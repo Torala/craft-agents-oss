@@ -12,6 +12,7 @@ export interface TokenUsage {
   inputTokens: number;
   outputTokens: number;
   totalTokens: number;
+  contextTokens: number;  // Current context size (last request's input tokens)
 }
 
 export interface UseAgentResult {
@@ -48,6 +49,7 @@ export function useAgent(config: CraftAgentConfig): UseAgentResult {
     inputTokens: 0,
     outputTokens: 0,
     totalTokens: 0,
+    contextTokens: 0,
   });
   const [model, setModelState] = useState(config.model || 'claude-sonnet-4-5-20250929');
 
@@ -223,6 +225,7 @@ export function useAgent(config: CraftAgentConfig): UseAgentResult {
                   prev.totalTokens +
                   event.usage!.inputTokens +
                   event.usage!.outputTokens,
+                contextTokens: event.usage!.inputTokens,  // Current context size
               }));
             }
             break;

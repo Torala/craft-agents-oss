@@ -488,8 +488,8 @@ export const App: React.FC<AppProps> = ({ config, onRequestSetup }) => {
           connected={connected}
           model={model}
           mcpUrl={config.mcpUrl}
-          inputTokens={tokenUsage.inputTokens}
-          outputTokens={tokenUsage.outputTokens}
+          contextTokens={tokenUsage.contextTokens}
+          cost={estimateCost(tokenUsage.inputTokens, tokenUsage.outputTokens)}
         />
       </Box>
     </Box>

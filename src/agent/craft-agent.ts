@@ -187,7 +187,7 @@ export class CraftAgent {
 
     try {
       // Connect to MCP server and get tools
-      yield { type: 'status', message: 'Connecting to Craft...' };
+      yield { type: 'status', message: 'Processing...' };
       await this.ensureMcpConnection();
 
       // Build message content with attachments

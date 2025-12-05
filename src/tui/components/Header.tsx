@@ -1,21 +1,21 @@
 import React, { memo, useMemo } from 'react';
 import { Box, Text } from 'ink';
-import { formatTokens, estimateCost } from '../utils/markdown.ts';
+import { formatTokens } from '../utils/markdown.ts';
 
 export interface HeaderProps {
   connected: boolean;
   model?: string;
   mcpUrl?: string;
-  inputTokens?: number;
-  outputTokens?: number;
+  contextTokens?: number;
+  cost?: string;
 }
 
 export const Header: React.FC<HeaderProps> = memo(({
   connected,
   model = 'claude-sonnet-4-5-20250929',
   mcpUrl,
-  inputTokens = 0,
-  outputTokens = 0,
+  contextTokens = 0,
+  cost = '$0.00',
 }) => {
   // Map model IDs to friendly names
   const modelDisplay = useMemo(() => {
@@ -32,9 +32,6 @@ export const Header: React.FC<HeaderProps> = memo(({
     ? mcpUrl.replace(/^https?:\/\//, '').split('/')[0]
     : 'Not connected', [mcpUrl]);
 
-  const totalTokens = inputTokens + outputTokens;
-  const cost = useMemo(() => estimateCost(inputTokens, outputTokens), [inputTokens, outputTokens]);
-
   return (
     <Box justifyContent="space-between">
       <Box>
@@ -47,9 +44,9 @@ export const Header: React.FC<HeaderProps> = memo(({
       </Box>
 
       <Box>
-        {totalTokens > 0 && (
+        {contextTokens > 0 && (
           <>
-            <Text dimColor>{formatTokens(totalTokens)} tokens</Text>
+            <Text dimColor>{formatTokens(contextTokens)} context</Text>
             <Text dimColor> ({cost})</Text>
             <Text dimColor> | </Text>
           </>
