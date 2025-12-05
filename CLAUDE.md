@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Craft TUI Agent is a Claude Code-like terminal interface for managing Craft documents. It uses the Anthropic SDK directly (not Claude Agent SDK) to interact with Claude models and connects to a Craft MCP server for document operations.
+Craft TUI Agent is a Claude Code-like terminal interface for managing Craft documents. It uses the Claude Agent SDK (`@anthropic-ai/claude-agent-sdk`) to interact with Claude models and connects to a Craft MCP server for document operations.
 
 ## Commands
 
@@ -34,18 +34,20 @@ bun link
 
 ### Agent Layer
 - `src/agent/craft-agent.ts` - Core agent class (`CraftAgent`) that:
-  - Uses `@anthropic-ai/sdk` directly for Claude API calls (not Claude Agent SDK despite the npm dependency)
-  - Implements streaming with agentic tool loop (continues until no more tool calls)
-  - Manages conversation history internally
+  - Uses `@anthropic-ai/claude-agent-sdk` for Claude API calls via the `query()` function
+  - Leverages SDK's built-in agentic loop (no manual tool call handling needed)
+  - **Auto compaction**: SDK automatically compresses long conversations to manage context
+  - Session management via `resume` option for conversation continuity
   - Handles OAuth token refresh for Craft MCP authentication
-  - Emits typed `AgentEvent` stream events (text_delta, tool_start, tool_result, etc.)
-  - Integrates Claude's built-in tools: web_search, web_fetch, code_execution
-  - Has a built-in `update_user_preferences` tool for storing user context
+  - Converts SDK's `SDKMessage` events to `AgentEvent` for TUI compatibility
+  - Configures Craft MCP server via SDK's `mcpServers` option with HTTP transport
+  - Has a built-in `update_user_preferences` tool via PreToolUse hook
 
 ### MCP Integration
-- `src/mcp/client.ts` - Wraps `@modelcontextprotocol/sdk` with StreamableHTTPClientTransport
+- MCP is now handled by the Claude Agent SDK directly
+- `src/mcp/client.ts` - Legacy MCP client (no longer used by agent, kept for /tools command)
 - `src/mcp/tools.ts` - Tool registry and help formatting for Craft MCP tools
-- Tools are fetched from the MCP server at runtime and converted to Anthropic tool format
+- The SDK connects to the MCP server via `mcpServers: { craft: { type: 'http', url, headers } }`
 
 ### TUI Layer (Ink/React)
 - `src/tui/App.tsx` - Main application component, handles slash commands (/help, /tools, /model, /web, /clear, etc.)
@@ -61,13 +63,20 @@ bun link
 ## Key Patterns
 
 ### Streaming Architecture
-The agent uses a custom event-based streaming pattern:
-1. `CraftAgent.chat()` is an async generator yielding `AgentEvent` objects
-2. `useAgent` hook consumes events and updates React state with throttling (50ms) to reduce flickering
-3. Tool execution happens inline during streaming - the agent loops until no more tool calls
+The agent uses the Claude Agent SDK's streaming pattern:
+1. `CraftAgent.chat()` calls `query()` from the SDK, which returns an async generator of `SDKMessage`
+2. Messages are converted to `AgentEvent` objects for backward compatibility with the TUI
+3. `useAgent` hook consumes events and updates React state with throttling (50ms) to reduce flickering
+4. The SDK handles the agentic loop internally (tool calls, MCP communication, etc.)
+
+### Auto Compaction
+- The SDK automatically compacts conversation history when it grows too large
+- Compaction events are surfaced as status messages in the TUI
+- Session IDs are preserved to enable `resume` for conversation continuity
 
 ### OAuth Flow
 - OAuth handled in `src/auth/oauth.ts` with automatic token refresh
+- Tokens are passed to the SDK via `mcpServers.craft.headers`
 - Supports both authenticated and public MCP servers (controlled by `isPublic` flag in config)
 
 ### Message Types
@@ -76,5 +85,5 @@ Messages have types: 'user', 'assistant', 'tool', 'error', 'status', 'system' - 
 ## Tech Stack
 - **Runtime**: Bun
 - **TUI**: Ink (React for CLIs)
-- **AI**: @anthropic-ai/sdk (direct API, not Agent SDK)
-- **MCP**: @modelcontextprotocol/sdk with StreamableHTTPClientTransport
+- **AI**: @anthropic-ai/claude-agent-sdk (Agent SDK with auto compaction, session management)
+- **MCP**: Handled by Agent SDK via HTTP transport
