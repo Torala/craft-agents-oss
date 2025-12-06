@@ -23,22 +23,18 @@ const CALLBACK_PORT = 8914;
 const CALLBACK_PATH = '/oauth/callback';
 const CLIENT_NAME = 'Craft TUI Agent';
 
-// Tokyo Night color palette (matching TUI theme)
-const tokyoNight = {
-  bg: '#1a1b26',
-  fg: '#dcdee8',
-  comment: '#565f89',
-  purple: '#bb9af7',
-  green: '#9ece6a',
-  red: '#f7768e',
-};
-
-// ASCII Craft logo (from Header.tsx WelcomeBanner)
-const CRAFT_LOGO = `  ████████ █████████    ██████   ██████████ ██████████
-██████████ ██████████ ██████████ █████████  ██████████
-██████     ██████████ ██████████ ████████   ██████████
-██████████ ████████   ██████████ ███████      █████
-  ████████ ████  ████ ████  ████ █████        █████`;
+// ASCII Craft logo (exact copy from Header.tsx WelcomeBanner)
+const CRAFT_LOGO = [
+  '                                                      ',
+  '                                                      ',
+  '  ████████ █████████    ██████   ██████████ ██████████',
+  '██████████ ██████████ ██████████ █████████  ██████████',
+  '██████     ██████████ ██████████ ████████   ██████████',
+  '██████████ ████████   ██████████ ███████      █████   ',
+  '  ████████ ████  ████ ████  ████ █████        █████   ',
+  '                                                      ',
+  '                                                      ',
+].join('\n');
 
 /**
  * Generate a styled OAuth callback page matching TUI aesthetic
@@ -51,7 +47,6 @@ function generateOAuthPage(options: {
   errorDetail?: string;
 }): string {
   const { title, message, isSuccess, autoClose = false, errorDetail } = options;
-  const titleColor = isSuccess ? tokyoNight.green : tokyoNight.red;
 
   const countdownScript = autoClose ? `
     <script>
@@ -73,7 +68,7 @@ function generateOAuthPage(options: {
     : '';
 
   const errorHtml = errorDetail
-    ? `<p class="error-detail">Error: ${errorDetail}</p>`
+    ? `<p class="error-detail">${errorDetail}</p>`
     : '';
 
   return `<!DOCTYPE html>
@@ -81,13 +76,13 @@ function generateOAuthPage(options: {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Craft TUI - ${title}</title>
+  <title>Craft - ${title}</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
-      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-      background-color: ${tokyoNight.bg};
-      color: ${tokyoNight.fg};
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
+      background: #0d0d0d;
+      color: #a0a0a0;
       min-height: 100vh;
       display: flex;
       align-items: center;
@@ -95,24 +90,23 @@ function generateOAuthPage(options: {
     }
     .container { text-align: center; padding: 2rem; }
     .logo {
-      color: ${tokyoNight.purple};
-      font-size: 10px;
-      line-height: 1.2;
+      color: #888;
+      font-size: 8px;
+      line-height: 1;
       white-space: pre;
       margin-bottom: 2rem;
-      font-weight: bold;
+      letter-spacing: -1px;
     }
-    @media (min-width: 600px) { .logo { font-size: 14px; } }
+    @media (min-width: 640px) { .logo { font-size: 12px; } }
     .title {
-      font-size: 1.5rem;
-      font-weight: bold;
-      margin-bottom: 0.5rem;
-      color: ${titleColor};
+      font-size: 1.25rem;
+      font-weight: 600;
+      margin-bottom: 0.75rem;
+      color: ${isSuccess ? '#22c55e' : '#dc2626'};
     }
-    .message { color: ${tokyoNight.comment}; margin-bottom: 0.5rem; }
-    .error-detail { color: ${tokyoNight.red}; margin-bottom: 1rem; font-size: 0.875rem; }
-    .countdown { color: ${tokyoNight.comment}; font-size: 0.875rem; }
-    .hint { color: ${tokyoNight.comment}; font-size: 0.75rem; margin-top: 2rem; }
+    .message { color: #666; margin-bottom: 0.5rem; }
+    .error-detail { color: #dc2626; margin-bottom: 1rem; font-size: 0.875rem; }
+    .countdown { color: #555; font-size: 0.875rem; margin-top: 1rem; }
   </style>
 </head>
 <body>
@@ -122,7 +116,6 @@ function generateOAuthPage(options: {
     <p class="message">${message}</p>
     ${errorHtml}
     ${countdownHtml}
-    <p class="hint">Return to terminal to continue</p>
   </div>
   ${countdownScript}
 </body>
