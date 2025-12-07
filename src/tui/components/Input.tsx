@@ -123,43 +123,27 @@ const SimpleTextInput: React.FC<{
       }
 
       // Handle backspace/delete
-      // Note: Some terminals send delete instead of backspace, so we treat delete-at-end as backspace
-      const isActualBackspace = key.backspace || (key.delete && cursor === value.length);
+      // Note: On macOS, the backspace key sends key.delete, not key.backspace
       if (key.backspace || key.delete) {
-        if (isActualBackspace) {
-          if (sel) {
-            const newValue = value.slice(0, sel.start) + value.slice(sel.end);
-            cursorRef.current = sel.start;
-            selectionRef.current = null;
-            prevValueRef.current = newValue;
-            onChange(newValue);
-          } else if (cursor > 0) {
-            const newValue = value.slice(0, cursor - 1) + value.slice(cursor);
-            cursorRef.current = cursor - 1;
-            prevValueRef.current = newValue;
-            onChange(newValue);
-          } else if (value.length > 0) {
-            // Fallback: cursor is 0 but value has content - delete from end
-            const newValue = value.slice(0, -1);
-            cursorRef.current = newValue.length;
-            prevValueRef.current = newValue;
-            onChange(newValue);
-          } else if (onBackspaceEmpty) {
-            onBackspaceEmpty();
-          }
-        } else if (key.delete && cursor < value.length) {
-          // Forward delete (only when not at end)
-          if (sel) {
-            const newValue = value.slice(0, sel.start) + value.slice(sel.end);
-            cursorRef.current = sel.start;
-            selectionRef.current = null;
-            prevValueRef.current = newValue;
-            onChange(newValue);
-          } else if (cursor < value.length) {
-            const newValue = value.slice(0, cursor) + value.slice(cursor + 1);
-            prevValueRef.current = newValue;
-            onChange(newValue);
-          }
+        if (sel) {
+          const newValue = value.slice(0, sel.start) + value.slice(sel.end);
+          cursorRef.current = sel.start;
+          selectionRef.current = null;
+          prevValueRef.current = newValue;
+          onChange(newValue);
+        } else if (cursor > 0) {
+          const newValue = value.slice(0, cursor - 1) + value.slice(cursor);
+          cursorRef.current = cursor - 1;
+          prevValueRef.current = newValue;
+          onChange(newValue);
+        } else if (value.length > 0) {
+          // Fallback: cursor is 0 but value has content - delete from end
+          const newValue = value.slice(0, -1);
+          cursorRef.current = newValue.length;
+          prevValueRef.current = newValue;
+          onChange(newValue);
+        } else if (onBackspaceEmpty) {
+          onBackspaceEmpty();
         }
         return;
       }
