@@ -6,9 +6,89 @@
  */
 
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
+import Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
 import type { ApiConfig, ApiEndpoint } from './types.ts';
 import { debug } from '../tui/utils/debug.ts';
+
+// Token limit for summarization trigger (roughly ~40KB of text)
+const TOKEN_LIMIT = 10000;
+
+// Max tokens to send to Haiku for summarization (~80KB, well under 200k context)
+const MAX_SUMMARIZATION_INPUT = 20000;
+
+// Lazy-initialized Anthropic client for summarization
+let anthropicClient: Anthropic | null = null;
+
+function getAnthropicClient(): Anthropic {
+  if (!anthropicClient) {
+    anthropicClient = new Anthropic();
+  }
+  return anthropicClient;
+}
+
+/**
+ * Summarize a large API response to fit within context limits.
+ * Uses Claude Haiku for fast, cheap summarization.
+ *
+ * @param response - The full API response text
+ * @param endpointDescription - What this endpoint does (for context)
+ * @param requestParams - The parameters used in the request (for focus)
+ * @returns Summarized response
+ */
+async function summarizeLargeResponse(
+  response: string,
+  endpointDescription: string,
+  requestParams: Record<string, unknown> | undefined
+): Promise<string> {
+  const client = getAnthropicClient();
+
+  // Build context from request params
+  const paramsContext = requestParams
+    ? `The user searched for: ${JSON.stringify(requestParams)}`
+    : 'No specific search parameters provided.';
+
+  // Truncate response to fit within Haiku's context safely
+  const maxChars = MAX_SUMMARIZATION_INPUT * 4; // ~80KB
+  const truncatedResponse = response.length > maxChars
+    ? response.substring(0, maxChars) + '\n\n[... truncated for summarization ...]'
+    : response;
+  const wasTruncated = response.length > maxChars;
+
+  try {
+    const result = await client.messages.create({
+      model: 'claude-haiku-4-20250514',
+      max_tokens: 4096,
+      messages: [{
+        role: 'user',
+        content: `You are summarizing an API response that was too large to fit in context.
+
+Endpoint description: ${endpointDescription}
+
+${paramsContext}
+${wasTruncated ? '\nNote: The response was truncated before summarization due to extreme size.' : ''}
+
+Your task:
+1. Extract the MOST RELEVANT information based on what was searched for
+2. Preserve key data points, IDs, URLs, and actionable information
+3. Summarize long text content but keep essential details
+4. Format the output cleanly for the AI assistant to use
+
+API Response to summarize:
+${truncatedResponse}
+
+Provide a concise but comprehensive summary that captures the essential information.`
+      }]
+    });
+
+    const textBlock = result.content.find(b => b.type === 'text');
+    return textBlock?.text || 'Failed to summarize response';
+  } catch (error) {
+    debug(`[api-tools] Summarization failed: ${error}`);
+    // Fall back to truncation if summarization fails
+    return response.substring(0, 40000) + '\n\n[Response truncated due to size]';
+  }
+}
 
 /**
  * Create an in-process MCP server for an API configuration.
@@ -77,6 +157,20 @@ export function createApiServer(
           }
 
           debug(`[api-tools] Success, response length: ${text.length}`);
+
+          // Check if response is too large and needs summarization
+          const estimatedTokens = Math.ceil(text.length / 4);
+          if (estimatedTokens > TOKEN_LIMIT) {
+            debug(`[api-tools] Response too large (~${estimatedTokens} tokens), summarizing...`);
+            const summary = await summarizeLargeResponse(text, endpoint.description, requestParams);
+            return {
+              content: [{
+                type: 'text' as const,
+                text: `[Response summarized - original was ~${estimatedTokens} tokens]\n\n${summary}`,
+              }],
+            };
+          }
+
           return { content: [{ type: 'text' as const, text }] };
         } catch (error) {
           const message = error instanceof Error ? error.message : 'Unknown error';

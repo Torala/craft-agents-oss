@@ -18,6 +18,28 @@ export interface ExtractionResult {
   info?: string[];  // Info messages for users (warnings, notices, etc.)
 }
 
+export interface ExtractionProgressEvent {
+  type: 'tool_start' | 'tool_complete' | 'status';
+  toolName?: string;
+  message: string;
+}
+
+/**
+ * Format tool name into a human-readable progress message
+ */
+function formatToolMessage(toolName: string): string {
+  if (toolName === 'mcp__craft__blocks_get') {
+    return 'Reading document blocks...';
+  }
+  if (toolName === 'mcp__craft__document_get') {
+    return 'Fetching document...';
+  }
+  if (toolName.startsWith('mcp__craft__')) {
+    return `Running ${toolName.replace('mcp__craft__', '')}...`;
+  }
+  return `Running ${toolName}...`;
+}
+
 /**
  * Extract agent definition using agentic approach
  *
@@ -32,6 +54,7 @@ export async function extractAgentDefinition(
   model: string,
   mcpUrl: string,
   mcpToken?: string,
+  onProgress?: (event: ExtractionProgressEvent) => void,
 ): Promise<ExtractionResult> {
   debug('[extractor] Starting agentic extraction for agent:', agentName, 'documentId:', documentId);
 
@@ -102,10 +125,11 @@ For each API found, extract:
     * Start with what the endpoint DOES (not just its name)
     * Explain WHEN to use it (use cases, scenarios)
     * List KEY PARAMETERS with their purpose and valid values
+    * PAGINATION/LIMITS ARE CRITICAL: Always prominently mention any limit/count/numResults parameters. Large responses can overwhelm context. Recommend conservative defaults (e.g., "numResults: 1-100, default 10, START WITH 5-10 to avoid huge responses")
     * Include any important CONSTRAINTS (rate limits, max results, etc.)
     * Mention RELATED endpoints if relevant
     BAD: "Search the Exa API"
-    GOOD: "Search the web using Exa's neural search engine. Use this for finding recent articles, research papers, news, or any web content. Key parameters: query (search string), numResults (1-100, default 10), type ('neural' for semantic search, 'keyword' for exact match), category (optional: 'news', 'research paper', 'company', 'github'). Returns URLs, titles, and snippets. For full page content, follow up with exa_contents using the returned URLs."
+    GOOD: "Search the web using Exa's neural search engine. Use this for finding recent articles, research papers, news, or any web content. Key parameters: query (search string), numResults (1-100, default 10, START WITH 5-10 to avoid huge responses), type ('neural' for semantic search, 'keyword' for exact match), category (optional: 'news', 'research paper', 'company', 'github'). Returns URLs, titles, and snippets. For full page content, follow up with exa_contents using the returned URLs."
   - exampleParams: Example request body extracted from curl -d or request body (as object, not string)
 
 INFO MESSAGES - VERY IMPORTANT:
@@ -239,11 +263,19 @@ Rules:
     let result: ExtractionResult | null = null;
 
     for await (const message of query({ prompt, options })) {
-      // Log tool usage for debugging
+      // Log tool usage for debugging and emit progress events
       if (message.type === 'assistant') {
         for (const block of message.message.content) {
           if (block.type === 'tool_use') {
             debug('[extractor] Tool call:', block.name, JSON.stringify(block.input));
+
+            // Emit progress event
+            debug('[extractor] Emitting progress event for tool:', block.name);
+            onProgress?.({
+              type: 'tool_start',
+              toolName: block.name,
+              message: formatToolMessage(block.name),
+            });
           }
         }
       }

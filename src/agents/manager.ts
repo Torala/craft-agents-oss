@@ -18,7 +18,7 @@ import type {
 } from './types.ts';
 import { createApiServer } from './api-tools.ts';
 import { normalizeAgentName } from './parser.ts';
-import { extractAgentDefinition } from './extractor.ts';
+import { extractAgentDefinition, type ExtractionProgressEvent } from './extractor.ts';
 import {
   loadRegistry,
   saveRegistry,
@@ -181,7 +181,10 @@ export class SubAgentManager {
   /**
    * Get full agent definition (from cache or fetch)
    */
-  async getDefinition(agentId: string): Promise<SubAgentDefinition | null> {
+  async getDefinition(
+    agentId: string,
+    onProgress?: (event: ExtractionProgressEvent) => void,
+  ): Promise<SubAgentDefinition | null> {
     debug('[getDefinition] agentId:', agentId);
 
     // Check file cache
@@ -200,13 +203,14 @@ export class SubAgentManager {
 
     try {
       // Use agentic extraction - Claude will fetch the document using MCP tools
-      debug('[getDefinition] starting agentic extraction for documentId:', metadata.documentId);
+      debug('[getDefinition] starting agentic extraction for documentId:', metadata.documentId, 'onProgress:', !!onProgress);
       const extracted = await extractAgentDefinition(
         metadata.documentId,
         metadata.name,
         this.config.model,
         this.config.mcpUrl,
         this.config.mcpToken,
+        onProgress,
       );
 
       // Check if extraction actually got content
@@ -249,7 +253,10 @@ export class SubAgentManager {
    * Activate an agent by name
    * Returns the definition if successful, null otherwise
    */
-  async activateAgent(name: string): Promise<SubAgentDefinition | null> {
+  async activateAgent(
+    name: string,
+    onProgress?: (event: ExtractionProgressEvent) => void,
+  ): Promise<SubAgentDefinition | null> {
     debug('[activateAgent] Activating agent:', name);
     const agents = await this.getAvailableAgents();
     debug('[activateAgent] Available agents:', agents.map(a => a.name));
@@ -261,7 +268,7 @@ export class SubAgentManager {
     }
 
     debug('[activateAgent] Found agent:', agent.name, 'id:', agent.id);
-    const definition = await this.getDefinition(agent.id);
+    const definition = await this.getDefinition(agent.id, onProgress);
     if (!definition) {
       debug('[activateAgent] Failed to get definition for agent');
       return null;

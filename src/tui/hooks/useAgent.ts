@@ -18,6 +18,7 @@ import {
 import { CraftMcpClient } from '../../mcp/client.ts';
 import { SubAgentManager } from '../../agents/manager.ts';
 import type { SubAgentDefinition, McpServerConfig, ApiConfig } from '../../agents/types.ts';
+import type { ExtractionProgressEvent } from '../../agents/extractor.ts';
 import { invalidateDefinition, clearMcpCredentials, loadRegistry } from '../../agents/cache.ts';
 import { CraftOAuth, getMcpBaseUrl } from '../../auth/oauth.ts';
 import { debug } from '../utils/debug.ts';
@@ -856,7 +857,18 @@ export function useAgent(config: CraftAgentConfig): UseAgentResult {
       }]);
     }
 
-    const definition = await agentManagerRef.current.activateAgent(name);
+    const definition = await agentManagerRef.current.activateAgent(name, (event: ExtractionProgressEvent) => {
+      debug('[useAgent.activateAgent] Progress event:', event.type, event.message);
+      // Update extraction message with progress
+      if (extractionMsgId && event.type === 'tool_start') {
+        debug('[useAgent.activateAgent] Updating extraction message with:', event.message);
+        setMessages(prev => prev.map(m =>
+          m.id === extractionMsgId
+            ? { ...m, content: event.message }
+            : m
+        ));
+      }
+    });
 
     // Update extraction message on completion
     if (extractionMsgId) {
