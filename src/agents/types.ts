@@ -39,6 +39,8 @@ export interface SubAgentDefinition {
   instructionsBlockId?: string;
   /** MCP server configs parsed from code blocks */
   mcpServers?: McpServerConfig[];
+  /** REST API configs extracted from curl examples or documentation */
+  apis?: ApiConfig[];
   /** Info messages from extraction (warnings, notices, etc.) */
   info?: string[];
   /** Full raw content for reference */
@@ -63,6 +65,53 @@ export interface McpServerConfig {
   description?: string;
   /** Tools available on this server (populated after connection) */
   tools?: string[];
+}
+
+/**
+ * REST API configuration extracted from agent document
+ * APIs are converted to in-process MCP servers at runtime
+ */
+export interface ApiConfig {
+  /** API identifier - becomes tool prefix (e.g., "exa" → "exa_search") */
+  name: string;
+  /** Base URL for API requests */
+  baseUrl: string;
+  /** Authentication configuration */
+  auth?: {
+    type: 'header' | 'bearer' | 'query';
+    /** Header name for type='header' (e.g., "x-api-key") */
+    headerName?: string;
+    /** Query param name for type='query' (e.g., "api_key") */
+    queryParam?: string;
+  };
+  /** Discovered endpoints */
+  endpoints: ApiEndpoint[];
+  /** Human-readable description */
+  description?: string;
+}
+
+/**
+ * API endpoint configuration - becomes an MCP tool
+ */
+export interface ApiEndpoint {
+  /** Endpoint name - becomes tool suffix (e.g., "search" → "exa_search") */
+  name: string;
+  /** HTTP method */
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
+  /** Path relative to baseUrl (e.g., "/search") */
+  path: string;
+  /**
+   * Rich tool description that helps Claude use this endpoint effectively.
+   * Should include:
+   * - What the endpoint does
+   * - When to use it (use cases)
+   * - Key parameters with valid values
+   * - Constraints (rate limits, max values)
+   * - Related endpoints
+   */
+  description: string;
+  /** Example parameters extracted from curl/docs - appended to description */
+  exampleParams?: Record<string, unknown>;
 }
 
 /**

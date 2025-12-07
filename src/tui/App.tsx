@@ -11,6 +11,7 @@ import { WorkspaceRename } from './components/WorkspaceRename.tsx';
 import { ApiKeyChange } from './components/ApiKeyChange.tsx';
 import { AskUserQuestion } from './components/AskUserQuestion.tsx';
 import { McpAuth } from './components/McpAuth.tsx';
+import { ApiAuth } from './components/ApiAuth.tsx';
 import { HelpPanel } from './components/HelpPanel.tsx';
 import { useAgent } from './hooks/useAgent.ts';
 import { useHistory } from './hooks/useHistory.ts';
@@ -75,6 +76,10 @@ export const App: React.FC<AppProps> = ({ config, onRequestSetup }) => {
     completeMcpAuth,
     cancelMcpAuth,
     triggerMcpAuth,
+    // API auth for REST API integrations
+    pendingApiAuth,
+    completeApiAuth,
+    cancelApiAuth,
   } = useAgent(config);
 
   const { history, addToHistory } = useHistory();
@@ -216,6 +221,16 @@ export const App: React.FC<AppProps> = ({ config, onRequestSetup }) => {
                 info += `: ${server.tools.join(', ')}`;
               } else {
                 info += ': (no tools)';
+              }
+            }
+          }
+
+          // Show API tools (in-process servers)
+          if (activeAgentDefinition.apis && activeAgentDefinition.apis.length > 0) {
+            for (const api of activeAgentDefinition.apis) {
+              info += `\n\n**${api.name}** (API)`;
+              for (const endpoint of api.endpoints) {
+                info += `\n  • ${api.name}_${endpoint.name} - ${endpoint.description.split('.')[0]}`;
               }
             }
           }
@@ -1050,6 +1065,17 @@ export const App: React.FC<AppProps> = ({ config, onRequestSetup }) => {
         />
       )}
 
+      {/* API key authentication for REST API integrations */}
+      {pendingApiAuth && (
+        <ApiAuth
+          apis={pendingApiAuth.apis}
+          workspaceId={workspace.id}
+          agentId={pendingApiAuth.agentId}
+          onComplete={completeApiAuth}
+          onCancel={cancelApiAuth}
+        />
+      )}
+
       {/* Input + Status bar + Header together at bottom */}
       <Box flexDirection="column" width="100%" paddingX={1}>
         {/* Permission prompt */}
@@ -1078,7 +1104,7 @@ export const App: React.FC<AppProps> = ({ config, onRequestSetup }) => {
             />
           </Box>
         )}
-        {!showModelSelector && !showHelp && !showAgentMenu && !showWorkspaceSelector && !showWorkspaceAdd && !showWorkspaceRename && !showApiKeyChange && !pendingPermission && !pendingQuestion && !pendingMcpAuth && (
+        {!showModelSelector && !showHelp && !showAgentMenu && !showWorkspaceSelector && !showWorkspaceAdd && !showWorkspaceRename && !showApiKeyChange && !pendingPermission && !pendingQuestion && !pendingMcpAuth && !pendingApiAuth && (
           <Input
             onSubmit={handleSubmit}
             onPaste={handlePaste}

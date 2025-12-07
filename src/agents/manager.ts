@@ -14,7 +14,9 @@ import type {
   ActiveAgentState,
   AgentRegistry,
   McpServerConfig,
+  ApiConfig,
 } from './types.ts';
+import { createApiServer } from './api-tools.ts';
 import { normalizeAgentName } from './parser.ts';
 import { extractAgentDefinition } from './extractor.ts';
 import {
@@ -69,6 +71,8 @@ export class SubAgentManager {
   private activeAgent: ActiveAgentState = { type: 'main' };
   private registry: AgentRegistry | null = null;
   private definitionCache: Map<string, SubAgentDefinition> = new Map();
+  /** Cache for API servers (created once per agent activation) */
+  private apiServerCache: Map<string, ReturnType<typeof createApiServer>> = new Map();
 
   constructor(workspaceId: string, mcpClient: CraftMcpClient, config: SubAgentManagerConfig) {
     this.workspaceId = workspaceId;
@@ -230,6 +234,7 @@ export class SubAgentManager {
         instructions: extracted.instructions,
         instructionsBlockId: extracted.instructionsBlockId,
         mcpServers: extracted.mcpServers?.length ? extracted.mcpServers : undefined,
+        apis: extracted.apis?.length ? extracted.apis : undefined,
         info: extracted.info?.length ? extracted.info : undefined,
         rawContent: extracted.instructions, // Use instructions as raw content since we don't have separate raw
         parsedAt: Date.now(),
@@ -476,6 +481,89 @@ export class SubAgentManager {
       const name = config.name || this.extractNameFromUrl(config.url);
       return isCredentialExpired(this.workspaceId, this.activeAgent.agentId!, name);
     });
+  }
+
+  // ============================================================
+  // API Server Config
+  // ============================================================
+
+  /**
+   * Get APIs that need authentication (have auth config but no stored key)
+   */
+  getApisNeedingAuth(definition: SubAgentDefinition): ApiConfig[] {
+    if (!definition.apis || !this.activeAgent.agentId) {
+      return [];
+    }
+
+    return definition.apis.filter((api) => {
+      // No auth needed for this API
+      if (!api.auth) return false;
+
+      // Check if we have stored credentials
+      const creds = getServerCredentials(
+        this.workspaceId,
+        this.activeAgent.agentId!,
+        `api_${api.name}`
+      );
+      return !creds?.accessToken;
+    });
+  }
+
+  /**
+   * Build in-process MCP servers for all APIs with credentials
+   * Returns servers keyed by `api_{name}`
+   */
+  buildApiServers(
+    definition: SubAgentDefinition
+  ): Record<string, ReturnType<typeof createApiServer>> {
+    const servers: Record<string, ReturnType<typeof createApiServer>> = {};
+
+    if (!definition.apis || !this.activeAgent.agentId) {
+      return servers;
+    }
+
+    for (const api of definition.apis) {
+      const serverKey = `api_${api.name}`;
+
+      // Check cache first
+      if (this.apiServerCache.has(serverKey)) {
+        servers[serverKey] = this.apiServerCache.get(serverKey)!;
+        debug(`[manager.buildApiServers] Using cached server for ${api.name}`);
+        continue;
+      }
+
+      // Get API key (either stored or not needed)
+      let apiKey = '';
+      if (api.auth) {
+        const creds = getServerCredentials(
+          this.workspaceId,
+          this.activeAgent.agentId,
+          serverKey
+        );
+        if (!creds?.accessToken) {
+          debug(`[manager.buildApiServers] No credentials for ${api.name}, skipping`);
+          continue;
+        }
+        apiKey = creds.accessToken;
+      }
+
+      // Create and cache the server
+      const server = createApiServer(api, apiKey);
+      this.apiServerCache.set(serverKey, server);
+      servers[serverKey] = server;
+
+      debug(`[manager.buildApiServers] Created server for ${api.name} with ${api.endpoints.length} endpoints`);
+    }
+
+    return servers;
+  }
+
+  /**
+   * Clear API server cache (called on agent deactivation)
+   */
+  clearApiServerCache(): void {
+    debug(`[manager.clearApiServerCache] Clearing ${this.apiServerCache.size} cached servers`);
+    this.apiServerCache.clear();
   }
 
   /**

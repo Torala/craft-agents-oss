@@ -227,6 +227,8 @@ export class CraftAgent {
   private activeAgentDefinition: SubAgentDefinition | null = null;
   // Pre-built MCP server configs for the active agent (includes auth headers)
   private agentMcpServers: Record<string, { type: 'http' | 'sse'; url: string; headers?: Record<string, string> }> = {};
+  // In-process MCP servers for API integrations (created from ApiConfig)
+  private agentApiServers: Record<string, ReturnType<typeof createSdkMcpServer>> = {};
 
   // Callback for permission requests - set by TUI to receive permission prompts
   public onPermissionRequest: ((request: { requestId: string; toolName: string; command: string; description: string }) => void) | null = null;
@@ -451,6 +453,8 @@ export class CraftAgent {
         preferences: getPreferencesServer(),
         // Add agent-specific MCP servers if an agent is active
         ...this.getAgentMcpServers(),
+        // Add in-process API servers (REST APIs converted to MCP tools)
+        ...this.getAgentApiServers(),
       };
 
       // Debug: log active agent before building system prompt
@@ -1098,13 +1102,16 @@ export class CraftAgent {
    * Set the active agent definition and optionally its pre-built MCP server configs
    * @param definition The agent definition (or null to deactivate)
    * @param mcpServers Pre-built MCP server configs with auth headers (from SubAgentManager.buildMcpServerConfig)
+   * @param apiServers In-process MCP servers for REST APIs (from SubAgentManager.buildApiServers)
    */
   setActiveAgentDefinition(
     definition: SubAgentDefinition | null,
-    mcpServers?: Record<string, { type: 'http' | 'sse'; url: string; headers?: Record<string, string> }>
+    mcpServers?: Record<string, { type: 'http' | 'sse'; url: string; headers?: Record<string, string> }>,
+    apiServers?: Record<string, ReturnType<typeof createSdkMcpServer>>
   ): void {
     this.activeAgentDefinition = definition;
     this.agentMcpServers = mcpServers ?? {};
+    this.agentApiServers = apiServers ?? {};
   }
 
   /**
@@ -1114,6 +1121,14 @@ export class CraftAgent {
    */
   private getAgentMcpServers(): Record<string, { type: 'http' | 'sse'; url: string; headers?: Record<string, string> }> {
     return this.agentMcpServers;
+  }
+
+  /**
+   * Get in-process MCP servers for REST APIs
+   * These are created by createApiServer() from API configs extracted from agent documents
+   */
+  private getAgentApiServers(): Record<string, ReturnType<typeof createSdkMcpServer>> {
+    return this.agentApiServers;
   }
 
   async close(): Promise<void> {
