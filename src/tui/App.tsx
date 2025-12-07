@@ -61,6 +61,7 @@ export const App: React.FC<AppProps> = ({ config, onRequestSetup }) => {
     // Agent-related
     availableAgents,
     activeAgentName,
+    activeAgentDefinition,
     activeAgentMcpServers,
     activateAgent,
     deactivateAgent,
@@ -195,10 +196,19 @@ export const App: React.FC<AppProps> = ({ config, onRequestSetup }) => {
       }
       case 'info': {
         debug('[handleAgentAction.info] activeAgentName:', activeAgentName, 'mcpServers:', activeAgentMcpServers.length);
-        if (activeAgentName) {
+        if (activeAgentName && activeAgentDefinition) {
+          let info = `**Active Agent**: @${activeAgentName}`;
+
+          // Show info messages if any
+          if (activeAgentDefinition.info && activeAgentDefinition.info.length > 0) {
+            info += '\n\n**Info**';
+            for (const msg of activeAgentDefinition.info) {
+              info += `\nℹ ${msg}`;
+            }
+          }
+
           // Fetch tools from MCP servers
           const serversWithTools = await fetchAgentTools();
-          let info = `**Active Agent**: @${activeAgentName}`;
           if (serversWithTools.length > 0) {
             for (const server of serversWithTools) {
               info += `\n\n**${server.name}**`;
@@ -217,7 +227,7 @@ export const App: React.FC<AppProps> = ({ config, onRequestSetup }) => {
         break;
       }
     }
-  }, [activateAgent, deactivateAgent, reloadAgent, resetAgent, refreshAgents, fetchAgentTools, activeAgentName, activeAgentMcpServers, addLocalMessage]);
+  }, [activateAgent, deactivateAgent, reloadAgent, resetAgent, refreshAgents, fetchAgentTools, activeAgentName, activeAgentDefinition, activeAgentMcpServers, addLocalMessage]);
 
   const handleAgentMenuCancel = useCallback(() => {
     setShowAgentMenu(false);

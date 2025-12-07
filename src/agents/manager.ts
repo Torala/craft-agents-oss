@@ -230,6 +230,7 @@ export class SubAgentManager {
         instructions: extracted.instructions,
         instructionsBlockId: extracted.instructionsBlockId,
         mcpServers: extracted.mcpServers?.length ? extracted.mcpServers : undefined,
+        info: extracted.info?.length ? extracted.info : undefined,
         rawContent: extracted.instructions, // Use instructions as raw content since we don't have separate raw
         parsedAt: Date.now(),
       };

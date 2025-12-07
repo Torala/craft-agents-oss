@@ -10,6 +10,8 @@ import {
   clearWorkspaceConversation,
   isWorkspaceTokenExpired,
   updateWorkspaceOAuthTokens,
+  loadStoredConfig,
+  saveConfig,
   type Workspace,
   type StoredMessage,
 } from '../../config/storage.ts';
@@ -111,6 +113,7 @@ export interface UseAgentResult {
   // Sub-agent related
   availableAgents: string[];
   activeAgentName: string | null;
+  activeAgentDefinition: SubAgentDefinition | null;
   activeAgentMcpServers: McpServerConfig[];
   activateAgent: (name: string) => Promise<boolean | 'pending_auth'>;
   deactivateAgent: () => void;
@@ -720,6 +723,12 @@ export function useAgent(config: CraftAgentConfig): UseAgentResult {
     if (agentRef.current) {
       agentRef.current.setModel(newModel);
     }
+    // Persist model selection to config
+    const config = loadStoredConfig();
+    if (config) {
+      config.model = newModel;
+      saveConfig(config);
+    }
   }, []);
 
   const setWorkspace = useCallback((newWorkspace: Workspace) => {
@@ -872,6 +881,19 @@ export function useAgent(config: CraftAgentConfig): UseAgentResult {
       const agentId = agentMeta?.id || name;
 
       setActiveAgentDefinition(definition);
+
+      // Show info messages from extraction
+      if (definition.info && definition.info.length > 0) {
+        setMessages(prev => [
+          ...prev,
+          ...definition.info!.map((msg, idx) => ({
+            id: `info-${Date.now()}-${idx}`,
+            type: 'system' as const,
+            content: msg,
+            timestamp: Date.now(),
+          })),
+        ]);
+      }
 
       // Check if any MCP servers need authentication
       const serversNeedingAuth = agentManagerRef.current.getMcpServersNeedingAuth(definition);
@@ -1175,6 +1197,7 @@ export function useAgent(config: CraftAgentConfig): UseAgentResult {
     // Sub-agent related
     availableAgents,
     activeAgentName,
+    activeAgentDefinition,
     activeAgentMcpServers,
     activateAgent,
     deactivateAgent,

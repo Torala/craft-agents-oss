@@ -39,6 +39,8 @@ export interface SubAgentDefinition {
   instructionsBlockId?: string;
   /** MCP server configs parsed from code blocks */
   mcpServers?: McpServerConfig[];
+  /** Info messages from extraction (warnings, notices, etc.) */
+  info?: string[];
   /** Full raw content for reference */
   rawContent: string;
   /** When this was parsed */

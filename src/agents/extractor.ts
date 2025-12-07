@@ -14,6 +14,7 @@ export interface ExtractionResult {
   instructions: string;
   instructionsBlockId?: string;
   mcpServers?: McpServerConfig[];
+  info?: string[];  // Info messages for users (warnings, notices, etc.)
 }
 
 /**
@@ -59,6 +60,7 @@ Just the raw JSON object starting with { and ending with }.`;
 1. First, use mcp__craft__blocks_get with documentId="${documentId}" and depth=3 to read the document
 2. Find the Instructions section/subpage and note its block ID
 3. Extract ALL instruction content EXACTLY as written
+4. Look for MCP server configurations
 
 IMPORTANT: Keep the original instructions as intact as possible. Only make minimal, logical changes:
 - Prepend the agent identity context (document ID)
@@ -66,18 +68,37 @@ IMPORTANT: Keep the original instructions as intact as possible. Only make minim
 - Do NOT rephrase, summarize, or restructure the content
 - Preserve the exact wording, structure, and formatting from the original
 
+MCP Server Handling:
+- Look for MCP server configurations in code blocks (YAML, JSON, or plain URLs)
+- ONLY include servers with HTTP/HTTPS URLs in the mcpServers array
+- UNSUPPORTED server types (do NOT include in mcpServers):
+  * npx commands (e.g., "npx -y @modelcontextprotocol/server-filesystem")
+  * command/args configs (e.g., { "command": "npx", "args": [...] })
+  * stdio transports
+  * Any server config without an http:// or https:// URL
+
+INFO MESSAGES - VERY IMPORTANT:
+Use the "info" array to communicate important information to the user. You MUST add info messages for:
+- Unsupported MCP servers: "MCP server '[name]' uses npx/stdio which is not supported. Only HTTP/HTTPS servers work."
+- Missing or empty Instructions section: "No Instructions section found in document."
+- Malformed or unparseable MCP configs: "Could not parse MCP server config in code block."
+- Any other issues or warnings the user should know about during agent setup
+
 Prepend this context line, then include the EXACT original content:
 "You are the ${agentName} agent. Your definition is stored in Craft document ${documentId}."
 
 Return ONLY valid JSON:
 {
-  "instructions": "You are the ${agentName} agent. Your definition is stored in Craft document ${documentId}.\\n\\n[EXACT instruction content from document - do not modify]",
+  "instructions": "You are the ${agentName} agent. Your definition is stored in Craft document ${documentId}.\\n\\n[EXACT instruction content from document]",
   "instructionsBlockId": "block-id-of-instructions-section-or-null",
-  "mcpServers": [{ "name": "...", "url": "...", "requiresAuth": false }]
+  "mcpServers": [{ "name": "myserver", "url": "https://example.com/mcp", "requiresAuth": false }],
+  "info": ["MCP server 'filesystem' uses npx/stdio transport which is not supported yet. Only HTTP/HTTPS MCP servers work in this environment."]
 }
 
-If no MCP servers found, use empty array.
-If document empty or not found, return empty instructions string.`;
+Rules:
+- mcpServers: Empty array [] if no HTTP/HTTPS MCP servers found
+- info: Empty array [] if nothing to report. MUST contain messages for any issues, warnings, or important information the user should know.
+- instructions: Empty string "" if document is empty or not found`;
 
     const options: Options = {
       model: model || 'claude-sonnet-4-20250514',
@@ -116,6 +137,11 @@ If document empty or not found, return empty instructions string.`;
                   requiresAuth: { type: 'boolean' },
                 },
               },
+            },
+            info: {
+              type: 'array',
+              description: 'User-facing info messages about the extraction (warnings, notices, etc.)',
+              items: { type: 'string' },
             },
           },
           required: ['instructions'],
