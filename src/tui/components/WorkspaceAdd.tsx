@@ -3,66 +3,7 @@ import { Box, Text, useInput } from 'ink';
 import { addWorkspace, type Workspace, type OAuthCredentials } from '../../config/storage.ts';
 import { CraftOAuth, getMcpBaseUrl } from '../../auth/oauth.ts';
 import { getCredentialManager } from '../../credentials/index.ts';
-
-// Simple text input component
-const SimpleTextInput: React.FC<{
-  value: string;
-  onChange: (value: string) => void;
-  onSubmit: (value: string) => void;
-  placeholder?: string;
-}> = ({ value, onChange, onSubmit, placeholder = '' }) => {
-  useInput((input, key) => {
-    if (key.return) {
-      onSubmit(value);
-      return;
-    }
-
-    if (key.backspace || key.delete) {
-      onChange(value.slice(0, -1));
-      return;
-    }
-
-    // Handle Ctrl+U to clear
-    if (input === '\x15') {
-      onChange('');
-      return;
-    }
-
-    // Ignore control characters
-    if (key.ctrl || key.meta || key.escape || key.upArrow || key.downArrow || key.leftArrow || key.rightArrow) {
-      return;
-    }
-
-    // Add printable characters (supports paste - multi-char input)
-    if (input && input.length >= 1) {
-      // Strip bracketed paste markers
-      const chars = input.replace(/\x1b\[200~/g, '').replace(/\x1b\[201~/g, '');
-      // Filter to printable characters
-      const printable = chars.split('').filter(c => c.charCodeAt(0) >= 32).join('');
-      if (printable) {
-        onChange(value + printable);
-      }
-    }
-  });
-
-  const showPlaceholder = value.length === 0;
-
-  return (
-    <Text>
-      {showPlaceholder ? (
-        <>
-          <Text color="green">|</Text>
-          <Text dimColor>{placeholder}</Text>
-        </>
-      ) : (
-        <>
-          <Text>{value}</Text>
-          <Text color="green">|</Text>
-        </>
-      )}
-    </Text>
-  );
-};
+import { TextInput } from './TextInput.tsx';
 
 type AddStep = 'name' | 'url' | 'checking-auth' | 'no-oauth-options' | 'oauth-auth' | 'bearer-token' | 'complete' | 'error';
 
@@ -82,8 +23,12 @@ export const WorkspaceAdd: React.FC<WorkspaceAddProps> = ({ onComplete, onCancel
   const [error, setError] = useState<string | null>(null);
   const [oauthClient, setOauthClient] = useState<CraftOAuth | null>(null);
 
-  // Handle Ctrl+C and Escape to cancel
+  // Handle Ctrl+C and Escape for steps without TextInput
+  // (name, url, bearer-token steps use TextInput.onCancel)
   useInput((input, key) => {
+    const textInputSteps = ['name', 'url', 'bearer-token'];
+    if (textInputSteps.includes(step)) return;
+
     if ((key.ctrl && input === 'c') || key.escape) {
       // Cancel OAuth flow if in progress
       if (oauthClient) {
@@ -259,6 +204,7 @@ export const WorkspaceAdd: React.FC<WorkspaceAddProps> = ({ onComplete, onCancel
           value={name}
           onChange={setName}
           onSubmit={handleName}
+          onCancel={onCancel}
         />
       )}
 
@@ -267,6 +213,7 @@ export const WorkspaceAdd: React.FC<WorkspaceAddProps> = ({ onComplete, onCancel
           value={mcpUrl}
           onChange={setMcpUrl}
           onSubmit={handleMcpUrl}
+          onCancel={onCancel}
           error={error}
         />
       )}
@@ -290,6 +237,7 @@ export const WorkspaceAdd: React.FC<WorkspaceAddProps> = ({ onComplete, onCancel
           value={bearerToken}
           onChange={setBearerToken}
           onSubmit={handleBearerToken}
+          onCancel={onCancel}
         />
       )}
 
@@ -352,9 +300,10 @@ interface NameStepProps {
   value: string;
   onChange: (value: string) => void;
   onSubmit: (value: string) => void;
+  onCancel: () => void;
 }
 
-const NameStep: React.FC<NameStepProps> = ({ value, onChange, onSubmit }) => {
+const NameStep: React.FC<NameStepProps> = ({ value, onChange, onSubmit, onCancel }) => {
   return (
     <Box flexDirection="column">
       <Text>Give this workspace a friendly name:</Text>
@@ -363,10 +312,11 @@ const NameStep: React.FC<NameStepProps> = ({ value, onChange, onSubmit }) => {
       </Box>
       <Box>
         <Text color="green">&gt; </Text>
-        <SimpleTextInput
+        <TextInput
           value={value}
           onChange={onChange}
           onSubmit={onSubmit}
+          onCancel={onCancel}
           placeholder="My Workspace"
         />
       </Box>
@@ -378,10 +328,11 @@ interface UrlStepProps {
   value: string;
   onChange: (value: string) => void;
   onSubmit: (value: string) => void;
+  onCancel: () => void;
   error: string | null;
 }
 
-const UrlStep: React.FC<UrlStepProps> = ({ value, onChange, onSubmit, error }) => {
+const UrlStep: React.FC<UrlStepProps> = ({ value, onChange, onSubmit, onCancel, error }) => {
   return (
     <Box flexDirection="column">
       <Text>Enter the Craft MCP server URL:</Text>
@@ -392,10 +343,11 @@ const UrlStep: React.FC<UrlStepProps> = ({ value, onChange, onSubmit, error }) =
       )}
       <Box marginTop={1}>
         <Text color="green">&gt; </Text>
-        <SimpleTextInput
+        <TextInput
           value={value}
           onChange={onChange}
           onSubmit={onSubmit}
+          onCancel={onCancel}
           placeholder="https://mcp.craft.do/links/YOUR_LINK_ID"
         />
       </Box>
@@ -477,9 +429,10 @@ interface BearerTokenStepProps {
   value: string;
   onChange: (value: string) => void;
   onSubmit: (value: string) => void;
+  onCancel: () => void;
 }
 
-const BearerTokenStep: React.FC<BearerTokenStepProps> = ({ value, onChange, onSubmit }) => {
+const BearerTokenStep: React.FC<BearerTokenStepProps> = ({ value, onChange, onSubmit, onCancel }) => {
   return (
     <Box flexDirection="column">
       <Text>Enter your bearer token:</Text>
@@ -488,11 +441,14 @@ const BearerTokenStep: React.FC<BearerTokenStepProps> = ({ value, onChange, onSu
       </Box>
       <Box>
         <Text color="green">&gt; </Text>
-        <SimpleTextInput
+        <TextInput
           value={value}
           onChange={onChange}
           onSubmit={onSubmit}
+          onCancel={onCancel}
           placeholder="Paste your bearer token..."
+          mask="•"
+          maskReveal={{ last: 4 }}
         />
       </Box>
     </Box>

@@ -5,66 +5,7 @@ import { saveServerCredentialsAsync } from '../../agents/cache.ts';
 import type { McpServerConfig } from '../../agents/types.ts';
 import { AnimatedSpinner } from './Spinner.tsx';
 import { debug } from '../utils/debug.ts';
-
-// Simple text input component for bearer token entry
-const SimpleTextInput: React.FC<{
-  value: string;
-  onChange: (value: string) => void;
-  onSubmit: (value: string) => void;
-  placeholder?: string;
-}> = ({ value, onChange, onSubmit, placeholder = '' }) => {
-  useInput((input, key) => {
-    if (key.return) {
-      onSubmit(value);
-      return;
-    }
-
-    if (key.backspace || key.delete) {
-      onChange(value.slice(0, -1));
-      return;
-    }
-
-    // Handle Ctrl+U to clear
-    if (input === '\x15') {
-      onChange('');
-      return;
-    }
-
-    // Ignore control characters (except for text entry)
-    if (key.ctrl || key.meta || key.escape || key.upArrow || key.downArrow || key.leftArrow || key.rightArrow) {
-      return;
-    }
-
-    // Add printable characters (supports paste - multi-char input)
-    if (input && input.length >= 1) {
-      // Strip bracketed paste markers
-      const chars = input.replace(/\x1b\[200~/g, '').replace(/\x1b\[201~/g, '');
-      // Filter to printable characters
-      const printable = chars.split('').filter(c => c.charCodeAt(0) >= 32).join('');
-      if (printable) {
-        onChange(value + printable);
-      }
-    }
-  });
-
-  const showPlaceholder = value.length === 0;
-
-  return (
-    <Text>
-      {showPlaceholder ? (
-        <>
-          <Text color="green">|</Text>
-          <Text dimColor>{placeholder}</Text>
-        </>
-      ) : (
-        <>
-          <Text>{value}</Text>
-          <Text color="green">|</Text>
-        </>
-      )}
-    </Text>
-  );
-};
+import { TextInput } from './TextInput.tsx';
 
 export interface McpAuthProps {
   servers: McpServerConfig[];
@@ -107,10 +48,10 @@ export const McpAuth: React.FC<McpAuthProps> = ({
 
   const currentServer = servers[currentServerIndex];
 
-  // Handle keyboard input
+  // Handle keyboard input (for steps without TextInput)
   useInput((input, key) => {
-    // Escape to cancel at any step
-    if (key.escape || (key.ctrl && input === 'c')) {
+    // Skip escape/ctrl+c handling for bearer-token step (TextInput handles it)
+    if (step !== 'bearer-token' && (key.escape || (key.ctrl && input === 'c'))) {
       debug('[McpAuth] User cancelled auth flow');
       isCancelledRef.current = true;
       if (oauthRef.current) {
@@ -349,11 +290,14 @@ export const McpAuth: React.FC<McpAuthProps> = ({
             <Text>Enter a bearer token instead:</Text>
             <Box marginTop={1}>
               <Text color="green">&gt; </Text>
-              <SimpleTextInput
+              <TextInput
                 value={bearerToken}
                 onChange={setBearerToken}
                 onSubmit={handleBearerTokenSubmit}
+                onCancel={onCancel}
                 placeholder="Paste your bearer token..."
+                mask="•"
+                maskReveal={{ last: 4 }}
               />
             </Box>
           </Box>

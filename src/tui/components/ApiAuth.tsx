@@ -1,68 +1,9 @@
 import React, { useState, useCallback } from 'react';
-import { Box, Text, useInput } from 'ink';
+import { Box, Text } from 'ink';
 import { saveApiKeyCredentialAsync } from '../../agents/cache.ts';
 import type { ApiConfig } from '../../agents/types.ts';
 import { debug } from '../utils/debug.ts';
-
-// Simple text input component for API key entry
-const SimpleTextInput: React.FC<{
-  value: string;
-  onChange: (value: string) => void;
-  onSubmit: (value: string) => void;
-  placeholder?: string;
-}> = ({ value, onChange, onSubmit, placeholder = '' }) => {
-  useInput((input, key) => {
-    if (key.return) {
-      onSubmit(value);
-      return;
-    }
-
-    if (key.backspace || key.delete) {
-      onChange(value.slice(0, -1));
-      return;
-    }
-
-    // Handle Ctrl+U to clear
-    if (input === '\x15') {
-      onChange('');
-      return;
-    }
-
-    // Ignore control characters (except for text entry)
-    if (key.ctrl || key.meta || key.escape || key.upArrow || key.downArrow || key.leftArrow || key.rightArrow) {
-      return;
-    }
-
-    // Add printable characters (supports paste - multi-char input)
-    if (input && input.length >= 1) {
-      // Strip bracketed paste markers
-      const chars = input.replace(/\x1b\[200~/g, '').replace(/\x1b\[201~/g, '');
-      // Filter to printable characters
-      const printable = chars.split('').filter(c => c.charCodeAt(0) >= 32).join('');
-      if (printable) {
-        onChange(value + printable);
-      }
-    }
-  });
-
-  const showPlaceholder = value.length === 0;
-
-  return (
-    <Text>
-      {showPlaceholder ? (
-        <>
-          <Text color="green">|</Text>
-          <Text dimColor>{placeholder}</Text>
-        </>
-      ) : (
-        <>
-          <Text>{value}</Text>
-          <Text color="green">|</Text>
-        </>
-      )}
-    </Text>
-  );
-};
+import { TextInput } from './TextInput.tsx';
 
 export interface ApiAuthProps {
   apis: ApiConfig[];
@@ -86,14 +27,6 @@ export const ApiAuth: React.FC<ApiAuthProps> = ({
   debug('[ApiAuth] Mounted with', apis.length, 'APIs:', apis.map(a => a.name));
 
   const currentApi = apis[currentIndex];
-
-  // Handle escape key
-  useInput((_input, key) => {
-    if (key.escape) {
-      debug('[ApiAuth] User cancelled');
-      onCancel();
-    }
-  });
 
   // Handle API key submission
   const handleSubmit = useCallback(async (key: string) => {
@@ -177,11 +110,14 @@ export const ApiAuth: React.FC<ApiAuthProps> = ({
           </Text>
           <Box marginTop={1}>
             <Text color="green">&gt; </Text>
-            <SimpleTextInput
+            <TextInput
               value={apiKey}
               onChange={setApiKey}
               onSubmit={handleSubmit}
+              onCancel={onCancel}
               placeholder="Paste your API key..."
+              mask="•"
+              maskReveal={{ last: 4 }}
             />
           </Box>
         </Box>

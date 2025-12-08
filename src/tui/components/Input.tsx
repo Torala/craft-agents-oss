@@ -1,6 +1,7 @@
-import React, { useState, useCallback, memo, useMemo, useRef } from 'react';
+import React, { useState, useCallback, memo, useMemo } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { getCommandHint, getAgentHint, getTabCompletion, type HintData } from '../utils/filtering.ts';
+import { TextInput } from './TextInput.tsx';
 
 export interface InputProps {
   onSubmit: (input: string) => void;
@@ -20,261 +21,6 @@ export interface InputProps {
   /** Terminal width in columns (for separator lines) */
   columns?: number;
 }
-
-// Helper: Find previous word boundary
-const findPrevWordBoundary = (text: string, pos: number): number => {
-  if (pos <= 0) return 0;
-  let i = pos - 1;
-  // Skip any whitespace first
-  while (i > 0 && /\s/.test(text[i]!)) i--;
-  // Then skip to the start of the word
-  while (i > 0 && !/\s/.test(text[i - 1]!)) i--;
-  return i;
-};
-
-// Helper: Find next word boundary
-const findNextWordBoundary = (text: string, pos: number): number => {
-  if (pos >= text.length) return text.length;
-  let i = pos;
-  // Skip current word
-  while (i < text.length && !/\s/.test(text[i]!)) i++;
-  // Skip whitespace to next word
-  while (i < text.length && /\s/.test(text[i]!)) i++;
-  return i;
-};
-
-// Text input with cursor navigation
-// Uses ref as single source of truth for cursor (never synced from state)
-const SimpleTextInput: React.FC<{
-  value: string;
-  onChange: (value: string) => void;
-  onSubmit: (value: string) => void;
-  onBackspaceEmpty?: () => void;
-  onPastedText?: (text: string) => void;
-  placeholder?: string;
-  disabled?: boolean;
-}> = ({
-  value,
-  onChange,
-  onSubmit,
-  onBackspaceEmpty,
-  onPastedText,
-  placeholder = '',
-  disabled = false,
-}) => {
-  // Cursor ref is the SINGLE SOURCE OF TRUTH - never synced from state
-  const cursorRef = useRef(value.length);
-  const selectionRef = useRef<{ start: number; end: number } | null>(null);
-
-  // Force re-render when cursor/selection changes (without syncing back)
-  const [, forceUpdate] = useState(0);
-  const triggerRender = () => forceUpdate(n => n + 1);
-
-  // Reset cursor when value changes externally (e.g., history navigation)
-  const prevValueRef = useRef(value);
-  if (value !== prevValueRef.current) {
-    cursorRef.current = value.length;
-    selectionRef.current = null;
-    prevValueRef.current = value;
-  }
-
-  useInput(
-    (input, key) => {
-      if (disabled) return;
-
-      const cursor = cursorRef.current;
-      const sel = selectionRef.current;
-
-      // Check for Option+arrow via escape sequences
-      const isOptionLeft = input === 'b' && key.meta;
-      const isOptionRight = input === 'f' && key.meta;
-      const hasEscB = input === '\x1bb' || input === '\u001bb';
-      const hasEscF = input === '\x1bf' || input === '\u001bf';
-
-      if (isOptionLeft || hasEscB) {
-        selectionRef.current = null;
-        cursorRef.current = findPrevWordBoundary(value, cursor);
-        triggerRender();
-        return;
-      }
-
-      if (isOptionRight || hasEscF) {
-        selectionRef.current = null;
-        cursorRef.current = findNextWordBoundary(value, cursor);
-        triggerRender();
-        return;
-      }
-
-      if (key.return) {
-        const trimmed = value.trim();
-        const looksLikeFilePath = trimmed.startsWith('~/') ||
-          (trimmed.startsWith('/') && trimmed.length > 2 && trimmed.slice(1).includes('/'));
-
-        if (onPastedText && trimmed && looksLikeFilePath) {
-          onPastedText(trimmed);
-          onChange('');
-          cursorRef.current = 0;
-          selectionRef.current = null;
-          prevValueRef.current = '';
-          return;
-        }
-        onSubmit(value);
-        return;
-      }
-
-      // Handle backspace/delete
-      // Note: On macOS, the backspace key sends key.delete, not key.backspace
-      if (key.backspace || key.delete) {
-        if (sel) {
-          const newValue = value.slice(0, sel.start) + value.slice(sel.end);
-          cursorRef.current = sel.start;
-          selectionRef.current = null;
-          prevValueRef.current = newValue;
-          onChange(newValue);
-        } else if (cursor > 0) {
-          const newValue = value.slice(0, cursor - 1) + value.slice(cursor);
-          cursorRef.current = cursor - 1;
-          prevValueRef.current = newValue;
-          onChange(newValue);
-        } else if (value.length > 0) {
-          // Fallback: cursor is 0 but value has content - delete from end
-          const newValue = value.slice(0, -1);
-          cursorRef.current = newValue.length;
-          prevValueRef.current = newValue;
-          onChange(newValue);
-        } else if (onBackspaceEmpty) {
-          onBackspaceEmpty();
-        }
-        return;
-      }
-
-      // Arrow key navigation
-      if (key.leftArrow) {
-        const isCmdArrow = key.meta && input === '';
-
-        if (key.shift) {
-          const anchor = sel ? sel.start : cursor;
-          const newPos = isCmdArrow ? 0 : Math.max(0, cursor - 1);
-          cursorRef.current = newPos;
-          if (newPos !== anchor) {
-            selectionRef.current = { start: Math.min(anchor, newPos), end: Math.max(anchor, newPos) };
-          } else {
-            selectionRef.current = null;
-          }
-        } else {
-          selectionRef.current = null;
-          cursorRef.current = isCmdArrow ? 0 : Math.max(0, cursor - 1);
-        }
-        triggerRender();
-        return;
-      }
-
-      if (key.rightArrow) {
-        const isCmdArrow = key.meta && input === '';
-
-        if (key.shift) {
-          const anchor = sel ? sel.end : cursor;
-          const newPos = isCmdArrow ? value.length : Math.min(value.length, cursor + 1);
-          cursorRef.current = newPos;
-          if (newPos !== (sel?.start ?? cursor)) {
-            const start = sel ? sel.start : cursor;
-            selectionRef.current = { start: Math.min(start, newPos), end: Math.max(start, newPos) };
-          } else {
-            selectionRef.current = null;
-          }
-        } else {
-          selectionRef.current = null;
-          cursorRef.current = isCmdArrow ? value.length : Math.min(value.length, cursor + 1);
-        }
-        triggerRender();
-        return;
-      }
-
-      // Handle Ctrl+A to select all
-      if (key.ctrl && input === 'a') {
-        if (value.length > 0) {
-          selectionRef.current = { start: 0, end: value.length };
-          cursorRef.current = value.length;
-          triggerRender();
-        }
-        return;
-      }
-
-      // Ignore other control keys
-      if (key.escape || key.upArrow || key.downArrow || key.ctrl || key.meta) {
-        return;
-      }
-
-      // Handle printable input
-      if (input && input.length >= 1) {
-        const chars = input.replace(/\x1b\[200~/g, '').replace(/\x1b\[201~/g, '');
-        const printable = chars.split('').filter(c => c.charCodeAt(0) >= 32).join('');
-
-        if (printable) {
-          const looksLikePastedPath = printable.startsWith('~/') ||
-            (printable.startsWith('/') && printable.length > 2 && printable.slice(1).includes('/'));
-
-          if (onPastedText && printable.length > 1 && looksLikePastedPath) {
-            onPastedText(printable);
-          } else {
-            let newValue: string;
-            let newCursor: number;
-            if (sel) {
-              newValue = value.slice(0, sel.start) + printable + value.slice(sel.end);
-              newCursor = sel.start + printable.length;
-              selectionRef.current = null;
-            } else {
-              newValue = value.slice(0, cursor) + printable + value.slice(cursor);
-              newCursor = cursor + printable.length;
-            }
-            cursorRef.current = newCursor;
-            prevValueRef.current = newValue;
-            onChange(newValue);
-          }
-        }
-      }
-    },
-    { isActive: !disabled }
-  );
-
-  // Render the text with cursor and selection
-  const cursor = cursorRef.current;
-  const selection = selectionRef.current;
-
-  if (value.length === 0) {
-    if (disabled) {
-      return <Text dimColor>{placeholder}</Text>;
-    }
-    return (
-      <Text>
-        <Text backgroundColor="blue" color="white"> </Text>
-        <Text dimColor>{placeholder}</Text>
-      </Text>
-    );
-  }
-
-  const parts: React.ReactNode[] = [];
-
-  for (let i = 0; i <= value.length; i++) {
-    const char = i < value.length ? value[i]! : ' ';
-    const isAtCursor = i === cursor && !disabled;
-    const isSelected = selection && i >= selection.start && i < selection.end;
-
-    if (i === value.length) {
-      if (isAtCursor) {
-        parts.push(<Text key={i} backgroundColor="blue" color="white"> </Text>);
-      }
-    } else if (isAtCursor) {
-      parts.push(<Text key={i} backgroundColor="blue" color="white">{char}</Text>);
-    } else if (isSelected) {
-      parts.push(<Text key={i} backgroundColor="cyan" color="black">{char}</Text>);
-    } else {
-      parts.push(<Text key={i}>{char}</Text>);
-    }
-  }
-
-  return <Text>{parts}</Text>;
-};
 
 // Memoized prompt character
 const InputPrompt = memo<{ disabled: boolean }>(({ disabled }) => (
@@ -299,8 +45,16 @@ export const Input: React.FC<InputProps> = ({
   activeAgentName,
   columns = 80,
 }) => {
-  const [value, setValue] = useState('');
+  const [value, setValueRaw] = useState('');
   const [historyIndex, setHistoryIndex] = useState(-1);
+
+  // Wrap setValue to reset history index when value is cleared
+  const setValue = useCallback((newValue: string) => {
+    setValueRaw(newValue);
+    if (newValue === '') {
+      setHistoryIndex(-1);
+    }
+  }, []);
 
   const handleSubmit = useCallback(
     (input: string) => {
@@ -347,17 +101,10 @@ export const Input: React.FC<InputProps> = ({
         }
       }
 
-      // Handle Ctrl+U to clear line (Ctrl+U = ASCII 21 = '\x15')
-      if (input === '\x15' || (key.ctrl && input === 'u')) {
-        setValue('');
-        setHistoryIndex(-1);
-      }
-
       // Handle Escape to clear input and attachments (when not processing - App handles interrupt)
       if (key.escape && !disabled) {
         if (value.length > 0) {
-          setValue('');
-          setHistoryIndex(-1);
+          setValue('');  // This also resets history index
         }
         if (onClearAttachments) {
           onClearAttachments();
@@ -441,7 +188,7 @@ export const Input: React.FC<InputProps> = ({
               [{attachmentLabel || (attachmentCount === 1 ? '1 file' : `${attachmentCount} files`)}]{' '}
             </Text>
           )}
-          <SimpleTextInput
+          <TextInput
             value={value}
             onChange={setValue}
             onSubmit={handleSubmit}
@@ -449,6 +196,8 @@ export const Input: React.FC<InputProps> = ({
             onPastedText={onPastedText}
             placeholder={placeholderText}
             disabled={disabled}
+            detectFilePaths
+            multiline
           />
         </Box>
         <Box />
@@ -468,7 +217,7 @@ export const InputHint: React.FC<{ visible?: boolean }> = memo(({ visible = true
   return (
     <Box justifyContent="space-between" paddingX={1} marginTop={1}>
       <Text dimColor>
-        ←→ move | ⌥←→ word | ⌘←→ line | ⇧ select | ↑↓ history | Ctrl+C exit
+        ←→ move | ⌥←→ word | ⌘←→ line | ⇧ select | ⇧↵ newline | ↑↓ history | Ctrl+C exit
       </Text>
       <Box />
     </Box>

@@ -69,14 +69,16 @@ src/
     ├── App.tsx               # Main app, command routing
     ├── components/
     │   ├── ApiAuth.tsx           # API key entry for REST APIs
+    │   ├── ApiKeyChange.tsx      # Change API key dialog
     │   ├── AskUserQuestion.tsx   # Interactive question UI for SDK hooks
     │   ├── Header.tsx            # Status bar (model, workspace, tokens, cost)
-    │   ├── Input.tsx             # Text input with history & file handling
+    │   ├── Input.tsx             # Main chat input with history & file handling
     │   ├── McpAuth.tsx           # OAuth flow for MCP servers
     │   ├── Messages.tsx          # Message display with streaming
     │   ├── ModelSelector.tsx     # Model selection UI
     │   ├── Setup.tsx             # First-run configuration wizard
     │   ├── Spinner.tsx           # Thinking indicator
+    │   ├── TextInput.tsx         # Shared text input (cursor nav, selection, masking)
     │   ├── ToolCall.tsx          # Tool execution visualization
     │   ├── WorkspaceAdd.tsx      # Add new workspace wizard
     │   ├── WorkspaceRename.tsx   # Rename workspace dialog
@@ -86,6 +88,11 @@ src/
     │   ├── useElapsedTime.ts     # Track elapsed time during processing
     │   ├── useHistory.ts         # Command history (arrow keys)
     │   └── useResize.ts          # Terminal resize handling
+    ├── keyboard/
+    │   ├── index.ts              # Public exports
+    │   ├── sequences.ts          # Terminal escape sequence definitions
+    │   ├── actions.ts            # Keyboard action types
+    │   └── useKeyboard.ts        # Input normalization hook
     └── utils/
         ├── files.ts              # File attachment processing
         ├── markdown.ts           # Markdown rendering with Shiki
@@ -290,9 +297,42 @@ Includes:
 - Context tokens = base + cache for next request
 - Cost calculated by SDK (`total_cost_usd`)
 
+### Keyboard Input Layer (`src/tui/keyboard/`)
+
+Centralized detection helpers for keyboard shortcuts. Works WITH Ink's `useInput` (not as a wrapper).
+
+**Important**: Ink transforms escape sequences before we see them:
+- Strips `\x1b` prefix from sequences
+- Sets `key.return`, `key.escape`, etc. for recognized keys
+
+| Key Combo | Ghostty Sends | Ink Delivers |
+|-----------|---------------|--------------|
+| Shift+Enter | `\x1b[27;2;13~` | `input='[27;2;13~'` |
+| Cmd+Left | `\x01` (Ctrl+A) | `input='\x01'` |
+| Cmd+Right | `\x05` (Ctrl+E) | `input='\x05'` |
+| Option+Left | `\x1bb` | `input='b'` + `key.meta=true` |
+| Option+Right | `\x1bf` | `input='f'` + `key.meta=true` |
+
+**Architecture:**
+- `mappings.ts` - Detection functions + documentation
+
+**Usage:**
+```typescript
+import { useInput } from 'ink';
+import { isShiftEnter, isLineStart, isLineEnd } from '../keyboard';
+
+useInput((input, key) => {
+  if (isShiftEnter(input, key)) { /* newline */ }
+  if (isLineStart(input, key)) { /* jump to start */ }
+  if (key.return) { /* submit */ }
+});
+```
+
+**Note:** Ctrl+A is "line start" (readline convention), not "select all".
+
 ### Terminal Resize Handling
 
-**The Problem:** When terminal is resized, Ink's character-by-character text rendering (like in SimpleTextInput) can wrap differently at different widths. Ink's internal log-update mechanism caches `previousLineCount` and only erases that many lines on re-render. When wrapping changes, stale line count causes partial erasure → visual artifacts (duplicated text scattered across screen).
+**The Problem:** When terminal is resized, Ink's character-by-character text rendering (like in TextInput) can wrap differently at different widths. Ink's internal log-update mechanism caches `previousLineCount` and only erases that many lines on re-render. When wrapping changes, stale line count causes partial erasure → visual artifacts (duplicated text scattered across screen).
 
 **What Didn't Work:**
 1. **Screen clear without debounce** - Race condition with React's async state updates caused blank screens
@@ -321,6 +361,27 @@ useResize(handleTerminalResize);
 ```
 
 **Key insight:** The `/clear` command worked perfectly because it clears screen THEN updates state. We replicated this pattern for resize with debouncing to prevent flicker.
+
+### TextInput Component (`src/tui/components/TextInput.tsx`)
+Shared text input used by all input dialogs (API keys, bearer tokens, workspace names, etc.).
+
+**Features:**
+- Arrow key navigation (←→) with Cmd+arrows for line start/end
+- Option+arrows for word boundary navigation
+- Shift+arrows for text selection (tracks anchor/active positions)
+- Ctrl+A to select all, Ctrl+U to clear line
+- Password masking with optional reveal (`mask="•" maskReveal={{ last: 4 }}`)
+- Block or bar cursor styles
+
+**Key props:**
+- `mask` - Character to mask input (e.g., `"•"` for passwords)
+- `maskReveal` - Show first/last N characters unmasked
+- `detectFilePaths` - When true, intercepts file paths for drag-drop handling (only used by main Input.tsx)
+- `onCancel` - Callback for Escape or Ctrl+C (cancel actions)
+
+**Selection tracking:** Uses `{ anchor, active }` instead of `{ start, end }` to correctly extend selections across multiple keystrokes.
+
+**Cancel handling:** `onCancel` prop handles both Escape and Ctrl+C. Use it for simple cancel scenarios. For complex logic (clearing attachments, canceling OAuth), use parent `useInput` but skip steps that use TextInput to avoid double-execution.
 
 ## Debugging
 

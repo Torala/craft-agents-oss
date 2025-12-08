@@ -4,57 +4,7 @@ import { saveConfig, getConfigPath, generateWorkspaceId, loadStoredConfig, getAc
 import { CraftOAuth, getMcpBaseUrl } from '../../auth/oauth.ts';
 import { getExistingClaudeToken, isClaudeCliInstalled, runClaudeSetupToken } from '../../auth/claude-token.ts';
 import { getCredentialManager } from '../../credentials/index.ts';
-
-// Simple text input without cursor animation
-const SimpleTextInput: React.FC<{
-  value: string;
-  onChange: (value: string) => void;
-  onSubmit: (value: string) => void;
-  placeholder?: string;
-  mask?: string;
-}> = ({ value, onChange, onSubmit, placeholder = '', mask }) => {
-  useInput((input, key) => {
-    if (key.return) {
-      onSubmit(value);
-      return;
-    }
-
-    if (key.backspace || key.delete) {
-      onChange(value.slice(0, -1));
-      return;
-    }
-
-    // Ignore control characters
-    if (key.ctrl || key.meta || key.escape || key.upArrow || key.downArrow || key.leftArrow || key.rightArrow) {
-      return;
-    }
-
-    // Add printable characters (supports paste - multi-char input)
-    if (input && input.length >= 1) {
-      // Strip bracketed paste markers
-      const chars = input.replace(/\x1b\[200~/g, '').replace(/\x1b\[201~/g, '');
-      // Filter to printable characters
-      const printable = chars.split('').filter((c) => c.charCodeAt(0) >= 32).join('');
-      if (printable) {
-        onChange(value + printable);
-      }
-    }
-  });
-
-  const displayValue = mask ? mask.repeat(value.length) : value;
-  const showPlaceholder = value.length === 0;
-
-  return (
-    <Text>
-      {showPlaceholder ? (
-        <Text dimColor>{placeholder}</Text>
-      ) : (
-        <Text>{displayValue}</Text>
-      )}
-      <Text color="green">▌</Text>
-    </Text>
-  );
-};
+import { TextInput } from './TextInput.tsx';
 
 type SetupStep = 'welcome' | 'auth-type' | 'api-key' | 'oauth-token' | 'oauth-token-setup' | 'mcp-url' | 'checking-auth' | 'no-oauth-options' | 'oauth-auth' | 'bearer-token' | 'confirm' | 'testing' | 'complete' | 'error';
 
@@ -843,12 +793,6 @@ const InputStep: React.FC<InputStepProps> = ({
 }) => {
   const [value, setValue] = useState(initialValue);
 
-  useInput((input, key) => {
-    if (key.escape) {
-      onBack();
-    }
-  });
-
   return (
     <Box flexDirection="column">
       <Text bold>{title}</Text>
@@ -862,10 +806,11 @@ const InputStep: React.FC<InputStepProps> = ({
       )}
       <Box>
         <Text color="green">&gt; </Text>
-        <SimpleTextInput
+        <TextInput
           value={value}
           onChange={setValue}
           onSubmit={onSubmit}
+          onCancel={onBack}
           placeholder={placeholder}
           mask={masked ? '*' : undefined}
         />
@@ -1052,29 +997,19 @@ const OAuthTokenStep: React.FC<OAuthTokenStepProps> = ({
   });
 
   useInput((input, key) => {
-    if (mode === 'select') {
-      if (key.upArrow && selected > 0) {
-        setSelected(selected - 1);
-      } else if (key.downArrow && selected < options.length - 1) {
-        setSelected(selected + 1);
-      } else if (key.return) {
-        options[selected]?.action();
-      } else if (key.escape) {
-        onBack();
-      }
-    } else if (mode === 'manual') {
-      if (key.return && manualToken.trim()) {
-        onManualEntry(manualToken.trim());
-      } else if (key.escape) {
-        setMode('select');
-        setManualToken('');
-      } else if (key.backspace || key.delete) {
-        setManualToken(prev => prev.slice(0, -1));
-      } else if (input && input.length === 1 && input.charCodeAt(0) >= 32) {
-        setManualToken(prev => prev + input);
-      }
+    // Only handle selection mode - manual mode uses TextInput
+    if (mode !== 'select') return;
+
+    if (key.upArrow && selected > 0) {
+      setSelected(selected - 1);
+    } else if (key.downArrow && selected < options.length - 1) {
+      setSelected(selected + 1);
+    } else if (key.return) {
+      options[selected]?.action();
+    } else if (key.escape) {
+      onBack();
     }
-  });
+  }, { isActive: mode === 'select' });
 
   if (mode === 'manual') {
     return (
@@ -1085,17 +1020,20 @@ const OAuthTokenStep: React.FC<OAuthTokenStepProps> = ({
         </Box>
         <Box>
           <Text color="green">&gt; </Text>
-          {manualToken.length === 0 ? (
-            <>
-              <Text dimColor>sk-ant-oat01-...</Text>
-              <Text color="green">▌</Text>
-            </>
-          ) : (
-            <>
-              <Text>{'•'.repeat(Math.min(manualToken.length, 20))}{manualToken.length > 20 ? '...' : ''}</Text>
-              <Text color="green">▌</Text>
-            </>
-          )}
+          <TextInput
+            value={manualToken}
+            onChange={setManualToken}
+            onSubmit={(value) => {
+              if (value.trim()) onManualEntry(value.trim());
+            }}
+            onCancel={() => {
+              setMode('select');
+              setManualToken('');
+            }}
+            placeholder="sk-ant-oat01-..."
+            mask="*"
+            maskReveal={{ first: 12 }}
+          />
         </Box>
         <Box marginTop={1}>
           <Text dimColor>Enter to confirm, Esc to go back</Text>
@@ -1210,12 +1148,6 @@ interface BearerTokenStepProps {
 }
 
 const BearerTokenStep: React.FC<BearerTokenStepProps> = ({ value, onChange, onSubmit, onBack }) => {
-  useInput((_, key) => {
-    if (key.escape) {
-      onBack();
-    }
-  });
-
   return (
     <Box flexDirection="column">
       <Text bold>Enter Bearer Token</Text>
@@ -1224,11 +1156,14 @@ const BearerTokenStep: React.FC<BearerTokenStepProps> = ({ value, onChange, onSu
       </Box>
       <Box>
         <Text color="green">&gt; </Text>
-        <SimpleTextInput
+        <TextInput
           value={value}
           onChange={onChange}
           onSubmit={onSubmit}
+          onCancel={onBack}
           placeholder="Paste your bearer token..."
+          mask="•"
+          maskReveal={{ last: 4 }}
         />
       </Box>
       <Box marginTop={1}>

@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import { Box, Text, useInput } from 'ink';
+import React, { useState, useCallback } from 'react';
+import { Box, Text } from 'ink';
+import { TextInput } from './TextInput.tsx';
 
 export interface WorkspaceRenameProps {
   currentName: string;
@@ -14,47 +15,12 @@ export const WorkspaceRename: React.FC<WorkspaceRenameProps> = ({
 }) => {
   const [value, setValue] = useState(currentName);
 
-  useInput((input, key) => {
-    if (key.return) {
-      const trimmed = value.trim();
-      if (trimmed) {
-        onSubmit(trimmed);
-      }
-      return;
+  const handleSubmit = useCallback((input: string) => {
+    const trimmed = input.trim();
+    if (trimmed) {
+      onSubmit(trimmed);
     }
-
-    if (key.escape) {
-      onCancel();
-      return;
-    }
-
-    if (key.backspace || key.delete) {
-      setValue((prev) => prev.slice(0, -1));
-      return;
-    }
-
-    // Handle Ctrl+U to clear
-    if (input === '\x15') {
-      setValue('');
-      return;
-    }
-
-    // Ignore control characters
-    if (key.ctrl || key.meta || key.upArrow || key.downArrow || key.leftArrow || key.rightArrow) {
-      return;
-    }
-
-    // Add printable characters (supports paste - multi-char input)
-    if (input && input.length >= 1) {
-      // Strip bracketed paste markers
-      const chars = input.replace(/\x1b\[200~/g, '').replace(/\x1b\[201~/g, '');
-      // Filter to printable characters
-      const printable = chars.split('').filter((c) => c.charCodeAt(0) >= 32).join('');
-      if (printable) {
-        setValue((prev) => prev + printable);
-      }
-    }
-  });
+  }, [onSubmit]);
 
   return (
     <Box flexDirection="column" paddingX={1}>
@@ -64,22 +30,18 @@ export const WorkspaceRename: React.FC<WorkspaceRenameProps> = ({
 
       <Box>
         <Text>New name: </Text>
-        {value.length === 0 ? (
-          <>
-            <Text color="blue">▌</Text>
-            <Text dimColor>Enter a name</Text>
-          </>
-        ) : (
-          <>
-            <Text color="blue">{value}</Text>
-            <Text color="blue">▌</Text>
-          </>
-        )}
+        <TextInput
+          value={value}
+          onChange={setValue}
+          onSubmit={handleSubmit}
+          onCancel={onCancel}
+          placeholder="Enter a name"
+        />
       </Box>
 
       <Box marginTop={1}>
         <Text dimColor>
-          Enter confirm | Esc cancel | Ctrl+U clear
+          Enter confirm | Esc cancel | ←→ navigate | Ctrl+U clear
         </Text>
       </Box>
     </Box>
