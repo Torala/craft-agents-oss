@@ -32,6 +32,7 @@ bun link
 - `--url, -u` - Override MCP server URL
 - `--token, -t` - Override bearer token (testing)
 - `--model, -m` - Override model selection
+- `--debug` - Enable debug logging to `/tmp/craft-debug.log`
 
 ## Project Structure
 
@@ -385,14 +386,16 @@ Shared text input used by all input dialogs (API keys, bearer tokens, workspace 
 
 ## Debugging
 
-Debug logs are written to `/tmp/craft-debug.log`. Use the `debug()` function from `src/tui/utils/debug.ts` to add log entries.
+Debug logging is disabled by default. Enable it with the `--debug` flag to write logs to `/tmp/craft-debug.log`.
+
+Use the `debug()` function from `src/tui/utils/debug.ts` to add log entries. These calls are no-ops unless `--debug` is passed.
 
 **Important:** Never trim or truncate log output (e.g., using `.substring()`). Full log content is essential for debugging.
 
 **Two-terminal debugging setup:**
 ```bash
-# Terminal 1: Run the app with stderr redirected to debug log
-bun start 2>> /tmp/craft-debug.log
+# Terminal 1: Run the app with debug logging enabled
+bun start --debug
 
 # Terminal 2: Watch the debug log in real-time
 tail -f /tmp/craft-debug.log

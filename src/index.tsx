@@ -15,6 +15,7 @@ import {
   type AuthType,
 } from './config/storage.ts';
 import type { CraftAgentConfig } from './agent/craft-agent.ts';
+import { enableDebug } from './tui/utils/debug.ts';
 
 const cli = meow(
   `
@@ -28,6 +29,7 @@ const cli = meow(
     --url, -u       Craft MCP server URL (overrides saved config)
     --token, -t     Bearer token for authentication (overrides saved config)
     --model, -m     Claude model to use (default: claude-sonnet-4-5-20250929)
+    --debug         Enable debug logging to /tmp/craft-debug.log
     --help          Show this help message
     --version       Show version number
 
@@ -62,6 +64,10 @@ const cli = meow(
       model: {
         type: 'string',
         shortFlag: 'm',
+      },
+      debug: {
+        type: 'boolean',
+        default: false,
       },
     },
   }
@@ -177,6 +183,11 @@ const Root: React.FC<RootProps> = ({ initialConfig, cliFlags, forceSetup, initia
 };
 
 async function main() {
+  // Enable debug logging if --debug flag is passed
+  if (cli.flags.debug) {
+    enableDebug();
+  }
+
   // Clear screen and move cursor to top-left
   process.stdout.write('\x1b[2J\x1b[H');
 
