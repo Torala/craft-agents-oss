@@ -397,6 +397,7 @@ export class CraftAgent {
   private pendingPermissions: Map<string, PendingPermission> = new Map();
   private pendingQuestions: Map<string, PendingQuestion> = new Map();
   private alwaysAllowedCommands: Set<string> = new Set(); // Base commands allowed for this session (e.g., "ls", "cat")
+  private alwaysAllowedDomains: Set<string> = new Set(); // Domains allowed for curl/wget (session-scoped)
   private activeAgentDefinition: SubAgentDefinition | null = null;
   // Pre-built MCP server configs for the active agent (includes auth headers)
   private agentMcpServers: Record<string, { type: 'http' | 'sse'; url: string; headers?: Record<string, string> }> = {};
@@ -449,6 +450,15 @@ export class CraftAgent {
   }
 
   /**
+   * Extract domain from a curl/wget command
+   * e.g., curl https://api.example.com/path -> "api.example.com"
+   */
+  private extractDomainFromNetworkCommand(command: string): string | null {
+    const urlMatch = command.match(/https?:\/\/([^\/\s"']+)/i);
+    return urlMatch?.[1] ?? null;
+  }
+
+  /**
    * Respond to a pending permission request
    */
   respondToPermission(requestId: string, allowed: boolean, alwaysAllow: boolean = false): void {
@@ -457,10 +467,19 @@ export class CraftAgent {
     if (pending) {
       this.onDebug?.(`Resolving permission promise for ${requestId}`);
 
-      // If "always allow" was selected and it's not a dangerous command, remember it
-      if (alwaysAllow && allowed && !this.isDangerousCommand(pending.baseCommand)) {
-        this.alwaysAllowedCommands.add(pending.baseCommand);
-        this.onDebug?.(`Added "${pending.baseCommand}" to always-allowed commands`);
+      // If "always allow" was selected, remember it (with special handling for curl/wget)
+      if (alwaysAllow && allowed) {
+        if (['curl', 'wget'].includes(pending.baseCommand)) {
+          // For curl/wget, whitelist the domain instead of the command
+          const domain = this.extractDomainFromNetworkCommand(pending.command);
+          if (domain) {
+            this.alwaysAllowedDomains.add(domain);
+            this.onDebug?.(`Added domain "${domain}" to always-allowed domains`);
+          }
+        } else if (!this.isDangerousCommand(pending.baseCommand)) {
+          this.alwaysAllowedCommands.add(pending.baseCommand);
+          this.onDebug?.(`Added "${pending.baseCommand}" to always-allowed commands`);
+        }
       }
 
       pending.resolve(allowed);
@@ -694,6 +713,15 @@ export class CraftAgent {
                 if (this.alwaysAllowedCommands.has(baseCommand) && !this.isDangerousCommand(baseCommand)) {
                   this.onDebug?.(`Auto-allowing "${baseCommand}" (previously approved)`);
                   return { continue: true };
+                }
+
+                // For curl/wget, check if the domain is whitelisted
+                if (['curl', 'wget'].includes(baseCommand)) {
+                  const domain = this.extractDomainFromNetworkCommand(commandStr);
+                  if (domain && this.alwaysAllowedDomains.has(domain)) {
+                    this.onDebug?.(`Auto-allowing ${baseCommand} to "${domain}" (domain whitelisted)`);
+                    return { continue: true };
+                  }
                 }
 
                 // Ask for permission
