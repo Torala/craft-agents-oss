@@ -253,10 +253,11 @@ export function useAgent(config: CraftAgentConfig): UseAgentResult {
       const storedMessages = messages.map(messageToStoredMessage);
       saveWorkspaceConversation(workspace.id, storedMessages, tokenUsage);
 
-      // Also save session ID if available
+      // Also save session ID if available and update React state
       const sessionId = agentRef.current?.getSessionId();
-      if (sessionId) {
+      if (sessionId && sessionId !== workspace.sessionId) {
         updateWorkspaceSessionId(workspace.id, sessionId);
+        setWorkspaceState(prev => ({ ...prev, sessionId }));
       }
     }
   }, [messages, isProcessing, workspace.id, tokenUsage]);

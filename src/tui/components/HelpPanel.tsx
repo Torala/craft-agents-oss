@@ -43,6 +43,7 @@ const HELP_TEXT = `
   /bash        Toggle bash/shell execution
   /auth        Authenticate MCP servers for active agent
   /debug       Show debug info and file paths
+  /feedback    Send feedback email with session transcript
 
 **Keyboard Shortcuts**
   Enter      Send message

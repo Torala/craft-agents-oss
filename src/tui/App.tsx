@@ -898,6 +898,64 @@ export const App: React.FC<AppProps> = ({ config, onRequestSetup }) => {
             return;
           }
 
+          case '/feedback': {
+            if (!workspace.sessionId) {
+              addLocalMessage('No session transcript available. Start a conversation first.', 'error');
+              return;
+            }
+
+            const projectSlug = process.cwd().replace(/\//g, '-');
+            const transcriptFolder = `${homedir()}/.claude/projects/${projectSlug}`;
+            const transcriptPath = `${transcriptFolder}/${workspace.sessionId}.jsonl`;
+
+            // Check if transcript file exists
+            const { existsSync } = await import('fs');
+            if (!existsSync(transcriptPath)) {
+              addLocalMessage(`Transcript file not found: ${transcriptPath}`, 'error');
+              return;
+            }
+
+            const { execSync } = await import('child_process');
+            const platform = process.platform;
+            const subject = 'Craft TUI Agent Feedback';
+            const recipient = 'beta@craft.do';
+            const body = `
+Please attach the transcript file from the folder that just opened. 
+Filename: ${workspace.sessionId}.jsonl`;
+
+            // open folder of transcript
+            try {
+              if (platform === 'darwin') {
+                execSync(`open "${transcriptFolder}"`, { stdio: 'ignore' });
+              } else if (platform === 'linux') {
+                execSync(`xdg-open "${transcriptFolder}"`, { stdio: 'ignore' });
+              } else if (platform === 'win32') {
+                execSync(`explorer "${transcriptFolder.replace(/\//g, '\\')}"`, { stdio: 'ignore' });
+              }
+            } catch {
+              // fail silently
+            }
+
+            // Open mailto link
+            const mailtoUrl = `mailto:${recipient}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+            try {
+              if (platform === 'darwin') {
+                execSync(`open "${mailtoUrl}"`, { stdio: 'ignore' });
+              } else if (platform === 'linux') {
+                execSync(`xdg-open "${mailtoUrl}"`, { stdio: 'ignore' });
+              } else if (platform === 'win32') {
+                execSync(`start "" "${mailtoUrl}"`, { stdio: 'ignore' });
+              }
+              // OSC 8 hyperlinks with underline: \x1b[4m = underline, \x1b[24m = underline off
+              const fileLink = `\x1b]8;;file://${transcriptPath}\x07\x1b[4m${workspace.sessionId}.jsonl\x1b[24m\x1b]8;;\x07`;
+              const emailLink = `\x1b]8;;mailto:${recipient}\x07\x1b[4m${recipient}\x1b[24m\x1b]8;;\x07`;
+              addLocalMessage(`Opening email to ${emailLink} and transcript location...\n\nDrag the file to attach: ${fileLink}`, 'system');
+            } catch {
+              addLocalMessage(`Could not open email client. Please email ${recipient} and attach:\n${transcriptPath}`, 'error');
+            }
+            return;
+          }
+
           default:
             addLocalMessage(`Unknown command: ${command}. Type /help for available commands.`, 'error');
             return;

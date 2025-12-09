@@ -63,6 +63,7 @@ export const COMMANDS: [string, string][] = [
   ['/apikey', 'Change Anthropic API key'],
   // Debug/exit
   ['/debug', 'Show conversation file path'],
+  ['/feedback', 'Send feedback with session transcript'],
   ['/exit', 'Exit the application'],
 ];
 
