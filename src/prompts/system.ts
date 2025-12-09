@@ -49,50 +49,40 @@ export function getSystemPrompt(
 
 /**
  * Generate tool priority section for the system prompt
- * Lists agent-specific tools and provides guidance on when to use them vs Craft tools
+ * Lists agent server names (not individual tools) to keep prompt size manageable
  */
 function generateToolPrioritySection(agent: SubAgentDefinition): string {
-  const toolSections: string[] = [];
+  const serverNames: string[] = [];
 
-  // Collect MCP server tools
+  // Collect MCP server names
   if (agent.mcpServers) {
     for (const server of agent.mcpServers) {
-      if (server.tools && server.tools.length > 0) {
-        toolSections.push(`- **${server.name}**: ${server.tools.join(', ')}`);
-      }
+      serverNames.push(server.name);
     }
   }
 
-  // Collect API tools
+  // Collect API names
   if (agent.apis) {
     for (const api of agent.apis) {
-      const tools = api.endpoints.map(e => `${api.name}_${e.name}`);
-      if (tools.length > 0) {
-        toolSections.push(`- **${api.name}** (API): ${tools.join(', ')}`);
-      }
+      serverNames.push(`${api.name} (API)`);
     }
   }
 
-  if (toolSections.length === 0) {
+  if (serverNames.length === 0) {
     return '';
   }
 
   return `
 ### Tool Priority
 
-This agent provides the following tools:
-${toolSections.join('\n')}
+This agent connects to: ${serverNames.join(', ')}
 
-**IMPORTANT**: When the user asks for operations that match this agent's purpose, prefer using the agent's tools over Craft tools.
+**IMPORTANT**: When the user asks for operations that match this agent's purpose, prefer tools from these servers over Craft tools.
 
 Only use Craft MCP tools when:
-1. The user explicitly mentions "Craft", "Craft document", "Craft folder", or similar
-2. The operation is Craft-specific (blocks, daily notes, collections, document editing)
-3. The agent doesn't have a tool for the requested operation
-
-For example:
-- "${agent.name}" agent active + "list my folders" → Use ${agent.name}'s tools
-- "${agent.name}" agent active + "list my Craft folders" → Use Craft's folders_list
+1. The user explicitly mentions "Craft", "Craft document", or "Craft folder"
+2. The operation is Craft-specific (blocks, daily notes, collections)
+3. The agent's servers don't have a relevant tool
 
 `;
 }
