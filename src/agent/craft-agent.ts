@@ -10,7 +10,6 @@ import { CraftOAuth, getMcpBaseUrl } from '../auth/oauth.ts';
 import type { FileAttachment } from '../tui/utils/files.ts';
 import { debug } from '../tui/utils/debug.ts';
 import { getDocumentationServer } from './documentation-server.ts';
-import { getTracingManager } from '../tracing/index.ts';
 
 export interface CraftAgentConfig {
   workspace: Workspace;
@@ -469,20 +468,6 @@ export class CraftAgent {
   }
 
   async *chat(userMessage: string, attachments?: FileAttachment[]): AsyncGenerator<AgentEvent> {
-    // start tracing for this conversation turn
-    const tracing = getTracingManager().getInstrumentation();
-    tracing?.startConversationTurn({
-      sessionId: this.sessionId,
-      workspaceId: this.config.workspace.id,
-      model: this.config.model || 'claude-sonnet-4-5-20250929',
-      hasAttachments: !!attachments && attachments.length > 0,
-      attachmentCount: attachments?.length || 0,
-      userMessage,  // Pass user message for debug mode tracing
-    });
-
-    let tracingSuccess = true;
-    let assistantResponse = '';  // Track assistant response for tracing (debug mode)
-
     try {
       // Check if we have binary attachments that need the AsyncIterable interface
       const hasBinaryAttachments = attachments?.some(a => a.type === 'image' || a.type === 'pdf');
@@ -491,7 +476,6 @@ export class CraftAgent {
       if (!userMessage.trim() && (!attachments || attachments.length === 0)) {
         yield { type: 'error', message: 'Cannot send empty message' };
         yield { type: 'complete' };
-        tracingSuccess = false;
         return;
       }
 
@@ -733,19 +717,8 @@ export class CraftAgent {
 
           const events = this.convertSDKMessage(message, pendingToolUses, emittedToolStarts);
           for (const event of events) {
-            // send event to tracing
-            tracing?.processEvent(event);
-
-            // Track assistant's text response for tracing
-            if (event.type === 'text_complete') {
-              assistantResponse += event.text;
-            }
-
             if (event.type === 'complete') {
               receivedComplete = true;
-            }
-            if (event.type === 'error') {
-              tracingSuccess = false;
             }
             yield event;
           }
@@ -756,7 +729,6 @@ export class CraftAgent {
           yield { type: 'complete' };
         }
       } catch (sdkError) {
-        tracingSuccess = false;
         // Handle user interruption
         if (sdkError instanceof AbortError) {
           yield { type: 'status', message: 'Interrupted' };
@@ -776,18 +748,12 @@ export class CraftAgent {
       }
 
     } catch (error) {
-      tracingSuccess = false;
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       yield { type: 'error', message: errorMessage };
       // emit complete even on error so TUI knows we're done
       yield { type: 'complete' };
     } finally {
       this.currentQuery = null;
-      // end tracing span with assistant response (for debug mode)
-      tracing?.endConversationTurn({
-        success: tracingSuccess,
-        assistantResponse: assistantResponse || undefined,
-      });
     }
   }
 

@@ -16,7 +16,6 @@ import {
 } from './config/storage.ts';
 import type { CraftAgentConfig } from './agent/craft-agent.ts';
 import { enableDebug } from './tui/utils/debug.ts';
-import { initializeTracing, getTracingManager } from './tracing/index.ts';
 import { install } from './version/install.ts';
 
 const cli = meow(
@@ -202,8 +201,6 @@ async function main() {
     enableDebug();
   }
 
-  await initializeTracing();
-
   // Clear screen and move cursor to top-left
   process.stdout.write('\x1b[2J\x1b[H');
 
@@ -214,7 +211,6 @@ async function main() {
   // Ensure we clean up on exit
   const cleanup = () => {
     process.stdout.write('\x1b[?2004l'); // Disable bracketed paste mode
-    getTracingManager().flush().catch(() => {});
   };
   process.on('exit', cleanup);
   process.on('SIGINT', () => { cleanup(); process.exit(0); });
