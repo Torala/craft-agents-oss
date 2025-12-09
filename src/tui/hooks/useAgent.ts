@@ -399,6 +399,10 @@ export function useAgent(config: CraftAgentConfig): UseAgentResult {
       agentRef.current.onAskUserQuestion = (request) => {
         setPendingQuestion(request);
       };
+      // Set up debug callback for SDK message logging
+      agentRef.current.onDebug = (message) => {
+        debug('[SDK]', message);
+      };
       // Sync current state to the newly created agent
       agentRef.current.setModel(model);
       agentRef.current.setWebSearchEnabled(webSearchEnabled);
@@ -1013,13 +1017,16 @@ export function useAgent(config: CraftAgentConfig): UseAgentResult {
         return 'pending_auth';  // Reuse 'pending_auth' to indicate async flow
       }
 
-      // Check if any MCP servers need authentication
+      // Check if any MCP servers need authentication OR validation
       const serversNeedingAuth = await agentManagerRef.current.getMcpServersNeedingAuth(definition);
-      if (serversNeedingAuth.length > 0) {
-        debug('[useAgent.activateAgent] Servers needing auth:', serversNeedingAuth.map(s => s.name));
-        // Trigger auth flow - don't complete activation until auth is done
+      const noAuthServers = agentManagerRef.current.getNoAuthMcpServers(definition);
+      const allServersToValidate = [...serversNeedingAuth, ...noAuthServers];
+
+      if (allServersToValidate.length > 0) {
+        debug('[useAgent.activateAgent] Servers needing auth/validation:', allServersToValidate.map(s => s.name));
+        // Trigger auth/validation flow - don't complete activation until done
         setPendingMcpAuth({
-          servers: serversNeedingAuth,
+          servers: allServersToValidate,
           agentId,
           agentName: name,
           definition,
@@ -1172,10 +1179,18 @@ export function useAgent(config: CraftAgentConfig): UseAgentResult {
     setPendingMcpAuth(null);
   }, [pendingMcpAuth, getAgent, activationComplete]);
 
-  // Cancel MCP auth flow
+  // Cancel MCP auth flow - returns to main agent
   const cancelMcpAuth = useCallback(() => {
-    completeMcpAuth(false);
-  }, [completeMcpAuth]);
+    debug('[cancelMcpAuth] User cancelled MCP auth, deactivating agent');
+    setPendingMcpAuth(null);
+    deactivateAgent();
+    setMessages(prev => [...prev, {
+      id: `auth-cancelled-${Date.now()}`,
+      type: 'system',
+      content: 'Authentication cancelled. Returned to main agent.',
+      timestamp: Date.now(),
+    }]);
+  }, [deactivateAgent]);
 
   // Trigger auth flow manually (for /auth command)
   const triggerMcpAuth = useCallback(async () => {
@@ -1238,10 +1253,18 @@ export function useAgent(config: CraftAgentConfig): UseAgentResult {
     setPendingApiAuth(null);
   }, [pendingApiAuth, getAgent, activationComplete]);
 
-  // Cancel API auth flow
+  // Cancel API auth flow - returns to main agent
   const cancelApiAuth = useCallback(() => {
-    completeApiAuth(false);
-  }, [completeApiAuth]);
+    debug('[cancelApiAuth] User cancelled API auth, deactivating agent');
+    setPendingApiAuth(null);
+    deactivateAgent();
+    setMessages(prev => [...prev, {
+      id: `auth-cancelled-${Date.now()}`,
+      type: 'system',
+      content: 'Authentication cancelled. Returned to main agent.',
+      timestamp: Date.now(),
+    }]);
+  }, [deactivateAgent]);
 
   // Save clarifications to Craft document - sends HIDDEN message to agent
   // Accepts clarifications directly to avoid React state timing issues

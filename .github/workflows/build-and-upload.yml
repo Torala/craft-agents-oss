@@ -1,0 +1,44 @@
+name: Build and Upload
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to build (e.g., 1.0.0)'
+        required: true
+        type: string
+      isLatest:
+        description: 'Also upload to /latest folder'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  build-and-upload:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Build
+        run: bun run scripts/build.ts ${{ inputs.version }}
+
+      - name: Upload
+        env:
+          S3_VERSIONS_BUCKET_ENDPOINT: ${{ secrets.S3_VERSIONS_BUCKET_ENDPOINT }}
+          S3_VERSIONS_BUCKET_ACCESS_KEY_ID: ${{ secrets.S3_VERSIONS_BUCKET_ACCESS_KEY_ID }}
+          S3_VERSIONS_BUCKET_SECRET_ACCESS_KEY: ${{ secrets.S3_VERSIONS_BUCKET_SECRET_ACCESS_KEY }}
+        run: |
+          if [ "${{ inputs.isLatest }}" = "true" ]; then
+            bun run scripts/upload.ts --latest
+          else
+            bun run scripts/upload.ts
+          fi
