@@ -17,13 +17,18 @@ import {
 import type { CraftAgentConfig } from './agent/craft-agent.ts';
 import { enableDebug } from './tui/utils/debug.ts';
 import { initializeTracing, getTracingManager } from './tracing/index.ts';
+import { install } from './version/install.ts';
 
 const cli = meow(
   `
   Craft Document Assistant - A Claude Code-like TUI for Craft documents
 
   Usage
-    $ craft-agent [options]
+    $ craft-agent [command] [options]
+
+  Commands
+    install [version]  Install a specific version (defaults to "latest")
+
 
   Options
     --setup         Run the setup wizard (reconfigure)
@@ -46,6 +51,7 @@ const cli = meow(
     $ craft-agent
     $ craft-agent --setup
     $ craft-agent --url http://localhost:3000/v1/links/abc123/mcp
+    $ craft-agent install 0.0.1
 `,
   {
     importMeta: import.meta,
@@ -184,6 +190,13 @@ const Root: React.FC<RootProps> = ({ initialConfig, cliFlags, forceSetup, initia
 };
 
 async function main() {
+  // Handle install command
+  if (cli.input[0] === 'install') {
+    const version = cli.input[1] || 'latest';
+    await install(version);
+    process.exit(0);
+  }
+
   // Enable debug logging if --debug flag is passed
   if (cli.flags.debug) {
     enableDebug();

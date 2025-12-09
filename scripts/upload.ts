@@ -102,10 +102,13 @@ try {
 
   // If --latest, also update latest folder
   if (isLatest) {
-    const latestPrefix = 'latest/';
-    await deleteFolder(latestPrefix);
-    await uploadFolder(latestPrefix);
-    console.log('');
+    const latestPrefix = 'latest';
+    await s3.send(new PutObjectCommand({
+      Bucket: BUCKET,
+      Key: latestPrefix,
+      Body: JSON.stringify({ version }),
+      ContentType: 'application/json',
+    }));
   }
 
   console.log('Upload complete!');

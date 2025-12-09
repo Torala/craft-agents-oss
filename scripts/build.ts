@@ -57,8 +57,9 @@ for (const target of TARGETS) {
   try {
     await $`bun build --compile --minify \
       --target=${target.bunTarget} \
-      --external yoga-wasm-web \
-      --external keytar \
+      --define VERSION="${VERSION}" \
+      --define BUILD_TIME="${BUILD_TIME}" \
+      --define BUILD_TIMESTAMP="${BUILD_TIMESTAMP}" \
       src/index.tsx \
       --outfile ${outfile}`.quiet();
 
@@ -71,7 +72,7 @@ for (const target of TARGETS) {
     console.log(`    SHA256: ${hash}`);
 
     manifest.binaries[target.name] = {
-      url: `https://your-server.com/craft/craft-${target.name}${target.ext}`,
+      url: `https://version.chaps.app/${VERSION}/craft-${target.name}${target.ext}`,
       sha256: hash,
       size,
     };
