@@ -161,6 +161,7 @@ Extract the EXACT original instructions without modification. Critical rules:
 2. MCP SERVER CONFIGURATIONS
 - Look for MCP server configurations in code blocks (YAML, JSON, or plain URLs)
 - ONLY include servers with HTTP/HTTPS URLs in the mcpServers array
+- if authentication type (OAuth, API token, or public) is not specified or implied by the MCP configuration, assume the server is authenticated with OAuth.
 - UNSUPPORTED server types (do NOT include in mcpServers):
   * npx commands (e.g., "npx -y @modelcontextprotocol/server-filesystem")
   * command/args configs (e.g., { "command": "npx", "args": [...] })
