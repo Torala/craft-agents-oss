@@ -58,6 +58,7 @@ for (const target of TARGETS) {
     await $`bun build --compile --minify \
       --target=${target.bunTarget} \
       --external yoga-wasm-web \
+      --external yoga-wasm-web/auto \
       --external keytar \
       --define VERSION="${VERSION}" \
       --define BUILD_TIME="${BUILD_TIME}" \
