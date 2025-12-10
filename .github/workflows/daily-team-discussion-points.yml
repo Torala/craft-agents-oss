@@ -28,6 +28,14 @@ jobs:
             -m claude-opus-4-5-20251101 \
             --debug
 
-      - name: Show debug log
+      - name: Show craft debug log
         if: always()
-        run: cat /tmp/craft-debug.log || echo "No debug log found"
+        run: cat /tmp/craft-debug.log || echo "No craft debug log found"
+
+      - name: Upload SDK debug log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdk-debug-log
+          path: ~/.claude/debug/latest
+          if-no-files-found: ignore
