@@ -206,6 +206,18 @@ export function getActiveWorkspace(): Workspace | null {
   return config.workspaces.find(w => w.id === config.activeWorkspaceId) || config.workspaces[0] || null;
 }
 
+/**
+ * Find a workspace by name (case-insensitive) or ID.
+ * Useful for CLI -w flag to specify workspace.
+ */
+export function getWorkspaceByNameOrId(nameOrId: string): Workspace | null {
+  const workspaces = getWorkspaces();
+  return workspaces.find(w =>
+    w.id === nameOrId ||
+    w.name.toLowerCase() === nameOrId.toLowerCase()
+  ) || null;
+}
+
 export function setActiveWorkspace(workspaceId: string): void {
   const config = loadStoredConfig();
   if (!config) return;

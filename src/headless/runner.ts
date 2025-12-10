@@ -339,15 +339,20 @@ export class HeadlessRunner {
       this.agent!.respondToQuestion(request.requestId, {});
     };
 
-    // Set session ID
+    // Set session ID based on flags
+    // Default: fresh session (don't set any - SDK will create new)
     if (this.config.sessionId) {
-      // Explicit session from CLI
+      // --session-id: explicit session for external workflow management
+      debug('[HeadlessRunner] Using explicit session ID:', this.config.sessionId);
       this.agent.setSessionId(this.config.sessionId);
-    } else if (!this.config.noSession && this.config.workspace.sessionId) {
-      // Use workspace session for continuity
+    } else if (this.config.sessionResume && this.config.workspace.sessionId) {
+      // --session-resume: continue workspace's saved session
+      debug('[HeadlessRunner] Resuming workspace session:', this.config.workspace.sessionId);
       this.agent.setSessionId(this.config.workspace.sessionId);
+    } else {
+      // Default: fresh session each run (predictable for automation)
+      debug('[HeadlessRunner] Using fresh session (default for headless mode)');
     }
-    // If noSession is true, don't set any session (fresh each time)
   }
 
   /**

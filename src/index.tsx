@@ -7,6 +7,7 @@ import { Setup } from './tui/components/Setup.tsx';
 import {
   loadStoredConfig,
   getActiveWorkspace,
+  getWorkspaceByNameOrId,
   getAnthropicApiKey,
   getClaudeOAuthToken,
   hasValidCredentials,
@@ -32,15 +33,16 @@ const cli = meow(
   Commands
     install [version]  Install a specific version (defaults to "latest")
 
-  Agent Selection
+  Common Options (both modes)
     --agent, -a <name>      Agent to activate (with or without @ prefix)
+    --workspace, -w <name>  Select workspace by name or ID
 
   Print Mode (non-interactive, exits after response)
     --print, -p <query>     Execute prompt and exit (non-interactive)
     --output-format <fmt>   Output format: text, json, stream-json (default: text)
     --permission-policy     Permission handling: deny-all, allow-safe, allow-all (default: deny-all)
-    --session-id <uuid>     Use specific session ID for conversation continuity
-    --no-session            Don't persist or resume session
+    --session-id <uuid>     Use explicit session ID (for workflow management)
+    --session-resume        Resume workspace's saved session (default: fresh session)
 
   Interactive Mode Options
     --setup         Run the setup wizard (reconfigure)
@@ -59,12 +61,19 @@ const cli = meow(
     Settings are stored in ~/.craft-agent/config.json
     Run with --setup to reconfigure at any time.
 
+  Session Behavior
+    - Interactive (REPL): Always resumes workspace session
+    - Print mode: Fresh session by default (predictable for scripts)
+      Use --session-resume to continue workspace session
+      Use --session-id <uuid> for explicit session management
+
   Examples
     $ craft                                    # Interactive mode
     $ craft "What documents do I have?"        # Interactive with initial prompt
     $ craft -a writer "Help me draft an email" # Activate agent + prompt
-    $ craft -p "list my documents"             # Print mode (non-interactive)
+    $ craft -w work -p "list my documents"     # Print mode with specific workspace
     $ craft -p "summarize" -a writer           # Print mode with agent
+    $ craft -p "query" --session-resume        # Print mode, resume session
     $ craft -p "query" --output-format json    # JSON output for scripts
     $ craft --setup                            # Reconfigure
     $ craft install 0.0.1                      # Install specific version
@@ -92,9 +101,13 @@ const cli = meow(
       sessionId: {
         type: 'string',
       },
-      noSession: {
+      sessionResume: {
         type: 'boolean',
         default: false,
+      },
+      workspace: {
+        type: 'string',
+        shortFlag: 'w',
       },
       // Interactive mode flags
       setup: {
@@ -274,16 +287,27 @@ async function main() {
       process.exit(1);
     }
 
-    // Get workspace
-    const workspace = cli.flags.url
-      ? {
-          id: 'cli-override',
-          name: 'CLI Override',
-          mcpUrl: cli.flags.url,
-          isPublic: true,
-          createdAt: Date.now(),
-        }
-      : getActiveWorkspace();
+    // Get workspace: -w flag > --url override > active workspace
+    let workspace: Workspace | null = null;
+    if (cli.flags.url) {
+      // URL override creates a temporary workspace
+      workspace = {
+        id: 'cli-override',
+        name: 'CLI Override',
+        mcpUrl: cli.flags.url,
+        isPublic: true,
+        createdAt: Date.now(),
+      };
+    } else if (cli.flags.workspace) {
+      // -w flag: lookup by name or ID
+      workspace = getWorkspaceByNameOrId(cli.flags.workspace);
+      if (!workspace) {
+        console.error(`Error: Workspace '${cli.flags.workspace}' not found.`);
+        process.exit(1);
+      }
+    } else {
+      workspace = getActiveWorkspace();
+    }
 
     if (!workspace) {
       console.error('Error: No workspace configured. Run `craft --setup` first.');
@@ -331,7 +355,7 @@ async function main() {
       outputFormat,
       permissionPolicy,
       sessionId: cli.flags.sessionId,
-      noSession: cli.flags.noSession,
+      sessionResume: cli.flags.sessionResume,
     });
 
     const result = await writeStreamingOutput(runner.runStreaming(), outputFormat);
