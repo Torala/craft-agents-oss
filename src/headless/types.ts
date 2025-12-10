@@ -22,9 +22,6 @@ export interface HeadlessConfig {
   // --session-id <uuid>: use explicit session (for external workflow management)
   sessionId?: string;           // Explicit session ID (--session-id)
   sessionResume?: boolean;      // Resume workspace's saved session (--session-resume)
-
-  // Limits
-  maxTurns?: number;
 }
 
 /**
