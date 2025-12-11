@@ -268,18 +268,17 @@ export function useAgent(config: CraftAgentConfig): UseAgentResult {
 
   // Helper to get MCP token for current workspace
   const getMcpToken = useCallback(async (): Promise<string | null> => {
-    if (workspace.isPublic) {
-      return null;
-    }
-
     // Get token from credential store (handles bearer token, OAuth, and legacy config fallback)
-    const token = await getWorkspaceAccessTokenAsync(workspace.id);
+    const { authType, token } = await getWorkspaceAccessTokenAsync(workspace.id);
     if (!token) {
+      if (authType !== 'public') {
+        throw new Error('No authentication credentials found for workspace. Please re-add the workspace.');
+      }
       return null;
     }
 
-    // Check if token is expired and refresh if needed
-    const isExpired = await isWorkspaceTokenExpiredAsync(workspace.id);
+    // Check if token is expired and refresh if needed (only for OAuth tokens)
+    const isExpired = authType === 'workspace_oauth' ? await isWorkspaceTokenExpiredAsync(workspace.id) : false;
     if (isExpired) {
       // Get full OAuth credentials from credential store for refresh
       const manager = getCredentialManager();
