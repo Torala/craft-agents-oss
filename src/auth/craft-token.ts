@@ -42,8 +42,6 @@ function isTokenExpiringSoon(token: string): boolean {
   return expiresIn < REFRESH_BUFFER_MS;
 }
 
-const CRAFT_API_BASE_URL = 'https://api.craft.do';
-
 async function refreshCraftToken(currentToken: string): Promise<string> {
   debug('[CraftToken] Refreshing token...');
 
@@ -88,7 +86,7 @@ export async function getTeamId(): Promise<string | null> {
   if (!token) {
     throw new Error('No Craft token stored. Please authenticate first.');
   }
-  const craftApi = new CraftApi(CRAFT_API_BASE_URL);
+  const craftApi = new CraftApi();
   const profile = await craftApi.getProfile(token);
   return getTeamIdFromProfile(profile);
 }
