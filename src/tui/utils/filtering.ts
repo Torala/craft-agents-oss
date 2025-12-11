@@ -68,7 +68,6 @@ export const COMMANDS: CommandDefinition[] = [
 
   // AI & Billing
   { command: '/credits', description: 'View billing method and manage credits', category: 'AI & Billing' },
-  { command: '/balance', description: 'Open Craft AI Credits top-up page', category: 'AI & Billing' },
   { command: '/tools', description: 'List available tools (-v for details)', category: 'AI & Billing' },
 
   // Configuration
@@ -346,7 +345,7 @@ export function getCommandHint(input: string): HintData {
     return {
       selected: null,
       description: null,
-      others: ['/agent', '/workspace', '/model', '/help', '/clear', '/tools', '/cost', '/balance', '/exit'],
+      others: ['/agent', '/workspace', '/model', '/help', '/clear', '/tools', '/cost', '/credits', '/exit'],
     };
   }
 

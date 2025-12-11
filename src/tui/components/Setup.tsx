@@ -11,11 +11,14 @@ import { AnimatedSpinner } from './Spinner.tsx';
 import { CraftCallbackStep, type CraftProfile } from './craftAuth/CraftCallbackStep.tsx';
 import { CraftSpaceSelector, McpLinkSelector, type McpLink } from './craftAuth/CraftSpaceSelector.tsx';
 import { CraftApi } from '../../clients/craftApi.ts';
+import { checkSubscription } from '../../subscription/check.ts';
+import open from 'open';
 
-// Streamlined flow: Craft Login -> Select Space -> [Select MCP] -> MCP Validation -> Billing -> [Credentials] -> Save
+// Streamlined flow: Craft Login -> Subscription Check -> Select Space -> [Select MCP] -> MCP Validation -> Billing -> [Credentials] -> Save
 type SetupStep =
   | 'welcome'
   | 'craft-login'        // Craft OAuth (mandatory first step)
+  | 'subscription-check' // Check if user has paid subscription
   | 'select-space'       // Select Craft space
   | 'select-mcp'         // Select existing MCP or create new (if multiple exist)
   | 'mcp-validating'     // Validate MCP connection (after space/mcp selection)
@@ -163,10 +166,15 @@ export const Setup: React.FC<SetupProps> = ({ onComplete, onCancel, authState, s
     setStep('billing-method');
   }, []);
 
-  // Craft OAuth complete -> Select Space
+  // Craft OAuth complete -> Subscription Check
   const handleCraftLoginComplete = useCallback((token: string, profile: CraftProfile) => {
     setCraftToken(token);
     setCraftProfile(profile);
+    setStep('subscription-check');
+  }, []);
+
+  // Subscription check passed -> Select Space
+  const handleSubscriptionPaid = useCallback(() => {
     setStep('select-space');
   }, []);
 
@@ -482,11 +490,15 @@ export const Setup: React.FC<SetupProps> = ({ onComplete, onCancel, authState, s
         // New users pressing back on first step - cancel/exit
         onCancel();
         break;
-      case 'select-space':
+      case 'subscription-check':
         // Go back to craft login (need to re-auth)
         setCraftToken(null);
         setCraftProfile(null);
         setStep('craft-login');
+        break;
+      case 'select-space':
+        // Go back to subscription check
+        setStep('subscription-check');
         break;
       case 'select-mcp':
         // Go back to space selection
@@ -532,7 +544,7 @@ export const Setup: React.FC<SetupProps> = ({ onComplete, onCancel, authState, s
     }
   }, [step, hasExistingWorkspace, mcpOAuthClient, onCancel]);
 
-  const totalSteps = hasExistingWorkspace ? 4 : 6;
+  const totalSteps = hasExistingWorkspace ? 4 : 7;
   const currentStep = getStepNumber(step, hasExistingWorkspace);
 
   return (
@@ -567,6 +579,14 @@ export const Setup: React.FC<SetupProps> = ({ onComplete, onCancel, authState, s
         {step === 'craft-login' && (
           <CraftCallbackStep
             onComplete={({ token, profile }) => handleCraftLoginComplete(token, profile)}
+            onBack={handleBack}
+          />
+        )}
+
+        {step === 'subscription-check' && craftProfile && (
+          <SubscriptionCheckStep
+            profile={craftProfile}
+            onPaid={handleSubscriptionPaid}
             onBack={handleBack}
           />
         )}
@@ -726,24 +746,25 @@ function getStepNumber(step: SetupStep, hasExistingWorkspace: boolean = false): 
       default: return 4;
     }
   }
-  // New user flow: craft-login -> select-space -> select-mcp/mcp-validate -> billing -> credentials -> save (6 steps)
+  // New user flow: craft-login -> subscription-check -> select-space -> select-mcp/mcp-validate -> billing -> credentials -> save (7 steps)
   switch (step) {
     case 'craft-login': return 1;
-    case 'select-space': return 2;
+    case 'subscription-check': return 2;
+    case 'select-space': return 3;
     case 'select-mcp':
     case 'mcp-validating':
     case 'mcp-auth':
-      return 3;
-    case 'billing-method': return 4;
+      return 4;
+    case 'billing-method': return 5;
     case 'api-key-entry':
     case 'oauth-token-entry':
     case 'oauth-token-setup':
-      return 5;
+      return 6;
     case 'saving':
     case 'complete':
     case 'error':
-      return 6;
-    default: return 6;
+      return 7;
+    default: return 7;
   }
 }
 
@@ -751,6 +772,7 @@ function getStepName(step: SetupStep): string {
   switch (step) {
     case 'welcome': return 'Welcome';
     case 'craft-login': return 'Sign In';
+    case 'subscription-check': return 'Checking Subscription';
     case 'select-space': return 'Select Space';
     case 'select-mcp': return 'Select Connection';
     case 'mcp-validating': return 'Connecting';
@@ -787,6 +809,82 @@ const WelcomeStep: React.FC<WelcomeStepProps> = ({ onContinue, onExit }) => {
     <Box flexDirection="column" alignItems="center">
       <Text>Your Craft space is already connected.</Text>
       <Text dimColor>Press Enter to update your billing settings.</Text>
+    </Box>
+  );
+};
+
+interface SubscriptionCheckStepProps {
+  profile: CraftProfile;
+  onPaid: () => void;
+  onBack: () => void;
+}
+
+const SubscriptionCheckStep: React.FC<SubscriptionCheckStepProps> = ({ profile, onPaid, onBack }) => {
+  const [status, setStatus] = useState<'checking' | 'blocked'>('checking');
+  const [subscribeUrl, setSubscribeUrl] = useState<string | null>(null);
+
+  const checkStatus = useCallback(async () => {
+    setStatus('checking');
+    const url = await checkSubscription(profile);
+    if (url) {
+      setSubscribeUrl(url);
+      setStatus('blocked');
+    } else {
+      onPaid();
+    }
+  }, [profile, onPaid]);
+
+  useEffect(() => {
+    checkStatus();
+  }, []);
+
+  const openSubscribePage = useCallback(async () => {
+    if (subscribeUrl) {
+      try {
+        await open(subscribeUrl);
+      } catch {
+        // Browser open failed, user can copy URL manually
+      }
+    }
+  }, [subscribeUrl]);
+
+  useInput((input, key) => {
+    if (status !== 'blocked') return;
+
+    if (key.return) {
+      openSubscribePage();
+    } else if (input === 'r' || input === 'R') {
+      checkStatus();
+    } else if (key.escape) {
+      onBack();
+    }
+  });
+
+  if (status === 'checking') {
+    return (
+      <Box flexDirection="column" alignItems="center">
+        <Box>
+          <AnimatedSpinner />
+          <Text> Checking subscription...</Text>
+        </Box>
+      </Box>
+    );
+  }
+
+  return (
+    <Box flexDirection="column" alignItems="center">
+      <Text color="yellow">⚠ Subscription Required</Text>
+      <Box marginY={1} flexDirection="column" alignItems="center">
+        <Text>A paid Craft subscription is required to use Craft Agent.</Text>
+        {subscribeUrl && (
+          <Box marginTop={1}>
+            <Text dimColor>{subscribeUrl}</Text>
+          </Box>
+        )}
+      </Box>
+      <Box marginTop={1}>
+        <Text dimColor>↵ open browser • R check again • Esc back</Text>
+      </Box>
     </Box>
   );
 };
