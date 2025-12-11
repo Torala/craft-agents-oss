@@ -4,10 +4,11 @@ import { addWorkspace, type Workspace, type OAuthCredentials, type McpAuthType }
 import { CraftOAuth, getMcpBaseUrl } from '../../auth/oauth.ts';
 import { getCredentialManager } from '../../credentials/index.ts';
 import { validateMcpConnection, getValidationErrorMessage } from '../../mcp/validation.ts';
+import { validateMcpUrl } from '../../validation/url-validator.ts';
 import { TextInput } from './TextInput.tsx';
 import { AnimatedSpinner } from './Spinner.tsx';
 
-type AddStep = 'name' | 'url' | 'checking-auth' | 'no-oauth-options' | 'oauth-auth' | 'bearer-token' | 'validating' | 'complete' | 'error';
+type AddStep = 'name' | 'url' | 'validating-url' | 'checking-auth' | 'no-oauth-options' | 'oauth-auth' | 'bearer-token' | 'validating' | 'complete' | 'error';
 
 export interface WorkspaceAddProps {
   onComplete: (workspace: Workspace) => void;
@@ -65,16 +66,39 @@ export const WorkspaceAdd: React.FC<WorkspaceAddProps> = ({ onComplete, onCancel
 
   const handleMcpUrl = useCallback((value: string) => {
     if (!value.trim()) return;
-
-    // Basic URL validation
-    try {
-      new URL(value.trim());
-      setMcpUrl(value.trim());
-      setStep('checking-auth');
-    } catch {
-      setError('Please enter a valid URL');
-    }
+    setMcpUrl(value.trim());
+    setStep('validating-url');
   }, []);
+
+  // Validate URL using AI when entering validating-url step
+  useEffect(() => {
+    if (step !== 'validating-url' || !mcpUrl) return;
+
+    let cancelled = false;
+
+    const validate = async () => {
+      const manager = getCredentialManager();
+      const apiKey = await manager.getApiKey();
+      const oauthToken = await manager.getClaudeOAuth();
+
+      const result = await validateMcpUrl(mcpUrl, apiKey || undefined, oauthToken || undefined);
+
+      if (cancelled) return;
+
+      if (result.valid) {
+        setStep('checking-auth');
+      } else {
+        setError(result.error || 'Please enter a valid Craft MCP URL (mcp.craft.do)');
+        setStep('url');
+      }
+    };
+
+    validate();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [step, mcpUrl]);
 
   // Check if OAuth is required when entering checking-auth step
   useEffect(() => {
@@ -276,6 +300,15 @@ export const WorkspaceAdd: React.FC<WorkspaceAddProps> = ({ onComplete, onCancel
         />
       )}
 
+      {step === 'validating-url' && (
+        <Box flexDirection="column">
+          <Box>
+            <AnimatedSpinner />
+            <Text> Validating URL...</Text>
+          </Box>
+        </Box>
+      )}
+
       {step === 'checking-auth' && (
         <Box flexDirection="column">
           <Text>Checking server...</Text>
@@ -360,7 +393,9 @@ export const WorkspaceAdd: React.FC<WorkspaceAddProps> = ({ onComplete, onCancel
 function getStepNumber(step: AddStep): number {
   switch (step) {
     case 'name': return 1;
-    case 'url': return 2;
+    case 'url':
+    case 'validating-url':
+      return 2;
     case 'checking-auth':
     case 'no-oauth-options':
     case 'oauth-auth':

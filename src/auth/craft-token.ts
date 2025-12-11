@@ -3,6 +3,8 @@ import { CraftApi } from '../clients/craftApi';
 import { debug } from '../tui/utils/debug';
 
 const REFRESH_BUFFER_MS = 60 * 60 * 1000;
+const CRAFT_API_BASE_URL = 'https://api.craft.do';
+
 
 function decodeJwtPayload(token: string): { exp?: number } | null {
   try {
@@ -41,8 +43,6 @@ function isTokenExpiringSoon(token: string): boolean {
   const expiresIn = expiresAtMs - now;
   return expiresIn < REFRESH_BUFFER_MS;
 }
-
-const CRAFT_API_BASE_URL = 'https://api.craft.do';
 
 async function refreshCraftToken(currentToken: string): Promise<string> {
   debug('[CraftToken] Refreshing token...');
