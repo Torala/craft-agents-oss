@@ -2,8 +2,16 @@ import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
 import open from 'open';
 import { getAiCreditTopUpUrl } from '../../auth/balance.ts';
+import type { AuthType } from '../../config/storage.ts';
+
+const AUTH_TYPE_LABELS: Record<AuthType, string> = {
+  'craft_credits': 'Craft Credits',
+  'api_key': 'Anthropic API Key',
+  'oauth_token': 'Claude Max Subscription',
+};
 
 export interface BalanceProps {
+  authType: AuthType;
   onClose: () => void;
 }
 
@@ -12,10 +20,15 @@ type BalanceState =
   | { type: 'ready'; url: string }
   | { type: 'error'; message: string };
 
-export const Balance: React.FC<BalanceProps> = ({ onClose }) => {
-  const [state, setState] = useState<BalanceState>({ type: 'loading' });
+export const Balance: React.FC<BalanceProps> = ({ authType, onClose }) => {
+  const isCraftCredits = authType === 'craft_credits';
+  const [state, setState] = useState<BalanceState>(
+    isCraftCredits ? { type: 'loading' } : { type: 'ready', url: '' }
+  );
 
   useEffect(() => {
+    if (!isCraftCredits) return;
+
     const fetchUrl = async () => {
       try {
         const url = await getAiCreditTopUpUrl();
@@ -35,7 +48,7 @@ export const Balance: React.FC<BalanceProps> = ({ onClose }) => {
       }
     };
     fetchUrl();
-  }, []);
+  }, [isCraftCredits]);
 
   const openUrl = async (url: string) => {
     await open(url);
@@ -43,59 +56,70 @@ export const Balance: React.FC<BalanceProps> = ({ onClose }) => {
   };
 
   useInput((input, key) => {
-    if (key.escape) {
-      onClose();
+    if (key.escape || key.return) {
+      if (isCraftCredits && state.type === 'ready' && state.url && (key.return || input.toLowerCase() === 'o')) {
+        void openUrl(state.url);
+      } else {
+        onClose();
+      }
       return;
     }
 
-    if (state.type === 'ready') {
-      if (key.return || input.toLowerCase() === 'o') {
-        void openUrl(state.url);
-      }
-    }
-
-    if (state.type === 'error' && key.return) {
-      onClose();
+    if (isCraftCredits && state.type === 'ready' && input.toLowerCase() === 'o') {
+      void openUrl(state.url);
     }
   });
 
   return (
     <Box flexDirection="column" paddingX={1}>
       <Box marginBottom={1}>
-        <Text bold>AI Credits Top-up</Text>
+        <Text bold>AI Credits</Text>
       </Box>
 
-      {state.type === 'loading' && (
-        <Box>
-          <Text dimColor>Loading...</Text>
-        </Box>
-      )}
+      <Box flexDirection="column">
+        <Text>
+          Current billing: <Text color="cyan" bold>{AUTH_TYPE_LABELS[authType]}</Text>
+        </Text>
+      </Box>
 
-      {state.type === 'ready' && (
+      {isCraftCredits && (
         <>
-          <Box flexDirection="column">
-            <Text>URL: <Text color="cyan">{state.url}</Text></Text>
-          </Box>
-          <Box marginTop={1}>
-            <Text dimColor>
-              Press <Text bold>o</Text> or <Text bold>Enter</Text> to open | <Text bold>Esc</Text> to go back
-            </Text>
-          </Box>
+          {state.type === 'loading' && (
+            <Box marginTop={1}>
+              <Text dimColor>Loading top-up link...</Text>
+            </Box>
+          )}
+
+          {state.type === 'ready' && state.url && (
+            <Box marginTop={1} flexDirection="column">
+              <Text dimColor>
+                Press <Text bold color="white">o</Text> or <Text bold color="white">Enter</Text> to view credits & top up in browser
+              </Text>
+            </Box>
+          )}
+
+          {state.type === 'error' && (
+            <Box marginTop={1}>
+              <Text color="red">{state.message}</Text>
+            </Box>
+          )}
         </>
       )}
 
-      {state.type === 'error' && (
-        <>
-          <Box>
-            <Text color="red">{state.message}</Text>
-          </Box>
-          <Box marginTop={1}>
-            <Text dimColor>
-              Press <Text bold>Enter</Text> or <Text bold>Esc</Text> to go back
-            </Text>
-          </Box>
-        </>
-      )}
+      <Box marginTop={1}>
+        <Text dimColor>
+          To change your billing method, use <Text color="white">/settings</Text>
+        </Text>
+      </Box>
+
+      <Box marginTop={1}>
+        <Text dimColor>
+          {isCraftCredits && state.type === 'ready' && state.url
+            ? 'Press Esc to close'
+            : 'Press Enter or Esc to close'
+          }
+        </Text>
+      </Box>
     </Box>
   );
 };

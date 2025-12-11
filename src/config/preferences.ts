@@ -106,34 +106,48 @@ export function formatPreferencesForPrompt(): string {
 export function formatPreferencesDisplay(): string {
   const prefs = loadPreferences();
 
-  if (Object.keys(prefs).length === 0) {
-    return 'No preferences set yet. The assistant will learn about you over time, or you can set them manually.';
-  }
+  const lines: string[] = ['**Your Preferences**', ''];
 
-  const lines: string[] = ['**User Preferences**', ''];
+  // Check if any preferences are actually set
+  const hasName = !!prefs.name;
+  const hasTimezone = !!prefs.timezone;
+  const hasLocation = prefs.location && (prefs.location.city || prefs.location.region || prefs.location.country);
+  const hasLanguage = !!prefs.language;
+  const hasNotes = !!prefs.notes;
+  const hasAnyPrefs = hasName || hasTimezone || hasLocation || hasLanguage || hasNotes;
 
-  lines.push(`- Name: ${prefs.name || '(not set)'}`);
-  lines.push(`- Timezone: ${prefs.timezone || '(not set)'}`);
+  lines.push('Your preferences help personalise your experience. The assistant uses these to provide more relevant responses (e.g., timezone for scheduling, language for communication).');
+  lines.push('');
 
-  const loc = prefs.location;
-  if (loc && (loc.city || loc.region || loc.country)) {
-    const parts = [loc.city, loc.region, loc.country].filter(Boolean);
-    lines.push(`- Location: ${parts.join(', ')}`);
+  if (!hasAnyPrefs) {
+    lines.push('**Status:** Nothing saved yet.');
+    lines.push('');
   } else {
-    lines.push('- Location: (not set)');
+    lines.push(`- Name: ${prefs.name || '(not set)'}`);
+    lines.push(`- Timezone: ${prefs.timezone || '(not set)'}`);
+
+    if (hasLocation) {
+      const loc = prefs.location!;
+      const parts = [loc.city, loc.region, loc.country].filter(Boolean);
+      lines.push(`- Location: ${parts.join(', ')}`);
+    } else {
+      lines.push('- Location: (not set)');
+    }
+
+    lines.push(`- Language: ${prefs.language || '(not set)'}`);
+
+    if (hasNotes) {
+      lines.push('', '**Notes**', prefs.notes!);
+    }
+
+    if (prefs.updatedAt) {
+      lines.push('', `_Last updated: ${new Date(prefs.updatedAt).toLocaleString()}_`);
+    }
+    lines.push('');
   }
 
-  lines.push(`- Language: ${prefs.language || '(not set)'}`);
-
-  if (prefs.notes) {
-    lines.push('', '**Notes**', prefs.notes);
-  }
-
-  if (prefs.updatedAt) {
-    lines.push('', `_Last updated: ${new Date(prefs.updatedAt).toLocaleString()}_`);
-  }
-
-  lines.push('', `Config file: \`${PREFERENCES_FILE}\``);
+  lines.push('**How to update:** Just tell the assistant (e.g., "My name is Alex" or "I\'m in London, GMT timezone").');
+  lines.push(`**Config file:** \`${PREFERENCES_FILE}\``);
 
   return lines.join('\n');
 }

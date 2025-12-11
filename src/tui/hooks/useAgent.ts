@@ -22,6 +22,7 @@ import {
   getWorkspaceAccessTokenAsync,
   isWorkspaceTokenExpiredAsync,
   updateWorkspaceOAuthTokensAsync,
+  checkWorkspaceAuthStatus,
   loadStoredConfig,
   saveConfig,
   type Workspace,
@@ -146,12 +147,6 @@ export interface UseAgentResult {
   setModel: (model: string) => void;
   workspace: Workspace;
   setWorkspace: (workspace: Workspace) => void;
-  isWebSearchEnabled: () => boolean;
-  setWebSearchEnabled: (enabled: boolean) => void;
-  isWebFetchEnabled: () => boolean;
-  setWebFetchEnabled: (enabled: boolean) => void;
-  isCodeExecutionEnabled: () => boolean;
-  setCodeExecutionEnabled: (enabled: boolean) => void;
   // Sub-agent related
   availableAgents: string[];
   activeAgentName: string | null;
@@ -201,11 +196,6 @@ export function useAgent(config: CraftAgentConfig): UseAgentResult {
   const [pendingPermission, setPendingPermission] = useState<PermissionRequest | null>(null);
   const [pendingQuestion, setPendingQuestion] = useState<AskUserQuestionRequest | null>(null);
   const [hasExecutingTool, setHasExecutingTool] = useState(false);
-
-  // Track tool settings in state so they persist even before agent is created
-  const [webSearchEnabled, setWebSearchEnabledState] = useState(config.enableWebSearch ?? true);
-  const [webFetchEnabled, setWebFetchEnabledState] = useState(config.enableWebFetch ?? true);
-  const [codeExecutionEnabled, setCodeExecutionEnabledState] = useState(config.enableCodeExecution ?? true);
 
   // Sub-agent state
   const [availableAgents, setAvailableAgents] = useState<string[]>([]);
@@ -343,6 +333,18 @@ export function useAgent(config: CraftAgentConfig): UseAgentResult {
     const initializeAgentManager = async () => {
       setAgentsLoading(true);
       try {
+        // Check MCP auth status before attempting connection
+        const authStatus = await checkWorkspaceAuthStatus(workspace.id);
+        if (authStatus.needsAuth) {
+          // MCP authentication is required but missing - log and skip initialization
+          // This will cause connection to fail with a clear error when user tries to use agent
+          debug('[useAgent] MCP auth needed:', authStatus.message);
+          setError(`MCP authentication required. ${authStatus.message || 'Please re-authenticate.'}`);
+          setConnected(false);
+          setAgentsLoading(false);
+          return;
+        }
+
         // Build MCP URL
         let mcpUrl = workspace.mcpUrl;
         mcpUrl = mcpUrl.replace(/\/+$/, '');
@@ -435,9 +437,6 @@ export function useAgent(config: CraftAgentConfig): UseAgentResult {
       };
       // Sync current state to the newly created agent
       agentRef.current.setModel(model);
-      agentRef.current.setWebSearchEnabled(webSearchEnabled);
-      agentRef.current.setWebFetchEnabled(webFetchEnabled);
-      agentRef.current.setCodeExecutionEnabled(codeExecutionEnabled);
       // Restore session ID from workspace if available (for conversation continuity)
       if (workspace.sessionId) {
         agentRef.current.setSessionId(workspace.sessionId);
@@ -470,7 +469,7 @@ export function useAgent(config: CraftAgentConfig): UseAgentResult {
     });
 
     return agentRef.current;
-  }, [config, model, webSearchEnabled, webFetchEnabled, codeExecutionEnabled, workspace]);
+  }, [config, model, workspace]);
 
   const respondToPermission = useCallback((allowed: boolean, alwaysAllow: boolean = false) => {
     if (pendingPermission) {
@@ -931,39 +930,6 @@ export function useAgent(config: CraftAgentConfig): UseAgentResult {
     // Update workspace state (triggers useEffect to reinitialize MCP proxy)
     setWorkspaceState(newWorkspace);
   }, [messages, workspace, tokenUsage]);
-
-  const isWebSearchEnabled = useCallback(() => {
-    return webSearchEnabled;
-  }, [webSearchEnabled]);
-
-  const setWebSearchEnabled = useCallback((enabled: boolean) => {
-    setWebSearchEnabledState(enabled);
-    if (agentRef.current) {
-      agentRef.current.setWebSearchEnabled(enabled);
-    }
-  }, []);
-
-  const isWebFetchEnabled = useCallback(() => {
-    return webFetchEnabled;
-  }, [webFetchEnabled]);
-
-  const setWebFetchEnabled = useCallback((enabled: boolean) => {
-    setWebFetchEnabledState(enabled);
-    if (agentRef.current) {
-      agentRef.current.setWebFetchEnabled(enabled);
-    }
-  }, []);
-
-  const isCodeExecutionEnabled = useCallback(() => {
-    return codeExecutionEnabled;
-  }, [codeExecutionEnabled]);
-
-  const setCodeExecutionEnabled = useCallback((enabled: boolean) => {
-    setCodeExecutionEnabledState(enabled);
-    if (agentRef.current) {
-      agentRef.current.setCodeExecutionEnabled(enabled);
-    }
-  }, []);
 
   // Complete agent activation - called when ENTIRE setup (extraction + all auth) is done
   // isFirstTimeSetup: true when extraction happened (show info), false when switching to cached agent
@@ -1628,12 +1594,6 @@ The goal is to have clean, actionable instructions without unanswered questions.
     setModel,
     workspace,
     setWorkspace,
-    isWebSearchEnabled,
-    setWebSearchEnabled,
-    isWebFetchEnabled,
-    setWebFetchEnabled,
-    isCodeExecutionEnabled,
-    setCodeExecutionEnabled,
     // Sub-agent related
     availableAgents,
     activeAgentName,

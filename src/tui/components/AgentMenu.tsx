@@ -5,6 +5,7 @@ export type AgentAction =
   | { type: 'activate'; name: string }
   | { type: 'clear' }
   | { type: 'reload' }
+  | { type: 'reauth' }
   | { type: 'reset' }
   | { type: 'refresh' }
   | { type: 'info' };
@@ -33,40 +34,47 @@ export const AgentMenu: React.FC<AgentMenuProps> = ({
   // Build menu items: commands first, then agents
   const menuItems: MenuItem[] = [];
 
-  // Add commands
+  // Add commands for active agent (logically grouped)
   if (activeAgentName) {
-    menuItems.push({
-      key: 'clear',
-      label: 'Exit',
-      desc: 'Return to main assistant',
-      action: { type: 'clear' },
-    });
-    menuItems.push({
-      key: 'reload',
-      label: 'Reload',
-      desc: 'Reload agent instructions',
-      action: { type: 'reload' },
-      requiresActive: true,
-    });
-    menuItems.push({
-      key: 'reset',
-      label: 'Reset',
-      desc: 'Clear all data and exit (re-select to restart setup)',
-      action: { type: 'reset' },
-      requiresActive: true,
-    });
+    // Info first - most common action
     menuItems.push({
       key: 'info',
       label: 'Info',
       desc: 'Show active agent details',
       action: { type: 'info' },
-      requiresActive: true,
+    });
+    // Updates/refresh actions
+    menuItems.push({
+      key: 'reload',
+      label: 'Reload',
+      desc: 'Reload agent instructions',
+      action: { type: 'reload' },
+    });
+    menuItems.push({
+      key: 'reauth',
+      label: 'Reauthenticate',
+      desc: 'Re-authenticate MCP servers',
+      action: { type: 'reauth' },
+    });
+    // Destructive actions last
+    menuItems.push({
+      key: 'reset',
+      label: 'Reset',
+      desc: 'Clear cached data (re-select to restart setup)',
+      action: { type: 'reset' },
+    });
+    menuItems.push({
+      key: 'clear',
+      label: 'Exit Agent',
+      desc: 'Return to main assistant',
+      action: { type: 'clear' },
     });
   }
 
+  // General actions (always available)
   menuItems.push({
     key: 'refresh',
-    label: 'Refresh',
+    label: 'Refresh List',
     desc: 'Re-scan Agents folder',
     action: { type: 'refresh' },
   });

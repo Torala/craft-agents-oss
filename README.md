@@ -1,6 +1,6 @@
-# Craft TUI Agent
+# Craft Agent
 
-A Claude Code-like TUI (Terminal User Interface) agent for Craft documents using the Anthropic SDK and Craft MCP.
+A Claude Code-like agent for Craft documents using the Anthropic SDK and Craft MCP.
 
 ## Features
 
@@ -41,11 +41,11 @@ On first run, you'll be guided through an interactive setup wizard:
 
 ```
 ┌─────────────────────────────────────┐
-│ Craft TUI Agent - Setup             │
+│ Craft Agent - Setup                 │
 └─────────────────────────────────────┘
 Step 1 of 4: Welcome
 
-Welcome to Craft TUI Agent!
+Welcome to Craft Agent!
 You'll need:
 • An Anthropic API key (from console.anthropic.com)
 • Your Craft MCP server URL (workflow link)
@@ -66,7 +66,7 @@ Configuration is saved to `~/.craft-agent/config.json`
 ## Usage
 
 ```bash
-# Run the TUI agent (shows setup wizard on first run)
+# Run the agent (shows setup wizard on first run)
 craft
 
 # Re-run setup wizard to change configuration
@@ -91,7 +91,6 @@ bun dev
 | `/agent` | List, activate, or deactivate subagents |
 | `/info` | Show active agent info and available tools |
 | `/setup` | Re-run the configuration wizard |
-| `/config` | Show current configuration |
 | `/clear` | Clear conversation |
 | `/exit` | Exit application |
 | `Ctrl+C` | Interrupt / Exit |

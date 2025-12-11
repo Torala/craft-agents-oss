@@ -17,9 +17,6 @@ export interface CraftAgentConfig {
   workspace: Workspace;
   mcpToken?: string;           // Override token (for testing)
   model?: string;
-  enableWebSearch?: boolean;
-  enableWebFetch?: boolean;
-  enableCodeExecution?: boolean;
 }
 
 // Message types for streaming - kept for TUI compatibility
@@ -425,9 +422,6 @@ export class CraftAgent {
   private config: CraftAgentConfig;
   private currentQuery: Query | null = null;
   private sessionId: string | null = null;
-  private webSearchEnabled: boolean;
-  private webFetchEnabled: boolean;
-  private codeExecutionEnabled: boolean;
   private pendingPermissions: Map<string, PendingPermission> = new Map();
   private pendingQuestions: Map<string, PendingQuestion> = new Map();
   private alwaysAllowedCommands: Set<string> = new Set(); // Base commands allowed for this session (e.g., "ls", "cat")
@@ -451,9 +445,6 @@ export class CraftAgent {
 
   constructor(config: CraftAgentConfig) {
     this.config = config;
-    this.webSearchEnabled = config.enableWebSearch ?? true;
-    this.webFetchEnabled = config.enableWebFetch ?? true;
-    this.codeExecutionEnabled = config.enableCodeExecution ?? true; // Default true - permission required per command
   }
 
   /**
@@ -543,8 +534,8 @@ export class CraftAgent {
     input: Record<string, unknown>,
     toolUseId: string
   ): Promise<{ allowed: boolean; updatedInput: Record<string, unknown> }> {
-    // Bash commands require permission when code execution is enabled
-    if (toolName === 'Bash' && this.codeExecutionEnabled) {
+    // Bash commands require permission
+    if (toolName === 'Bash') {
       const command = typeof input.command === 'string' ? input.command : JSON.stringify(input);
       const baseCommand = command.trim().split(/\s+/)[0] || command;
       const requestId = `perm-${toolUseId}`;
@@ -655,14 +646,8 @@ export class CraftAgent {
         return;
       }
 
-      // Build disallowed tools list based on user settings
+      // All tools are enabled - no disallowed tools
       const disallowedTools: string[] = [];
-      if (!this.webSearchEnabled) disallowedTools.push('WebSearch');
-      if (!this.webFetchEnabled) disallowedTools.push('WebFetch');
-      if (!this.codeExecutionEnabled) {
-        disallowedTools.push('Bash');
-        disallowedTools.push('BashOutput');
-      }
 
       // Build MCP servers config - always use HTTP (SDK handles connections efficiently)
       const token = await this.getToken();
@@ -735,18 +720,10 @@ export class CraftAgent {
                 return { continue: true };
               }
 
-              this.onDebug?.(`PreToolUse hook: ${input.tool_name}, codeExec=${this.codeExecutionEnabled}`);
+              this.onDebug?.(`PreToolUse hook: ${input.tool_name}`);
 
               // For Bash, check if we need permission
               if (input.tool_name === 'Bash') {
-                if (!this.codeExecutionEnabled) {
-                  return {
-                    continue: false,
-                    decision: 'block' as const,
-                    reason: 'Bash is disabled. Use /bash to enable.',
-                  };
-                }
-
                 // Extract command and base command
                 const command = typeof input.tool_input === 'object' && input.tool_input !== null
                   ? (input.tool_input as Record<string, unknown>).command
@@ -819,7 +796,7 @@ export class CraftAgent {
         // Custom permission handler for Bash commands and AskUserQuestion
         canUseTool: async (toolName, input, toolOptions) => {
           // Debug: show what tools are being called
-          this.onDebug?.(`canUseTool: ${toolName}, codeExec=${this.codeExecutionEnabled}`);
+          this.onDebug?.(`canUseTool: ${toolName}`);
 
           // Handle AskUserQuestion tool - needs user input
           if (toolName === 'AskUserQuestion') {
@@ -863,8 +840,8 @@ export class CraftAgent {
             }
           }
 
-          // Bash commands require user permission when code execution is enabled
-          if (toolName === 'Bash' && this.codeExecutionEnabled) {
+          // Bash commands require user permission
+          if (toolName === 'Bash') {
             const result = await this.checkToolPermission(toolName, input as Record<string, unknown>, toolOptions.toolUseID);
             if (result.allowed) {
               return { behavior: 'allow' as const, updatedInput: result.updatedInput };
@@ -1365,30 +1342,6 @@ export class CraftAgent {
 
   setSessionId(sessionId: string | null): void {
     this.sessionId = sessionId;
-  }
-
-  isWebSearchEnabled(): boolean {
-    return this.webSearchEnabled;
-  }
-
-  setWebSearchEnabled(enabled: boolean): void {
-    this.webSearchEnabled = enabled;
-  }
-
-  isWebFetchEnabled(): boolean {
-    return this.webFetchEnabled;
-  }
-
-  setWebFetchEnabled(enabled: boolean): void {
-    this.webFetchEnabled = enabled;
-  }
-
-  isCodeExecutionEnabled(): boolean {
-    return this.codeExecutionEnabled;
-  }
-
-  setCodeExecutionEnabled(enabled: boolean): void {
-    this.codeExecutionEnabled = enabled;
   }
 
   getActiveAgentDefinition(): SubAgentDefinition | null {

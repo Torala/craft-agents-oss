@@ -6,7 +6,7 @@ let documentationServerInstance: ReturnType<typeof createSdkMcpServer> | null = 
 
 /**
  * Get the documentation MCP server with the get_craft_documentation tool.
- * This provides on-demand documentation for Craft TUI Agent features,
+ * This provides on-demand documentation for Craft Agent features,
  * avoiding the need to embed lengthy instructions in the system prompt.
  */
 export function getDocumentationServer() {
@@ -17,7 +17,7 @@ export function getDocumentationServer() {
       tools: [
         tool(
           'get_craft_documentation',
-          `Get Craft TUI Agent documentation. Use this when users ask about:
+          `Get Craft Agent documentation. Use this when users ask about:
 - How to connect/add MCP servers
 - How to add REST APIs
 - How to create agents
@@ -48,7 +48,7 @@ IMPORTANT: Always call this tool BEFORE answering questions about MCP servers, A
 
 function getDocumentation(topic: string): string {
   const sections: Record<string, string> = {
-    mcp_servers: `## Adding MCP Servers in Craft TUI Agent
+    mcp_servers: `## Adding MCP Servers in Craft Agent
 
 MCP servers are configured via Craft documents, NOT config files.
 
@@ -80,7 +80,7 @@ https://example.com/mcp
 - Credentials stored in encrypted file (not config files)
 - DO NOT mention ~/.claude/settings.json or Claude Code MCP setup`,
 
-    rest_apis: `## Adding REST APIs in Craft TUI Agent
+    rest_apis: `## Adding REST APIs in Craft Agent
 
 REST APIs are auto-detected from Craft documents and converted to tools.
 
@@ -110,7 +110,7 @@ curl -X POST https://api.exa.ai/search \\
 - Include endpoint descriptions for better tool usage
 - Mention pagination/limit params to avoid large responses`,
 
-    creating_agents: `## Creating Agents in Craft TUI Agent
+    creating_agents: `## Creating Agents in Craft Agent
 
 Agents are defined in Craft documents (not code files).
 
@@ -129,7 +129,7 @@ Agents are defined in Craft documents (not code files).
 - \`@main\`
 - \`/agent clear\``,
 
-    authentication: `## Authentication in Craft TUI Agent
+    authentication: `## Authentication in Craft Agent
 
 All credentials stored in AES-256-GCM encrypted file at ~/.craft-agent/credentials.enc.
 
@@ -152,16 +152,16 @@ All credentials stored in AES-256-GCM encrypted file at ~/.craft-agent/credentia
 - \`/auth\` command to re-enter credentials
 - Automatic token refresh when possible`,
 
-    configuration: `## Craft TUI Agent Configuration
+    configuration: `## Craft Agent Configuration
 
-**IMPORTANT:** Craft TUI Agent uses different paths than Claude Code.
+**IMPORTANT:** Craft Agent uses different paths than Claude Code.
 
 ### Config directory:
-- Craft TUI Agent: \`~/.craft-agent/\`
+- Craft Agent: \`~/.craft-agent/\`
 - NOT \`~/.claude/\`
 
 ### Key differences from Claude Code:
-| Feature | Craft TUI Agent | Claude Code |
+| Feature | Craft Agent | Claude Code |
 |---------|-----------------|-------------|
 | Config dir | ~/.craft-agent/ | ~/.claude/ |
 | MCP servers | Craft documents | settings.json |
@@ -170,8 +170,8 @@ All credentials stored in AES-256-GCM encrypted file at ~/.craft-agent/credentia
 | Sessions | Workspaces | sessions |
 
 ### Available commands:
-\`/help\`, \`/clear\`, \`/tools\`, \`/config\`, \`/prefs\`,
-\`/setup\`, \`/model\`, \`/workspace\`, \`/agent\`, \`/auth\`, \`/exit\`
+\`/help\`, \`/clear\`, \`/tools\`, \`/settings\`, \`/prefs\`,
+\`/setup\`, \`/model\`, \`/workspace\`, \`/agent\`, \`/exit\`
 
 ### DO NOT reference:
 - ~/.claude/ directory

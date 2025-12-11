@@ -32,47 +32,87 @@ export function filterByPrefix<T>(
 // ============================================
 // Command definitions (single source of truth)
 // Order matters for tab completion - heavier/common commands first
+// Used by both filtering/autocomplete AND HelpPanel
 // ============================================
 
+export type CommandCategory =
+  | 'General'
+  | 'AI & Billing'
+  | 'Configuration'
+  | 'Workspace'
+  | 'Sub-Agents'
+  | 'Attaching Files'
+  | 'Troubleshooting';
+
+export interface CommandDefinition {
+  command: string;
+  description: string;
+  category: CommandCategory;
+}
+
 /**
- * Primary commands with descriptions.
+ * Primary commands with descriptions and categories.
  * Order determines tab completion priority (first match wins).
  * Heavier commands (agent, workspace, model) are prioritized.
  */
-export const COMMANDS: [string, string][] = [
-  // Heavy/common commands first
-  ['/agent', 'Manage sub-agents (list, create, clear, info)'],
-  ['/workspace', 'Switch workspace (add, rename, remove)'],
-  ['/model', 'Show or change the Claude model'],
-  // Standard commands
-  ['/help', 'Show help and available commands'],
-  ['/clear', 'Clear conversation history'],
-  ['/tools', 'List available tools (-v for details)'],
-  ['/config', 'Show current configuration'],
-  ['/cost', 'Show token usage and estimated cost'],
-  ['/balance', 'Open Craft AI Credits top-up page'],
-  ['/compact', 'Toggle compact mode for tool output'],
-  // Feature toggles
-  ['/web', 'Toggle web search capability'],
-  ['/fetch', 'Toggle web fetch capability'],
-  ['/bash', 'Toggle bash/shell execution'],
-  // File operations
-  ['/paste', 'Paste files/images from clipboard'],
-  // Settings
-  ['/prefs', 'Show user preferences'],
-  ['/setup', 'Reconfigure API keys and MCP settings'],
-  ['/apikey', 'Change Anthropic API key'],
-  // Debug/exit
-  ['/debug', 'Show conversation file path'],
-  ['/feedback', 'Send feedback with session transcript'],
-  ['/exit', 'Exit the application'],
+export const COMMANDS: CommandDefinition[] = [
+  // Heavy/common commands first (for tab completion priority)
+  { command: '/agent', description: 'Manage sub-agents (list, info, refresh, clear)', category: 'Sub-Agents' },
+  { command: '/workspace', description: 'Switch workspace (add, rename, remove)', category: 'Workspace' },
+  { command: '/model', description: 'Show or change model (e.g., /model opus)', category: 'AI & Billing' },
+
+  // General
+  { command: '/help', description: 'Show help and available commands', category: 'General' },
+  { command: '/clear', description: 'Clear conversation history', category: 'General' },
+  { command: '/exit', description: 'Exit the application (or Ctrl+C)', category: 'General' },
+
+  // AI & Billing
+  { command: '/credits', description: 'View billing method and manage credits', category: 'AI & Billing' },
+  { command: '/balance', description: 'Open Craft AI Credits top-up page', category: 'AI & Billing' },
+  { command: '/tools', description: 'List available tools (-v for details)', category: 'AI & Billing' },
+
+  // Configuration
+  { command: '/settings', description: 'Open settings menu', category: 'Configuration' },
+  { command: '/prefs', description: 'Your personalisation (name, timezone, etc.)', category: 'Configuration' },
+  { command: '/logout', description: 'Clear all settings and credentials', category: 'Configuration' },
+
+  // Attaching Files
+  { command: '/paste', description: 'Paste files/images from clipboard', category: 'Attaching Files' },
+
+  // Troubleshooting
+  { command: '/debug', description: 'Show debug info and file paths', category: 'Troubleshooting' },
+  { command: '/feedback', description: 'Send feedback email with session transcript', category: 'Troubleshooting' },
 ];
 
-/** Command lookup map for descriptions */
-export const COMMAND_MAP: Record<string, string> = Object.fromEntries(COMMANDS);
+/** Category display order for HelpPanel */
+export const CATEGORY_ORDER: CommandCategory[] = [
+  'General',
+  'AI & Billing',
+  'Configuration',
+  'Workspace',
+  'Sub-Agents',
+  'Attaching Files',
+  'Troubleshooting',
+];
 
-/** Ordered list of primary commands (for filtering/completion) */
-export const PRIMARY_COMMANDS: string[] = COMMANDS.map(([cmd]) => cmd);
+/** Get commands grouped by category (for HelpPanel) */
+export function getCommandsByCategory(): Map<CommandCategory, CommandDefinition[]> {
+  const map = new Map<CommandCategory, CommandDefinition[]>();
+  for (const cmd of COMMANDS) {
+    const existing = map.get(cmd.category) || [];
+    existing.push(cmd);
+    map.set(cmd.category, existing);
+  }
+  return map;
+}
+
+/** Command lookup map for descriptions (derived) */
+export const COMMAND_MAP: Record<string, string> = Object.fromEntries(
+  COMMANDS.map(c => [c.command, c.description])
+);
+
+/** Ordered list of primary commands for filtering/completion (derived) */
+export const PRIMARY_COMMANDS: string[] = COMMANDS.map(c => c.command);
 
 /** Aliases that map to primary commands (exact match only, no partial matching) */
 export const COMMAND_ALIASES: Record<string, string> = {
@@ -81,8 +121,6 @@ export const COMMAND_ALIASES: Record<string, string> = {
   '/quit': '/exit',
   '/image': '/paste',
   '/preferences': '/prefs',
-  '/websearch': '/web',
-  '/webfetch': '/fetch',
   '/w': '/workspace',
 };
 
@@ -308,7 +346,7 @@ export function getCommandHint(input: string): HintData {
     return {
       selected: null,
       description: null,
-      others: ['/agent', '/workspace', '/model', '/help', '/clear', '/tools', '/web', '/cost', '/balance', '/exit'],
+      others: ['/agent', '/workspace', '/model', '/help', '/clear', '/tools', '/cost', '/balance', '/exit'],
     };
   }
 

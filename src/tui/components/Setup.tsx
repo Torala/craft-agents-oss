@@ -1,80 +1,106 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { Box, Text, useInput, useApp } from 'ink';
-import { saveConfig, getConfigPath, generateWorkspaceId, loadStoredConfig, getActiveWorkspace, type StoredConfig, type Workspace, type AuthType } from '../../config/storage.ts';
-import { CraftOAuth, getMcpBaseUrl } from '../../auth/oauth.ts';
+import { saveConfig, getConfigPath, generateWorkspaceId, loadStoredConfig, getActiveWorkspace, type StoredConfig, type Workspace, type AuthType, type OAuthCredentials, type McpAuthType } from '../../config/storage.ts';
+import { type AuthState, type SetupNeeds } from '../../auth/state.ts';
 import { getExistingClaudeToken, isClaudeCliInstalled, runClaudeSetupToken } from '../../auth/claude-token.ts';
 import { getCredentialManager } from '../../credentials/index.ts';
 import { validateMcpConnection, getValidationErrorMessage } from '../../mcp/validation.ts';
+import { CraftOAuth, getMcpBaseUrl } from '../../auth/oauth.ts';
 import { TextInput } from './TextInput.tsx';
 import { AnimatedSpinner } from './Spinner.tsx';
-import { McpUrlTypeStep, type McpUrlMethod } from './McpUrlTypeStep.tsx';
-import { CraftAuth } from './craftAuth/CraftAuth.tsx';
+import { CraftCallbackStep, type CraftProfile } from './craftAuth/CraftCallbackStep.tsx';
+import { CraftSpaceSelector, McpLinkSelector, type McpLink } from './craftAuth/CraftSpaceSelector.tsx';
+import { CraftApi } from '../../clients/craftApi.ts';
 
-type SetupStep = 'welcome' | 'auth-type' | 'api-key' | 'oauth-token' | 'oauth-token-setup' | 'mcp-url-type' | 'mcp-url' | 'craft-auth' | 'checking-auth' | 'no-oauth-options' | 'oauth-auth' | 'bearer-token' | 'confirm' | 'complete' | 'error' | 'validating';
+// Streamlined flow: Craft Login -> Select Space -> [Select MCP] -> MCP Validation -> Billing -> [Credentials] -> Save
+type SetupStep =
+  | 'welcome'
+  | 'craft-login'        // Craft OAuth (mandatory first step)
+  | 'select-space'       // Select Craft space
+  | 'select-mcp'         // Select existing MCP or create new (if multiple exist)
+  | 'mcp-validating'     // Validate MCP connection (after space/mcp selection)
+  | 'mcp-auth'           // MCP OAuth if server requires it
+  | 'billing-method'     // Choose: craft_credits | api_key | oauth_token
+  | 'api-key-entry'      // Enter Anthropic API key
+  | 'oauth-token-entry'  // Enter Claude Max OAuth token
+  | 'oauth-token-setup'  // Running claude setup-token
+  | 'saving'             // Saving configuration
+  | 'complete'
+  | 'error';
 
 export interface SetupProps {
   onComplete: (config: StoredConfig) => void;
   onCancel: () => void;
+  /** Current auth state from getAuthState() */
+  authState: AuthState;
+  /** Derived setup needs from getSetupNeeds() */
+  setupNeeds: SetupNeeds;
 }
 
-export const Setup: React.FC<SetupProps> = ({ onComplete, onCancel }) => {
+/**
+ * Determine the initial setup step based on what's missing
+ */
+function getInitialStep(setupNeeds: SetupNeeds, authState: AuthState): SetupStep {
+  if (setupNeeds.needsCraftAuth) {
+    // Need Craft auth and/or workspace - start from beginning
+    return 'craft-login';
+  }
+  if (setupNeeds.needsBillingConfig) {
+    // Have Craft + workspace, just need billing config
+    return 'billing-method';
+  }
+  if (setupNeeds.needsCredentials) {
+    // Have billing type, just need to enter credentials
+    if (authState.billing.type === 'api_key') return 'api-key-entry';
+    if (authState.billing.type === 'oauth_token') return 'oauth-token-entry';
+  }
+  // Fully configured - shouldn't be in setup, but default to complete
+  return 'complete';
+}
+
+export const Setup: React.FC<SetupProps> = ({ onComplete, onCancel, authState, setupNeeds }) => {
   const { exit } = useApp();
-  const [step, setStep] = useState<SetupStep>('welcome');
-  const [authType, setAuthType] = useState<AuthType>('api_key');
+
+  // Determine initial step based on what's missing
+  const [step, setStep] = useState<SetupStep>(() => getInitialStep(setupNeeds, authState));
+
+  // Craft login state - initialize from authState if available
+  const [craftToken, setCraftToken] = useState<string | null>(authState.craft.token);
+  const [craftProfile, setCraftProfile] = useState<CraftProfile | null>(null);
+
+  // Space/MCP selection state - initialize from authState if available
+  const [selectedSpaceId, setSelectedSpaceId] = useState<string | null>(null);
+  const [selectedSpaceName, setSelectedSpaceName] = useState<string>(
+    authState.workspace.active?.name || ''
+  );
+  const [mcpLinks, setMcpLinks] = useState<Array<{ name: string; linkId: string; mcpUrl: string }>>([]);
+  const [mcpUrl, setMcpUrl] = useState(authState.workspace.active?.mcpUrl || '');
+
+  // MCP OAuth state (for servers that require additional OAuth)
+  const [mcpOAuthStatus, setMcpOAuthStatus] = useState('');
+  const [mcpOAuthResult, setMcpOAuthResult] = useState<OAuthCredentials | null>(null);
+  const [mcpOAuthClient, setMcpOAuthClient] = useState<CraftOAuth | null>(null);
+
+  // Billing method state - initialize from authState if available
+  const [billingMethod, setBillingMethod] = useState<AuthType>(
+    authState.billing.type || 'craft_credits'
+  );
   const [apiKey, setApiKey] = useState('');
   const [oauthToken, setOauthToken] = useState('');
-  const [mcpUrl, setMcpUrl] = useState('');
-  const [workspaceName, setWorkspaceName] = useState('Default');
   const [oauthStatus, setOauthStatus] = useState('');
 
-  // Track if we have existing MCP config to skip those steps
-  const [hasExistingMcp, setHasExistingMcp] = useState(false);
-  const [existingWorkspace, setExistingWorkspace] = useState<Workspace | null>(null);
+  // Derive whether we have existing workspace (for back navigation logic)
+  const hasExistingWorkspace = authState.workspace.hasWorkspace;
+  const existingWorkspace = authState.workspace.active;
 
-  // Load existing config on mount
-  useEffect(() => {
-    const loadExisting = async () => {
-      const existingConfig = loadStoredConfig();
-      const activeWorkspace = getActiveWorkspace();
-      if (existingConfig && activeWorkspace && activeWorkspace.mcpUrl) {
-        setHasExistingMcp(true);
-        setExistingWorkspace(activeWorkspace);
-        setMcpUrl(activeWorkspace.mcpUrl);
-        setIsPublicServer(activeWorkspace.isPublic ?? false);
-
-        // Load OAuth from credential store
-        const manager = getCredentialManager();
-        const oauth = await manager.getWorkspaceOAuth(activeWorkspace.id);
-        if (oauth) {
-          setOauthResult({
-            accessToken: oauth.accessToken,
-            refreshToken: oauth.refreshToken,
-            expiresAt: oauth.expiresAt,
-            clientId: oauth.clientId || '',
-            tokenType: oauth.tokenType || 'Bearer',
-          });
-        }
-      }
-    };
-    loadExisting();
-  }, []);
-  const [oauthResult, setOauthResult] = useState<{
-    accessToken: string;
-    refreshToken?: string;
-    expiresAt?: number;
-    clientId: string;
-    tokenType: string;
-  } | null>(null);
-  const [isPublicServer, setIsPublicServer] = useState(false);
-  const [mcpBearerToken, setMcpBearerToken] = useState('');
+  // UI state
   const [error, setError] = useState<string | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [showApiKey, setShowApiKey] = useState(false);
-  const [showOauthToken, setShowOauthToken] = useState(false);
-  const [oauthClient, setOauthClient] = useState<CraftOAuth | null>(null);
+
+  // Claude CLI state (for Claude Max option)
   const [hasClaudeCli, setHasClaudeCli] = useState(false);
   const [existingClaudeToken, setExistingClaudeToken] = useState<string | null>(null);
-  const [isRunningSetupToken, setIsRunningSetupToken] = useState(false);
   const [envApiKey, setEnvApiKey] = useState<string | null>(null);
 
   // Check for Claude CLI and ANTHROPIC_API_KEY env var on mount
@@ -94,10 +120,10 @@ export const Setup: React.FC<SetupProps> = ({ onComplete, onCancel }) => {
       if (step === 'welcome') {
         exit();
       } else {
-        // Cancel OAuth flow if in progress
-        if (oauthClient) {
-          oauthClient.cancel();
-          setOauthClient(null);
+        // Cancel MCP OAuth if in progress
+        if (mcpOAuthClient) {
+          mcpOAuthClient.cancel();
+          setMcpOAuthClient(null);
         }
         onCancel();
       }
@@ -105,200 +131,160 @@ export const Setup: React.FC<SetupProps> = ({ onComplete, onCancel }) => {
 
     // Toggle visibility for sensitive fields
     if (key.ctrl && input === 'v') {
-      if (step === 'api-key') setShowApiKey(!showApiKey);
-      if (step === 'oauth-token') setShowOauthToken(!showOauthToken);
+      if (step === 'api-key-entry') setShowApiKey(!showApiKey);
     }
 
-    // Handle validation step retry/back/edit
-    if (step === 'validating' && validationError) {
+    // Handle MCP validation step retry/back
+    if (step === 'mcp-validating' && validationError) {
       if (key.return) {
         // Retry validation
-        handleConfirm();
+        validateMcp();
       } else if (key.escape) {
-        // Go back to confirm step
+        // Go back to space selection
         setValidationError(null);
-        setStep('confirm');
-      } else if (input.toLowerCase() === 'e') {
-        // Edit MCP connection - go back to MCP URL step
-        setValidationError(null);
-        setOauthResult(null);
-        setIsPublicServer(false);
-        setMcpBearerToken('');
-        setStep('mcp-url');
+        setStep('select-space');
       }
     }
   });
 
+  // === NEW HANDLERS FOR CRAFT-FIRST FLOW ===
+
+  // Welcome -> Craft Login (or billing-method if hasExistingWorkspace)
+  // For new users, we skip welcome and go straight to craft-login
   const handleWelcome = useCallback(() => {
-    setStep('auth-type');
+    // Only used when hasExistingWorkspace - skip to billing method
+    setStep('billing-method');
   }, []);
 
-  const handleAuthTypeSelect = useCallback((type: AuthType) => {
-    setAuthType(type);
-    if (type === 'api_key') {
-      setStep('api-key');
-    } else {
-      // Check for existing Claude token
-      const existing = getExistingClaudeToken();
-      if (existing) {
-        setExistingClaudeToken(existing);
-      }
-      setStep('oauth-token');
-    }
+  // Craft OAuth complete -> Select Space
+  const handleCraftLoginComplete = useCallback((token: string, profile: CraftProfile) => {
+    setCraftToken(token);
+    setCraftProfile(profile);
+    setStep('select-space');
   }, []);
 
-  const handleOauthToken = useCallback((value: string) => {
-    if (!value.trim()) return;
-    setOauthToken(value.trim());
-    // Skip MCP setup if we have existing config
-    if (hasExistingMcp) {
-      setStep('confirm');
-    } else {
-      setStep('mcp-url-type');
-    }
-  }, [hasExistingMcp]);
+  // Space selected -> Check for existing MCP links
+  const handleSpaceSelected = useCallback(async (spaceId: string, spaceName: string) => {
+    setSelectedSpaceId(spaceId);
+    setSelectedSpaceName(spaceName);
 
-  const handleUseExistingToken = useCallback(() => {
-    if (existingClaudeToken) {
-      setOauthToken(existingClaudeToken);
-      if (hasExistingMcp) {
-        setStep('confirm');
-      } else {
-        setStep('mcp-url-type');
-      }
-    }
-  }, [existingClaudeToken, hasExistingMcp]);
+    if (!craftToken) return;
 
-  const handleRunSetupToken = useCallback(async () => {
-    setStep('oauth-token-setup');
-    setIsRunningSetupToken(true);
+    // Show loading state
+    setStep('mcp-validating');
+    setValidationError(null);
 
-    const result = await runClaudeSetupToken((status) => {
-      setOauthStatus(status);
-    });
-
-    setIsRunningSetupToken(false);
-
-    if (result.success && result.token) {
-      setOauthToken(result.token);
-      setExistingClaudeToken(result.token);
-      if (hasExistingMcp) {
-        setStep('confirm');
-      } else {
-        setStep('mcp-url-type');
-      }
-    } else {
-      setError(result.error || 'Failed to get token');
-      setStep('oauth-token');
-    }
-  }, [hasExistingMcp]);
-
-  const handleApiKey = useCallback((value: string) => {
-    if (!value.trim()) return;
-    setApiKey(value.trim());
-    // Skip MCP setup if we have existing config
-    if (hasExistingMcp) {
-      setStep('confirm');
-    } else {
-      setStep('mcp-url-type');
-    }
-  }, [hasExistingMcp]);
-
-  const handleUseEnvKey = useCallback(() => {
-    if (envApiKey) {
-      setAuthType('api_key');
-      setApiKey(envApiKey);
-      if (hasExistingMcp) {
-        setStep('confirm');
-      } else {
-        setStep('mcp-url-type');
-      }
-    }
-  }, [envApiKey, hasExistingMcp]);
-
-  const handleMcpUrlTypeSelect = useCallback((method: McpUrlMethod) => {
-    if (method === 'paste') {
-      setStep('mcp-url');
-    } else {
-      setStep('craft-auth');
-    }
-  }, []);
-
-  const handleCraftAuthComplete = useCallback((url: string, spaceName: string) => {
-    setMcpUrl(url);
-    setWorkspaceName(spaceName);
-    setIsPublicServer(true);
-    setStep('confirm');
-  }, []);
-
-  const handleMcpUrl = useCallback((value: string) => {
-    if (!value.trim()) return;
-
-    // Basic URL validation
     try {
-      new URL(value.trim());
-      setMcpUrl(value.trim());
-      setStep('checking-auth');
-    } catch {
-      setError('Please enter a valid URL');
-    }
-  }, []);
+      const craftApi = new CraftApi('https://api.craft.do');
+      const workflowLinks = await craftApi.getWorkflowLinks({ authToken: craftToken, spaceId });
 
-  const handleNoOAuthSelect = useCallback((method: 'bearer' | 'public') => {
-    if (method === 'bearer') {
-      setStep('bearer-token');
-    } else {
-      setIsPublicServer(true);
-      setStep('confirm');
-    }
-  }, []);
+      // Filter for fullSpace MCP links that are enabled
+      const fullSpaceMcpLinks = workflowLinks
+        .filter(link => link.type === 'mcp' && link.scope === 'fullSpace' && link.enabled && link.urls?.mcp)
+        .map(link => ({
+          name: link.name,
+          linkId: link.linkId,
+          mcpUrl: link.urls.mcp!,
+        }));
 
-  const handleMcpBearerToken = useCallback((token: string) => {
-    if (!token.trim()) return;
-    setMcpBearerToken(token.trim());
-    setStep('confirm');
-  }, []);
-
-  // Check if OAuth is required when entering checking-auth step
-  useEffect(() => {
-    if (step !== 'checking-auth' || !mcpUrl) return;
-
-    const mcpBaseUrl = getMcpBaseUrl(mcpUrl);
-    const oauth = new CraftOAuth(
-      { mcpBaseUrl },
-      {
-        onStatus: (message) => setOauthStatus(message),
-        onError: () => {},
+      if (fullSpaceMcpLinks.length > 0) {
+        // Multiple MCP links exist - show selection step
+        setMcpLinks(fullSpaceMcpLinks);
+        setStep('select-mcp');
+      } else {
+        // No existing MCP links - create one automatically
+        await createNewMcpLink(spaceId, spaceName);
       }
-    );
+    } catch (err) {
+      // If we can't get workflow links, try creating a new one
+      await createNewMcpLink(spaceId, spaceName);
+    }
+  }, [craftToken]);
 
-    setOauthStatus('Checking server authentication requirements...');
+  // Create a new MCP link for the space
+  const createNewMcpLink = useCallback(async (spaceId?: string, spaceName?: string) => {
+    const id = spaceId || selectedSpaceId;
+    const name = spaceName || selectedSpaceName;
+    if (!id || !name || !craftToken) return;
 
-    oauth.checkAuthRequired()
-      .then((authRequired) => {
-        if (authRequired) {
-          setIsPublicServer(false);
-          setStep('oauth-auth');
-        } else {
-          // No OAuth detected - offer bearer token or public options
-          setStep('no-oauth-options');
-        }
-      })
-      .catch(() => {
-        // Can't detect OAuth - offer alternatives
-        setStep('no-oauth-options');
+    setStep('mcp-validating');
+    setValidationError(null);
+
+    try {
+      const craftApi = new CraftApi('https://api.craft.do');
+      const link = await craftApi.createSpaceWorkflowLink({
+        authToken: craftToken,
+        spaceId: id,
+        name: 'Craft Agent MCP',
+        type: 'mcp',
+        scope: 'fullSpace'
       });
-  }, [step, mcpUrl]);
 
-  // Start OAuth flow when entering oauth-auth step
-  useEffect(() => {
-    if (step !== 'oauth-auth' || !mcpUrl) return;
+      if (link.urls?.mcp) {
+        // Save Craft OAuth token and proceed to validation
+        const manager = getCredentialManager();
+        await manager.setCraftOAuth(craftToken);
+        setMcpUrl(link.urls.mcp);
+        // Now validate the MCP connection
+        validateMcp(link.urls.mcp);
+      } else {
+        setValidationError('Failed to create MCP connection');
+      }
+    } catch (err) {
+      setValidationError(err instanceof Error ? err.message : 'Failed to create MCP connection');
+    }
+  }, [craftToken, selectedSpaceId, selectedSpaceName]);
 
-    const mcpBaseUrl = getMcpBaseUrl(mcpUrl);
+  // MCP link selected -> Validate MCP
+  const handleMcpSelected = useCallback(async (url: string) => {
+    // Save Craft OAuth token
+    if (craftToken) {
+      const manager = getCredentialManager();
+      await manager.setCraftOAuth(craftToken);
+    }
+    setMcpUrl(url);
+    setStep('mcp-validating');
+    validateMcp(url);
+  }, [craftToken]);
+
+  // Validate MCP connection - called after space selection
+  const validateMcp = useCallback(async (urlOverride?: string) => {
+    const url = urlOverride || mcpUrl;
+    setValidationError(null);
+
+    try {
+      const manager = getCredentialManager();
+      const craftOAuthToken = await manager.getCraftOAuth();
+
+      // Try to validate the MCP connection
+      const validationResult = await validateMcpConnection({
+        mcpUrl: url,
+        mcpAccessToken: craftOAuthToken || undefined,
+      });
+
+      if (validationResult.errorType === 'needs-auth') {
+        // MCP server requires OAuth - start OAuth flow
+        setStep('mcp-auth');
+        startMcpOAuth(url);
+      } else if (validationResult.success) {
+        // Connected! Proceed to billing
+        setStep('billing-method');
+      } else {
+        // Failed - show error
+        setValidationError(getValidationErrorMessage(validationResult));
+      }
+    } catch (err) {
+      setValidationError(err instanceof Error ? err.message : 'Failed to validate MCP connection');
+    }
+  }, [mcpUrl]);
+
+  // Start MCP OAuth flow
+  const startMcpOAuth = useCallback(async (url: string) => {
+    const mcpBaseUrl = getMcpBaseUrl(url);
     const oauth = new CraftOAuth(
       { mcpBaseUrl },
       {
-        onStatus: (message) => setOauthStatus(message),
+        onStatus: (message) => setMcpOAuthStatus(message),
         onError: (errorMsg) => {
           setError(errorMsg);
           setStep('error');
@@ -306,82 +292,59 @@ export const Setup: React.FC<SetupProps> = ({ onComplete, onCancel }) => {
       }
     );
 
-    setOauthClient(oauth);
-
-    oauth.authenticate()
-      .then(({ tokens, clientId }) => {
-        setOauthResult({
-          accessToken: tokens.accessToken,
-          refreshToken: tokens.refreshToken,
-          expiresAt: tokens.expiresAt,
-          clientId,
-          tokenType: tokens.tokenType,
-        });
-        setOauthClient(null);
-        setStep('confirm');
-      })
-      .catch((err) => {
-        // OAuth failed - offer bearer token as alternative
-        setOauthStatus(err instanceof Error ? err.message : 'OAuth failed');
-        setOauthClient(null);
-        setStep('no-oauth-options');
-      });
-
-    return () => {
-      oauth.cancel();
-    };
-  }, [step, mcpUrl]);
-
-  const handleConfirm = useCallback(async () => {
-    // For new MCP setup, we need OAuth, bearer token, or public
-    if (!hasExistingMcp && !isPublicServer && !oauthResult && !mcpBearerToken) {
-      setError('MCP authentication not completed');
-      setStep('error');
-      return;
-    }
-
-    setStep('validating');
-    setValidationError(null);
+    setMcpOAuthClient(oauth);
 
     try {
-      // Determine MCP access token for validation
-      let mcpAccessToken: string | undefined;
-      if (oauthResult) {
-        mcpAccessToken = oauthResult.accessToken;
-      } else if (mcpBearerToken) {
-        mcpAccessToken = mcpBearerToken;
-      }
-      // For public servers, no token needed
+      const { tokens, clientId } = await oauth.authenticate();
+      const oauthCreds: OAuthCredentials = {
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        expiresAt: tokens.expiresAt,
+        clientId,
+        tokenType: tokens.tokenType,
+      };
+      setMcpOAuthResult(oauthCreds);
+      setMcpOAuthClient(null);
+      // OAuth successful, proceed to billing
+      setStep('billing-method');
+    } catch (err) {
+      setMcpOAuthClient(null);
+      setError(err instanceof Error ? err.message : 'MCP OAuth authentication failed');
+      setStep('error');
+    }
+  }, []);
 
-      // Validate MCP connection using SDK
-      const validationResult = await validateMcpConnection({
-        mcpUrl,
-        mcpAccessToken,
-        claudeApiKey: authType === 'api_key' ? apiKey : undefined,
-        claudeOAuthToken: authType === 'oauth_token' ? oauthToken : undefined,
-      });
+  // Save configuration - called after credentials are gathered
+  // MCP is already validated at this point
+  const saveConfiguration = useCallback(async (
+    method: AuthType,
+    apiKeyOverride?: string,
+    oauthTokenOverride?: string
+  ) => {
+    setStep('saving');
 
-      if (!validationResult.success) {
-        setValidationError(getValidationErrorMessage(validationResult));
-        return; // Stay on validating step with error
-      }
-
-      // Validation passed - save credentials to credential store
+    try {
       const manager = getCredentialManager();
+      const finalApiKey = apiKeyOverride || apiKey;
+      const finalOauthToken = oauthTokenOverride || oauthToken;
 
-      // Save Claude credentials to credential store
-      if (authType === 'api_key' && apiKey) {
-        await manager.setApiKey(apiKey);
-      } else if (authType === 'oauth_token' && oauthToken) {
-        await manager.setClaudeOAuth(oauthToken);
+      // Save credentials based on billing method
+      if (method === 'api_key' && finalApiKey) {
+        await manager.setApiKey(finalApiKey);
+      } else if (method === 'oauth_token' && finalOauthToken) {
+        await manager.setClaudeOAuth(finalOauthToken);
       }
+      // For craft_credits, Craft OAuth is already saved by CraftSpaceSelector
+
+      // Save MCP OAuth credentials if we obtained them
+      // (Will be used later when creating the workspace)
 
       // Reuse existing workspace or create new one
       let workspace: Workspace;
       let workspaceId: string;
 
-      if (hasExistingMcp && existingWorkspace) {
-        // Reuse existing workspace (just updating auth)
+      if (hasExistingWorkspace && existingWorkspace) {
+        // Reuse existing workspace (just updating billing method)
         workspace = existingWorkspace;
         workspaceId = existingWorkspace.id;
       } else {
@@ -389,24 +352,23 @@ export const Setup: React.FC<SetupProps> = ({ onComplete, onCancel }) => {
         workspaceId = generateWorkspaceId();
         workspace = {
           id: workspaceId,
-          name: workspaceName,
+          name: selectedSpaceName || 'Craft Workspace',
           mcpUrl: mcpUrl,
-          isPublic: isPublicServer,
+          // MCP servers have their own OAuth, separate from Craft platform OAuth
+          mcpAuthType: 'workspace_oauth' as McpAuthType,
           createdAt: Date.now(),
         };
       }
 
-      // Save workspace credentials to credential store (not in config)
-      if (oauthResult) {
+      // Save MCP OAuth credentials to workspace if obtained
+      if (mcpOAuthResult) {
         await manager.setWorkspaceOAuth(workspaceId, {
-          accessToken: oauthResult.accessToken,
-          refreshToken: oauthResult.refreshToken,
-          expiresAt: oauthResult.expiresAt,
-          clientId: oauthResult.clientId,
-          tokenType: oauthResult.tokenType,
+          accessToken: mcpOAuthResult.accessToken,
+          refreshToken: mcpOAuthResult.refreshToken,
+          expiresAt: mcpOAuthResult.expiresAt,
+          clientId: mcpOAuthResult.clientId,
+          tokenType: mcpOAuthResult.tokenType,
         });
-      } else if (mcpBearerToken) {
-        await manager.setWorkspaceBearer(workspaceId, mcpBearerToken);
       }
 
       // Load existing config to preserve other workspaces
@@ -415,8 +377,8 @@ export const Setup: React.FC<SetupProps> = ({ onComplete, onCancel }) => {
 
       // Update or add the workspace
       let updatedWorkspaces: Workspace[];
-      if (hasExistingMcp && existingWorkspace) {
-        // Keep all existing workspaces as-is (we're just changing Claude auth)
+      if (hasExistingWorkspace && existingWorkspace) {
+        // Keep all existing workspaces as-is (we're just changing billing method)
         updatedWorkspaces = existingWorkspaces;
       } else {
         // Add new workspace
@@ -425,7 +387,7 @@ export const Setup: React.FC<SetupProps> = ({ onComplete, onCancel }) => {
 
       // Build config (credentials stored in credential store, not here)
       const config: StoredConfig = {
-        authType,
+        authType: method,
         workspaces: updatedWorkspaces,
         activeWorkspaceId: workspaceId,
       };
@@ -441,329 +403,351 @@ export const Setup: React.FC<SetupProps> = ({ onComplete, onCancel }) => {
       setError(err instanceof Error ? err.message : 'Failed to save configuration');
       setStep('error');
     }
-  }, [apiKey, oauthToken, authType, mcpUrl, workspaceName, oauthResult, isPublicServer, mcpBearerToken, onComplete, hasExistingMcp, existingWorkspace]);
+  }, [apiKey, oauthToken, mcpUrl, selectedSpaceName, onComplete, hasExistingWorkspace, existingWorkspace, mcpOAuthResult]);
+
+  // Billing method selected -> Credentials entry or Save
+  const handleBillingMethodSelect = useCallback((method: AuthType) => {
+    setBillingMethod(method);
+    if (method === 'craft_credits') {
+      // No additional credentials needed - go straight to save
+      saveConfiguration(method);
+    } else if (method === 'api_key') {
+      setStep('api-key-entry');
+    } else {
+      // oauth_token - check for existing Claude token first
+      const existing = getExistingClaudeToken();
+      if (existing) {
+        setExistingClaudeToken(existing);
+      }
+      setStep('oauth-token-entry');
+    }
+  }, [saveConfiguration]);
+
+  // API key entered -> Save
+  const handleApiKeySubmit = useCallback((value: string) => {
+    if (!value.trim()) return;
+    setApiKey(value.trim());
+    saveConfiguration('api_key', value.trim());
+  }, [saveConfiguration]);
+
+  // OAuth token entered -> Save
+  const handleOauthTokenSubmit = useCallback((value: string) => {
+    if (!value.trim()) return;
+    setOauthToken(value.trim());
+    saveConfiguration('oauth_token', undefined, value.trim());
+  }, [saveConfiguration]);
+
+  // Use existing Claude token -> Save
+  const handleUseExistingToken = useCallback(() => {
+    if (existingClaudeToken) {
+      setOauthToken(existingClaudeToken);
+      saveConfiguration('oauth_token', undefined, existingClaudeToken);
+    }
+  }, [existingClaudeToken, saveConfiguration]);
+
+  // Run claude setup-token
+  const handleRunSetupToken = useCallback(async () => {
+    setStep('oauth-token-setup');
+
+    const result = await runClaudeSetupToken((status) => {
+      setOauthStatus(status);
+    });
+
+    if (result.success && result.token) {
+      setOauthToken(result.token);
+      setExistingClaudeToken(result.token);
+      saveConfiguration('oauth_token', undefined, result.token);
+    } else {
+      setError(result.error || 'Failed to get token');
+      setStep('oauth-token-entry');
+    }
+  }, [saveConfiguration]);
 
   const handleBack = useCallback(() => {
     setError(null);
-    // Cancel any ongoing OAuth flow
-    if (oauthClient) {
-      oauthClient.cancel();
-      setOauthClient(null);
-    }
+    setValidationError(null);
     switch (step) {
-      case 'auth-type':
-        setStep('welcome');
+      case 'craft-login':
+        // New users pressing back on first step - cancel/exit
+        onCancel();
         break;
-      case 'api-key':
-      case 'oauth-token':
-        setStep('auth-type');
+      case 'select-space':
+        // Go back to craft login (need to re-auth)
+        setCraftToken(null);
+        setCraftProfile(null);
+        setStep('craft-login');
         break;
-      case 'mcp-url-type':
-        if (authType === 'api_key') {
-          setStep('api-key');
+      case 'select-mcp':
+        // Go back to space selection
+        setMcpLinks([]);
+        setStep('select-space');
+        break;
+      case 'mcp-validating':
+      case 'mcp-auth':
+        // Cancel MCP OAuth if in progress
+        if (mcpOAuthClient) {
+          mcpOAuthClient.cancel();
+          setMcpOAuthClient(null);
+        }
+        setMcpOAuthResult(null);
+        // Go back to MCP selection if we have links, otherwise space selection
+        if (mcpLinks.length > 0) {
+          setStep('select-mcp');
         } else {
-          setStep('oauth-token');
+          setStep('select-space');
         }
         break;
-      case 'mcp-url':
-      case 'craft-auth':
-        setStep('mcp-url-type');
-        break;
-      case 'checking-auth':
-      case 'no-oauth-options':
-      case 'oauth-auth':
-        setStep('mcp-url');
-        break;
-      case 'bearer-token':
-        setStep('no-oauth-options');
-        break;
-      case 'confirm':
-        // If we skipped MCP setup, go back to auth input
-        if (hasExistingMcp) {
-          if (authType === 'api_key') {
-            setStep('api-key');
-          } else {
-            setStep('oauth-token');
-          }
+      case 'billing-method':
+        if (hasExistingWorkspace) {
+          // Go back to welcome if existing MCP
+          setStep('welcome');
         } else {
-          setStep('mcp-url'); // Go back to URL, will re-check auth
-          setOauthResult(null);
-          setIsPublicServer(false);
-          setMcpBearerToken('');
+          // Go back to space selection (MCP is already validated, can try different space)
+          setStep('select-space');
         }
+        break;
+      case 'api-key-entry':
+      case 'oauth-token-entry':
+      case 'oauth-token-setup':
+        setStep('billing-method');
         break;
       case 'error':
-        if (hasExistingMcp) {
-          setStep('auth-type');
+        if (hasExistingWorkspace) {
+          setStep('welcome');
         } else {
-          setStep('mcp-url');
-          setOauthResult(null);
-          setIsPublicServer(false);
+          setStep('craft-login');
         }
         break;
     }
-  }, [step, oauthClient, authType, hasExistingMcp]);
+  }, [step, hasExistingWorkspace, mcpOAuthClient, onCancel]);
 
-  const maskValue = (value: string, show: boolean): string => {
-    if (show || !value) return value;
-    if (value.length <= 8) return '*'.repeat(value.length);
-    return value.slice(0, 4) + '*'.repeat(value.length - 8) + value.slice(-4);
-  };
+  const totalSteps = hasExistingWorkspace ? 4 : 6;
+  const currentStep = getStepNumber(step, hasExistingWorkspace);
 
   return (
-    <Box flexDirection="column" padding={1}>
-      {/* Header */}
-      <Box
-        borderStyle="round"
-        borderColor="cyan"
-        paddingX={2}
-        paddingY={1}
-        marginBottom={1}
-      >
-        <Text bold color="cyan">Craft TUI Agent - Setup</Text>
-      </Box>
+    <Box flexDirection="column" alignItems="center" paddingY={1}>
+      {/* Centered container */}
+      <Box flexDirection="column" width={64}>
+        {/* Header */}
+        <Box justifyContent="center" marginBottom={1}>
+          <Text bold color="cyan">✦ Craft Agent Setup</Text>
+        </Box>
 
-      {/* Progress indicator */}
-      <Box marginBottom={1}>
-        <Text dimColor>
-          Step {getStepNumber(step, hasExistingMcp)} of {hasExistingMcp ? 3 : 5}:{' '}
-        </Text>
-        <Text>{getStepName(step)}</Text>
-      </Box>
+        {/* Progress indicator - visual dots */}
+        <Box justifyContent="center" marginBottom={1} gap={1}>
+          {Array.from({ length: totalSteps }, (_, i) => (
+            <Text key={i} color={i < currentStep ? 'cyan' : 'gray'}>
+              {i < currentStep ? '●' : i === currentStep - 1 ? '◉' : '○'}
+            </Text>
+          ))}
+        </Box>
 
-      {/* Step content */}
-      <Box flexDirection="column" marginY={1}>
+        {/* Step name */}
+        <Box justifyContent="center" marginBottom={1}>
+          <Text dimColor>{getStepName(step)}</Text>
+        </Box>
+
+        {/* Step content */}
+        <Box flexDirection="column" marginY={1}>
         {step === 'welcome' && (
-          <WelcomeStep onContinue={handleWelcome} onExit={exit} hasExistingMcp={hasExistingMcp} />
+          <WelcomeStep onContinue={handleWelcome} onExit={exit} hasExistingWorkspace={hasExistingWorkspace} />
         )}
 
-        {step === 'auth-type' && (
-          <AuthTypeStep
-            onSelect={handleAuthTypeSelect}
+        {step === 'craft-login' && (
+          <CraftCallbackStep
+            onComplete={({ token, profile }) => handleCraftLoginComplete(token, profile)}
             onBack={handleBack}
-            envApiKey={envApiKey}
-            onUseEnvKey={handleUseEnvKey}
           />
         )}
 
-        {step === 'api-key' && (
+        {step === 'select-space' && craftProfile && (
+          <CraftSpaceSelector
+            profile={craftProfile}
+            onSelect={handleSpaceSelected}
+            onBack={handleBack}
+          />
+        )}
+
+        {step === 'select-mcp' && (
+          <McpLinkSelector
+            spaceName={selectedSpaceName}
+            mcpLinks={mcpLinks}
+            onSelect={handleMcpSelected}
+            onCreateNew={() => createNewMcpLink()}
+            onBack={handleBack}
+          />
+        )}
+
+        {step === 'mcp-validating' && (
+          <Box flexDirection="column" alignItems="center">
+            {validationError ? (
+              <>
+                <Text color="red">✗ Connection failed</Text>
+                <Box marginY={1}>
+                  <Text dimColor>{validationError}</Text>
+                </Box>
+                <Box marginTop={1}>
+                  <Text dimColor>↵ retry • Esc back</Text>
+                </Box>
+              </>
+            ) : (
+              <Box>
+                <AnimatedSpinner />
+                <Text> Connecting to {selectedSpaceName || 'workspace'}...</Text>
+              </Box>
+            )}
+          </Box>
+        )}
+
+        {step === 'mcp-auth' && (
+          <Box flexDirection="column" alignItems="center">
+            <Text dimColor>The server requires additional authentication.</Text>
+            <Box marginY={1}>
+              <AnimatedSpinner />
+              <Text> {mcpOAuthStatus || 'Opening browser...'}</Text>
+            </Box>
+            <Box marginTop={1}>
+              <Text dimColor>Complete in your browser • Esc to cancel</Text>
+            </Box>
+          </Box>
+        )}
+
+        {step === 'billing-method' && (
+          <BillingMethodStep
+            onSelect={handleBillingMethodSelect}
+            onBack={handleBack}
+            envApiKey={envApiKey}
+          />
+        )}
+
+        {step === 'api-key-entry' && (
           <InputStep
             title="Anthropic API Key"
-            description="Enter your Anthropic API key. You can get one from https://console.anthropic.com/"
+            description="Enter your Anthropic API key. Get one at console.anthropic.com"
             placeholder="sk-ant-..."
             value={apiKey}
             masked={!showApiKey}
-            onSubmit={handleApiKey}
+            onSubmit={handleApiKeySubmit}
             onBack={handleBack}
             hint="Press Ctrl+V to toggle visibility"
           />
         )}
 
-        {step === 'oauth-token' && (
+        {step === 'oauth-token-entry' && (
           <OAuthTokenStep
             existingToken={existingClaudeToken}
             hasClaudeCli={hasClaudeCli}
             onUseExisting={handleUseExistingToken}
             onRunSetup={handleRunSetupToken}
-            onManualEntry={handleOauthToken}
+            onManualEntry={handleOauthTokenSubmit}
             onBack={handleBack}
             error={error}
           />
         )}
 
         {step === 'oauth-token-setup' && (
-          <Box flexDirection="column">
-            <Text bold>Running Claude Setup Token</Text>
+          <Box flexDirection="column" alignItems="center">
             <Box marginY={1}>
-              <Text color="cyan">●</Text>
-              <Text> {oauthStatus || 'Opening browser for authentication...'}</Text>
+              <AnimatedSpinner />
+              <Text> {oauthStatus || 'Opening browser...'}</Text>
             </Box>
             <Box marginTop={1}>
-              <Text dimColor>Complete the authentication in your browser, then return here.</Text>
+              <Text dimColor>Complete authentication in your browser</Text>
             </Box>
           </Box>
         )}
 
-        {step === 'mcp-url-type' && (
-          <McpUrlTypeStep
-            onSelect={handleMcpUrlTypeSelect}
-            onBack={handleBack}
-          />
-        )}
-
-        {step === 'mcp-url' && (
-          <InputStep
-            title="Craft MCP Server URL"
-            description="Enter the URL of your Craft MCP server."
-            placeholder="https://mcp.craft.do/links/YOUR_LINK_ID"
-            value={mcpUrl}
-            onSubmit={handleMcpUrl}
-            onBack={handleBack}
-            error={error}
-          />
-        )}
-
-        {step === 'craft-auth' && (
-          <CraftAuth
-            onComplete={handleCraftAuthComplete}
-            onBack={handleBack}
-          />
-        )}
-
-        {step === 'checking-auth' && (
-          <Box flexDirection="column">
-            <Text bold>Checking Server</Text>
-            <Box marginY={1}>
-              <Text color="cyan">●</Text>
-              <Text> {oauthStatus || 'Connecting to server...'}</Text>
+        {step === 'saving' && (
+          <Box flexDirection="column" alignItems="center">
+            <Box>
+              <AnimatedSpinner />
+              <Text> Saving configuration...</Text>
             </Box>
-          </Box>
-        )}
-
-        {step === 'no-oauth-options' && (
-          <NoOAuthOptionsStep
-            onSelect={handleNoOAuthSelect}
-            onBack={handleBack}
-            message={oauthStatus}
-          />
-        )}
-
-        {step === 'bearer-token' && (
-          <BearerTokenStep
-            value={mcpBearerToken}
-            onChange={setMcpBearerToken}
-            onSubmit={handleMcpBearerToken}
-            onBack={handleBack}
-          />
-        )}
-
-        {step === 'oauth-auth' && (
-          <OAuthStep
-            status={oauthStatus}
-            onBack={handleBack}
-          />
-        )}
-
-        {step === 'confirm' && (
-          <ConfirmStep
-            authType={authType}
-            apiKey={authType === 'api_key' ? maskValue(apiKey, false) : undefined}
-            oauthToken={authType === 'oauth_token' ? maskValue(oauthToken, false) : undefined}
-            mcpUrl={mcpUrl}
-            isPublic={isPublicServer}
-            oauthAuthenticated={!!oauthResult}
-            bearerToken={mcpBearerToken ? maskValue(mcpBearerToken, false) : undefined}
-            onConfirm={handleConfirm}
-            onBack={handleBack}
-          />
-        )}
-
-        {step === 'validating' && (
-          <Box flexDirection="column">
-            {validationError ? (
-              <>
-                <Text color="red" bold>Connection validation failed</Text>
-                <Box marginY={1}>
-                  <Text color="red">{validationError}</Text>
-                </Box>
-                <Text dimColor>Press Enter to retry, Esc to go back, </Text>
-                <Text color="cyan">E to edit MCP connection</Text>
-              </>
-            ) : (
-              <Box>
-                <AnimatedSpinner />
-                <Text> Validating MCP connection...</Text>
-              </Box>
-            )}
           </Box>
         )}
 
         {step === 'complete' && (
-          <Box flexDirection="column">
-            <Text color="green" bold>✓ Configuration saved successfully!</Text>
-            <Text dimColor>Config stored at: {getConfigPath()}</Text>
+          <Box flexDirection="column" alignItems="center">
+            <Text color="green">✓ Setup complete!</Text>
             <Box marginTop={1}>
-              <Text>Starting Craft TUI Agent...</Text>
+              <Text dimColor>Starting Craft Agent...</Text>
             </Box>
           </Box>
         )}
 
         {step === 'error' && (
-          <Box flexDirection="column">
-            <Text color="red" bold>✗ Setup failed</Text>
-            <Text color="red">{error}</Text>
+          <Box flexDirection="column" alignItems="center">
+            <Text color="red">✗ Setup failed</Text>
+            <Box marginY={1}>
+              <Text dimColor>{error}</Text>
+            </Box>
             <Box marginTop={1}>
-              <Text dimColor>Press Enter to retry, or Ctrl+C to exit</Text>
+              <Text dimColor>↵ retry • Ctrl+C exit</Text>
             </Box>
           </Box>
         )}
-      </Box>
+        </Box>
 
-      {/* Footer */}
-      <Box marginTop={1}>
-        <Text dimColor>
-          Press Ctrl+C to cancel | Esc to exit the setup
-        </Text>
+        {/* Footer */}
+        <Box justifyContent="center" marginTop={1}>
+          <Text dimColor>Ctrl+C to cancel</Text>
+        </Box>
       </Box>
     </Box>
   );
 };
 
-function getStepNumber(step: SetupStep, hasExistingMcp: boolean = false): number {
-  if (hasExistingMcp) {
-    // Shortened flow: welcome/auth-type -> api-key/oauth-token -> confirm
+function getStepNumber(step: SetupStep, hasExistingWorkspace: boolean = false): number {
+  if (hasExistingWorkspace) {
+    // Shortened flow: welcome -> billing-method -> credentials -> save (4 steps)
     switch (step) {
       case 'welcome': return 1;
-      case 'auth-type': return 1;
-      case 'api-key': return 2;
-      case 'oauth-token': return 2;
-      case 'oauth-token-setup': return 2;
-      case 'confirm':
-      case 'validating':
+      case 'billing-method': return 2;
+      case 'api-key-entry':
+      case 'oauth-token-entry':
+      case 'oauth-token-setup':
+        return 3;
+      case 'saving':
       case 'complete':
       case 'error':
-        return 3;
-      default: return 3;
+        return 4;
+      default: return 4;
     }
   }
-  // Full flow
+  // New user flow: craft-login -> select-space -> select-mcp/mcp-validate -> billing -> credentials -> save (6 steps)
   switch (step) {
-    case 'welcome': return 1;
-    case 'auth-type': return 1;
-    case 'api-key': return 2;
-    case 'oauth-token': return 2;
-    case 'oauth-token-setup': return 2;
-    case 'mcp-url-type': return 3;
-    case 'mcp-url': return 3;
-    case 'craft-auth': return 3;
-    case 'checking-auth': return 4;
-    case 'no-oauth-options': return 4;
-    case 'oauth-auth': return 4;
-    case 'bearer-token': return 4;
-    case 'confirm':
-    case 'validating':
+    case 'craft-login': return 1;
+    case 'select-space': return 2;
+    case 'select-mcp':
+    case 'mcp-validating':
+    case 'mcp-auth':
+      return 3;
+    case 'billing-method': return 4;
+    case 'api-key-entry':
+    case 'oauth-token-entry':
+    case 'oauth-token-setup':
+      return 5;
+    case 'saving':
     case 'complete':
     case 'error':
-      return 5;
+      return 6;
+    default: return 6;
   }
 }
 
 function getStepName(step: SetupStep): string {
   switch (step) {
     case 'welcome': return 'Welcome';
-    case 'auth-type': return 'Authentication';
-    case 'api-key': return 'API Key';
-    case 'oauth-token': return 'OAuth Token';
+    case 'craft-login': return 'Sign In';
+    case 'select-space': return 'Select Space';
+    case 'select-mcp': return 'Select Connection';
+    case 'mcp-validating': return 'Connecting';
+    case 'mcp-auth': return 'Authenticate';
+    case 'billing-method': return 'Billing';
+    case 'api-key-entry': return 'API Key';
+    case 'oauth-token-entry': return 'Claude Token';
     case 'oauth-token-setup': return 'Setting up...';
-    case 'mcp-url-type': return 'MCP Setup';
-    case 'mcp-url': return 'MCP URL';
-    case 'craft-auth': return 'Craft Auth';
-    case 'checking-auth': return 'Checking...';
-    case 'no-oauth-options': return 'Auth Method';
-    case 'oauth-auth': return 'Authorization';
-    case 'bearer-token': return 'Bearer Token';
-    case 'confirm': return 'Confirm';
-    case 'validating': return 'Validating...';
+    case 'saving': return 'Saving...';
     case 'complete': return 'Complete';
     case 'error': return 'Error';
   }
@@ -774,10 +758,10 @@ function getStepName(step: SetupStep): string {
 interface WelcomeStepProps {
   onContinue: () => void;
   onExit: () => void;
-  hasExistingMcp?: boolean;
+  hasExistingWorkspace?: boolean;
 }
 
-const WelcomeStep: React.FC<WelcomeStepProps> = ({ onContinue, onExit, hasExistingMcp }) => {
+const WelcomeStep: React.FC<WelcomeStepProps> = ({ onContinue, onExit }) => {
   useInput((input, key) => {
     if (key.return) {
       onContinue();
@@ -786,87 +770,41 @@ const WelcomeStep: React.FC<WelcomeStepProps> = ({ onContinue, onExit, hasExisti
     }
   });
 
-  if (hasExistingMcp) {
-    return (
-      <Box flexDirection="column">
-        <Text>Welcome to <Text bold color="cyan">Craft TUI Agent</Text> Setup!</Text>
-        <Box marginY={1}>
-          <Text>
-            Your MCP server is already configured. This will update your Claude authentication.
-          </Text>
-        </Box>
-        <Box marginY={1}>
-          <Text>You can choose:</Text>
-        </Box>
-        <Box flexDirection="column" marginLeft={2}>
-          <Text>• <Text bold>API Key</Text> - Pay-as-you-go billing</Text>
-          <Text>• <Text bold>Claude Max Token</Text> - Use your Max subscription</Text>
-        </Box>
-        <Box marginTop={2}>
-          <Text color="green" bold>Press Enter to continue...</Text>
-        </Box>
-      </Box>
-    );
-  }
-
+  // This is only shown for existing users changing billing settings
   return (
-    <Box flexDirection="column">
-      <Text>Welcome to <Text bold color="cyan">Craft TUI Agent</Text>!</Text>
-      <Box marginY={1}>
-        <Text>
-          This setup will help you configure your connection to Claude and your Craft MCP server.
-        </Text>
-      </Box>
-      <Box marginY={1}>
-        <Text>You'll need:</Text>
-      </Box>
-      <Box flexDirection="column" marginLeft={2}>
-        <Text>• An Anthropic API key OR Claude Max OAuth token</Text>
-        <Text>• Your Craft MCP server URL (workflow link)</Text>
-        <Text>• A browser to complete OAuth authorization</Text>
-      </Box>
-      <Box marginTop={2}>
-        <Text color="green" bold>Press Enter to continue...</Text>
-      </Box>
+    <Box flexDirection="column" alignItems="center">
+      <Text>Your Craft space is already connected.</Text>
+      <Text dimColor>Press Enter to update your billing settings.</Text>
     </Box>
   );
 };
 
-interface AuthTypeStepProps {
-  onSelect: (type: AuthType) => void;
+interface BillingMethodStepProps {
+  onSelect: (method: AuthType) => void;
   onBack: () => void;
   envApiKey?: string | null;
-  onUseEnvKey?: () => void;
 }
 
-const AuthTypeStep: React.FC<AuthTypeStepProps> = ({ onSelect, onBack, envApiKey, onUseEnvKey }) => {
+const BillingMethodStep: React.FC<BillingMethodStepProps> = ({ onSelect, onBack, envApiKey }) => {
   const [selected, setSelected] = useState<number>(0);
 
-  // Build options dynamically based on whether env var is available
-  const options: { id: string; label: string; desc: string; action: () => void }[] = [];
-
-  if (envApiKey) {
-    options.push({
-      id: 'env',
-      label: 'Use ANTHROPIC_API_KEY from environment',
-      desc: `Found: ${envApiKey.slice(0, 12)}...${envApiKey.slice(-4)}`,
-      action: () => onUseEnvKey?.(),
-    });
-  }
-
-  options.push({
-    id: 'api_key',
-    label: 'API Key',
-    desc: 'Pay-as-you-go billing (console.anthropic.com)',
-    action: () => onSelect('api_key'),
-  });
-
-  options.push({
-    id: 'oauth',
-    label: 'Claude Max Token',
-    desc: "Use your Max subscription (run 'claude setup-token')",
-    action: () => onSelect('oauth_token'),
-  });
+  const options: { id: AuthType; label: string; desc: string }[] = [
+    {
+      id: 'craft_credits',
+      label: 'Craft Credits',
+      desc: 'Use your Craft subscription (no extra setup)',
+    },
+    {
+      id: 'api_key',
+      label: 'API Key',
+      desc: 'Pay-as-you-go via Anthropic',
+    },
+    {
+      id: 'oauth_token',
+      label: 'Claude Pro/Max',
+      desc: 'Use your Claude subscription',
+    },
+  ];
 
   useInput((input, key) => {
     if (key.upArrow && selected > 0) {
@@ -874,7 +812,8 @@ const AuthTypeStep: React.FC<AuthTypeStepProps> = ({ onSelect, onBack, envApiKey
     } else if (key.downArrow && selected < options.length - 1) {
       setSelected(s => s + 1);
     } else if (key.return) {
-      options[selected]?.action();
+      const opt = options[selected];
+      if (opt) onSelect(opt.id);
     } else if (key.escape) {
       onBack();
     }
@@ -882,34 +821,36 @@ const AuthTypeStep: React.FC<AuthTypeStepProps> = ({ onSelect, onBack, envApiKey
 
   return (
     <Box flexDirection="column">
-      <Text bold>Choose Authentication Method</Text>
+      <Text dimColor>How would you like to pay for AI usage?</Text>
 
       {envApiKey && (
-        <Box marginY={1}>
+        <Box marginTop={1}>
           <Text color="green">✓ Found ANTHROPIC_API_KEY in environment</Text>
         </Box>
       )}
 
-      <Box marginY={1}>
-        <Text dimColor>How would you like to authenticate with Claude?</Text>
-      </Box>
-
       <Box flexDirection="column" marginY={1}>
         {options.map((opt, i) => (
-          <Box key={opt.id}>
-            <Text color={selected === i ? 'green' : undefined}>
-              {selected === i ? '❯ ' : '  '}
-            </Text>
-            <Text color={selected === i ? 'green' : undefined} bold={selected === i}>
-              {opt.label}
-            </Text>
-            <Text dimColor> - {opt.desc}</Text>
+          <Box key={opt.id} flexDirection="column">
+            <Box>
+              <Text color={selected === i ? 'cyan' : undefined}>
+                {selected === i ? '› ' : '  '}
+              </Text>
+              <Text color={selected === i ? 'cyan' : 'white'} bold={selected === i}>
+                {opt.label}
+              </Text>
+            </Box>
+            {selected === i && (
+              <Box marginLeft={4}>
+                <Text dimColor>{opt.desc}</Text>
+              </Box>
+            )}
           </Box>
         ))}
       </Box>
 
       <Box marginTop={1}>
-        <Text dimColor>Use ↑↓ to select, Enter to confirm, Esc to go back</Text>
+        <Text dimColor>↑↓ navigate • ↵ select • Esc back</Text>
       </Box>
     </Box>
   );
@@ -942,17 +883,14 @@ const InputStep: React.FC<InputStepProps> = ({
 
   return (
     <Box flexDirection="column">
-      <Text bold>{title}</Text>
-      <Box marginY={1}>
-        <Text dimColor>{description}</Text>
-      </Box>
+      <Text dimColor>{description}</Text>
       {error && (
-        <Box marginBottom={1}>
+        <Box marginTop={1}>
           <Text color="red">{error}</Text>
         </Box>
       )}
-      <Box>
-        <Text color="green">&gt; </Text>
+      <Box marginY={1}>
+        <Text color="cyan">› </Text>
         <TextInput
           value={value}
           onChange={setValue}
@@ -962,131 +900,8 @@ const InputStep: React.FC<InputStepProps> = ({
           mask={masked ? '*' : undefined}
         />
       </Box>
-      {hint && (
-        <Box marginTop={1}>
-          <Text dimColor>{hint}</Text>
-        </Box>
-      )}
-    </Box>
-  );
-};
-
-interface OAuthStepProps {
-  status: string;
-  onBack: () => void;
-}
-
-const OAuthStep: React.FC<OAuthStepProps> = ({ status, onBack }) => {
-  useInput((input, key) => {
-    if (key.escape) {
-      onBack();
-    }
-  });
-
-  return (
-    <Box flexDirection="column">
-      <Text bold>OAuth Authorization</Text>
-      <Box marginY={1}>
-        <Text dimColor>
-          A browser window will open for you to authorize access to your Craft documents.
-        </Text>
-      </Box>
-      <Box marginY={1}>
-        <Text color="cyan">●</Text>
-        <Text> {status}</Text>
-      </Box>
       <Box marginTop={1}>
-        <Text dimColor>Complete the authorization in your browser, then return here.</Text>
-      </Box>
-      <Box marginTop={1}>
-        <Text dimColor>Press Esc to go back and cancel</Text>
-      </Box>
-    </Box>
-  );
-};
-
-interface ConfirmStepProps {
-  authType: AuthType;
-  apiKey?: string;
-  oauthToken?: string;
-  mcpUrl: string;
-  isPublic: boolean;
-  oauthAuthenticated: boolean;
-  bearerToken?: string;
-  onConfirm: () => void;
-  onBack: () => void;
-}
-
-const ConfirmStep: React.FC<ConfirmStepProps> = ({
-  authType,
-  apiKey,
-  oauthToken,
-  mcpUrl,
-  isPublic,
-  oauthAuthenticated,
-  bearerToken,
-  onConfirm,
-  onBack,
-}) => {
-  useInput((input, key) => {
-    if (key.return) {
-      onConfirm();
-    }
-    if (key.escape) {
-      onBack();
-    }
-  });
-
-  const getMcpAuthStatus = () => {
-    if (isPublic) {
-      return { color: 'blue' as const, text: '○ Public (no auth required)' };
-    }
-    if (oauthAuthenticated) {
-      return { color: 'green' as const, text: '✓ OAuth authenticated' };
-    }
-    if (bearerToken) {
-      return { color: 'green' as const, text: '✓ Bearer token' };
-    }
-    return { color: 'red' as const, text: '✗ Not authenticated' };
-  };
-
-  const mcpAuthStatus = getMcpAuthStatus();
-
-  return (
-    <Box flexDirection="column">
-      <Text bold>Please confirm your settings:</Text>
-      <Box flexDirection="column" marginY={1} marginLeft={2}>
-        <Box>
-          <Text dimColor>Claude Auth: </Text>
-          <Text color="cyan">{authType === 'api_key' ? 'API Key' : 'Max Subscription'}</Text>
-        </Box>
-        {authType === 'api_key' && apiKey && (
-          <Box>
-            <Text dimColor>API Key: </Text>
-            <Text>{apiKey}</Text>
-          </Box>
-        )}
-        {authType === 'oauth_token' && oauthToken && (
-          <Box>
-            <Text dimColor>OAuth Token: </Text>
-            <Text>{oauthToken}</Text>
-          </Box>
-        )}
-        <Box>
-          <Text dimColor>MCP URL: </Text>
-          <Text>{mcpUrl}</Text>
-        </Box>
-        <Box>
-          <Text dimColor>MCP Auth: </Text>
-          <Text color={mcpAuthStatus.color}>{mcpAuthStatus.text}</Text>
-        </Box>
-      </Box>
-      <Box marginTop={1}>
-        <Text dimColor>Configuration will be saved to: </Text>
-        <Text>{getConfigPath()}</Text>
-      </Box>
-      <Box marginTop={2}>
-        <Text color="green" bold>Press Enter to save, or Esc to go back</Text>
+        <Text dimColor>↵ confirm • Esc back{hint ? ` • ${hint}` : ''}</Text>
       </Box>
     </Box>
   );
@@ -1122,7 +937,7 @@ const OAuthTokenStep: React.FC<OAuthTokenStepProps> = ({
     options.push({
       id: 'existing',
       label: 'Use existing token',
-      desc: `Found token: ${existingToken.slice(0, 20)}...`,
+      desc: `Found: ${existingToken.slice(0, 20)}...`,
       action: onUseExisting,
     });
   }
@@ -1131,7 +946,7 @@ const OAuthTokenStep: React.FC<OAuthTokenStepProps> = ({
     options.push({
       id: 'setup',
       label: 'Run claude setup-token',
-      desc: 'Opens browser to authenticate with your Max subscription',
+      desc: 'Opens browser to authenticate',
       action: onRunSetup,
     });
   }
@@ -1161,12 +976,9 @@ const OAuthTokenStep: React.FC<OAuthTokenStepProps> = ({
   if (mode === 'manual') {
     return (
       <Box flexDirection="column">
-        <Text bold>Enter OAuth Token</Text>
+        <Text dimColor>Paste your Claude Max OAuth token:</Text>
         <Box marginY={1}>
-          <Text dimColor>Paste your Claude Max OAuth token below.</Text>
-        </Box>
-        <Box>
-          <Text color="green">&gt; </Text>
+          <Text color="cyan">› </Text>
           <TextInput
             value={manualToken}
             onChange={setManualToken}
@@ -1183,7 +995,7 @@ const OAuthTokenStep: React.FC<OAuthTokenStepProps> = ({
           />
         </Box>
         <Box marginTop={1}>
-          <Text dimColor>Enter to confirm, Esc to go back</Text>
+          <Text dimColor>↵ confirm • Esc back</Text>
         </Box>
       </Box>
     );
@@ -1191,13 +1003,10 @@ const OAuthTokenStep: React.FC<OAuthTokenStepProps> = ({
 
   return (
     <Box flexDirection="column">
-      <Text bold>Claude Max OAuth Token</Text>
-      <Box marginY={1}>
-        <Text dimColor>Choose how to provide your Claude Max token:</Text>
-      </Box>
+      <Text dimColor>Choose how to provide your Claude Max token:</Text>
 
       {error && (
-        <Box marginBottom={1}>
+        <Box marginTop={1}>
           <Text color="red">{error}</Text>
         </Box>
       )}
@@ -1206,10 +1015,10 @@ const OAuthTokenStep: React.FC<OAuthTokenStepProps> = ({
         {options.map((opt, i) => (
           <Box key={opt.id} flexDirection="column">
             <Box>
-              <Text color={selected === i ? 'green' : undefined}>
-                {selected === i ? '❯ ' : '  '}
+              <Text color={selected === i ? 'cyan' : undefined}>
+                {selected === i ? '› ' : '  '}
               </Text>
-              <Text color={selected === i ? 'green' : undefined} bold={selected === i}>
+              <Text color={selected === i ? 'cyan' : 'white'} bold={selected === i}>
                 {opt.label}
               </Text>
             </Box>
@@ -1223,13 +1032,13 @@ const OAuthTokenStep: React.FC<OAuthTokenStepProps> = ({
       </Box>
 
       <Box marginTop={1}>
-        <Text dimColor>Use ↑↓ to select, Enter to confirm, Esc to go back</Text>
+        <Text dimColor>↑↓ navigate • ↵ select • Esc back</Text>
       </Box>
 
       {!hasClaudeCli && (
         <Box marginTop={1}>
           <Text color="yellow" dimColor>
-            Note: Claude CLI not found. Install it to use automatic token setup.
+            Note: Claude CLI not found for automatic setup.
           </Text>
         </Box>
       )}
@@ -1237,85 +1046,3 @@ const OAuthTokenStep: React.FC<OAuthTokenStepProps> = ({
   );
 };
 
-// No OAuth options - shown when OAuth is not detected or fails
-interface NoOAuthOptionsStepProps {
-  onSelect: (method: 'bearer' | 'public') => void;
-  onBack: () => void;
-  message?: string;
-}
-
-const NoOAuthOptionsStep: React.FC<NoOAuthOptionsStepProps> = ({ onSelect, onBack, message }) => {
-  const [selected, setSelected] = useState(0);
-  const options = [
-    { label: 'Enter Bearer Token', value: 'bearer' as const },
-    { label: 'No authentication (public server)', value: 'public' as const },
-  ];
-
-  useInput((_, key) => {
-    if (key.upArrow) {
-      setSelected(s => Math.max(0, s - 1));
-    } else if (key.downArrow) {
-      setSelected(s => Math.min(options.length - 1, s + 1));
-    } else if (key.return) {
-      const option = options[selected];
-      if (option) onSelect(option.value);
-    } else if (key.escape) {
-      onBack();
-    }
-  });
-
-  return (
-    <Box flexDirection="column">
-      <Text bold>Choose Authentication Method</Text>
-      {message && (
-        <Box marginY={1}>
-          <Text dimColor>{message}</Text>
-        </Box>
-      )}
-      <Box marginY={1} flexDirection="column">
-        {options.map((opt, i) => (
-          <Text key={opt.value}>
-            <Text color={i === selected ? 'green' : undefined}>
-              {i === selected ? '> ' : '  '}{opt.label}
-            </Text>
-          </Text>
-        ))}
-      </Box>
-      <Text dimColor>Use arrow keys to select, Enter to confirm, Esc to go back</Text>
-    </Box>
-  );
-};
-
-// Bearer token input step
-interface BearerTokenStepProps {
-  value: string;
-  onChange: (value: string) => void;
-  onSubmit: (value: string) => void;
-  onBack: () => void;
-}
-
-const BearerTokenStep: React.FC<BearerTokenStepProps> = ({ value, onChange, onSubmit, onBack }) => {
-  return (
-    <Box flexDirection="column">
-      <Text bold>Enter Bearer Token</Text>
-      <Box marginY={1}>
-        <Text dimColor>The token will be sent as: Authorization: Bearer {'<token>'}</Text>
-      </Box>
-      <Box>
-        <Text color="green">&gt; </Text>
-        <TextInput
-          value={value}
-          onChange={onChange}
-          onSubmit={onSubmit}
-          onCancel={onBack}
-          placeholder="Paste your bearer token..."
-          mask="•"
-          maskReveal={{ last: 4 }}
-        />
-      </Box>
-      <Box marginTop={1}>
-        <Text dimColor>Press Enter to confirm, Esc to go back</Text>
-      </Box>
-    </Box>
-  );
-};

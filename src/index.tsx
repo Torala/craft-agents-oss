@@ -17,11 +17,11 @@ import {
   setActiveWorkspace,
   getAnthropicApiKey,
   getClaudeOAuthToken,
-  hasValidCredentials,
   type StoredConfig,
   type Workspace,
   type AuthType,
 } from './config/storage.ts';
+import { getAuthState, getSetupNeeds, type AuthState, type SetupNeeds } from './auth/state.ts';
 import type { CraftAgentConfig } from './agent/craft-agent.ts';
 import { enableDebug } from './tui/utils/debug.ts';
 import { install } from './version/install.ts';
@@ -57,7 +57,7 @@ function createUrlWorkspace(url: string): Workspace {
 
 const cli = meow(
   `
-  Craft Document Assistant - A Claude Code-like TUI for Craft documents
+  Craft Agent - A Claude Code-like agent for Craft documents
 
   Usage
     $ craft [options]                     Interactive mode
@@ -172,30 +172,32 @@ interface RootProps {
   initialConfig: StoredConfig | null;
   cliFlags: typeof cli.flags;
   forceSetup: boolean;
-  initialCredentials: { apiKey: string | null; oauthToken: string | null } | null;
-  initialHasValidCredentials: boolean;
+  /** Unified auth state from getAuthState() */
+  authState: AuthState;
+  /** Derived setup needs from getSetupNeeds() */
+  setupNeeds: SetupNeeds;
   /** Agent to auto-activate on startup (without @ prefix) */
   initialAgent?: string;
   /** Prompt to auto-send after agent activation */
   initialPrompt?: string;
 }
 
-const Root: React.FC<RootProps> = ({ initialConfig, cliFlags, forceSetup, initialCredentials, initialHasValidCredentials, initialAgent, initialPrompt }) => {
-  // Show setup if: forced, no config, or no valid credentials in credential store
-  const [showSetup, setShowSetup] = useState(forceSetup || !initialConfig || !initialHasValidCredentials);
+const Root: React.FC<RootProps> = ({ initialConfig, cliFlags, forceSetup, authState, setupNeeds, initialAgent, initialPrompt }) => {
+  // Show setup if: forced or not fully configured
+  const [showSetup, setShowSetup] = useState(forceSetup || !setupNeeds.isFullyConfigured);
   const [config, setConfig] = useState<StoredConfig | null>(initialConfig);
-  const [credentials, setCredentials] = useState(initialCredentials);
+  // Track current auth state (may be updated after setup)
+  const [currentAuthState, setCurrentAuthState] = useState<AuthState>(authState);
 
   const handleSetupComplete = useCallback(async (newConfig: StoredConfig) => {
     setConfig(newConfig);
-    // Reload credentials from credential store after setup
+    // Reload auth state after setup
     try {
-      const apiKey = await getAnthropicApiKey();
-      const oauthToken = await getClaudeOAuthToken();
-      setCredentials({ apiKey, oauthToken });
+      const newAuthState = await getAuthState();
+      setCurrentAuthState(newAuthState);
     } catch (err) {
-      // Log error but continue - credentials may have been saved successfully
-      console.error('Failed to reload credentials:', err);
+      // Log error but continue - setup may have completed successfully
+      console.error('Failed to reload auth state:', err);
     }
     setShowSetup(false);
   }, []);
@@ -213,35 +215,35 @@ const Root: React.FC<RootProps> = ({ initialConfig, cliFlags, forceSetup, initia
   }, []);
 
   if (showSetup) {
+    // Compute current setup needs (may have changed since initial render)
+    const currentNeeds = getSetupNeeds(currentAuthState);
     return (
       <Setup
         onComplete={handleSetupComplete}
         onCancel={handleSetupCancel}
+        authState={currentAuthState}
+        setupNeeds={currentNeeds}
       />
     );
   }
 
-  if (!config) {
-    // Should not happen, but just in case
+  // At this point we should have a valid config and workspace
+  // (setupNeeds.isFullyConfigured was true)
+  if (!config || !currentAuthState.workspace.active) {
+    // Shouldn't happen, but fallback to setup
+    const currentNeeds = getSetupNeeds(currentAuthState);
     return (
       <Setup
         onComplete={handleSetupComplete}
         onCancel={handleSetupCancel}
+        authState={currentAuthState}
+        setupNeeds={currentNeeds}
       />
     );
   }
 
-  // Get active workspace
-  const activeWorkspace = getActiveWorkspace();
-  if (!activeWorkspace) {
-    // No workspaces available - need to run setup
-    return (
-      <Setup
-        onComplete={handleSetupComplete}
-        onCancel={handleSetupCancel}
-      />
-    );
-  }
+  // Use workspace from current auth state
+  const activeWorkspace = currentAuthState.workspace.active;
 
   // Build agent config from stored config + CLI overrides
   // Priority: -w URL > -w workspace name/ID > active workspace
@@ -278,16 +280,22 @@ const Root: React.FC<RootProps> = ({ initialConfig, cliFlags, forceSetup, initia
   };
 
   // Set authentication in environment for the SDK based on auth type
-  // Credentials are now loaded from credential store (passed in from main())
-  const authType: AuthType = config.authType || 'api_key';
-  if (authType === 'oauth_token' && credentials?.oauthToken) {
+  const { billing } = currentAuthState;
+  if (billing.type === 'craft_credits') {
+    // Craft Credits - uses Craft's billing system
+    // Clear both API key and OAuth token - Craft handles billing via its own token
+    delete process.env.ANTHROPIC_API_KEY;
+    delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
+    // Note: The Craft OAuth token is used for MCP access, not Claude API billing
+    // Craft Credits billing is handled server-side by Craft's infrastructure
+  } else if (billing.type === 'oauth_token' && billing.claudeOAuthToken) {
     // Use Claude Max subscription via OAuth token
-    process.env.CLAUDE_CODE_OAUTH_TOKEN = credentials.oauthToken;
+    process.env.CLAUDE_CODE_OAUTH_TOKEN = billing.claudeOAuthToken;
     // Clear API key to ensure SDK uses OAuth token
     delete process.env.ANTHROPIC_API_KEY;
-  } else if (credentials?.apiKey) {
+  } else if (billing.apiKey) {
     // Use API key (pay-as-you-go)
-    process.env.ANTHROPIC_API_KEY = credentials.apiKey;
+    process.env.ANTHROPIC_API_KEY = billing.apiKey;
     // Clear OAuth token if set
     delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
   }
@@ -433,18 +441,11 @@ async function main() {
   process.on('SIGINT', () => { cleanup(); process.exit(0); });
   process.on('SIGTERM', () => { cleanup(); process.exit(0); });
 
-  // Check for existing config and credentials
+  // Get unified auth state
   const storedConfig = loadStoredConfig();
   const forceSetup = cli.flags.setup;
-  const initialHasValidCredentials = await hasValidCredentials();
-
-  // Load actual credentials from credential store (needed for env vars later)
-  let initialCredentials: { apiKey: string | null; oauthToken: string | null } | null = null;
-  if (storedConfig) {
-    const apiKey = await getAnthropicApiKey();
-    const oauthToken = await getClaudeOAuthToken();
-    initialCredentials = { apiKey, oauthToken };
-  }
+  const authState = await getAuthState();
+  const setupNeeds = getSetupNeeds(authState);
 
   // Extract initial agent and prompt for interactive mode
   // Agent comes from -a flag (strip @ prefix if present)
@@ -458,8 +459,8 @@ async function main() {
       initialConfig={storedConfig}
       cliFlags={cli.flags}
       forceSetup={forceSetup}
-      initialCredentials={initialCredentials}
-      initialHasValidCredentials={initialHasValidCredentials}
+      authState={authState}
+      setupNeeds={setupNeeds}
       initialAgent={initialAgent}
       initialPrompt={initialPrompt}
     />

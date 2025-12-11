@@ -10,16 +10,19 @@ import { WorkspaceSelector } from './components/WorkspaceSelector.tsx';
 import { WorkspaceAdd } from './components/WorkspaceAdd.tsx';
 import { WorkspaceRename } from './components/WorkspaceRename.tsx';
 import { ApiKeyChange } from './components/ApiKeyChange.tsx';
+import { ClaudeMaxAuth } from './components/ClaudeMaxAuth.tsx';
 import { AskUserQuestion } from './components/AskUserQuestion.tsx';
 import { McpAuth } from './components/McpAuth.tsx';
 import { ApiAuth } from './components/ApiAuth.tsx';
 import { AgentReview } from './components/AgentReview.tsx';
 import { HelpPanel } from './components/HelpPanel.tsx';
 import { Balance } from './components/Balance.tsx';
+import { Settings, type SettingsAction } from './components/Settings.tsx';
 import { useAgent } from './hooks/useAgent.ts';
 import { useHistory } from './hooks/useHistory.ts';
 import { useResize } from './hooks/useResize.ts';
-import { getConfigPath, getWorkspaces, setActiveWorkspace, removeWorkspace, renameWorkspace, getWorkspaceDataPath, updateApiKey, getAuthType, type Workspace, type AuthType } from '../config/storage.ts';
+import { getWorkspaces, setActiveWorkspace, removeWorkspace, renameWorkspace, getWorkspaceDataPath, updateApiKey, getAuthType, setAuthType, clearAllConfig, getTokenDisplay, setTokenDisplay, getShowCost, setShowCost, type Workspace, type AuthType, type TokenDisplayMode } from '../config/storage.ts';
+import { getCredentialManager } from '../credentials/index.ts';
 import { formatPreferencesDisplay, getPreferencesPath } from '../config/preferences.ts';
 import { formatTokens } from './utils/markdown.ts';
 import { processInputWithFiles, readClipboard, type FileAttachment } from './utils/files.ts';
@@ -42,6 +45,14 @@ export interface AppProps {
 export const App: React.FC<AppProps> = ({ config, onRequestSetup, initialAgent, initialPrompt, initialError }) => {
   const { exit } = useApp();
 
+  // Centralized exit function - ensures process actually terminates
+  // Ink's exit() unmounts React but doesn't guarantee process.exit() if event loop has pending work
+  // Call process.exit(0) immediately - cleanup happens via process 'exit' event handler in index.tsx
+  const exitApp = useCallback(() => {
+    exit();
+    process.exit(0);
+  }, [exit]);
+
   const {
     messages,
     isProcessing,
@@ -62,12 +73,6 @@ export const App: React.FC<AppProps> = ({ config, onRequestSetup, initialAgent, 
     setModel,
     workspace,
     setWorkspace,
-    isWebSearchEnabled,
-    setWebSearchEnabled,
-    isWebFetchEnabled,
-    setWebFetchEnabled,
-    isCodeExecutionEnabled,
-    setCodeExecutionEnabled,
     // Agent-related
     availableAgents,
     activeAgentName,
@@ -109,6 +114,8 @@ export const App: React.FC<AppProps> = ({ config, onRequestSetup, initialAgent, 
     return [];
   });
   const [compactMode, setCompactMode] = useState(true);
+  const [tokenDisplayMode, setTokenDisplayMode] = useState<TokenDisplayMode>(getTokenDisplay());
+  const [showCostSetting, setShowCostSetting] = useState(getShowCost());
   const [showWelcome, setShowWelcome] = useState(true);
   const [staticResetKey, setStaticResetKey] = useState(0); // Incremented on /clear to create fresh Static items
   const [pendingAttachments, setPendingAttachments] = useState<FileAttachment[]>([]);
@@ -119,7 +126,10 @@ export const App: React.FC<AppProps> = ({ config, onRequestSetup, initialAgent, 
   const [showWorkspaceAdd, setShowWorkspaceAdd] = useState(false);
   const [showWorkspaceRename, setShowWorkspaceRename] = useState(false);
   const [showApiKeyChange, setShowApiKeyChange] = useState(false);
+  const [showClaudeMaxAuth, setShowClaudeMaxAuth] = useState(false);
   const [showBalance, setShowBalance] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [pendingRemoveWorkspace, setPendingRemoveWorkspace] = useState<string | null>(null);
 
   // Track if we've processed initial startup params
@@ -350,8 +360,11 @@ export const App: React.FC<AppProps> = ({ config, onRequestSetup, initialAgent, 
         }
         break;
       }
+      case 'reauth':
+        triggerMcpAuth();
+        break;
     }
-  }, [activateAgent, deactivateAgent, reloadAgent, resetAgent, refreshAgents, fetchTools, activeAgentName, activeAgentDefinition, activeAgentMcpServers, addLocalMessage]);
+  }, [activateAgent, deactivateAgent, reloadAgent, resetAgent, refreshAgents, fetchTools, triggerMcpAuth, activeAgentName, activeAgentDefinition, activeAgentMcpServers, addLocalMessage]);
 
   const handleAgentMenuCancel = useCallback(() => {
     setShowAgentMenu(false);
@@ -452,7 +465,7 @@ export const App: React.FC<AppProps> = ({ config, onRequestSetup, initialAgent, 
     try {
       const success = await updateApiKey(newApiKey);
       if (success) {
-        addLocalMessage('API key updated. Restart the app to use the new key.', 'system');
+        addLocalMessage('API key saved. AI usage mode set to API Key. Restart the app for changes to take effect.', 'system');
       } else {
         addLocalMessage('Failed to update API key.', 'error');
       }
@@ -463,6 +476,93 @@ export const App: React.FC<AppProps> = ({ config, onRequestSetup, initialAgent, 
 
   const handleApiKeyCancel = useCallback(() => {
     setShowApiKeyChange(false);
+  }, []);
+
+  const handleClaudeMaxSubmit = useCallback(async (token: string) => {
+    setShowClaudeMaxAuth(false);
+    try {
+      const manager = getCredentialManager();
+      await manager.setClaudeOAuth(token);
+      setAuthType('oauth_token');
+      addLocalMessage('Claude Max token saved. AI usage mode set to Claude Max. Restart the app for changes to take effect.', 'system');
+    } catch {
+      addLocalMessage('Failed to save Claude Max token.', 'error');
+    }
+  }, [addLocalMessage]);
+
+  const handleClaudeMaxCancel = useCallback(() => {
+    setShowClaudeMaxAuth(false);
+  }, []);
+
+  const handleSettingsAction = useCallback(async (action: SettingsAction) => {
+    switch (action.type) {
+      case 'set_verbose':
+        // Don't close menu - just update the setting
+        setCompactMode(!action.verbose);
+        break;
+      case 'set_token_display':
+        // Update state and persist to config
+        setTokenDisplay(action.mode);
+        setTokenDisplayMode(action.mode);
+        break;
+      case 'set_show_cost':
+        // Update state and persist to config
+        setShowCost(action.show);
+        setShowCostSetting(action.show);
+        break;
+      case 'change_auth_mode': {
+        setShowSettings(false);
+
+        // Craft Credits: No extra credentials needed (uses existing Craft OAuth)
+        if (action.mode === 'craft_credits') {
+          setAuthType('craft_credits');
+          addLocalMessage(
+            'AI usage mode changed to: Craft Credits. Restart the app for changes to take effect.',
+            'system'
+          );
+          return;
+        }
+
+        // API Key: Check if key exists, if not show modal
+        if (action.mode === 'api_key') {
+          const manager = getCredentialManager();
+          const existingKey = await manager.getApiKey();
+          if (existingKey) {
+            setAuthType('api_key');
+            addLocalMessage(
+              'AI usage mode changed to: API Key. Restart the app for changes to take effect.',
+              'system'
+            );
+          } else {
+            // Show API key entry modal
+            setShowApiKeyChange(true);
+          }
+          return;
+        }
+
+        // Claude Max: Check if token exists, if not show modal
+        if (action.mode === 'oauth_token') {
+          const manager = getCredentialManager();
+          const existingToken = await manager.getClaudeOAuth();
+          if (existingToken) {
+            setAuthType('oauth_token');
+            addLocalMessage(
+              'AI usage mode changed to: Claude Max. Restart the app for changes to take effect.',
+              'system'
+            );
+          } else {
+            // Show Claude Max auth modal
+            setShowClaudeMaxAuth(true);
+          }
+          return;
+        }
+        break;
+      }
+    }
+  }, [addLocalMessage]);
+
+  const handleSettingsCancel = useCallback(() => {
+    setShowSettings(false);
   }, []);
 
   const handlePaste = useCallback(() => {
@@ -589,7 +689,11 @@ export const App: React.FC<AppProps> = ({ config, onRequestSetup, initialAgent, 
           case '/exit':
           case '/quit':
           case '/q':
-            exit();
+            exitApp();
+            return;
+
+          case '/logout':
+            setShowLogoutConfirm(true);
             return;
 
           case '/clear':
@@ -646,80 +750,18 @@ export const App: React.FC<AppProps> = ({ config, onRequestSetup, initialAgent, 
             return;
           }
 
-          case '/setup':
-            if (onRequestSetup) {
-              onRequestSetup();
-            } else {
-              addLocalMessage('Setup not available. Run with --setup flag to reconfigure.', 'system');
-            }
-            return;
-
           case '/apikey':
             setShowApiKeyChange(true);
             return;
 
-          case '/config':
-            const currentAuthType = getAuthType();
-            addLocalMessage(
-              `**Configuration**
-
-- Config file: \`${getConfigPath()}\`
-- Claude auth: ${currentAuthType === 'oauth_token' ? '**Max Subscription**' : 'API Key'}
-- Workspace: \`${workspace.name}\`
-- MCP URL: \`${workspace.mcpUrl}\`
-- Model: \`${model}\`
-- Compact mode: ${compactMode ? 'On' : 'Off'}
-- Web search: ${isWebSearchEnabled() ? 'On' : 'Off'}
-- Web fetch: ${isWebFetchEnabled() ? 'On' : 'Off'}
-- Code execution: ${isCodeExecutionEnabled() ? 'On' : 'Off'}`,
-              'assistant'
-            );
+          case '/settings':
+            setShowSettings(true);
             return;
 
           case '/prefs':
           case '/preferences':
             addLocalMessage(formatPreferencesDisplay(), 'assistant');
             return;
-
-          case '/compact':
-            setCompactMode(!compactMode);
-            addLocalMessage(
-              `Compact mode: ${!compactMode ? 'On' : 'Off'}`,
-              'system'
-            );
-            return;
-
-          case '/cost': {
-            const costDisplay = tokenUsage.costUsd < 0.01
-              ? `$${(tokenUsage.costUsd * 100).toFixed(2)}¢`
-              : `$${tokenUsage.costUsd.toFixed(4)}`;
-
-            // Calculate cache hit rate for debug mode
-            const totalCacheTokens = tokenUsage.cacheReadTokens + tokenUsage.cacheCreationTokens;
-            const cacheHitRate = totalCacheTokens > 0
-              ? ((tokenUsage.cacheReadTokens / totalCacheTokens) * 100).toFixed(1)
-              : '0.0';
-
-            let costMessage = `**Token Usage (this session)**
-
-- Input tokens: ${formatTokens(tokenUsage.inputTokens)}
-- Output tokens: ${formatTokens(tokenUsage.outputTokens)}
-- Total tokens: ${formatTokens(tokenUsage.totalTokens)}
-- Cost: ${costDisplay}`;
-
-            // Add cache stats only in debug mode
-            if (isDebugEnabled()) {
-              costMessage += `
-
-**Cache Stats (debug)**
-- Cache read tokens: ${formatTokens(tokenUsage.cacheReadTokens)}
-- Cache creation tokens: ${formatTokens(tokenUsage.cacheCreationTokens)}
-- Cache hit rate: ${cacheHitRate}%`;
-            }
-
-            addLocalMessage(costMessage, 'assistant');
-            return;
-          }
 
           case '/model': {
             const modelArg = parts[1];
@@ -965,45 +1007,7 @@ export const App: React.FC<AppProps> = ({ config, onRequestSetup, initialAgent, 
             return;
           }
 
-          case '/auth': {
-            // Trigger MCP server authentication for active agent
-            triggerMcpAuth();
-            return;
-          }
-
-          case '/web':
-          case '/websearch': {
-            const newState = !isWebSearchEnabled();
-            setWebSearchEnabled(newState);
-            addLocalMessage(
-              `Web search: ${newState ? 'Enabled' : 'Disabled'}`,
-              'system'
-            );
-            return;
-          }
-
-          case '/fetch':
-          case '/webfetch': {
-            const newState = !isWebFetchEnabled();
-            setWebFetchEnabled(newState);
-            addLocalMessage(
-              `Web fetch: ${newState ? 'Enabled' : 'Disabled'}`,
-              'system'
-            );
-            return;
-          }
-
-          case '/bash': {
-            const newState = !isCodeExecutionEnabled();
-            setCodeExecutionEnabled(newState);
-            addLocalMessage(
-              `Bash execution: ${newState ? 'Enabled' : 'Disabled'}`,
-              'system'
-            );
-            return;
-          }
-
-          case '/balance': {
+          case '/credits': {
             setShowBalance(true);
             return;
           }
@@ -1053,7 +1057,7 @@ export const App: React.FC<AppProps> = ({ config, onRequestSetup, initialAgent, 
 
             const { execSync } = await import('child_process');
             const platform = process.platform;
-            const subject = 'Craft TUI Agent Feedback';
+            const subject = 'Craft Agent Feedback';
             const recipient = 'beta@craft.do';
             const body = `
 Please attach the transcript file from the folder that just opened. 
@@ -1133,12 +1137,6 @@ Filename: ${workspace.sessionId}.jsonl`;
       setModel,
       workspace,
       setWorkspace,
-      isWebSearchEnabled,
-      setWebSearchEnabled,
-      isWebFetchEnabled,
-      setWebFetchEnabled,
-      isCodeExecutionEnabled,
-      setCodeExecutionEnabled,
       pendingAttachments,
       availableAgents,
       activeAgentName,
@@ -1154,6 +1152,18 @@ Filename: ${workspace.sessionId}.jsonl`;
 
   // Handle Ctrl+C to interrupt or exit, and permission responses
   useInput((input, key) => {
+    // Handle logout confirmation (y/n)
+    if (showLogoutConfirm) {
+      if (input.toLowerCase() === 'y') {
+        clearAllConfig().then(() => exitApp());
+        return;
+      } else if (input.toLowerCase() === 'n' || key.escape) {
+        setShowLogoutConfirm(false);
+        return;
+      }
+      return; // Ignore other keys during confirmation
+    }
+
     // Handle permission responses (y/n/a)
     if (pendingPermission) {
       if (input.toLowerCase() === 'y') {
@@ -1174,7 +1184,7 @@ Filename: ${workspace.sessionId}.jsonl`;
       } else if (isProcessing) {
         interrupt();
       } else {
-        exit();
+        exitApp();
       }
     }
 
@@ -1279,9 +1289,47 @@ Filename: ${workspace.sessionId}.jsonl`;
         />
       )}
 
-      {/* Balance / AI credits top-up */}
+      {/* Claude Max auth input */}
+      {showClaudeMaxAuth && (
+        <ClaudeMaxAuth
+          onSubmit={handleClaudeMaxSubmit}
+          onCancel={handleClaudeMaxCancel}
+        />
+      )}
+
+      {/* Balance / AI credits */}
       {showBalance && (
-        <Balance onClose={() => setShowBalance(false)} />
+        <Balance
+          authType={getAuthType()}
+          onClose={() => setShowBalance(false)}
+        />
+      )}
+
+      {/* Settings menu */}
+      {showSettings && (
+        <Settings
+          compactMode={compactMode}
+          currentAuthType={getAuthType()}
+          tokenDisplay={tokenDisplayMode}
+          showCost={showCostSetting}
+          onAction={handleSettingsAction}
+          onCancel={handleSettingsCancel}
+        />
+      )}
+
+      {/* Logout confirmation */}
+      {showLogoutConfirm && (
+        <Box flexDirection="column" borderStyle="round" borderColor="red" paddingX={1} marginX={1}>
+          <Text color="red" bold>⚠ Logout</Text>
+          <Text>This will clear all settings and credentials.</Text>
+          <Text>You will need to run setup again to use the app.</Text>
+          <Box marginTop={1}>
+            <Text>Continue? </Text>
+            <Text color="green" bold>[Y]es</Text>
+            <Text> / </Text>
+            <Text color="red" bold>[N]o</Text>
+          </Box>
+        </Box>
       )}
 
       {/* MCP server authentication for sub-agents */}
@@ -1346,7 +1394,7 @@ Filename: ${workspace.sessionId}.jsonl`;
             />
           </Box>
         )}
-        {!showModelSelector && !showHelp && !showAgentMenu && !showWorkspaceSelector && !showWorkspaceAdd && !showWorkspaceRename && !showApiKeyChange && !showBalance && !pendingPermission && !pendingQuestion && !pendingMcpAuth && !pendingApiAuth && !pendingReview && (
+        {!showModelSelector && !showHelp && !showAgentMenu && !showWorkspaceSelector && !showWorkspaceAdd && !showWorkspaceRename && !showApiKeyChange && !showClaudeMaxAuth && !showBalance && !showSettings && !showLogoutConfirm && !pendingPermission && !pendingQuestion && !pendingMcpAuth && !pendingApiAuth && !pendingReview && (
           <Input
             onSubmit={handleSubmit}
             onPaste={handlePaste}
@@ -1368,10 +1416,14 @@ Filename: ${workspace.sessionId}.jsonl`;
           mcpUrl={workspace.mcpUrl}
           workspaceName={workspace.name}
           contextTokens={tokenUsage.contextTokens}
+          inputTokens={tokenUsage.inputTokens}
+          outputTokens={tokenUsage.outputTokens}
           costUsd={tokenUsage.costUsd}
           authType={getAuthType()}
           activeAgentName={activeAgentName ?? undefined}
           agentsLoading={agentsLoading}
+          tokenDisplay={tokenDisplayMode}
+          showCost={showCostSetting}
         />
       </Box>
     </Box>

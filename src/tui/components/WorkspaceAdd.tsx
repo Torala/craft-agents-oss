@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
-import { addWorkspace, type Workspace, type OAuthCredentials } from '../../config/storage.ts';
+import { addWorkspace, type Workspace, type OAuthCredentials, type McpAuthType } from '../../config/storage.ts';
 import { CraftOAuth, getMcpBaseUrl } from '../../auth/oauth.ts';
 import { getCredentialManager } from '../../credentials/index.ts';
 import { validateMcpConnection, getValidationErrorMessage } from '../../mcp/validation.ts';
@@ -185,10 +185,20 @@ export const WorkspaceAdd: React.FC<WorkspaceAddProps> = ({ onComplete, onCancel
       }
 
       // Validation passed - create workspace
+      // Determine mcpAuthType based on auth method used
+      let mcpAuthType: McpAuthType;
+      if (oauth) {
+        mcpAuthType = 'workspace_oauth';
+      } else if (token) {
+        mcpAuthType = 'workspace_bearer';
+      } else {
+        mcpAuthType = 'public';
+      }
+
       const workspace = addWorkspace({
         name,
         mcpUrl,
-        isPublic,
+        mcpAuthType,
       });
 
       // Save credentials to credential store

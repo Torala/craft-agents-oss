@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Craft TUI Agent is a Claude Code-like terminal interface for managing Craft documents. It uses the Claude Agent SDK (`@anthropic-ai/claude-agent-sdk`) to interact with Claude models and connects to Craft MCP servers for document operations. Supports multiple workspaces with separate conversations and OAuth authentication.
+Craft Agent is a Claude Code-like terminal interface for managing Craft documents. It uses the Claude Agent SDK (`@anthropic-ai/claude-agent-sdk`) to interact with Claude models and connects to Craft MCP servers for document operations. Supports multiple workspaces with separate conversations and OAuth authentication.
 
 ## Commands
 
@@ -127,22 +127,52 @@ Core `CraftAgent` class that:
 Multi-workspace support with:
 ```typescript
 interface StoredConfig {
-  authType?: 'api_key' | 'oauth_token';
+  authType?: 'api_key' | 'oauth_token' | 'craft_credits';
   model?: string;
   workspaces: Workspace[];
   activeWorkspaceId: string | null;
 }
 
+// How MCP server should be authenticated
+type McpAuthType = 'workspace_oauth' | 'workspace_bearer' | 'public';
+
 interface Workspace {
   id: string;
   name: string;
   mcpUrl: string;
-  isPublic?: boolean;        // For public servers
+  mcpAuthType?: McpAuthType; // Explicit MCP auth type (defaults to workspace_oauth)
+  isPublic?: boolean;        // DEPRECATED: Use mcpAuthType instead
   sessionId?: string;        // SDK session for continuity
 }
 ```
 - Workspace conversations stored in `~/.craft-agent/workspaces/{id}/conversation.json`
 - **Credentials stored in encrypted file** at `~/.craft-agent/credentials.enc`
+
+**Important Authentication Separation:**
+- **Craft OAuth (`craft_oauth::global`)**: For Craft API only (managing spaces, MCP links, credits). NEVER used for MCP server authentication.
+- **Workspace OAuth (`workspace_oauth::{workspaceId}`)**: For MCP server authentication. Each MCP server has its own OAuth, separate from Craft platform.
+- The `getWorkspaceAccessTokenAsync()` function does NOT fall back to Craft OAuth - MCP servers require their own credentials.
+
+### Setup Flow (`src/tui/components/Setup.tsx`)
+The setup wizard uses a "Craft-first" flow:
+
+1. **Welcome** - Introduction
+2. **Craft Login** - Mandatory OAuth with Craft account (opens browser)
+3. **Select Space** - Choose from user's Craft spaces (auto-creates MCP link if needed)
+4. **Billing Method** - Choose how to pay for AI:
+   - **Craft Credits** - Use Craft subscription (no extra auth needed)
+   - **API Key** - Pay-as-you-go via Anthropic
+   - **Claude Pro/Max** - Use Claude subscription
+5. **Enter Credentials** - Only for API Key or Claude Pro/Max
+6. **Confirm & Validate** - Review settings, validate MCP connection
+7. **Complete**
+
+**Existing MCP shortcut:** If user already has a workspace configured, setup skips steps 2-3 and goes directly to billing method selection.
+
+**CraftSpaceSelector** (`src/tui/components/craftAuth/CraftSpaceSelector.tsx`):
+- After selecting a space, checks for existing fullSpace MCP links
+- If found: shows list with existing links + "Create new" option
+- If none: auto-creates a new MCP link named "Craft Agent MCP"
 
 ### Credential Storage (`src/credentials/`)
 All sensitive credentials are stored in an AES-256-GCM encrypted file:
@@ -287,7 +317,7 @@ API responses can be huge (e.g., full web page content). To prevent context over
 
 ### TUI Layer (`src/tui/`)
 **App.tsx** - Main component handling:
-- Slash commands: `/help`, `/clear`, `/paste`, `/tools`, `/config`, `/prefs`, `/setup`, `/compact`, `/cost`, `/model`, `/workspace`, `/web`, `/fetch`, `/bash`, `/exit`
+- Slash commands: `/help`, `/clear`, `/paste`, `/tools`, `/settings`, `/prefs`, `/setup`, `/cost`, `/model`, `/workspace`, `/debug`, `/exit`
 - Modal state (model selector, workspace selector, etc.)
 - Message persistence
 

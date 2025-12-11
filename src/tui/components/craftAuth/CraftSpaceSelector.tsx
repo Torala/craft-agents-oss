@@ -1,11 +1,14 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Box, Text, useInput } from 'ink';
-import { CraftApi } from '../../../clients/craftApi';
-import { getCredentialManager } from '../../../credentials';
+import type { CraftProfile } from './CraftCallbackStep';
+
+// ============================================
+// Space Selector Component
+// ============================================
 
 export interface CraftSpaceSelectorProps {
-  token: string;
-  onComplete: (mcpUrl: string, spaceName: string) => void;
+  profile: CraftProfile;
+  onSelect: (spaceId: string, spaceName: string) => void;
   onBack: () => void;
 }
 
@@ -14,94 +17,253 @@ interface Space {
   name: string;
 }
 
-const MCP_LINK_NAME = 'Craft TUI MCP';
+interface SpaceCategory {
+  title: string;
+  spaces: Space[];
+}
 
-export const CraftSpaceSelector: React.FC<CraftSpaceSelectorProps> = ({ token, onComplete, onBack }) => {
-  const [spaces, setSpaces] = useState<Space[]>([]);
-  const [selected, setSelected] = useState<number>(0);
-  const [loading, setLoading] = useState<string | null>("Loading spaces");
+const MAX_OTHER_SPACES = 5;
 
-  useEffect(() => {
-    (async () => {
-      const craftApi = new CraftApi('https://api.craft.do');
-      const profile = await craftApi.getProfile(token);
-      setSpaces(profile.spaces);
-      setLoading(null);
-    })();
-  }, [token]);
+export const CraftSpaceSelector: React.FC<CraftSpaceSelectorProps> = ({ profile, onSelect, onBack }) => {
+  const [selectedIndex, setSelectedIndex] = useState<number>(0);
+  const [showAllOther, setShowAllOther] = useState(false);
 
+  // Categorize spaces based on profile data
+  const categorizedSpaces = useMemo(() => {
+    const { userId, teams, spaces } = profile;
+    const categories: SpaceCategory[] = [];
+
+    // Get IDs of private teams (user's own spaces)
+    const privateTeamIds = new Set(
+      teams.filter(t => t.isPrivate).map(t => t.id)
+    );
+
+    const recommended: Space[] = [];
+    const yourSpaces: Space[] = [];
+    const otherSpaces: Space[] = [];
+
+    for (const space of spaces) {
+      // Personal space = space.id matches userId
+      if (space.id === userId) {
+        recommended.push(space);
+      } else if (privateTeamIds.has(space.id)) {
+        // Any space from a private team goes to "Your Spaces"
+        yourSpaces.push(space);
+      } else {
+        otherSpaces.push(space);
+      }
+    }
+
+    if (recommended.length > 0) {
+      categories.push({ title: 'Recommended', spaces: recommended });
+    }
+    if (yourSpaces.length > 0) {
+      categories.push({
+        title: 'Your Spaces',
+        spaces: yourSpaces.sort((a, b) => a.name.localeCompare(b.name))
+      });
+    }
+    if (otherSpaces.length > 0) {
+      categories.push({
+        title: 'Other Spaces',
+        spaces: otherSpaces.sort((a, b) => a.name.localeCompare(b.name))
+      });
+    }
+
+    return categories;
+  }, [profile]);
+
+  // Flatten visible spaces for navigation (respecting show more)
+  const visibleSpaces = useMemo(() => {
+    const result: { space: Space; categoryTitle: string; isShowMore?: boolean }[] = [];
+
+    for (const category of categorizedSpaces) {
+      const isOther = category.title === 'Other Spaces';
+      const spacesToShow = (isOther && !showAllOther)
+        ? category.spaces.slice(0, MAX_OTHER_SPACES)
+        : category.spaces;
+
+      for (const space of spacesToShow) {
+        result.push({ space, categoryTitle: category.title });
+      }
+
+      // Add "Show more" option if needed
+      if (isOther && category.spaces.length > MAX_OTHER_SPACES && !showAllOther) {
+        result.push({
+          space: { id: '__show_more__', name: `Show ${category.spaces.length - MAX_OTHER_SPACES} more...` },
+          categoryTitle: category.title,
+          isShowMore: true
+        });
+      }
+    }
+
+    return result;
+  }, [categorizedSpaces, showAllOther]);
+
+  // Handle keyboard input
   useInput((input, key) => {
-    if (loading || spaces.length === 0) return;
+    if (key.escape) {
+      onBack();
+      return;
+    }
+
+    if (visibleSpaces.length === 0) return;
 
     if (key.upArrow) {
-      setSelected((prev) => (prev > 0 ? prev - 1 : prev));
+      setSelectedIndex((prev) => (prev > 0 ? prev - 1 : prev));
     } else if (key.downArrow) {
-      setSelected((prev) => (prev < spaces.length - 1 ? prev + 1 : prev));
+      setSelectedIndex((prev) => (prev < visibleSpaces.length - 1 ? prev + 1 : prev));
     } else if (key.return) {
-      const selectedSpace = spaces[selected];
-      if (selectedSpace) {
-        selectSpace(selectedSpace.id, selectedSpace.name);
+      const selected = visibleSpaces[selectedIndex];
+      if (selected) {
+        if (selected.isShowMore) {
+          // Expand the list
+          setShowAllOther(true);
+        } else {
+          onSelect(selected.space.id, selected.space.name);
+        }
       }
-    } else if (key.escape) {
-      onBack();
     }
   });
 
-  const selectSpace = async (spaceId: string, spaceName: string) => {
-    const craftApi = new CraftApi('https://api.craft.do');
-    setLoading("Loading MCP URL");
-    const workflowLinks = await craftApi.getWorkflowLinks({ authToken: token, spaceId });
-    const spaceWorkflowLink = workflowLinks.find(link => link.type === 'mcp' && link.scope === 'fullSpace' && link.enabled && link.name === MCP_LINK_NAME);
-
-    const completeWithMcpUrl = async (mcpUrl: string) => {
-      // Save the Craft OAuth token to secure storage
-      const credentialManager = getCredentialManager();
-      await credentialManager.setCraftOAuth(token);
-      setLoading(null);
-      onComplete(mcpUrl, spaceName);
-    };
-    
-    if (spaceWorkflowLink?.urls?.mcp != null) {
-      await completeWithMcpUrl(spaceWorkflowLink.urls.mcp);
-    } else {
-      const link = await craftApi.createSpaceWorkflowLink({ authToken: token, spaceId, name: 'Craft TUI MCP', type: 'mcp', scope: 'fullSpace' });
-      if (link.urls?.mcp != null) {
-        await completeWithMcpUrl(link.urls.mcp);
-      } else {
-        setLoading(null);
-        throw new Error('Failed to create MCP link');
-      }
-    }
-  }
+  let currentIndex = 0;
 
   return (
     <Box flexDirection="column">
-      <Text bold>Select a Craft Space</Text>
-      <Box marginY={1}>
-        <Text dimColor>Choose the workspace to connect:</Text>
+      <Text dimColor>Choose the workspace to connect:</Text>
+      <Box marginTop={1} />
+
+      {categorizedSpaces.map((category) => {
+        const isOther = category.title === 'Other Spaces';
+        const spacesToShow = (isOther && !showAllOther)
+          ? category.spaces.slice(0, MAX_OTHER_SPACES)
+          : category.spaces;
+
+        return (
+          <Box key={category.title} flexDirection="column" marginBottom={1}>
+            <Text dimColor>{category.title}</Text>
+            {spacesToShow.map((space) => {
+              const itemIndex = currentIndex++;
+              const isSelected = selectedIndex === itemIndex;
+              return (
+                <Box key={space.id}>
+                  <Text color={isSelected ? 'cyan' : undefined}>
+                    {isSelected ? '› ' : '  '}
+                  </Text>
+                  <Text color={isSelected ? 'cyan' : 'white'} bold={isSelected}>
+                    {space.name}
+                  </Text>
+                </Box>
+              );
+            })}
+            {/* Show more option */}
+            {isOther && category.spaces.length > MAX_OTHER_SPACES && !showAllOther && (() => {
+              const showMoreIndex = currentIndex++;
+              const isSelected = selectedIndex === showMoreIndex;
+              return (
+                <Box>
+                  <Text color={isSelected ? 'cyan' : 'gray'}>
+                    {isSelected ? '› ' : '  '}
+                  </Text>
+                  <Text color={isSelected ? 'cyan' : 'gray'} italic>
+                    +{category.spaces.length - MAX_OTHER_SPACES} more...
+                  </Text>
+                </Box>
+              );
+            })()}
+          </Box>
+        );
+      })}
+
+      <Box marginTop={1}>
+        <Text dimColor>↑↓ navigate • ↵ select • Esc back</Text>
       </Box>
+    </Box>
+  );
+};
+
+// ============================================
+// MCP Link Selector Component
+// ============================================
+
+export interface McpLink {
+  name: string;
+  linkId: string;
+  mcpUrl: string;
+}
+
+export interface McpLinkSelectorProps {
+  spaceName: string;
+  mcpLinks: McpLink[];
+  onSelect: (mcpUrl: string) => void;
+  onCreateNew: () => void;
+  onBack: () => void;
+}
+
+export const McpLinkSelector: React.FC<McpLinkSelectorProps> = ({
+  spaceName,
+  mcpLinks,
+  onSelect,
+  onCreateNew,
+  onBack,
+}) => {
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const totalOptions = mcpLinks.length + 1; // +1 for "Create new" option
+
+  useInput((input, key) => {
+    if (key.escape) {
+      onBack();
+      return;
+    }
+
+    if (key.upArrow) {
+      setSelectedIndex((prev) => (prev > 0 ? prev - 1 : prev));
+    } else if (key.downArrow) {
+      setSelectedIndex((prev) => (prev < totalOptions - 1 ? prev + 1 : prev));
+    } else if (key.return) {
+      if (selectedIndex < mcpLinks.length) {
+        const link = mcpLinks[selectedIndex];
+        if (link) {
+          onSelect(link.mcpUrl);
+        }
+      } else {
+        onCreateNew();
+      }
+    }
+  });
+
+  return (
+    <Box flexDirection="column">
+      <Text dimColor>
+        Existing connections for <Text color="cyan">{spaceName}</Text>:
+      </Text>
 
       <Box flexDirection="column" marginY={1}>
-        {loading ? (
-          <Text dimColor>{loading}</Text>
-        ) : spaces.length === 0 ? (
-          <Text dimColor>No spaces found</Text>
-        ) : (
-          spaces.map((space, index) => (
-            <Box key={space.id}>
-              <Text color={selected === index ? 'green' : undefined}>
-                {selected === index ? '❯ ' : '  '}
-              </Text>
-              <Text color={selected === index ? 'green' : undefined} bold={selected === index}>
-                {space.name}
-              </Text>
-            </Box>
-          ))
-        )}
+        {/* Existing MCP links */}
+        {mcpLinks.map((link, index) => (
+          <Box key={link.linkId}>
+            <Text color={selectedIndex === index ? 'cyan' : undefined}>
+              {selectedIndex === index ? '› ' : '  '}
+            </Text>
+            <Text color={selectedIndex === index ? 'cyan' : 'white'} bold={selectedIndex === index}>
+              {link.name}
+            </Text>
+            <Text dimColor> (existing)</Text>
+          </Box>
+        ))}
+        {/* Create new option */}
+        <Box>
+          <Text color={selectedIndex === mcpLinks.length ? 'cyan' : 'gray'}>
+            {selectedIndex === mcpLinks.length ? '› ' : '  '}
+          </Text>
+          <Text color={selectedIndex === mcpLinks.length ? 'cyan' : 'gray'}>
+            + Create new connection
+          </Text>
+        </Box>
       </Box>
 
       <Box marginTop={1}>
-        <Text dimColor>Use ↑↓ to select, Enter to confirm, Esc to go back</Text>
+        <Text dimColor>↑↓ navigate • ↵ select • Esc back</Text>
       </Box>
     </Box>
   );

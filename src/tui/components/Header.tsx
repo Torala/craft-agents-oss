@@ -1,7 +1,7 @@
 import React, { memo, useMemo } from 'react';
 import { Box, Text } from 'ink';
 import { formatTokens } from '../utils/markdown.ts';
-import type { AuthType } from '../../config/storage.ts';
+import type { AuthType, TokenDisplayMode } from '../../config/storage.ts';
 import { AnimatedSpinner } from './Spinner.tsx';
 
 export interface HeaderProps {
@@ -10,10 +10,14 @@ export interface HeaderProps {
   mcpUrl?: string;
   workspaceName?: string;
   contextTokens?: number;
+  inputTokens?: number;
+  outputTokens?: number;
   costUsd?: number;
   authType?: AuthType;
   activeAgentName?: string;
   agentsLoading?: boolean;
+  tokenDisplay?: TokenDisplayMode;
+  showCost?: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = memo(({
@@ -22,10 +26,14 @@ export const Header: React.FC<HeaderProps> = memo(({
   mcpUrl,
   workspaceName,
   contextTokens = 0,
+  inputTokens = 0,
+  outputTokens = 0,
   costUsd = 0,
   authType = 'api_key',
   activeAgentName,
   agentsLoading = false,
+  tokenDisplay = 'total',
+  showCost = true,
 }) => {
   // Map model IDs to friendly names
   const modelDisplay = useMemo(() => {
@@ -70,15 +78,22 @@ export const Header: React.FC<HeaderProps> = memo(({
         </Text>
         <Text dimColor> {mcpDisplay}</Text>
         <Text dimColor> | </Text>
-        <Text color={authType === 'oauth_token' ? 'green' : 'blue'}>
-          {authType === 'oauth_token' ? 'Max' : 'API'}
+        <Text color={authType === 'oauth_token' ? 'green' : authType === 'craft_credits' ? 'magenta' : 'blue'}>
+          {authType === 'oauth_token' ? 'Claude Sub' : authType === 'craft_credits' ? 'Craft Credits' : 'API Key'}
         </Text>
       </Box>
 
       <Box>
-        {contextTokens > 0 && (
+        {tokenDisplay !== 'hidden' && (inputTokens > 0 || outputTokens > 0) && (
           <>
-            <Text dimColor>{formatTokens(contextTokens)} ({costDisplay})</Text>
+            <Text dimColor>
+              {tokenDisplay === 'separate'
+                ? `${formatTokens(inputTokens)} in / ${formatTokens(outputTokens)} out`
+                : formatTokens(inputTokens + outputTokens)}
+            </Text>
+            {showCost && authType === 'api_key' && costUsd > 0 && (
+              <Text dimColor> ({costDisplay})</Text>
+            )}
             <Text dimColor> | </Text>
           </>
         )}

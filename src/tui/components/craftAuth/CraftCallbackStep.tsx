@@ -6,8 +6,16 @@ import { createCallbackServer } from '../../../auth/callback-server';
 import { CraftApi } from '../../../clients/craftApi';
 import { AnimatedSpinner } from '../Spinner';
 
+export interface CraftProfile {
+  userId: string;
+  firstName: string;
+  lastName: string;
+  spaces: Array<{ id: string; name: string }>;
+  teams: Array<{ id: string; isPrivate: boolean; role: string; name: string }>;
+}
+
 export interface CraftCallbackStepProps {
-  onComplete: (params: { token: string }) => void;
+  onComplete: (params: { token: string; profile: CraftProfile }) => void;
   onBack: () => void;
 }
 
@@ -107,7 +115,10 @@ export const CraftCallbackStep: React.FC<CraftCallbackStepProps> = ({ onComplete
         
         const craftApi = new CraftApi('https://api.craft.do');
         const token = await craftApi.exchangeCodeForToken({ code: callbackCode, redirectUri: callbackUrl, codeVerifier });
-        onComplete({ token });
+
+        // Fetch profile to get spaces and teams for categorization
+        const profile = await craftApi.getProfile(token);
+        onComplete({ token, profile });
       } catch (err) {
         if (cancelled) return;
         setError(err instanceof Error ? err.message : 'Authentication failed');
@@ -121,63 +132,44 @@ export const CraftCallbackStep: React.FC<CraftCallbackStepProps> = ({ onComplete
   }, [onComplete]);
 
   return (
-    <Box flexDirection="column" paddingX={1}>
-      {/* Header */}
-      <Box marginBottom={1}>
-        <Text bold>🔐 Authorize with Craft</Text>
-      </Box>
-
+    <Box flexDirection="column">
       {/* Status-based content */}
       {status === 'initializing' && (
-        <Box marginY={1}>
+        <Box marginY={1} justifyContent="center">
           <AnimatedSpinner />
           <Text> Setting up authorization...</Text>
         </Box>
       )}
 
       {status === 'ready' && (
-        <Box flexDirection="column" marginY={1}>
-          <Text>Press <Text bold color="cyan">Enter</Text> or <Text bold color="cyan">o</Text> to open your browser and sign in to Craft.</Text>
+        <Box flexDirection="column" alignItems="center">
+          <Text>Press <Text bold color="cyan">Enter</Text> to open your browser and sign in.</Text>
           <Box marginTop={1}>
-            <Text dimColor>You'll be redirected back automatically after signing in.</Text>
+            <Text dimColor>You'll be redirected back automatically.</Text>
           </Box>
         </Box>
       )}
 
       {status === 'waiting' && (
-        <Box flexDirection="column" marginY={1}>
+        <Box flexDirection="column" alignItems="center">
           <Box>
             <AnimatedSpinner />
             <Text> Waiting for authorization...</Text>
           </Box>
           <Box marginTop={1}>
-            <Text dimColor>Complete the sign-in in your browser.</Text>
-          </Box>
-          <Box marginTop={1} flexDirection="column">
-            <Text dimColor>If the browser didn't open, visit this URL:</Text>
-            <Text dimColor color="blue">{url}</Text>
+            <Text dimColor>Complete sign-in in your browser.</Text>
           </Box>
         </Box>
       )}
 
       {status === 'error' && (
-        <Box flexDirection="column" marginY={1}>
+        <Box flexDirection="column" alignItems="center">
           <Text color="red">✗ {error}</Text>
           <Box marginTop={1}>
             <Text dimColor>Press Esc to go back and try again.</Text>
           </Box>
         </Box>
       )}
-
-      {/* Footer instructions */}
-      <Box marginTop={1}>
-        {status === 'ready' && (
-          <Text dimColor>Press Enter to open browser, Esc to go back</Text>
-        )}
-        {status === 'waiting' && (
-          <Text dimColor>Press Esc to cancel</Text>
-        )}
-      </Box>
     </Box>
   );
 };

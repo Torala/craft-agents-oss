@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'fs';
 import { homedir } from 'os';
 import { join } from 'path';
 import { randomUUID } from 'crypto';
@@ -20,16 +20,31 @@ export interface OAuthCredentials {
   tokenType: string;
 }
 
+/**
+ * How the workspace's MCP server should be authenticated.
+ * - 'workspace_oauth': Has OAuth credentials (workspace_oauth::{workspaceId})
+ * - 'workspace_bearer': Uses bearer token (workspace_bearer::{workspaceId})
+ * - 'public': Truly public, no auth needed
+ *
+ * Note: Craft OAuth (craft_oauth::global) is ONLY for Craft API (spaces, MCP link management).
+ * It should NEVER be used for MCP server authentication - MCP servers have their own OAuth.
+ */
+export type McpAuthType = 'workspace_oauth' | 'workspace_bearer' | 'public';
+
 export interface Workspace {
   id: string;
   name: string;
   mcpUrl: string;
-  isPublic?: boolean;
+  mcpAuthType?: McpAuthType;  // Explicit MCP auth type (defaults to workspace_oauth)
+  isPublic?: boolean;         // DEPRECATED: Use mcpAuthType instead
   createdAt: number;
   sessionId?: string;  // SDK session ID for conversation continuity
 }
 
-export type AuthType = 'api_key' | 'oauth_token';
+export type AuthType = 'api_key' | 'oauth_token' | 'craft_credits';
+
+// Token display mode for status bar
+export type TokenDisplayMode = 'hidden' | 'total' | 'separate';
 
 // Config stored in JSON file (credentials stored in encrypted file, not here)
 export interface StoredConfig {
@@ -38,6 +53,8 @@ export interface StoredConfig {
   activeWorkspaceId: string | null;
   model?: string;
   extendedCacheTtl?: boolean;  // Extended cache TTL: true=1h all, false=5m all, undefined=auto (Opus only)
+  tokenDisplay?: TokenDisplayMode;  // How to show tokens in status bar: hidden, total, or separate in/out
+  showCost?: boolean;  // Whether to show cost in status bar (only relevant for API Key auth)
 }
 
 const CONFIG_DIR = join(homedir(), '.craft-agent');
@@ -100,20 +117,6 @@ export function shouldUseExtendedCacheTtl(model: string): boolean {
 }
 
 /**
- * Check if config has valid credentials in credential store
- */
-export async function hasValidCredentials(): Promise<boolean> {
-  const config = loadStoredConfig();
-  if (!config) return false;
-
-  const manager = getCredentialManager();
-  const apiKey = await manager.getApiKey();
-  const oauthToken = await manager.getClaudeOAuth();
-
-  return !!(apiKey || oauthToken);
-}
-
-/**
  * Get the Anthropic API key from credential store
  */
 export async function getAnthropicApiKey(): Promise<string | null> {
@@ -141,24 +144,123 @@ export async function isWorkspaceTokenExpiredAsync(workspaceId: string): Promise
 }
 
 
-// Get access token for a specific workspace from credential store
+/**
+ * Determine the MCP auth type for a workspace.
+ * Uses explicit mcpAuthType if set, otherwise infers from legacy isPublic flag.
+ */
+function getWorkspaceMcpAuthType(workspace: Workspace): McpAuthType {
+  if (workspace.mcpAuthType) {
+    return workspace.mcpAuthType;
+  }
+  // Legacy: isPublic was sometimes misused, but treat it as 'public' for backwards compat
+  if (workspace.isPublic) {
+    return 'public';
+  }
+  // Default: most workspaces need OAuth
+  return 'workspace_oauth';
+}
+
+/**
+ * Get access token for a specific workspace from credential store.
+ *
+ * IMPORTANT: This function does NOT fall back to craft_oauth!
+ * Craft OAuth is for the Craft API (managing spaces, MCP links).
+ * MCP servers require their own workspace-specific authentication.
+ */
 export async function getWorkspaceAccessTokenAsync(workspaceId: string): Promise<string | null> {
   const config = loadStoredConfig();
   const workspace = config?.workspaces.find(w => w.id === workspaceId);
 
-  if (workspace?.isPublic) {
-    return null;
+  if (!workspace) return null;
+
+  const manager = getCredentialManager();
+  const authType = getWorkspaceMcpAuthType(workspace);
+
+  switch (authType) {
+    case 'workspace_oauth': {
+      const oauth = await manager.getWorkspaceOAuth(workspaceId);
+      // Return token if found, null otherwise (no fallback to craft_oauth!)
+      return oauth?.accessToken ?? null;
+    }
+
+    case 'workspace_bearer': {
+      const bearer = await manager.getWorkspaceBearer(workspaceId);
+      return bearer ?? null;
+    }
+
+    case 'public':
+      return null;
+
+    default:
+      return null;
+  }
+}
+
+/**
+ * Auth status for a workspace's MCP connection.
+ * Used by UI to show appropriate feedback when auth is missing.
+ */
+export interface WorkspaceAuthStatus {
+  authType: McpAuthType;
+  hasToken: boolean;
+  needsAuth: boolean;
+  message?: string;
+}
+
+/**
+ * Check if a workspace has the required MCP authentication configured.
+ * Returns status with needsAuth=true if credentials are missing.
+ */
+export async function checkWorkspaceAuthStatus(workspaceId: string): Promise<WorkspaceAuthStatus> {
+  const config = loadStoredConfig();
+  const workspace = config?.workspaces.find(w => w.id === workspaceId);
+
+  if (!workspace) {
+    return {
+      authType: 'workspace_oauth',
+      hasToken: false,
+      needsAuth: true,
+      message: 'Workspace not found'
+    };
   }
 
   const manager = getCredentialManager();
+  const authType = getWorkspaceMcpAuthType(workspace);
 
-  // Check credential store for bearer token
-  const bearer = await manager.getWorkspaceBearer(workspaceId);
-  if (bearer) return bearer;
+  switch (authType) {
+    case 'workspace_oauth': {
+      const oauth = await manager.getWorkspaceOAuth(workspaceId);
+      const hasToken = !!oauth?.accessToken;
+      return {
+        authType,
+        hasToken,
+        needsAuth: !hasToken,
+        message: hasToken ? undefined : 'MCP authentication required'
+      };
+    }
 
-  // Check credential store for OAuth
-  const oauth = await manager.getWorkspaceOAuth(workspaceId);
-  return oauth?.accessToken || null;
+    case 'workspace_bearer': {
+      const bearer = await manager.getWorkspaceBearer(workspaceId);
+      const hasToken = !!bearer;
+      return {
+        authType,
+        hasToken,
+        needsAuth: !hasToken,
+        message: hasToken ? undefined : 'Bearer token required'
+      };
+    }
+
+    case 'public':
+      return { authType, hasToken: true, needsAuth: false };
+
+    default:
+      return {
+        authType: 'workspace_oauth',
+        hasToken: false,
+        needsAuth: true,
+        message: 'Unknown auth configuration'
+      };
+  }
 }
 
 
@@ -206,8 +308,63 @@ export function getAuthType(): AuthType {
   return config?.authType || 'api_key';
 }
 
+export function setAuthType(authType: AuthType): void {
+  const config = loadStoredConfig();
+  if (!config) return;
+  config.authType = authType;
+  saveConfig(config);
+}
+
+export function getTokenDisplay(): TokenDisplayMode {
+  const config = loadStoredConfig();
+  return config?.tokenDisplay || 'total';
+}
+
+export function setTokenDisplay(mode: TokenDisplayMode): void {
+  const config = loadStoredConfig();
+  if (!config) return;
+  config.tokenDisplay = mode;
+  saveConfig(config);
+}
+
+export function getShowCost(): boolean {
+  const config = loadStoredConfig();
+  // Default to true if not set
+  return config?.showCost !== false;
+}
+
+export function setShowCost(show: boolean): void {
+  const config = loadStoredConfig();
+  if (!config) return;
+  config.showCost = show;
+  saveConfig(config);
+}
+
 export function getConfigPath(): string {
   return CONFIG_FILE;
+}
+
+/**
+ * Clear all configuration and credentials (for logout).
+ * Deletes config file and credentials file.
+ */
+export async function clearAllConfig(): Promise<void> {
+  // Delete config file
+  if (existsSync(CONFIG_FILE)) {
+    rmSync(CONFIG_FILE);
+  }
+
+  // Delete credentials file
+  const credentialsFile = join(CONFIG_DIR, 'credentials.enc');
+  if (existsSync(credentialsFile)) {
+    rmSync(credentialsFile);
+  }
+
+  // Optionally: Delete workspace data (conversations)
+  const workspacesDir = join(CONFIG_DIR, 'workspaces');
+  if (existsSync(workspacesDir)) {
+    rmSync(workspacesDir, { recursive: true });
+  }
 }
 
 // ============================================

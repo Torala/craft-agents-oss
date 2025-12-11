@@ -1,74 +1,18 @@
 import React from 'react';
 import { Box, Text, useInput } from 'ink';
+import { COMMANDS, SUBCOMMANDS, CATEGORY_ORDER, getCommandsByCategory, type CommandCategory } from '../utils/filtering.ts';
 
-const HELP_TEXT = `
-**Craft Document Assistant** - Commands
-
-**Chat**
-  Just type your message and press Enter to chat with Claude.
-  Use @agentname to activate a sub-agent (e.g., @writer).
-
-**Commands**
-  /help        Show this help message
-  /clear       Clear conversation history
-  /paste       Paste files/images from clipboard
-  /tools       List available tools (-v for details)
-  /config      Show current configuration
-  /prefs       Show user preferences
-  /setup       Reconfigure API keys and MCP settings
-  /apikey      Change Anthropic API key
-  /compact     Toggle compact/expanded tool output
-  /cost        Show token usage and estimated cost
-  /model       Show or change model (e.g., /model opus)
-  /exit        Exit the application (or Ctrl+C)
-
-**Workspace Commands**
-  /workspace          Switch workspace (or /w)
-  /workspace add      Add a new Craft MCP workspace
-  /workspace rename   Rename current workspace
-  /workspace remove   Remove a workspace
-
-**Sub-Agent Commands**
-  /agent              Show agent menu
-  /agent list         List available agents
-  /agent info         Show active agent details
-  /agent refresh      Reload agent list from Craft
-  /agent reload       Reload active agent's instructions
-  /agent reset        Fully reset active agent
-  /agent clear        Deactivate current agent
-
-**Capability Toggles**
-  /web         Toggle web search capability
-  /fetch       Toggle web fetch capability
-  /bash        Toggle bash/shell execution
-  /auth        Authenticate MCP servers for active agent
-  /debug       Show debug info and file paths
-  /feedback    Send feedback email with session transcript
-
-**Keyboard Shortcuts**
-  Enter      Send message
-  Up/Down    Navigate command history
-  Backspace  Remove last attached file (when input is empty)
-  Ctrl+C     Interrupt / Exit
-  Ctrl+U     Clear input line
-  Esc        Interrupt current operation
-
-**Attaching Files**
-  Drag & drop   Drag file into terminal window
-  /paste        Paste from clipboard (Cmd+C a file first)
-  Type path     Include /path/to/file in your message
-
-**Ghostty Users**
-  By default Ghostty uses Ctrl+Shift+V for paste.
-  Add to ~/.config/ghostty/config:
-    keybind = performable:ctrl+v=paste_from_clipboard
-
-**Examples**
-  "Show me today's daily note"
-  "Search for meeting notes about project X"
-  "@writer Help me draft an email"
-  "What's the weather in NYC?" (uses web search)
-`.trim();
+// Static content that isn't command-based
+const STATIC_CONTENT: Partial<Record<CommandCategory | 'Chat', string[]>> = {
+  'Chat': [
+    'Just type your message and press Enter to chat.',
+    'Use @agentname to activate a sub-agent (e.g., @writer).',
+  ],
+  'Attaching Files': [
+    'Drag & drop   Drag file into terminal window',
+    'Type path     Include /path/to/file in your message',
+  ],
+};
 
 interface HelpPanelProps {
   onClose: () => void;
@@ -81,35 +25,65 @@ export const HelpPanel: React.FC<HelpPanelProps> = ({ onClose }) => {
     }
   });
 
-  // Simple rendering - split into sections
-  const lines = HELP_TEXT.split('\n');
+  const commandsByCategory = getCommandsByCategory();
 
   return (
     <Box flexDirection="column" paddingX={1}>
-      {lines.map((line, index) => {
-        // Bold headers (lines starting with **)
-        if (line.startsWith('**') && line.endsWith('**')) {
-          const text = line.replace(/\*\*/g, '');
-          return (
-            <Box key={index} marginTop={index > 0 ? 1 : 0}>
-              <Text bold color="blue">{text}</Text>
-            </Box>
+      {/* Title */}
+      <Text bold color="blue">Craft Agent - Help</Text>
+
+      {/* Chat section (static, always first) */}
+      <Box marginTop={1}>
+        <Text bold color="blue">Chat</Text>
+      </Box>
+      {STATIC_CONTENT['Chat']?.map((line, i) => (
+        <Text key={`chat-${i}`} dimColor>  {line}</Text>
+      ))}
+
+      {/* Dynamic command sections based on CATEGORY_ORDER */}
+      {CATEGORY_ORDER.map(category => {
+        const commands = commandsByCategory.get(category);
+        if (!commands?.length) return null;
+
+        // Get subcommands for this category's commands (if any)
+        const subcommandEntries = commands
+          .filter(cmd => SUBCOMMANDS[cmd.command])
+          .flatMap(cmd =>
+            Object.entries(SUBCOMMANDS[cmd.command]!).map(([sub, desc]) => ({
+              command: `${cmd.command} ${sub}`,
+              description: desc,
+            }))
           );
-        }
-        // Command lines (indented with /)
-        if (line.trim().startsWith('/')) {
-          const parts = line.match(/^(\s*)(\S+)(\s+)(.*)$/);
-          if (parts) {
-            return (
-              <Text key={index}>
-                {parts[1]}<Text color="cyan">{parts[2]}</Text>{parts[3]}<Text dimColor>{parts[4]}</Text>
+
+        return (
+          <React.Fragment key={category}>
+            <Box marginTop={1}>
+              <Text bold color="blue">{category}</Text>
+            </Box>
+            {/* Main commands */}
+            {commands.map(cmd => (
+              <Text key={cmd.command}>
+                {'  '}<Text color="cyan">{cmd.command.padEnd(16)}</Text>
+                <Text dimColor>{cmd.description}</Text>
               </Text>
-            );
-          }
-        }
-        // Regular text
-        return <Text key={index} dimColor={line.startsWith('  ')}>{line}</Text>;
+            ))}
+            {/* Subcommands (indented further) */}
+            {subcommandEntries.map(sub => (
+              <Text key={sub.command}>
+                {'  '}<Text color="cyan">{sub.command.padEnd(16)}</Text>
+                <Text dimColor>{sub.description}</Text>
+              </Text>
+            ))}
+            {/* Static content for this category (e.g., file attachment tips) */}
+            {STATIC_CONTENT[category]?.map((line, i) => (
+              <Text key={`${category}-static-${i}`}>
+                {'  '}<Text dimColor>{line}</Text>
+              </Text>
+            ))}
+          </React.Fragment>
+        );
       })}
+
       <Box marginTop={1}>
         <Text dimColor>Press Esc, Enter, or q to close</Text>
       </Box>

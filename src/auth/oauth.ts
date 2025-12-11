@@ -21,7 +21,7 @@ export interface OAuthCallbacks {
 
 const CALLBACK_PORT = 8914;
 const CALLBACK_PATH = '/oauth/callback';
-const CLIENT_NAME = 'Craft TUI Agent';
+const CLIENT_NAME = 'Craft Agent';
 
 /**
  * Generate a styled OAuth callback page with terminal emulator aesthetic
