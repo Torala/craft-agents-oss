@@ -2,8 +2,7 @@ import { getCraftToken } from '../auth/craft-token';
 import { CraftApi, type ProfileResponse, getTeamIdFromProfile } from '../clients/craftApi';
 
 const FREE_TIER = ['Free', 'free', 'V2_Free', 'v2_free'];
-const SANDBOX_PRICE_ID = 'price_1SNGUyE6tZYZTgYxlPRQmvDx';
-const LIVE_PRICE_ID = 'price_1S1mWyCYYgB1lx2uSA55aNG1';
+const LIVE_PRICE_ID = 'price_1SdYeKCYYgB1lx2ucPn5ZPlL';
 
 function getSuccessUrl(params: { teamId: string, spaceId: string, go: string }) {
   const { teamId, spaceId, go } = params;
@@ -16,16 +15,6 @@ function getSuccessUrl(params: { teamId: string, spaceId: string, go: string }) 
 
 function getSubscriptionPriceId(params: { teamId: string, spaceId: string }) {
   const { teamId, spaceId } = params;
-  if (process.argv.includes('--debug')) {
-    return {
-      priceId: SANDBOX_PRICE_ID,
-      successUrl: getSuccessUrl({ teamId, spaceId, go: 'checkout-success' }),
-      cancelUrl: getSuccessUrl({ teamId, spaceId, go: 'checkout-cancel' }),
-      environment: 'sandbox' as const,
-      country: 'US',
-      locale: 'en-US',
-    };
-  }
   return {
     priceId: LIVE_PRICE_ID,
     successUrl: getSuccessUrl({ teamId, spaceId, go: 'checkout-success' }),
