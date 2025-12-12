@@ -56,21 +56,9 @@ curl -fsSL https://agents.craft.do/install.sh | bash
 
 **Testing fresh install (complete uninstall):**
 ```bash
-# Remove binaries
-rm -f ~/.local/bin/craft
-bun unlink 2>/dev/null || rm -f ~/.bun/bin/craft
-
-# Remove config/credentials
-rm -rf ~/.craft-agent
-
-# Remove PATH from shell config (zsh)
-sed -i '' '/# Added by Craft Agent installer/d' ~/.zshrc
-sed -i '' '/export PATH="\$HOME\/.local\/bin:\$PATH"/d' ~/.zshrc
-
-# Verify removal
-hash -r && which craft  # Should say "not found"
+bash scripts/uninstall.sh
+# Then open a new terminal and run the install script
 ```
-Then open a new terminal and run the install script.
 
 ## Project Structure
 

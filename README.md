@@ -252,31 +252,17 @@ curl -fsSL https://agents.craft.do/install.sh | bash
 
 ### Testing a Fresh Install
 
-To completely uninstall Craft Agent and test from scratch:
+Use the uninstall script to completely remove Craft Agent:
 
 ```bash
-# Remove the binary
-rm -f ~/.local/bin/craft
-
-# Remove bun-linked version (if using development install)
-bun unlink 2>/dev/null || rm -f ~/.bun/bin/craft
-
-# Remove config and credentials
-rm -rf ~/.craft-agent
-
-# Remove PATH from shell config (choose your shell)
-# For zsh:
-sed -i '' '/# Added by Craft Agent installer/d' ~/.zshrc
-sed -i '' '/export PATH="\$HOME\/.local\/bin:\$PATH"/d' ~/.zshrc
-
-# For bash:
-sed -i '/# Added by Craft Agent installer/d' ~/.bashrc
-sed -i '/export PATH="\$HOME\/.local\/bin:\$PATH"/d' ~/.bashrc
-
-# Clear command cache and verify removal
-hash -r
-which craft  # Should say "craft not found"
+bash scripts/uninstall.sh
 ```
+
+This removes:
+- Binary from `~/.local/bin/craft`
+- Bun-linked version (if exists)
+- Config and credentials (`~/.craft-agent`)
+- PATH entries from shell configs (`.zshrc`, `.bashrc`, etc.)
 
 Then open a **new terminal** and run the install script to test.
 
