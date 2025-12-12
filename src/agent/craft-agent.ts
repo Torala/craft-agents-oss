@@ -12,7 +12,7 @@ import { updatePreferences, loadPreferences, type UserPreferences } from '../con
 import { CraftOAuth, getMcpBaseUrl } from '../auth/oauth.ts';
 import type { FileAttachment } from '../tui/utils/files.ts';
 import { debug } from '../tui/utils/debug.ts';
-import { getDocumentationServer } from './documentation-server.ts';
+// Documentation is now served via external HTTP MCP at agents.craft.do/docs/mcp
 
 export interface CraftAgentConfig {
   workspace: Workspace;
@@ -671,7 +671,12 @@ export class CraftAgent {
           ...(token ? { headers: { Authorization: `Bearer ${token}` } } : {}),
         },
         preferences: getPreferencesServer(hasActiveAgent),
-        documentation: getDocumentationServer(),
+        // External docs MCP server (public, no auth required)
+        // Provides Craft Agent documentation for agents, MCP servers, APIs, and setup
+        docs: {
+          type: 'http',
+          url: 'https://agents.craft.do/docs/mcp',
+        },
         // Add agent-specific MCP servers if an agent is active
         ...agentMcpServers,
         // Add in-process API servers (REST APIs converted to MCP tools)

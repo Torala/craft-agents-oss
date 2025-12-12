@@ -67,6 +67,13 @@ const getCustomToolDisplay = (toolName: string, input?: Record<string, unknown>)
       params: truncateText(String(input.query), 60),
     };
   }
+  // Docs server tools - friendly names for documentation
+  if (toolName === 'mcp__docs__SearchCraftAgents' || toolName === 'SearchCraftAgents') {
+    return {
+      name: 'Searching Documentation',
+      params: input?.query ? truncateText(String(input.query), 60) : '',
+    };
+  }
   return null;
 };
 

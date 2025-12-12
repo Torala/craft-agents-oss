@@ -4,6 +4,7 @@ import { formatTokens } from '../utils/markdown.ts';
 import type { AuthType, TokenDisplayMode } from '../../config/storage.ts';
 import { AnimatedSpinner } from './Spinner.tsx';
 import { DEFAULT_MODEL, getModelDisplayName } from '../../config/models.ts';
+import { CRAFT_LOGO } from '../../branding.ts';
 
 export interface HeaderProps {
   connected: boolean;
@@ -144,13 +145,7 @@ export const WelcomeBanner: React.FC<{ version?: string }> = memo(({ version = '
   const purple = '\x1b[38;2;157;140;255m';
   const reset = '\x1b[0m';
 
-  const logo = [
-    '  ████████ █████████    ██████   ██████████ ██████████',
-    '██████████ ██████████ ██████████ █████████  ██████████',
-    '██████     ██████████ ██████████ ████████   ██████████',
-    '██████████ ████████   ██████████ ███████      █████   ',
-    '  ████████ ████  ████ ████  ████ █████        █████   ',
-  ];
+  const logo = CRAFT_LOGO;
 
   return (
     <Box flexDirection="column" marginBottom={1}>

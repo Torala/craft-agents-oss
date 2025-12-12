@@ -1,6 +1,7 @@
 import { debug } from '@/tui/utils/debug';
 import { createServer, type Server } from 'http';
 import { URL } from 'url';
+import { CRAFT_LOGO_HTML } from '../branding.ts';
 
 const START_PORT = 6477;
 const MAX_PORT_ATTEMPTS = 100;
@@ -436,12 +437,7 @@ function generateCallbackPage(options: {
       </div>
 
       <div class="logo-container">
-<pre class="logo">
-  ████████ █████████    ██████   ██████████ ██████████
-██████████ ██████████ ██████████ █████████  ██████████
-██████     ██████████ ██████████ ████████   ██████████
-██████████ ████████   ██████████ ███████      █████
-  ████████ ████  ████ ████  ████ █████        █████</pre>
+<pre class="logo">${CRAFT_LOGO_HTML}</pre>
       </div>
 
       <div class="terminal-output">

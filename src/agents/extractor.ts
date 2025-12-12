@@ -102,19 +102,33 @@ STEP 1: Get Document Outline (REQUIRED)
 - Call mcp__craft__blocks_get with id="${documentId}" and maxDepth=1
 - This gives you the top-level structure: document title and immediate children
 - Examine the block titles/content to identify:
-  * "Instructions" section (PRIORITY - this contains the agent behavior)
+  * Instructions section (PRIORITY) - Look for pages named "Instructions", "AI Instructions",
+    "Agent Instructions", "System Prompt", "Prompt", "Behavior", "Persona", or similar
+  * If no such section exists, the document root content IS the instructions
   * "MCP Servers" or similar sections (may contain server configs)
   * Code blocks at the top level (may contain inline configs)
   * Any section names suggesting APIs, integrations, or configurations
 
-STEP 2: Load Instructions Content (REQUIRED if found)
-- If you found an "Instructions" block in Step 1:
-  * Note its block ID (this will be different from ${documentId})
-  * Call mcp__craft__blocks_get with id="[instructions_block_id]" and maxDepth=2
-  * This loads the full instructions content including nested subpages
-- If NO "Instructions" section exists:
-  * Add info message: "No Instructions section found in document."
-  * The document root content may BE the instructions - use what you loaded in Step 1
+STEP 2: Load Instructions Content (REQUIRED)
+There are two valid document structures:
+
+A) Document has an Instructions-like subpage:
+   Look for a root-level page with a name that suggests it contains agent instructions:
+   - Exact matches: "Instructions", "AI Instructions", "Agent Instructions"
+   - Similar names: "System Prompt", "Prompt", "Behavior", "Persona", "Config"
+   - Any page that contextually appears to define how the agent should behave
+
+   If found:
+   - Note that block's ID (different from ${documentId})
+   - Call mcp__craft__blocks_get with id="[instructions_block_id]" and maxDepth=2
+   - Use that block ID as instructionsBlockId
+
+B) Document root IS the instructions (no Instructions-like subpage):
+   - The content from Step 1 IS the instructions
+   - Leave instructionsBlockId empty/null (there is no dedicated instructions block)
+   - This is a valid structure, NOT an error
+
+Both structures are equally valid. Do NOT add info messages about missing Instructions sections.
 
 STEP 3: Selectively Load Additional Sections (CONDITIONAL)
 Only load additional sections if Step 1 revealed potentially relevant content:
@@ -207,7 +221,7 @@ For each API found, extract:
 4. INFO MESSAGES
 Use the "info" array to communicate important information to the user. You MUST add info messages for:
 - Unsupported MCP servers: "MCP server '[name]' uses npx/stdio which is not supported. Only HTTP/HTTPS servers work."
-- Missing or empty Instructions section: "No Instructions section found in document."
+- Empty document (no content at all): "Document has no content."
 - Malformed or unparseable MCP configs: "Could not parse MCP server config in code block."
 - APIs found: "Found API '[name]' with [N] endpoints."
 - Unsupported automation features (see below): Add info message explaining the limitation
@@ -251,10 +265,15 @@ CRITICAL: Concerns must be based on EXISTING content in the document.
 - Suggested answers must NEVER imply new functionality not already in the document
 - A concern is about CLARIFYING existing content, not ADDING new content
 
-When NO instructions are found:
+When document is EMPTY (no content at all):
+- Return empty instructions string ""
+- Use the info array to notify: "Document has no content."
 - Return empty concerns array []
-- Use the info array to notify: "No Instructions section found in document."
-- The user can add instructions themselves - do not prompt them with suggestions
+
+When document has content but no "Instructions" subpage:
+- The root content IS the instructions - extract it normally
+- Leave instructionsBlockId empty/null (no dedicated instructions block exists)
+- This is NOT an error - do not add info messages about it
 
 Types:
 1. CONFUSING: Instructions that could genuinely be interpreted multiple ways
@@ -276,14 +295,16 @@ For each concern, include:
 
 If instructions are clear and complete, return empty concerns array []. Do NOT invent concerns.
 
-REMEMBER: "${documentId}" is the DOCUMENT ID. The instructionsBlockId will be a DIFFERENT number (the block ID of the Instructions subpage within the document).
+REMEMBER: "${documentId}" is the DOCUMENT ID. The instructionsBlockId should be:
+- The block ID of the Instructions subpage (if one exists), OR
+- Empty/null (if the root content IS the instructions - there is no separate block)
 
 === OUTPUT FORMAT ===
 
 Return ONLY valid JSON:
 {
   "instructions": "[EXACT instruction content from document - no identity prefix added]",
-  "instructionsBlockId": "[block ID of Instructions subpage, NOT ${documentId}]",
+  "instructionsBlockId": "[block ID of Instructions subpage, OR empty if instructions are at document root]",
   "mcpServers": [{ "name": "myserver", "url": "https://example.com/mcp", "requiresAuth": false }],
   "apis": [{
     "name": "exa",

@@ -22,6 +22,8 @@ const TOOL_STATUS: Record<string, ToolStatusInfo> = {
   code_execution: { message: 'Running code' },
   // Preferences
   update_user_preferences: { message: 'Remembering that' },
+  // Docs server tools
+  SearchCraftAgents: { message: 'Searching documentation' },
 };
 
 /**
