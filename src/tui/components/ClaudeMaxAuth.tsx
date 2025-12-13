@@ -1,6 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
-import { TextInput } from './TextInput.tsx';
 import { AnimatedSpinner } from './Spinner.tsx';
 import { getExistingClaudeToken, isClaudeCliInstalled, runClaudeSetupToken } from '../../auth/claude-token.ts';
 
@@ -9,7 +8,7 @@ export interface ClaudeMaxAuthProps {
   onCancel: () => void;
 }
 
-type ViewMode = 'loading' | 'select' | 'manual' | 'running-setup';
+type ViewMode = 'loading' | 'select' | 'running-setup' | 'no-options';
 
 export const ClaudeMaxAuth: React.FC<ClaudeMaxAuthProps> = ({
   onSubmit,
@@ -18,7 +17,6 @@ export const ClaudeMaxAuth: React.FC<ClaudeMaxAuthProps> = ({
   const [mode, setMode] = useState<ViewMode>('loading');
   const [existingToken, setExistingToken] = useState<string | null>(null);
   const [hasClaudeCli, setHasClaudeCli] = useState(false);
-  const [manualValue, setManualValue] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [setupStatus, setSetupStatus] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -30,7 +28,13 @@ export const ClaudeMaxAuth: React.FC<ClaudeMaxAuthProps> = ({
 
     setExistingToken(token);
     setHasClaudeCli(cliInstalled);
-    setMode('select');
+
+    // If no options available, show error
+    if (!token && !cliInstalled) {
+      setMode('no-options');
+    } else {
+      setMode('select');
+    }
   }, []);
 
   // Build options based on what's available
@@ -54,13 +58,6 @@ export const ClaudeMaxAuth: React.FC<ClaudeMaxAuthProps> = ({
     });
   }
 
-  options.push({
-    id: 'manual',
-    label: 'Enter token manually',
-    desc: 'Paste a token you already have',
-    action: () => setMode('manual'),
-  });
-
   const handleRunSetupToken = useCallback(async () => {
     setMode('running-setup');
     setError(null);
@@ -77,15 +74,15 @@ export const ClaudeMaxAuth: React.FC<ClaudeMaxAuthProps> = ({
     }
   }, [onSubmit]);
 
-  const handleManualSubmit = useCallback((input: string) => {
-    const trimmed = input.trim();
-    if (trimmed) {
-      onSubmit(trimmed);
-    }
-  }, [onSubmit]);
-
   // Handle keyboard navigation in select mode
-  useInput((input, key) => {
+  useInput((_input, key) => {
+    if (mode === 'no-options') {
+      if (key.escape) {
+        onCancel();
+      }
+      return;
+    }
+
     if (mode !== 'select') return;
 
     if (key.upArrow && selectedIndex > 0) {
@@ -97,7 +94,7 @@ export const ClaudeMaxAuth: React.FC<ClaudeMaxAuthProps> = ({
     } else if (key.escape) {
       onCancel();
     }
-  }, { isActive: mode === 'select' });
+  }, { isActive: mode === 'select' || mode === 'no-options' });
 
   if (mode === 'loading') {
     return (
@@ -124,33 +121,29 @@ export const ClaudeMaxAuth: React.FC<ClaudeMaxAuthProps> = ({
     );
   }
 
-  if (mode === 'manual') {
+  if (mode === 'no-options') {
     return (
       <Box flexDirection="column" paddingX={1}>
         <Box marginBottom={1}>
           <Text bold>Claude Max Authentication</Text>
         </Box>
 
-        <Text dimColor>Paste your Claude Max OAuth token:</Text>
-
         <Box marginY={1}>
-          <Text color="cyan">› </Text>
-          <TextInput
-            value={manualValue}
-            onChange={setManualValue}
-            onSubmit={handleManualSubmit}
-            onCancel={() => {
-              setMode('select');
-              setManualValue('');
-            }}
-            placeholder="sk-ant-oat01-..."
-            mask="•"
-            maskReveal={{ first: 12 }}
-          />
+          <Text color="yellow">Claude CLI is required for Claude Max authentication.</Text>
+        </Box>
+
+        <Box flexDirection="column" marginY={1}>
+          <Text dimColor>To use Claude Max, install the Claude CLI:</Text>
+          <Box marginTop={1} marginLeft={2}>
+            <Text color="cyan">npm install -g @anthropic-ai/claude-code</Text>
+          </Box>
+          <Box marginTop={1}>
+            <Text dimColor>Then run this setup again.</Text>
+          </Box>
         </Box>
 
         <Box marginTop={1}>
-          <Text dimColor>↵ confirm • Esc back</Text>
+          <Text dimColor>Esc to go back</Text>
         </Box>
       </Box>
     );
@@ -194,14 +187,6 @@ export const ClaudeMaxAuth: React.FC<ClaudeMaxAuthProps> = ({
       <Box marginTop={1}>
         <Text dimColor>↑↓ navigate • ↵ select • Esc cancel</Text>
       </Box>
-
-      {!hasClaudeCli && (
-        <Box marginTop={1}>
-          <Text color="yellow" dimColor>
-            Note: Claude CLI not found for automatic setup.
-          </Text>
-        </Box>
-      )}
     </Box>
   );
 };

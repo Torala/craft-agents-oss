@@ -434,13 +434,6 @@ export const Setup: React.FC<SetupProps> = ({ onComplete, onCancel, authState, s
     saveConfiguration('api_key', value.trim());
   }, [saveConfiguration]);
 
-  // OAuth token entered -> Save
-  const handleOauthTokenSubmit = useCallback((value: string) => {
-    if (!value.trim()) return;
-    setOauthToken(value.trim());
-    saveConfiguration('oauth_token', undefined, value.trim());
-  }, [saveConfiguration]);
-
   // Use existing Claude token -> Save
   const handleUseExistingToken = useCallback(() => {
     if (existingClaudeToken) {
@@ -644,7 +637,6 @@ export const Setup: React.FC<SetupProps> = ({ onComplete, onCancel, authState, s
             hasClaudeCli={hasClaudeCli}
             onUseExisting={handleUseExistingToken}
             onRunSetup={handleRunSetupToken}
-            onManualEntry={handleOauthTokenSubmit}
             onBack={handleBack}
             error={error}
           />
@@ -918,7 +910,6 @@ interface OAuthTokenStepProps {
   hasClaudeCli: boolean;
   onUseExisting: () => void;
   onRunSetup: () => void;
-  onManualEntry: (token: string) => void;
   onBack: () => void;
   error?: string | null;
 }
@@ -928,12 +919,11 @@ const OAuthTokenStep: React.FC<OAuthTokenStepProps> = ({
   hasClaudeCli,
   onUseExisting,
   onRunSetup,
-  onManualEntry,
   onBack,
   error,
 }) => {
-  const [mode, setMode] = useState<'select' | 'manual'>('select');
-  const [manualToken, setManualToken] = useState('');
+  // If neither token nor CLI available, show no-options mode
+  const mode: 'select' | 'no-options' = (!existingToken && !hasClaudeCli) ? 'no-options' : 'select';
   const [selected, setSelected] = useState(0);
 
   // Build options based on what's available
@@ -957,15 +947,14 @@ const OAuthTokenStep: React.FC<OAuthTokenStepProps> = ({
     });
   }
 
-  options.push({
-    id: 'manual',
-    label: 'Enter token manually',
-    desc: 'Paste a token you already have',
-    action: () => setMode('manual'),
-  });
+  useInput((_input, key) => {
+    if (mode === 'no-options') {
+      if (key.escape) {
+        onBack();
+      }
+      return;
+    }
 
-  useInput((input, key) => {
-    // Only handle selection mode - manual mode uses TextInput
     if (mode !== 'select') return;
 
     if (key.upArrow && selected > 0) {
@@ -977,31 +966,27 @@ const OAuthTokenStep: React.FC<OAuthTokenStepProps> = ({
     } else if (key.escape) {
       onBack();
     }
-  }, { isActive: mode === 'select' });
+  }, { isActive: mode === 'select' || mode === 'no-options' });
 
-  if (mode === 'manual') {
+  if (mode === 'no-options') {
     return (
       <Box flexDirection="column">
-        <Text dimColor>Paste your Claude Max OAuth token:</Text>
         <Box marginY={1}>
-          <Text color="cyan">› </Text>
-          <TextInput
-            value={manualToken}
-            onChange={setManualToken}
-            onSubmit={(value) => {
-              if (value.trim()) onManualEntry(value.trim());
-            }}
-            onCancel={() => {
-              setMode('select');
-              setManualToken('');
-            }}
-            placeholder="sk-ant-oat01-..."
-            mask="*"
-            maskReveal={{ first: 12 }}
-          />
+          <Text color="yellow">Claude CLI is required for Claude Max authentication.</Text>
         </Box>
+
+        <Box flexDirection="column" marginY={1}>
+          <Text dimColor>To use Claude Max, install the Claude CLI:</Text>
+          <Box marginTop={1} marginLeft={2}>
+            <Text color="cyan">npm install -g @anthropic-ai/claude-code</Text>
+          </Box>
+          <Box marginTop={1}>
+            <Text dimColor>Then run this setup again.</Text>
+          </Box>
+        </Box>
+
         <Box marginTop={1}>
-          <Text dimColor>↵ confirm • Esc back</Text>
+          <Text dimColor>Esc to go back</Text>
         </Box>
       </Box>
     );
@@ -1040,14 +1025,6 @@ const OAuthTokenStep: React.FC<OAuthTokenStepProps> = ({
       <Box marginTop={1}>
         <Text dimColor>↑↓ navigate • ↵ select • Esc back</Text>
       </Box>
-
-      {!hasClaudeCli && (
-        <Box marginTop={1}>
-          <Text color="yellow" dimColor>
-            Note: Claude CLI not found for automatic setup.
-          </Text>
-        </Box>
-      )}
     </Box>
   );
 };
