@@ -191,18 +191,25 @@ const Root: React.FC<RootProps> = ({ initialConfig, cliFlags, authState, setupNe
           USE_CRAFT_AI_GATEWAY: 'true',
           CRAFT_API_GATEWAY_TOKEN: token,
         });
+        // Set placeholder API key so SDK starts - the cache-ttl-interceptor
+        // will replace the auth header with the real Craft token
+        process.env.ANTHROPIC_API_KEY = 'craft-credits-placeholder';
         debug(`Set Craft API Gateway Token`);
       } else if (billing.type === 'oauth_token' && billing.claudeOAuthToken) {
         // Use Claude Max subscription via OAuth token
         process.env.CLAUDE_CODE_OAUTH_TOKEN = billing.claudeOAuthToken;
-        // Clear API key to ensure SDK uses OAuth token
+        // Clear API key and Craft Gateway settings to ensure SDK uses OAuth token
         delete process.env.ANTHROPIC_API_KEY;
+        delete process.env.USE_CRAFT_AI_GATEWAY;
+        delete process.env.CRAFT_API_GATEWAY_TOKEN;
         debug(`Set Claude Max OAuth Token`);
       } else if (billing.apiKey) {
         // Use API key (pay-as-you-go)
         process.env.ANTHROPIC_API_KEY = billing.apiKey;
-        // Clear OAuth token if set
+        // Clear OAuth token and Craft Gateway settings if set
         delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
+        delete process.env.USE_CRAFT_AI_GATEWAY;
+        delete process.env.CRAFT_API_GATEWAY_TOKEN;
         debug(`Set Anthropic API Key`);
       }
     })();
