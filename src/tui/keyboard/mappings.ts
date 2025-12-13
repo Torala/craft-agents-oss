@@ -20,7 +20,7 @@
  * | Ctrl+U         | \x15               | input='\x15'              |
  * | Ctrl+W         | \x17               | input='\x17'              |
  * | Ctrl+K         | \x0b               | input='\x0b'              |
- * | Option+Delete  | (varies)           | key.meta + key.delete     | (Mac - delete word backward)
+ * | Option+Fn+Del  | (varies)           | key.meta + key.delete     | (Mac - delete word forward)
  * | Alt+D          | \x1bd              | input='d' + key.meta      | (delete word forward)
  * | Ctrl+Backspace | (varies)           | key.ctrl + key.backspace  | (Linux)
  */
@@ -139,10 +139,11 @@ export function isAbort(input: string, key: InkKey): boolean {
 /**
  * Delete word backward - Option+Delete (Mac), Ctrl+W, Ctrl+Backspace (Linux)
  *
- * Mac Note: The "Delete" key on Mac acts as backspace, but Ink reports it
- * as key.delete=true (not key.backspace) when used with Option.
+ * Mac keyboard:
+ * - "Delete" key (without Fn) = backspace → key.backspace=true
+ * - "Fn+Delete" = forward delete → key.delete=true
  *
- * Option+Delete (Mac): Ink delivers key.meta=true + key.delete=true + input=""
+ * Option+Delete (Mac): Option + backspace key → key.meta + key.backspace
  *
  * Ctrl+W: Standard readline delete-word-backward (works on all platforms)
  * - Raw: \x17 (ASCII 23, W is 23rd letter)
@@ -155,11 +156,7 @@ export function isDeleteWordBackward(input: string, key: InkKey): boolean {
   if (input === '\x17' || (key.ctrl === true && input === 'w')) {
     return true;
   }
-  // Option+Delete on Mac - Ink reports key.delete=true (not backspace) with meta
-  if (key.meta === true && key.delete === true) {
-    return true;
-  }
-  // Fallback: Option+Delete might also send \x7f with meta in some terminals
+  // Option+Delete on Mac (Option + backspace key)
   if (key.meta === true && (key.backspace === true || input === '\x7f')) {
     return true;
   }
@@ -171,18 +168,23 @@ export function isDeleteWordBackward(input: string, key: InkKey): boolean {
 }
 
 /**
- * Delete word forward - Alt+D (Mac/Linux), Ctrl+Delete (Linux)
+ * Delete word forward - Option+Fn+Delete (Mac), Alt+D (Mac/Linux), Ctrl+Delete (Linux)
+ *
+ * Mac keyboard:
+ * - "Fn+Delete" = forward delete → key.delete=true
+ * - Option+Fn+Delete = delete word forward → key.meta + key.delete
  *
  * Alt+D / Option+D: Standard readline kill-word (ESC+d)
  * - Ink delivers: input='d' with key.meta=true
  * - Works on both Mac and Linux
  *
- * Note: On Mac, Option+Fn+Delete would be forward-delete + Option,
- * but Alt+D is the standard readline way and works everywhere.
- *
  * Ctrl+Delete (Linux): \x1b[3;5~ or similar
  */
 export function isDeleteWordForward(input: string, key: InkKey): boolean {
+  // Option+Fn+Delete on Mac (Option + forward delete)
+  if (key.meta === true && key.delete === true) {
+    return true;
+  }
   // Alt+D / Option+D (ESC + d) - standard readline
   if (key.meta === true && input === 'd') {
     return true;
