@@ -93,6 +93,8 @@ src/
 │   └── validation.ts         # SDK-based MCP connection validation
 ├── prompts/
 │   └── system.ts             # System prompt with date/time and preferences
+├── utils/
+│   └── summarize.ts          # Shared summarization for large tool results
 └── tui/
     ├── App.tsx               # Main app, command routing
     ├── components/
@@ -145,6 +147,7 @@ Core `CraftAgent` class that:
 - **Auto compaction**: SDK compresses long conversations automatically
 - **MCP HTTP mode**: SDK handles MCP connections efficiently (no custom proxy needed)
 - **Tool permissions**: `PreToolUse` hook for bash command approval
+- **Tool summarization**: `PostToolUse` hook summarizes large MCP tool results (>10k tokens)
 - **AskUserQuestion**: `canUseTool` callback for interactive questions
 - **Preferences tool**: Built-in `update_user_preferences` via in-process MCP server
 
@@ -328,12 +331,21 @@ createApiServer(config: ApiConfig, credential: ApiCredential)
 - Credentials injected automatically - Claude never sees keys
 
 **Large Response Summarization:**
-API responses can be huge (e.g., full web page content). To prevent context overflow:
-1. Extractor prompt emphasizes pagination/limit parameters in tool descriptions
-2. Responses >10k tokens (~40KB) are automatically summarized using Claude Haiku
-3. Summarization uses request params as context to focus on relevant information
-4. Input truncated to 20k tokens before summarization to prevent Haiku overflow
-5. Falls back to simple truncation if summarization fails
+Tool responses can be huge (e.g., full web page content, large Craft documents). To prevent context overflow:
+1. Responses >10k tokens (~40KB) are automatically summarized using Claude Haiku
+2. Summarization uses tool name and input params as context to focus on relevant information
+3. Input truncated to 20k tokens before summarization to prevent Haiku overflow
+4. Falls back to simple truncation (40k chars) if summarization fails
+5. Summaries output max 4096 tokens (~60%+ reduction for large responses)
+
+**What gets summarized:**
+| Tool Type | Summarized? | Where |
+|-----------|-------------|-------|
+| MCP tools (Craft, etc.) | ✅ Yes | PostToolUse hook in `craft-agent.ts` |
+| REST API tools (`api_*`) | ✅ Yes | In `api-tools.ts` handler |
+| Built-in SDK tools | ❌ No | Skipped by hook |
+
+Shared summarization utility: `src/utils/summarize.ts`
 
 **Credential storage:**
 - Stored in encrypted file via `CredentialManager` (see Credential Storage section)

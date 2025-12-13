@@ -1,0 +1,132 @@
+/**
+ * Shared summarization utility for large tool results.
+ * Uses Claude Haiku for fast, cost-effective summarization.
+ */
+
+import Anthropic from '@anthropic-ai/sdk';
+import { SUMMARIZATION_MODEL } from '../config/models.ts';
+import { debug } from '../tui/utils/debug.ts';
+import { getCredentialManager } from '../credentials/index.ts';
+
+// Token limit for summarization trigger (roughly ~60KB of text)
+export const TOKEN_LIMIT = 15000;
+
+// Max tokens to send to Haiku for summarization (~400KB, Haiku handles this quickly)
+const MAX_SUMMARIZATION_INPUT = 100000;
+
+// Lazy-initialized Anthropic client for summarization
+let anthropicClient: Anthropic | null = null;
+
+/**
+ * Get or create Anthropic client for summarization.
+ * Returns null if no API key is available (craft_credits/oauth users).
+ */
+async function getAnthropicClient(): Promise<Anthropic | null> {
+  if (anthropicClient) {
+    return anthropicClient;
+  }
+
+  // Try to get API key from credential manager
+  const manager = getCredentialManager();
+  const apiKey = await manager.getApiKey();
+
+  if (!apiKey) {
+    // No API key available - user is on craft_credits or oauth_token auth
+    // These auth types don't give us direct Anthropic API access for summarization
+    debug('[summarize] No API key available - summarization will use truncation fallback');
+    return null;
+  }
+
+  anthropicClient = new Anthropic({ apiKey });
+  return anthropicClient;
+}
+
+/**
+ * Estimate token count from text length (rough approximation: 4 chars per token)
+ */
+export function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 4);
+}
+
+/**
+ * Context for summarization - helps Haiku extract relevant information
+ */
+export interface SummarizationContext {
+  /** Tool or API name */
+  toolName: string;
+  /** Optional endpoint/path for API calls */
+  path?: string;
+  /** Tool input parameters */
+  input?: Record<string, unknown>;
+}
+
+/**
+ * Summarize a large tool result to fit within context limits.
+ * Uses Claude Haiku for fast, cheap summarization.
+ *
+ * @param response - The large response text to summarize
+ * @param context - Context about the tool/API call for better summarization
+ * @returns Summarized response, or truncated fallback on error
+ */
+export async function summarizeLargeResult(
+  response: string,
+  context: SummarizationContext
+): Promise<string> {
+  const client = await getAnthropicClient();
+
+  // If no client (no API key), fall back to truncation
+  if (!client) {
+    debug('[summarize] Falling back to truncation (no API key for Haiku summarization)');
+    return response.substring(0, 40000) + '\n\n[Result truncated due to size - smart summarization requires API key auth]';
+  }
+
+  // Build context from tool input
+  const inputContext = context.input
+    ? `Request parameters: ${JSON.stringify(context.input)}`
+    : 'No specific parameters provided.';
+
+  const endpointContext = context.path
+    ? `Endpoint: ${context.path}`
+    : '';
+
+  // Truncate response to fit within Haiku's context safely
+  const maxChars = MAX_SUMMARIZATION_INPUT * 4; // ~400KB
+  const truncatedResponse = response.length > maxChars
+    ? response.substring(0, maxChars) + '\n\n[... truncated for summarization ...]'
+    : response;
+  const wasTruncated = response.length > maxChars;
+
+  try {
+    const result = await client.messages.create({
+      model: SUMMARIZATION_MODEL,
+      max_tokens: 4096,
+      messages: [{
+        role: 'user',
+        content: `You are summarizing a tool result that was too large to fit in context.
+
+Tool: ${context.toolName}
+${endpointContext}
+${inputContext}
+${wasTruncated ? '\nNote: The response was truncated before summarization due to extreme size.' : ''}
+
+Your task:
+1. Extract the MOST RELEVANT information based on the request
+2. Preserve key data points, IDs, URLs, and actionable information
+3. Summarize long text content but keep essential details
+4. Format the output cleanly for the AI assistant to use
+
+Tool result to summarize:
+${truncatedResponse}
+
+Provide a concise but comprehensive summary that captures the essential information.`
+      }]
+    });
+
+    const textBlock = result.content.find(b => b.type === 'text');
+    return textBlock?.text || 'Failed to summarize result';
+  } catch (error) {
+    debug(`[summarize] Summarization failed: ${error}`);
+    // Fall back to truncation if summarization fails
+    return response.substring(0, 40000) + '\n\n[Result truncated due to size]';
+  }
+}

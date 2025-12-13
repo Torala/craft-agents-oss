@@ -12,6 +12,7 @@ import { updatePreferences, loadPreferences, type UserPreferences } from '../con
 import { CraftOAuth, getMcpBaseUrl } from '../auth/oauth.ts';
 import type { FileAttachment } from '../tui/utils/files.ts';
 import { debug } from '../tui/utils/debug.ts';
+import { estimateTokens, summarizeLargeResult, TOKEN_LIMIT } from '../utils/summarize.ts';
 // Documentation is now served via external HTTP MCP at agents.craft.do/docs/mcp
 
 export interface CraftAgentConfig {
@@ -788,6 +789,81 @@ export class CraftAgent {
               }
 
               return { continue: true };
+            }],
+          }],
+          // PostToolUse hook to summarize large MCP tool results
+          PostToolUse: [{
+            hooks: [async (input) => {
+              // Only handle PostToolUse events
+              if (input.hook_event_name !== 'PostToolUse') {
+                return { continue: true };
+              }
+
+              // Skip built-in SDK tools (they have their own context management)
+              const builtInTools = new Set([
+                'Bash', 'Read', 'Write', 'Edit', 'Glob', 'Grep',
+                'WebFetch', 'WebSearch', 'Task', 'AskUserQuestion',
+                'TodoWrite', 'MultiEdit', 'NotebookEdit', 'KillShell',
+                'EnterPlanMode', 'ExitPlanMode', 'Skill', 'SlashCommand',
+              ]);
+
+              // Skip in-process MCP tools (preferences, agent management)
+              const inProcessTools = new Set([
+                'update_user_preferences', 'reload_agent_instructions',
+                'update_agent_instructions',
+              ]);
+
+              // Skip API tools - they already handle summarization internally
+              if (builtInTools.has(input.tool_name) ||
+                  inProcessTools.has(input.tool_name) ||
+                  input.tool_name.startsWith('api_')) {
+                return { continue: true };
+              }
+
+              // Check if response is large enough to warrant summarization
+              const response = input.tool_response;
+              let responseStr: string;
+              try {
+                responseStr = typeof response === 'string'
+                  ? response
+                  : JSON.stringify(response);
+              } catch {
+                // Response has circular references or can't be stringified
+                // Skip summarization for non-serializable responses
+                return { continue: true };
+              }
+
+              const tokens = estimateTokens(responseStr);
+              if (tokens <= TOKEN_LIMIT) {
+                return { continue: true };
+              }
+
+              this.onDebug?.(`PostToolUse: ${input.tool_name} response too large (~${tokens} tokens), summarizing...`);
+
+              try {
+                const summary = await summarizeLargeResult(responseStr, {
+                  toolName: input.tool_name,
+                  input: input.tool_input as Record<string, unknown>,
+                });
+
+                return {
+                  continue: true,
+                  hookSpecificOutput: {
+                    hookEventName: 'PostToolUse' as const,
+                    updatedMCPToolOutput: `[Result summarized - original was ~${tokens} tokens]\n\n${summary}`,
+                  },
+                };
+              } catch (error) {
+                debug(`[PostToolUse] Summarization failed for ${input.tool_name}: ${error}`);
+                // On error, truncate rather than fail
+                return {
+                  continue: true,
+                  hookSpecificOutput: {
+                    hookEventName: 'PostToolUse' as const,
+                    updatedMCPToolOutput: responseStr.substring(0, 40000) + '\n\n[Result truncated due to size]',
+                  },
+                };
+              }
             }],
           }],
         },
