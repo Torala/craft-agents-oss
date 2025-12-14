@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
-import { addWorkspace, type Workspace, type OAuthCredentials, type McpAuthType } from '../../config/storage.ts';
+import { addWorkspace, getWorkspaces, type Workspace, type OAuthCredentials, type McpAuthType } from '../../config/storage.ts';
 import { CraftOAuth, getMcpBaseUrl } from '../../auth/oauth.ts';
 import { getCredentialManager } from '../../credentials/index.ts';
 import { validateMcpConnection, getValidationErrorMessage } from '../../mcp/validation.ts';
@@ -8,9 +8,21 @@ import { validateMcpUrl } from '../../validation/url-validator.ts';
 import { TextInput } from './TextInput.tsx';
 import { AnimatedSpinner } from './Spinner.tsx';
 import { ErrorBanner } from './ErrorBanner.tsx';
+import { CraftSpaceSelector, McpLinkSelector, type McpLink } from './craftAuth/CraftSpaceSelector.tsx';
+import { CraftApi } from '../../clients/craftApi.ts';
+import type { CraftProfile } from './craftAuth/CraftCallbackStep.tsx';
 import type { AgentError, RecoveryAction } from '../../agent/errors.ts';
 
-type AddStep = 'name' | 'url' | 'validating-url' | 'checking-auth' | 'no-oauth-options' | 'oauth-auth' | 'bearer-token' | 'validating' | 'complete' | 'error';
+type AddStep =
+  // New steps for Craft space selection
+  | 'choose-source'      // Choose between Craft spaces or manual URL
+  | 'loading-spaces'     // Fetching user's Craft spaces
+  | 'select-space'       // Show available Craft spaces
+  | 'loading-links'      // Fetching MCP links for selected space
+  | 'select-mcp-link'    // Select existing MCP link or create new
+  | 'creating-link'      // Creating new MCP link
+  // Existing steps (manual URL flow)
+  | 'name' | 'url' | 'validating-url' | 'checking-auth' | 'no-oauth-options' | 'oauth-auth' | 'bearer-token' | 'validating' | 'complete' | 'error';
 
 export interface WorkspaceAddProps {
   onComplete: (workspace: Workspace) => void;
@@ -20,7 +32,17 @@ export interface WorkspaceAddProps {
 }
 
 export const WorkspaceAdd: React.FC<WorkspaceAddProps> = ({ onComplete, onCancel, onErrorAction }) => {
-  const [step, setStep] = useState<AddStep>('name');
+  // Craft auth state (for space selection flow)
+  const [hasCraftAuth, setHasCraftAuth] = useState<boolean | null>(null); // null = checking
+  const [craftToken, setCraftToken] = useState<string | null>(null);
+  const [craftProfile, setCraftProfile] = useState<CraftProfile | null>(null);
+  const [availableSpaces, setAvailableSpaces] = useState<Array<{ id: string; name: string }>>([]);
+  const [selectedSpace, setSelectedSpace] = useState<{ id: string; name: string } | null>(null);
+  const [mcpLinks, setMcpLinks] = useState<McpLink[]>([]);
+  const [spaceError, setSpaceError] = useState<string | null>(null);
+
+  // Start with choose-source if we might have Craft auth, otherwise name
+  const [step, setStep] = useState<AddStep>('choose-source');
   const [name, setName] = useState('');
   const [mcpUrl, setMcpUrl] = useState('');
   const [oauthStatus, setOauthStatus] = useState('');
@@ -32,6 +54,28 @@ export const WorkspaceAdd: React.FC<WorkspaceAddProps> = ({ onComplete, onCancel
   const [validationError, setValidationError] = useState<string | null>(null);
   const [pendingAuth, setPendingAuth] = useState<{ oauth: OAuthCredentials | null; isPublic: boolean; token?: string } | null>(null);
   const [oauthClient, setOauthClient] = useState<CraftOAuth | null>(null);
+
+  // Check for Craft OAuth availability on mount
+  useEffect(() => {
+    const checkCraftAuth = async () => {
+      try {
+        const manager = getCredentialManager();
+        const craftOAuth = await manager.getCraftOAuth();
+        if (craftOAuth) {
+          setCraftToken(craftOAuth);
+          setHasCraftAuth(true);
+        } else {
+          setHasCraftAuth(false);
+          // No Craft auth - go directly to manual URL flow
+          setStep('name');
+        }
+      } catch {
+        setHasCraftAuth(false);
+        setStep('name');
+      }
+    };
+    checkCraftAuth();
+  }, []);
 
   // Handle Ctrl+C and Escape for steps without TextInput
   // (name, url, bearer-token steps use TextInput.onCancel)
@@ -62,6 +106,202 @@ export const WorkspaceAdd: React.FC<WorkspaceAddProps> = ({ onComplete, onCancel
       onCancel();
     }
   });
+
+  // Handle choosing between Craft spaces and manual URL
+  const handleChooseSource = useCallback((source: 'craft' | 'manual') => {
+    if (source === 'craft') {
+      setStep('loading-spaces');
+    } else {
+      setStep('name');
+    }
+  }, []);
+
+  // Fetch and filter Craft spaces when entering loading-spaces step
+  useEffect(() => {
+    if (step !== 'loading-spaces' || !craftToken) return;
+
+    let cancelled = false;
+
+    const fetchSpaces = async () => {
+      try {
+        const craftApi = new CraftApi();
+        const profile = await craftApi.getProfile(craftToken);
+
+        if (cancelled) return;
+
+        setCraftProfile(profile);
+
+        // Get existing workspace MCP URLs to filter out already-connected spaces
+        const existingUrls = getWorkspaces().map(w => w.mcpUrl);
+
+        // Filter out spaces that already have workspace connections
+        const spacesWithLinks: Array<{ id: string; name: string; hasConnection: boolean }> = [];
+
+        for (const space of profile.spaces) {
+          try {
+            const links = await craftApi.getWorkflowLinks({ authToken: craftToken, spaceId: space.id });
+            const mcpLinks = links.filter(
+              (l: { type: string; enabled: boolean; urls?: { mcp?: string } }) =>
+                l.type === 'mcp' && l.enabled && l.urls?.mcp
+            );
+
+            // Check if any of this space's MCP links are already used
+            const alreadyConnected = mcpLinks.some((link: { linkId: string }) =>
+              existingUrls.some(url => url.includes(link.linkId))
+            );
+
+            spacesWithLinks.push({
+              id: space.id,
+              name: space.name,
+              hasConnection: alreadyConnected,
+            });
+          } catch {
+            // If we can't fetch links for a space, include it anyway
+            spacesWithLinks.push({
+              id: space.id,
+              name: space.name,
+              hasConnection: false,
+            });
+          }
+        }
+
+        if (cancelled) return;
+
+        // Filter to only unconnected spaces
+        const unconnectedSpaces = spacesWithLinks
+          .filter(s => !s.hasConnection)
+          .map(s => ({ id: s.id, name: s.name }));
+
+        if (unconnectedSpaces.length === 0) {
+          // All spaces connected - show error and offer manual URL
+          setSpaceError('All your Craft spaces are already connected. You can add a workspace using a custom MCP URL.');
+          setStep('choose-source');
+        } else {
+          setAvailableSpaces(unconnectedSpaces);
+          setStep('select-space');
+        }
+      } catch (err) {
+        if (cancelled) return;
+        setSpaceError(err instanceof Error ? err.message : 'Failed to fetch spaces');
+        setStep('choose-source');
+      }
+    };
+
+    fetchSpaces();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [step, craftToken]);
+
+  // Handle space selection
+  const handleSpaceSelect = useCallback((spaceId: string, spaceName: string) => {
+    setSelectedSpace({ id: spaceId, name: spaceName });
+    setName(spaceName); // Pre-populate name with space name
+    setStep('loading-links');
+  }, []);
+
+  // Fetch MCP links for selected space
+  useEffect(() => {
+    if (step !== 'loading-links' || !craftToken || !selectedSpace) return;
+
+    let cancelled = false;
+
+    const fetchLinks = async () => {
+      try {
+        const craftApi = new CraftApi();
+        const links = await craftApi.getWorkflowLinks({
+          authToken: craftToken,
+          spaceId: selectedSpace.id,
+        });
+
+        if (cancelled) return;
+
+        // Filter to enabled MCP links with URLs
+        const mcpLinksForSpace: McpLink[] = links
+          .filter(l => l.type === 'mcp' && l.enabled && l.urls?.mcp)
+          .map(l => ({
+            name: l.name,
+            linkId: l.linkId,
+            mcpUrl: l.urls.mcp!,
+          }));
+
+        if (mcpLinksForSpace.length === 0) {
+          // No existing links - auto-create one
+          setStep('creating-link');
+        } else if (mcpLinksForSpace.length === 1 && mcpLinksForSpace[0]) {
+          // Single link - use it directly
+          setMcpUrl(mcpLinksForSpace[0].mcpUrl);
+          setStep('checking-auth');
+        } else {
+          // Multiple links - let user choose
+          setMcpLinks(mcpLinksForSpace);
+          setStep('select-mcp-link');
+        }
+      } catch (err) {
+        if (cancelled) return;
+        setSpaceError(err instanceof Error ? err.message : 'Failed to fetch MCP links');
+        setStep('select-space');
+      }
+    };
+
+    fetchLinks();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [step, craftToken, selectedSpace]);
+
+  // Handle MCP link selection
+  const handleMcpLinkSelect = useCallback((url: string) => {
+    setMcpUrl(url);
+    setStep('checking-auth');
+  }, []);
+
+  // Handle creating new MCP link
+  const handleCreateMcpLink = useCallback(() => {
+    setStep('creating-link');
+  }, []);
+
+  // Create new MCP link
+  useEffect(() => {
+    if (step !== 'creating-link' || !craftToken || !selectedSpace) return;
+
+    let cancelled = false;
+
+    const createLink = async () => {
+      try {
+        const craftApi = new CraftApi();
+        const newLink = await craftApi.createSpaceWorkflowLink({
+          authToken: craftToken,
+          spaceId: selectedSpace.id,
+          name: 'Craft Agent MCP',
+          type: 'mcp',
+          scope: 'fullSpace',
+        });
+
+        if (cancelled) return;
+
+        if (newLink.urls?.mcp) {
+          setMcpUrl(newLink.urls.mcp);
+          setStep('checking-auth');
+        } else {
+          setSpaceError('Created link but no MCP URL returned');
+          setStep('select-space');
+        }
+      } catch (err) {
+        if (cancelled) return;
+        setSpaceError(err instanceof Error ? err.message : 'Failed to create MCP link');
+        setStep('select-space');
+      }
+    };
+
+    createLink();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [step, craftToken, selectedSpace]);
 
   const handleName = useCallback((value: string) => {
     if (!value.trim()) return;
@@ -301,6 +541,78 @@ export const WorkspaceAdd: React.FC<WorkspaceAddProps> = ({ onComplete, onCancel
       </Box>
 
       {/* Step content */}
+
+      {/* Choose source: Craft spaces or manual URL */}
+      {step === 'choose-source' && hasCraftAuth !== null && (
+        <ChooseSourceStep
+          onSelect={handleChooseSource}
+          hasCraftAuth={hasCraftAuth}
+          error={spaceError}
+          onClearError={() => setSpaceError(null)}
+        />
+      )}
+
+      {/* Loading: checking Craft auth or loading spaces */}
+      {(step === 'choose-source' && hasCraftAuth === null) && (
+        <Box flexDirection="column">
+          <Box>
+            <AnimatedSpinner />
+            <Text> Checking Craft account...</Text>
+          </Box>
+        </Box>
+      )}
+
+      {step === 'loading-spaces' && (
+        <Box flexDirection="column">
+          <Box>
+            <AnimatedSpinner />
+            <Text> Loading your Craft spaces...</Text>
+          </Box>
+        </Box>
+      )}
+
+      {/* Select Craft space */}
+      {step === 'select-space' && craftProfile && (
+        <CraftSpaceSelector
+          profile={{
+            ...craftProfile,
+            // Override spaces with only available (unconnected) ones
+            spaces: availableSpaces,
+          }}
+          onSelect={handleSpaceSelect}
+          onBack={() => setStep('choose-source')}
+        />
+      )}
+
+      {step === 'loading-links' && (
+        <Box flexDirection="column">
+          <Box>
+            <AnimatedSpinner />
+            <Text> Loading MCP connections for {selectedSpace?.name}...</Text>
+          </Box>
+        </Box>
+      )}
+
+      {/* Select MCP link */}
+      {step === 'select-mcp-link' && selectedSpace && (
+        <McpLinkSelector
+          spaceName={selectedSpace.name}
+          mcpLinks={mcpLinks}
+          onSelect={handleMcpLinkSelect}
+          onCreateNew={handleCreateMcpLink}
+          onBack={() => setStep('select-space')}
+        />
+      )}
+
+      {step === 'creating-link' && (
+        <Box flexDirection="column">
+          <Box>
+            <AnimatedSpinner />
+            <Text> Creating new MCP connection...</Text>
+          </Box>
+        </Box>
+      )}
+
       {step === 'name' && (
         <NameStep
           value={name}
@@ -424,7 +736,15 @@ export const WorkspaceAdd: React.FC<WorkspaceAddProps> = ({ onComplete, onCancel
 
 function getStepNumber(step: AddStep): number {
   switch (step) {
-    case 'name': return 1;
+    case 'choose-source':
+    case 'loading-spaces':
+    case 'select-space':
+      return 1;
+    case 'loading-links':
+    case 'select-mcp-link':
+    case 'creating-link':
+    case 'name':
+      return 2;
     case 'url':
     case 'validating-url':
       return 2;
@@ -596,6 +916,61 @@ const BearerTokenStep: React.FC<BearerTokenStepProps> = ({ value, onChange, onSu
           maskReveal={{ last: 4 }}
         />
       </Box>
+    </Box>
+  );
+};
+
+// Choose source: Craft spaces or manual URL entry
+interface ChooseSourceStepProps {
+  onSelect: (source: 'craft' | 'manual') => void;
+  hasCraftAuth: boolean;
+  error: string | null;
+  onClearError: () => void;
+}
+
+const ChooseSourceStep: React.FC<ChooseSourceStepProps> = ({ onSelect, hasCraftAuth, error, onClearError }) => {
+  const [selected, setSelected] = useState(0);
+
+  const options = hasCraftAuth
+    ? [
+        { label: 'Select from your Craft spaces', value: 'craft' as const },
+        { label: 'Enter MCP URL manually', value: 'manual' as const },
+      ]
+    : [
+        { label: 'Enter MCP URL manually', value: 'manual' as const },
+      ];
+
+  useInput((_, key) => {
+    if (key.upArrow) {
+      setSelected(s => Math.max(0, s - 1));
+      if (error) onClearError();
+    } else if (key.downArrow) {
+      setSelected(s => Math.min(options.length - 1, s + 1));
+      if (error) onClearError();
+    } else if (key.return) {
+      const option = options[selected];
+      if (option) onSelect(option.value);
+    }
+  });
+
+  return (
+    <Box flexDirection="column">
+      <Text>How would you like to add a workspace?</Text>
+      {error && (
+        <Box marginY={1}>
+          <Text color="yellow">{error}</Text>
+        </Box>
+      )}
+      <Box marginY={1} flexDirection="column">
+        {options.map((opt, i) => (
+          <Text key={opt.value}>
+            <Text color={i === selected ? 'green' : undefined}>
+              {i === selected ? '> ' : '  '}{opt.label}
+            </Text>
+          </Text>
+        ))}
+      </Box>
+      <Text dimColor>Use arrow keys to select, Enter to confirm</Text>
     </Box>
   );
 };

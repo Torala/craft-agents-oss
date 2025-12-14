@@ -9,6 +9,7 @@ import {
   setReloadAgentInstructionsCallback,
   setGlobalPermissionHandler,
   resolveGlobalPermission,
+  clearGlobalPermissions,
 } from '../../agent/craft-agent.ts';
 import { parseSDKErrorText, isSDKErrorText, type AgentError } from '../../agent/errors.ts';
 import type { UpdateInstructionsContext, UpdateInstructionsProgressEvent } from '../../agents/instruction-updater.ts';
@@ -985,8 +986,42 @@ export function useAgent(config: CraftAgentConfig): UseAgentResult {
       }
     }
 
-    // Clear review state from previous workspace
+    // Clear ALL workspace-scoped state from previous workspace
     setPendingReview(null);
+    setPendingMcpAuth(null);
+    setPendingApiAuth(null);
+    setPendingQuestion(null);
+    setPendingPermission(null);
+
+    // Clear active agent (will be re-discovered in new workspace)
+    setActiveAgentDefinition(null);
+
+    // Reset processing state (in case switching during a query)
+    setIsProcessing(false);
+
+    // Clear UI state that could show stale content from previous workspace
+    setStreamingText('');
+    setStatus('');
+    setHasExecutingTool(false);
+    setTypedError(null);
+
+    // Clear streaming refs (could have pending timeout or stale buffer)
+    streamingBufferRef.current = '';
+    if (streamingTimeoutRef.current) {
+      clearTimeout(streamingTimeoutRef.current);
+      streamingTimeoutRef.current = null;
+    }
+
+    // Clear global permission map (orphaned permissions from old workspace)
+    clearGlobalPermissions();
+
+    // Clear global agent reload callback (matches deactivateAgent behavior)
+    setReloadAgentInstructionsCallback(null);
+
+    // Reset agent instance state (security whitelists, active agent servers, pending operations)
+    if (agentRef.current) {
+      agentRef.current.resetWorkspaceState();
+    }
 
     // Update workspace state (triggers useEffect to reinitialize MCP proxy)
     setWorkspaceState(newWorkspace);
