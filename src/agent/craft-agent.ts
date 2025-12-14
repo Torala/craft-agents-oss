@@ -702,6 +702,15 @@ export class CraftAgent {
         // Enable extended prompt cache TTL (1 hour instead of 5 minutes) when configured
         // The actual TTL injection happens in src/cache-ttl-interceptor.ts
         ...(useExtendedCache ? { betas: ['extended-cache-ttl-2025-04-11'] as any } : {}),
+        // Filter out SDK error messages from stderr (they're handled via ErrorBanner instead)
+        stderr: (data: string) => {
+          // Filter known SDK error patterns that we handle via typed errors
+          if (data.startsWith('API Error:')) return;
+          if (data.includes('Invalid API key · Fix external API key')) return;
+          if (data.startsWith('Invalid API key')) return;
+          // Pass through other stderr output (for debugging)
+          this.onDebug?.(`[SDK stderr] ${data}`);
+        },
         // Option A: Append to Claude Code's system prompt (recommended by docs)
         systemPrompt: {
           type: 'preset',

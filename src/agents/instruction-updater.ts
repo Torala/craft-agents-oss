@@ -179,6 +179,15 @@ Or if something went wrong:
       canUseTool: async (_toolName, input) => {
         return { behavior: 'allow' as const, updatedInput: input as Record<string, unknown> };
       },
+      // Filter out SDK error messages from stderr (they're handled via ErrorBanner instead)
+      stderr: (data: string) => {
+        // Filter known SDK error patterns that we handle via typed errors
+        if (data.startsWith('API Error:')) return;
+        if (data.includes('Invalid API key · Fix external API key')) return;
+        if (data.startsWith('Invalid API key')) return;
+        // Pass through other stderr output to debug log
+        debug('[instruction-updater] SDK stderr:', data);
+      },
       // Structured output for reliable JSON
       outputFormat: {
         type: 'json_schema',

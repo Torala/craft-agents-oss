@@ -178,6 +178,15 @@ export async function validateMcpConnection(
         mcpServers,
         model: config.model || DEFAULT_MODEL,
         abortController,
+        // Filter out SDK error messages from stderr (they're handled via ErrorBanner instead)
+        stderr: (data: string) => {
+          // Filter known SDK error patterns that we handle via typed errors
+          if (data.startsWith('API Error:')) return;
+          if (data.includes('Invalid API key · Fix external API key')) return;
+          if (data.startsWith('Invalid API key')) return;
+          // Pass through other stderr output to debug log
+          debug(`[mcp-validation stderr] ${data}`);
+        },
       },
     });
 

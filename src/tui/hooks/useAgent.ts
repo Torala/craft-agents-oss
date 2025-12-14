@@ -105,6 +105,20 @@ function storedMessageToMessage(stored: StoredMessage): Message {
 // Throttle streaming updates to reduce flickering
 const STREAMING_THROTTLE_MS = 50;
 
+/**
+ * Check if an error message is an SDK-generated error that should be filtered from UI display.
+ * These messages are written directly to stderr by the SDK subprocess and are redundant
+ * when we already show typed errors via ErrorBanner.
+ */
+function isSdkErrorMessage(message: string): boolean {
+  // SDK error prefix patterns
+  if (message.startsWith('API Error:')) return true;
+  if (message.includes('Invalid API key · Fix external API key')) return true;
+  // Generic SDK status messages that shouldn't be shown as errors
+  if (message.startsWith('Invalid API key')) return true;
+  return false;
+}
+
 export interface TokenUsage {
   inputTokens: number;
   outputTokens: number;
@@ -726,16 +740,19 @@ export function useAgent(config: CraftAgentConfig): UseAgentResult {
           }
 
           case 'error':
-            setError(event.message);
-            setMessages((prev) => [
-              ...prev,
-              {
-                id: `error-${Date.now()}`,
-                type: 'error',
-                content: event.message,
-                timestamp: Date.now(),
-              },
-            ]);
+            // Filter out SDK-generated error messages (shown via stderr, redundant with ErrorBanner)
+            if (!isSdkErrorMessage(event.message)) {
+              setError(event.message);
+              setMessages((prev) => [
+                ...prev,
+                {
+                  id: `error-${Date.now()}`,
+                  type: 'error',
+                  content: event.message,
+                  timestamp: Date.now(),
+                },
+              ]);
+            }
             break;
 
           case 'typed_error':
@@ -766,24 +783,28 @@ export function useAgent(config: CraftAgentConfig): UseAgentResult {
       setConnected(true);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error';
-      setError(errorMessage);
 
-      if (
-        errorMessage.includes('ECONNREFUSED') ||
-        errorMessage.includes('fetch failed')
-      ) {
-        setConnected(false);
+      // Filter out SDK-generated error messages (shown via stderr, redundant with ErrorBanner)
+      if (!isSdkErrorMessage(errorMessage)) {
+        setError(errorMessage);
+
+        if (
+          errorMessage.includes('ECONNREFUSED') ||
+          errorMessage.includes('fetch failed')
+        ) {
+          setConnected(false);
+        }
+
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `error-${Date.now()}`,
+            type: 'error',
+            content: errorMessage,
+            timestamp: Date.now(),
+          },
+        ]);
       }
-
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `error-${Date.now()}`,
-          type: 'error',
-          content: errorMessage,
-          timestamp: Date.now(),
-        },
-      ]);
     } finally {
       // Clean up any pending streaming timeout
       if (streamingTimeoutRef.current) {

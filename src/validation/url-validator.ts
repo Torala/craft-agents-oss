@@ -70,6 +70,15 @@ export async function validateMcpUrl(
       systemPrompt: SYSTEM_PROMPT,
       maxTurns: 1,
       tools: [], // No tools needed - pure text analysis
+      // Filter out SDK error messages from stderr (they're handled via ErrorBanner instead)
+      stderr: (data: string) => {
+        // Filter known SDK error patterns that we handle via typed errors
+        if (data.startsWith('API Error:')) return;
+        if (data.includes('Invalid API key · Fix external API key')) return;
+        if (data.startsWith('Invalid API key')) return;
+        // Pass through other stderr output to debug log
+        debug(`[url-validator stderr] ${data}`);
+      },
       ...(apiKey ? { apiKey } : {}),
       ...(oauthToken ? { oauthToken } : {}),
     };
