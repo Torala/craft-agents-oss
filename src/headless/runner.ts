@@ -2,7 +2,7 @@ import { CraftAgent, type CraftAgentConfig } from '../agent/craft-agent.ts';
 import { CraftMcpClient } from '../mcp/client.ts';
 import { SubAgentManager } from '../agents/manager.ts';
 import type { SubAgentDefinition } from '../agents/types.ts';
-import { getWorkspaceAccessTokenAsync, listSessions, loadSession } from '../config/storage.ts';
+import { getWorkspaceAccessTokenAsync, listSessions, getOrCreateSessionById, updateSessionSdkId } from '../config/storage.ts';
 import { debug } from '../tui/utils/debug.ts';
 import { DEFAULT_MODEL } from '../config/models.ts';
 import type {
@@ -41,6 +41,9 @@ export class HeadlessRunner {
   private activeDefinition: SubAgentDefinition | null = null;
   private mcpServers: Record<string, { type: 'http' | 'sse'; url: string; headers?: Record<string, string> }> = {};
   private apiServers: Record<string, unknown> = {};
+
+  // Session ID for persisting SDK session after run (only when --session is used)
+  private sessionIdToUpdate: string | null = null;
 
   constructor(config: HeadlessConfig) {
     this.config = config;
@@ -354,27 +357,33 @@ export class HeadlessRunner {
     // Set session ID based on flags
     // Default: fresh session (don't set any - SDK will create new)
     if (this.config.sessionId) {
-      // --session: load session and use its SDK session ID
-      const session = loadSession(this.config.sessionId);
-      if (session?.sdkSessionId) {
-        debug('[HeadlessRunner] Resuming session:', this.config.sessionId, 'SDK session:', session.sdkSessionId);
+      // --session: get or create session with this ID
+      const session = getOrCreateSessionById(this.config.sessionId, this.config.workspace.id);
+      this.sessionIdToUpdate = session.id;  // Save to update SDK session ID after run
+      if (session.sdkSessionId) {
+        debug('[HeadlessRunner] Resuming session (--session) - craft:', session.id, 'sdk:', session.sdkSessionId);
         this.agent.setSessionId(session.sdkSessionId);
       } else {
-        debug('[HeadlessRunner] Session not found or has no SDK session ID:', this.config.sessionId);
-        // Fall through to fresh session
+        debug('[HeadlessRunner] New session created (--session) - craft:', session.id, 'sdk: none (will be saved after run)');
+        // Fresh SDK session - will be saved after run
       }
     } else if (this.config.sessionResume) {
       // --session-resume: continue the last session for this workspace
       const sessions = listSessions(this.config.workspace.id);
-      if (sessions.length > 0 && sessions[0]?.sdkSessionId) {
-        debug('[HeadlessRunner] Resuming last session:', sessions[0].sdkSessionId);
-        this.agent.setSessionId(sessions[0].sdkSessionId);
+      if (sessions.length > 0 && sessions[0]) {
+        this.sessionIdToUpdate = sessions[0].id;  // Save to update SDK session ID after run
+        if (sessions[0].sdkSessionId) {
+          debug('[HeadlessRunner] Resuming last session (--session-resume) - craft:', sessions[0].id, 'sdk:', sessions[0].sdkSessionId);
+          this.agent.setSessionId(sessions[0].sdkSessionId);
+        } else {
+          debug('[HeadlessRunner] Last session has no SDK session (--session-resume) - craft:', sessions[0].id, 'sdk: none');
+        }
       } else {
-        debug('[HeadlessRunner] No previous session found, starting fresh');
+        debug('[HeadlessRunner] No previous session found (--session-resume), starting fresh');
       }
     } else {
       // Default: fresh session each run (predictable for automation)
-      debug('[HeadlessRunner] Using fresh session (default for headless mode)');
+      debug('[HeadlessRunner] Fresh session (default headless mode) - no craft session, no sdk session');
     }
   }
 
@@ -382,6 +391,15 @@ export class HeadlessRunner {
    * Clean up resources.
    */
   private async cleanup(): Promise<void> {
+    // Save SDK session ID to our session storage (if using --session or --session-resume)
+    if (this.sessionIdToUpdate && this.agent) {
+      const sdkSessionId = this.agent.getSessionId();
+      if (sdkSessionId) {
+        debug('[HeadlessRunner] Saving session - craft:', this.sessionIdToUpdate, 'sdk:', sdkSessionId);
+        updateSessionSdkId(this.sessionIdToUpdate, sdkSessionId);
+      }
+    }
+
     if (this.mcpClient) {
       await this.mcpClient.close().catch(() => {});
       this.mcpClient = null;
@@ -391,5 +409,6 @@ export class HeadlessRunner {
     this.activeDefinition = null;
     this.mcpServers = {};
     this.apiServers = {};
+    this.sessionIdToUpdate = null;
   }
 }

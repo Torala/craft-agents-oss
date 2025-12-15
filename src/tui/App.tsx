@@ -1,9 +1,10 @@
 import React, { useCallback, useMemo } from 'react';
 import { GlobalProvider } from './context/GlobalContext.tsx';
 import { SessionContainer } from './components/SessionContainer.tsx';
-import { loadStoredConfig, saveConfig, getOrCreateLatestSession, createSession, loadSession, type Session } from '../config/storage.ts';
+import { loadStoredConfig, saveConfig, getOrCreateLatestSession, createSession, getOrCreateSessionById, type Session } from '../config/storage.ts';
 import { DEFAULT_MODEL } from '../config/models.ts';
 import type { CraftAgentConfig } from '../agent/craft-agent.ts';
+import { debug } from './utils/debug.ts';
 
 export interface AppProps {
   config: CraftAgentConfig;
@@ -70,25 +71,21 @@ export const App: React.FC<AppProps> = ({
   // --session <id> → load specific session (fallback to new if not found)
   // (default) → resume latest session for workspace
   const initialSession = useMemo((): Session => {
+    let session: Session;
     if (newSession) {
       // --new: Create a fresh session
-      return createSession(config.workspace.id);
+      session = createSession(config.workspace.id);
+      debug('[App] Created new session (--new):', session.id);
+    } else if (sessionId) {
+      // --session <id>: Get or create session with this ID
+      session = getOrCreateSessionById(sessionId, config.workspace.id);
+      debug('[App] Using session (--session):', session.id, 'SDK session:', session.sdkSessionId || 'none');
+    } else {
+      // Default: Resume latest session for workspace
+      session = getOrCreateLatestSession(config.workspace.id);
+      debug('[App] Resuming latest session:', session.id, 'SDK session:', session.sdkSessionId || 'none');
     }
-
-    if (sessionId) {
-      // --session <id>: Load specific session
-      const session = loadSession(sessionId);
-      if (session) {
-        // Verify the session belongs to this workspace (or allow any for flexibility)
-        return session;
-      }
-      // Session not found - fallback to creating new
-      console.error(`Session '${sessionId}' not found. Starting new session.`);
-      return createSession(config.workspace.id);
-    }
-
-    // Default: Resume latest session for workspace
-    return getOrCreateLatestSession(config.workspace.id);
+    return session;
   }, [config.workspace.id, newSession, sessionId]);
 
   return (

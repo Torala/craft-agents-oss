@@ -770,6 +770,48 @@ export function createSession(workspaceId: string, name?: string): Session {
   return session;
 }
 
+// Get or create a session with a specific ID
+// Used for --session <id> flag to allow user-defined session IDs
+export function getOrCreateSessionById(sessionId: string, workspaceId: string): Session {
+  // Try to load existing session
+  const existing = loadSession(sessionId);
+  if (existing) {
+    return {
+      id: existing.id,
+      sdkSessionId: existing.sdkSessionId,
+      workspaceId: existing.workspaceId,
+      name: existing.name,
+      createdAt: existing.createdAt,
+      lastUsedAt: existing.lastUsedAt,
+    };
+  }
+
+  // Create new session with the specified ID
+  const now = Date.now();
+  const session: Session = {
+    id: sessionId,
+    workspaceId,
+    createdAt: now,
+    lastUsedAt: now,
+  };
+
+  // Save empty session file
+  const storedSession: StoredSession = {
+    ...session,
+    messages: [],
+    tokenUsage: {
+      inputTokens: 0,
+      outputTokens: 0,
+      totalTokens: 0,
+      contextTokens: 0,
+      costUsd: 0,
+    },
+  };
+  saveSession(storedSession);
+
+  return session;
+}
+
 // Save session (conversation data + metadata)
 export function saveSession(session: StoredSession): void {
   ensureSessionsDir();
