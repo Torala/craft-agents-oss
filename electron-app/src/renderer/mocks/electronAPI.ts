@@ -193,6 +193,21 @@ console.log(example);
 `
   },
 
+  // ===== Theme =====
+
+  async getSystemTheme(): Promise<boolean> {
+    // Use browser's media query to detect system preference
+    return window.matchMedia('(prefers-color-scheme: dark)').matches
+  },
+
+  onSystemThemeChange(callback: (isDark: boolean) => void): () => void {
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
+    const handler = (e: MediaQueryListEvent) => callback(e.matches)
+
+    mediaQuery.addEventListener('change', handler)
+    return () => mediaQuery.removeEventListener('change', handler)
+  },
+
   // ===== System =====
 
   getVersions() {

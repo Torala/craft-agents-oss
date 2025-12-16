@@ -67,7 +67,7 @@ export function ChatDisplay({
   }
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col min-w-0">
       {/* Toolbar */}
       <div className="flex items-center p-2">
         <div className="flex items-center gap-2">
@@ -97,7 +97,7 @@ export function ChatDisplay({
       <Separator />
 
       {session ? (
-        <div className="flex flex-1 flex-col min-h-0">
+        <div className="flex flex-1 flex-col min-h-0 min-w-0">
           {/* Session header */}
           <div className="flex items-start p-4">
             <div className="flex items-start gap-4 text-sm">
@@ -122,8 +122,8 @@ export function ChatDisplay({
           <Separator />
 
           {/* Messages area */}
-          <ScrollArea className="flex-1">
-            <div className="p-4 space-y-4">
+          <ScrollArea className="flex-1 min-w-0">
+            <div className="p-4 space-y-4 min-w-0">
               {session.messages.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-64 text-muted-foreground">
                   <div className="size-14 rounded-2xl bg-muted flex items-center justify-center mb-4">
@@ -285,7 +285,7 @@ function MessageBubble({ message, onOpenFile, onOpenUrl }: MessageBubbleProps) {
   if (message.role === 'user') {
     return (
       <div className="flex justify-end">
-        <div className="max-w-[80%] bg-primary text-primary-foreground rounded-lg px-4 py-2">
+        <div className="max-w-[80%] bg-primary text-primary-foreground rounded-lg px-4 py-2 break-words">
           <p className="whitespace-pre-wrap text-sm">{message.content}</p>
         </div>
       </div>
@@ -295,7 +295,7 @@ function MessageBubble({ message, onOpenFile, onOpenUrl }: MessageBubbleProps) {
   if (message.role === 'assistant') {
     return (
       <div className="flex justify-start">
-        <div className="max-w-[80%] bg-muted rounded-lg px-4 py-2">
+        <div className="max-w-[80%] bg-muted rounded-lg px-4 py-2 break-words">
           <p className="whitespace-pre-wrap text-sm">{detectLinks(message.content)}</p>
           {message.isStreaming && (
             <span className="inline-block w-2 h-4 bg-primary ml-1 animate-pulse rounded-sm" />
@@ -342,7 +342,7 @@ function MessageBubble({ message, onOpenFile, onOpenUrl }: MessageBubbleProps) {
   if (message.role === 'error') {
     return (
       <div className="flex justify-start">
-        <div className="max-w-[80%] bg-destructive/10 border border-destructive/20 rounded-lg px-4 py-2">
+        <div className="max-w-[80%] bg-destructive/10 border border-destructive/20 rounded-lg px-4 py-2 break-words">
           <div className="flex items-center gap-2 text-xs text-destructive mb-1 font-semibold">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />

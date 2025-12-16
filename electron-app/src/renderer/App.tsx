@@ -230,6 +230,11 @@ export default function App() {
     // TODO: Integrate browser view
   }, [])
 
+  const handleOpenSettings = useCallback(() => {
+    console.log('Open settings')
+    // TODO: Implement settings panel
+  }, [])
+
   return (
     <TooltipProvider>
       <div className="h-full bg-background text-foreground">
@@ -245,6 +250,7 @@ export default function App() {
           onSendMessage={handleSendMessage}
           onOpenFile={handleOpenFile}
           onOpenUrl={handleOpenUrl}
+          onOpenSettings={handleOpenSettings}
         />
       </div>
     </TooltipProvider>

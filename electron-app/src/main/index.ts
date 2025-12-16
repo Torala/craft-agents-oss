@@ -1,8 +1,9 @@
-import { app, BrowserWindow, shell } from 'electron'
+import { app, BrowserWindow, shell, nativeTheme } from 'electron'
 import { join } from 'path'
 import { existsSync } from 'fs'
 import { SessionManager } from './sessions'
 import { registerIpcHandlers } from './ipc'
+import { IPC_CHANNELS } from '../shared/types'
 
 // Check if running in development mode
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged
@@ -11,8 +12,19 @@ let mainWindow: BrowserWindow | null = null
 let sessionManager: SessionManager | null = null
 
 function createWindow(): void {
-  // Load app icon (PNG works cross-platform, but check if it exists)
-  const iconPath = join(__dirname, '../resources/icon.png')
+  // Load platform-specific app icon
+  const getIconPath = () => {
+    const resourcesDir = join(__dirname, '../resources')
+    if (process.platform === 'darwin') {
+      return join(resourcesDir, 'icon.icns')
+    } else if (process.platform === 'win32') {
+      return join(resourcesDir, 'icon.ico')
+    } else {
+      return join(resourcesDir, 'icon.png')
+    }
+  }
+
+  const iconPath = getIconPath()
   const iconExists = existsSync(iconPath)
 
   if (!iconExists) {
@@ -24,7 +36,7 @@ function createWindow(): void {
     height: 900,
     minWidth: 800,
     minHeight: 600,
-    title: 'Craft Agent',
+    title: 'Craft Agents',
     icon: iconExists ? iconPath : undefined,
     backgroundColor: '#1a1a1a',
     webPreferences: {
@@ -67,10 +79,23 @@ function createWindow(): void {
   if (sessionManager) {
     sessionManager.setMainWindow(mainWindow)
   }
+
+  // Listen for system theme changes and notify renderer
+  nativeTheme.on('updated', () => {
+    mainWindow?.webContents.send(IPC_CHANNELS.SYSTEM_THEME_CHANGED, nativeTheme.shouldUseDarkColors)
+  })
 }
 
 app.whenReady().then(async () => {
-  app.setName('Craft Agent')
+  app.setName('Craft Agents')
+
+  // Set dock icon on macOS (required for dev mode, bundled apps use Info.plist)
+  if (process.platform === 'darwin' && app.dock) {
+    const dockIconPath = join(__dirname, '../resources/icon.png')
+    if (existsSync(dockIconPath)) {
+      app.dock.setIcon(dockIconPath)
+    }
+  }
 
   try {
     // Initialize session manager first

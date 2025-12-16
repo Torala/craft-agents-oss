@@ -4,6 +4,7 @@ import {
   MessageSquare,
   Plus,
   Search,
+  Settings,
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
@@ -41,6 +42,7 @@ interface MailProps {
   onSendMessage: (sessionId: string, message: string) => void
   onOpenFile: (path: string) => void
   onOpenUrl: (url: string) => void
+  onOpenSettings: () => void
 }
 
 export function Mail({
@@ -56,6 +58,7 @@ export function Mail({
   onSendMessage,
   onOpenFile,
   onOpenUrl,
+  onOpenSettings,
 }: MailProps) {
   const [isCollapsed, setIsCollapsed] = React.useState(defaultCollapsed)
   const [session, setSession] = useSession()
@@ -100,63 +103,85 @@ export function Mail({
             localStorage.setItem('mail-collapsed', JSON.stringify(false))
           }}
           className={cn(
-            "bg-sidebar overflow-hidden",
+            "bg-sidebar overflow-hidden min-w-0",
             isCollapsed &&
-              "min-w-12.5 transition-all duration-300 ease-in-out"
+              "!min-w-12.5 transition-all duration-300 ease-in-out"
           )}
         >
-          <div
-            className={cn(
-              "flex h-13 items-center justify-center",
-              isCollapsed ? "h-13" : "px-2"
-            )}
-          >
-            <WorkspaceSwitcher
-              isCollapsed={isCollapsed}
-              workspaces={workspaces}
-              activeWorkspaceId={activeWorkspaceId}
-              onSelect={onSelectWorkspace}
-            />
+          <div className="flex h-full flex-col">
+            {/* Top section */}
+            <div className="flex-1">
+              <div
+                className={cn(
+                  "flex h-13 items-center justify-center",
+                  isCollapsed ? "h-13" : "px-2"
+                )}
+              >
+                <WorkspaceSwitcher
+                  isCollapsed={isCollapsed}
+                  workspaces={workspaces}
+                  activeWorkspaceId={activeWorkspaceId}
+                  onSelect={onSelectWorkspace}
+                />
+              </div>
+              <Separator />
+              <Nav
+                isCollapsed={isCollapsed}
+                links={[
+                  {
+                    title: "All Chats",
+                    label: String(sessions.length),
+                    icon: Inbox,
+                    variant: "default",
+                    onClick: () => setSession({ selected: null }),
+                  },
+                  {
+                    title: "New Chat",
+                    label: "",
+                    icon: Plus,
+                    variant: "ghost",
+                    onClick: () => activeWorkspace && onCreateSession(activeWorkspace.id),
+                  },
+                ]}
+              />
+              <Separator />
+              <Nav
+                isCollapsed={isCollapsed}
+                links={[
+                  {
+                    title: "Messages",
+                    label: String(sessions.reduce((acc, s) => acc + s.messages.length, 0)),
+                    icon: MessageSquare,
+                    variant: "ghost",
+                  },
+                ]}
+              />
+            </div>
+
+            {/* Bottom section - Settings */}
+            <div className="mt-auto">
+              <Separator />
+              <Nav
+                isCollapsed={isCollapsed}
+                links={[
+                  {
+                    title: "Settings",
+                    label: "",
+                    icon: Settings,
+                    variant: "ghost",
+                    onClick: onOpenSettings,
+                  },
+                ]}
+              />
+            </div>
           </div>
-          <Separator />
-          <Nav
-            isCollapsed={isCollapsed}
-            links={[
-              {
-                title: "All Chats",
-                label: String(sessions.length),
-                icon: Inbox,
-                variant: "default",
-                onClick: () => setSession({ selected: null }),
-              },
-              {
-                title: "New Chat",
-                label: "",
-                icon: Plus,
-                variant: "ghost",
-                onClick: () => activeWorkspace && onCreateSession(activeWorkspace.id),
-              },
-            ]}
-          />
-          <Separator />
-          <Nav
-            isCollapsed={isCollapsed}
-            links={[
-              {
-                title: "Messages",
-                label: String(sessions.reduce((acc, s) => acc + s.messages.length, 0)),
-                icon: MessageSquare,
-                variant: "ghost",
-              },
-            ]}
-          />
         </ResizablePanel>
         <ResizableHandle withHandle />
-        <ResizablePanel defaultSize={defaultLayout[1]} minSize={15} className="overflow-hidden">
-          <Tabs defaultValue="all" className="h-full flex flex-col">
-            <div className="flex items-center px-4 py-2">
-              <h1 className="text-xl font-bold">Sessions</h1>
-              <TabsList className="ml-auto">
+        <ResizablePanel defaultSize={defaultLayout[1]} minSize={15} className="overflow-hidden min-w-0">
+          <Tabs defaultValue="all" className="h-full flex flex-col min-w-0">
+            <div className="flex items-center px-4 py-2 min-w-0">
+              <h1 className="text-xl font-bold truncate">Sessions</h1>
+              <TabsList className="ml-auto shrink-0">
                 <TabsTrigger
                   value="all"
                   className="text-muted-foreground"
@@ -172,7 +197,7 @@ export function Mail({
               </TabsList>
             </div>
             <Separator />
-            <div className="bg-background/95 p-4 backdrop-blur supports-backdrop-filter:bg-background/60">
+            <div className="bg-background/95 p-4 backdrop-blur supports-backdrop-filter:bg-background/60 min-w-0">
               <form>
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
@@ -200,7 +225,7 @@ export function Mail({
           </Tabs>
         </ResizablePanel>
         <ResizableHandle withHandle />
-        <ResizablePanel defaultSize={defaultLayout[2]} minSize={30}>
+        <ResizablePanel defaultSize={defaultLayout[2]} minSize={30} className="overflow-hidden min-w-0">
           <ChatDisplay
             session={selectedSession}
             onSendMessage={(message) => selectedSession && onSendMessage(selectedSession.id, message)}

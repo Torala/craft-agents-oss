@@ -8,6 +8,23 @@ This is the Electron desktop app for Craft Agent - a GUI alternative to the TUI.
 
 **Important:** This app reuses the parent `craft-tui-agent` codebase. The main process imports directly from `../../../src/` (the TUI's source). Dependencies are managed in the root `package.json`.
 
+## UI Components
+
+**Always use shadcn/ui components** for building the UI. Never create custom button, input, or other primitive components - use the existing shadcn components from `@/components/ui/`.
+
+Available components in `src/renderer/components/ui/`:
+- `avatar`, `badge`, `button`, `collapsible`, `dropdown-menu`
+- `input`, `label`, `popover`, `resizable`, `scroll-area`
+- `select`, `separator`, `switch`, `tabs`, `textarea`, `tooltip`
+
+To add new shadcn components:
+```bash
+# From project root
+cd electron-app && npx shadcn@latest add <component-name>
+```
+
+Icons: Use [Lucide React](https://lucide.dev/icons/) (`lucide-react` package).
+
 ## Commands
 
 All commands run from the **project root** (not this directory):
@@ -29,17 +46,21 @@ bun run electron:build:resources # Copy icons
 electron-app/
 ├── src/
 │   ├── main/           # Electron main process (Node.js)
-│   │   ├── index.ts    # Window creation, app lifecycle
+│   │   ├── index.ts    # Window creation, app lifecycle, nativeTheme listener
 │   │   ├── ipc.ts      # IPC handler registration
 │   │   └── sessions.ts # SessionManager - CraftAgent integration
 │   ├── preload/        # Context bridge (main ↔ renderer)
-│   │   └── index.ts    # Exposes electronAPI to renderer
+│   │   └── index.ts    # Exposes electronAPI to renderer (incl. theme APIs)
 │   ├── renderer/       # React UI (browser context)
 │   │   ├── App.tsx     # Main app, session event handling
-│   │   ├── main.tsx    # React entry point
+│   │   ├── main.tsx    # React entry point, ThemeProvider
+│   │   ├── index.css   # CSS variables (:root, .dark, data-theme)
 │   │   ├── components/ # UI components
-│   │   ├── context/    # React context (ThemeContext)
-│   │   └── utils/      # Color utilities for theming
+│   │   ├── context/
+│   │   │   ├── NavigationContext.tsx  # Agent selection
+│   │   │   └── ThemeContext.tsx       # Theme state management
+│   │   ├── hooks/      # Custom hooks
+│   │   └── mocks/      # Browser dev mode mock APIs
 │   └── shared/
 │       └── types.ts    # IPC channels, Message/Session types
 ├── dist/               # Build output
@@ -56,6 +77,8 @@ The app uses Electron's IPC for main ↔ renderer communication:
 | `workspaces:get` | renderer → main | Get configured workspaces |
 | `session:event` | main → renderer | Stream events (text_delta, tool_start, etc.) |
 | `file:read` | renderer → main | Read files (path-validated) |
+| `theme:getSystemPreference` | renderer → main | Get macOS dark mode state |
+| `theme:systemChanged` | main → renderer | System theme preference changed |
 
 **Event streaming pattern:** `sendMessage` returns immediately. Results stream via `SESSION_EVENT` channel.
 
@@ -107,7 +130,57 @@ process.env.ANTHROPIC_API_KEY = apiKey
 
 ## Theming
 
-The app uses CSS custom properties for theming. `ThemeContext` manages colors stored in localStorage (`craft-agent-theme`). CSS classes use semantic names like `bg-bg-primary`, `text-text-primary`, `border-border-primary`.
+The app supports a **two-layer theming system** using CSS custom properties:
+
+### Layers
+
+| Layer | HTML Attribute | CSS Selector | Purpose |
+|-------|----------------|--------------|---------|
+| **Mode** | `class="dark"` | `.dark { }` | Light/Dark mode |
+| **Color Theme** | `data-theme="ocean"` | `[data-theme="ocean"]` | Custom color palettes |
+
+Combined: `<html class="dark" data-theme="ocean">`
+
+### Files
+
+- **`index.css`** - CSS variables for `:root` (light) and `.dark` (dark) modes
+- **`context/ThemeContext.tsx`** - React context managing theme state
+- **`main/index.ts`** - Electron `nativeTheme` listener for system sync
+- **`preload/index.ts`** - Exposes theme APIs to renderer
+
+### ThemeContext API
+
+```typescript
+const { mode, resolvedMode, colorTheme, setMode, setColorTheme } = useTheme()
+
+// mode: 'light' | 'dark' | 'system' (user preference)
+// resolvedMode: 'light' | 'dark' (actual applied mode)
+// colorTheme: string (e.g., 'default', 'ocean')
+```
+
+### Adding Custom Color Themes
+
+Add to `index.css`:
+
+```css
+/* Custom theme - Light mode */
+[data-theme="ocean"] {
+  --primary: hsl(200 80% 50%);
+  --ring: hsl(200 80% 50%);
+}
+
+/* Custom theme - Dark mode */
+.dark[data-theme="ocean"] {
+  --primary: hsl(200 80% 65%);
+  --ring: hsl(200 80% 65%);
+}
+```
+
+### Electron Integration
+
+- **`nativeTheme.shouldUseDarkColors`** - Get current system preference
+- **`nativeTheme.on('updated')`** - Listen for macOS appearance changes
+- Renderer receives updates via `theme:systemChanged` IPC channel
 
 ## Debugging
 

@@ -2,6 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { Provider as JotaiProvider } from 'jotai'
 import App from './App'
+import { ThemeProvider } from './context/ThemeContext'
 import './index.css'
 
 // Inject mock API when running in browser (no Electron)
@@ -20,7 +21,9 @@ function renderApp() {
   ReactDOM.createRoot(document.getElementById('root')!).render(
     <React.StrictMode>
       <JotaiProvider>
-        <App />
+        <ThemeProvider>
+          <App />
+        </ThemeProvider>
       </JotaiProvider>
     </React.StrictMode>
   )

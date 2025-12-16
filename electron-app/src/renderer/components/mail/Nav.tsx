@@ -34,12 +34,12 @@ export function Nav({ links, isCollapsed }: NavProps) {
                   onClick={link.onClick}
                   className={cn(
                     buttonVariants({ variant: link.variant, size: "icon" }),
-                    "h-9 w-9",
+                    "h-10 w-10",
                     link.variant === "default" &&
                       "dark:bg-muted dark:text-muted-foreground dark:hover:bg-muted dark:hover:text-foreground"
                   )}
                 >
-                  <link.icon className="h-4 w-4" />
+                  <link.icon className="h-5 w-5" />
                   <span className="sr-only">{link.title}</span>
                 </button>
               </TooltipTrigger>
@@ -57,13 +57,13 @@ export function Nav({ links, isCollapsed }: NavProps) {
               key={index}
               onClick={link.onClick}
               className={cn(
-                buttonVariants({ variant: link.variant, size: "sm" }),
+                buttonVariants({ variant: link.variant, size: "default" }),
                 link.variant === "default" &&
                   "dark:bg-muted dark:text-foreground dark:hover:bg-muted dark:hover:text-foreground",
                 "justify-start"
               )}
             >
-              <link.icon className="mr-2 h-4 w-4" />
+              <link.icon className="mr-2 h-5 w-5" />
               {link.title}
               {link.label && (
                 <span

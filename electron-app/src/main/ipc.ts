@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron'
+import { ipcMain, nativeTheme } from 'electron'
 import { readFile, realpath } from 'fs/promises'
 import { normalize, isAbsolute } from 'path'
 import { homedir } from 'os'
@@ -117,5 +117,10 @@ export function registerIpcHandlers(sessionManager: SessionManager): void {
       console.error('[IPC] readFile error:', message)
       throw new Error(`Failed to read file: ${message}`)
     }
+  })
+
+  // Get system theme preference (dark = true, light = false)
+  ipcMain.handle(IPC_CHANNELS.GET_SYSTEM_THEME, () => {
+    return nativeTheme.shouldUseDarkColors
   })
 }
