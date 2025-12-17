@@ -184,6 +184,10 @@ export function useCommands(props: UseCommandsProps) {
         openModal('help');
         return { handled: true };
 
+      case '/resume':
+        openModal('sessionMenu');
+        return { handled: true };
+
       case '/tools': {
         const verbose = parts[1] === '-v' || parts[1] === '--verbose';
         const toolGroups = await fetchTools();

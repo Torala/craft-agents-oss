@@ -1174,6 +1174,8 @@ export interface SessionMetadata {
   messageCount: number;
   preview?: string;  // Preview of first user message
   sdkSessionId?: string;
+  agents?: string[];  // Distinct agent names used in this session
+  planCount?: number;  // Number of plan files for this session
 }
 
 // List sessions, optionally filtered by workspace
@@ -1191,7 +1193,24 @@ export function listSessions(workspaceId?: string): SessionMetadata[] {
       if (!workspaceId || session.workspaceId === workspaceId) {
         // Find first user message for preview
         const firstUserMessage = session.messages?.find(m => m.type === 'user');
-        const preview = firstUserMessage?.content?.replace(/\n/g, ' ').substring(0, 100);
+        const preview = firstUserMessage?.content?.replace(/\n/g, ' ').substring(0, 150);
+
+        // Extract distinct agent names from "Now chatting with @<name>" messages
+        const agentPattern = /Now chatting with @(\S+)/g;
+        const agents = new Set<string>();
+        for (const msg of session.messages ?? []) {
+          if (msg.content) {
+            let match;
+            while ((match = agentPattern.exec(msg.content)) !== null) {
+              if (match[1]) {
+                agents.add(match[1]);
+              }
+            }
+          }
+        }
+
+        // Count plan files for this session
+        const planCount = listPlanFiles(session.id).length;
 
         sessions.push({
           id: session.id,
@@ -1202,6 +1221,8 @@ export function listSessions(workspaceId?: string): SessionMetadata[] {
           messageCount: session.messages?.length ?? 0,
           preview,
           sdkSessionId: session.sdkSessionId,
+          agents: agents.size > 0 ? Array.from(agents) : undefined,
+          planCount: planCount > 0 ? planCount : undefined,
         });
       }
     } catch {

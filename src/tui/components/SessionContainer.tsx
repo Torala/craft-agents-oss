@@ -19,6 +19,7 @@ import { ApiAuth } from './ApiAuth.tsx';
 import { AgentReview } from './AgentReview.tsx';
 import { PlanMenu, type PlanAction } from './PlanMenu.tsx';
 import { PlanSelector, type PlanFile } from './PlanSelector.tsx';
+import { SessionMenu } from './SessionMenu.tsx';
 import { HelpPanel } from './HelpPanel.tsx';
 import { Balance } from './Balance.tsx';
 import { ErrorBanner } from './ErrorBanner.tsx';
@@ -53,8 +54,11 @@ import {
   loadSession,
   listPlanFiles,
   deletePlanFile,
+  listSessions,
+  getOrCreateSessionById,
   type TokenDisplayMode,
   type Session,
+  type SessionMetadata,
 } from '../../config/storage.ts';
 import { processInputWithFiles, readClipboard, readFileAttachment, type FileAttachment } from '../utils/files.ts';
 import { debug } from '../utils/debug.ts';
@@ -529,6 +533,13 @@ export const SessionContainer: React.FC<SessionContainerProps> = ({
     }
   }, [closeModal, addLocalMessage, session.id]);
 
+  // Session menu handler - resumes selected session
+  const handleSessionSelect = useCallback((selectedSession: SessionMetadata) => {
+    const fullSession = getOrCreateSessionById(selectedSession.id, workspace.id);
+    setSession(fullSession);
+    closeModal();
+  }, [workspace.id, setSession, closeModal]);
+
   const handlePaste = useCallback(() => {
     try {
       const clipboardItems = readClipboard();
@@ -825,6 +836,16 @@ export const SessionContainer: React.FC<SessionContainerProps> = ({
           plans={listPlanFiles(session.id)}
           onSelect={handlePlanSelect}
           onDelete={handlePlanDelete}
+          onCancel={closeModal}
+        />
+      )}
+
+      {/* Session menu overlay */}
+      {isOpen('sessionMenu') && (
+        <SessionMenu
+          sessions={listSessions(workspace.id)}
+          currentSessionId={session.id}
+          onSelect={handleSessionSelect}
           onCancel={closeModal}
         />
       )}

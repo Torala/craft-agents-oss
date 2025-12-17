@@ -18,7 +18,8 @@ export type ModalName =
   | 'logoutConfirm'
   | 'planMenu'
   | 'planSelector'
-  | 'planReview';
+  | 'planReview'
+  | 'sessionMenu';
 
 export interface UseModalStateResult {
   /** Currently active modal, or null if none */
