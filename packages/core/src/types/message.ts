@@ -48,6 +48,7 @@ export interface StoredAttachment {
   size: number;
   storedPath: string;            // Full path to copied file on disk
   thumbnailPath?: string;        // Path to OS-generated thumbnail (images/PDFs/Office)
+  thumbnailBase64?: string;      // Base64-encoded thumbnail PNG (for renderer display)
   markdownPath?: string;         // For Office files: converted markdown for Claude
 }
 

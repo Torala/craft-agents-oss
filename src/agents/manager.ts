@@ -335,6 +335,18 @@ export class SubAgentManager {
   }
 
   /**
+   * Set active agent by ID (for use when definition is already loaded)
+   * This allows buildMcpServerConfig and buildApiServers to work with credentials
+   */
+  setActiveAgentId(agentId: string): void {
+    this.activeAgent = {
+      type: 'sub-agent',
+      agentId,
+      activatedAt: Date.now(),
+    };
+  }
+
+  /**
    * Get current active agent state
    */
   getActiveAgent(): ActiveAgentState {
@@ -447,9 +459,12 @@ export class SubAgentManager {
 
   /**
    * Get MCP servers that require authentication
+   * @param definition - Agent definition
+   * @param agentId - Optional agent ID (defaults to active agent)
    */
-  async getMcpServersNeedingAuth(definition: SubAgentDefinition): Promise<McpServerConfig[]> {
-    if (!definition.mcpServers || !this.activeAgent.agentId) {
+  async getMcpServersNeedingAuth(definition: SubAgentDefinition, agentId?: string): Promise<McpServerConfig[]> {
+    const effectiveAgentId = agentId || this.activeAgent.agentId;
+    if (!definition.mcpServers || !effectiveAgentId) {
       return [];
     }
 
@@ -458,10 +473,63 @@ export class SubAgentManager {
       if (!config.requiresAuth) continue;
 
       const name = config.name || this.extractNameFromUrl(config.url);
-      const isExpired = await isCredentialExpiredAsync(this.workspaceId, this.activeAgent.agentId!, name);
+      const isExpired = await isCredentialExpiredAsync(this.workspaceId, effectiveAgentId, name);
       if (isExpired) {
         results.push(config);
       }
+    }
+    return results;
+  }
+
+  /**
+   * Get MCP servers with their auth status (for Info dialog)
+   * @param definition - Agent definition
+   * @param agentId - Agent ID to check credentials for
+   * @returns Array of servers with hasAuth boolean indicating if credentials are stored
+   */
+  async getMcpServersWithAuthStatus(definition: SubAgentDefinition, agentId: string): Promise<Array<McpServerConfig & { hasAuth: boolean }>> {
+    if (!definition.mcpServers) {
+      return [];
+    }
+
+    const results: Array<McpServerConfig & { hasAuth: boolean }> = [];
+    for (const config of definition.mcpServers) {
+      const name = config.name || this.extractNameFromUrl(config.url);
+      let hasAuth = false;
+
+      if (config.requiresAuth) {
+        // Check if we have non-expired credentials
+        const isExpired = await isCredentialExpiredAsync(this.workspaceId, agentId, name);
+        hasAuth = !isExpired;
+      }
+
+      results.push({ ...config, name, hasAuth });
+    }
+    return results;
+  }
+
+  /**
+   * Get APIs with their auth status (for Info dialog)
+   * @param definition - Agent definition
+   * @param agentId - Agent ID to check credentials for
+   * @returns Array of APIs with hasAuth boolean indicating if credentials are stored
+   */
+  async getApisWithAuthStatus(definition: SubAgentDefinition, agentId: string): Promise<Array<ApiConfig & { hasAuth: boolean }>> {
+    if (!definition.apis) {
+      return [];
+    }
+
+    const results: Array<ApiConfig & { hasAuth: boolean }> = [];
+    for (const api of definition.apis) {
+      let hasAuth = false;
+
+      if (api.auth && api.auth.type !== 'none') {
+        // Check if we have stored credentials
+        const storedCred = await getApiKeyCredentialAsync(this.workspaceId, agentId, api.name);
+        hasAuth = !!storedCred;
+      }
+
+      results.push({ ...api, hasAuth });
     }
     return results;
   }
@@ -485,9 +553,12 @@ export class SubAgentManager {
   /**
    * Get APIs that need authentication (have auth config but no stored key)
    * Excludes APIs with auth.type='none' as they don't require credentials
+   * @param definition - Agent definition
+   * @param agentId - Optional agent ID (defaults to active agent)
    */
-  async getApisNeedingAuth(definition: SubAgentDefinition): Promise<ApiConfig[]> {
-    if (!definition.apis || !this.activeAgent.agentId) {
+  async getApisNeedingAuth(definition: SubAgentDefinition, agentId?: string): Promise<ApiConfig[]> {
+    const effectiveAgentId = agentId || this.activeAgent.agentId;
+    if (!definition.apis || !effectiveAgentId) {
       return [];
     }
 
@@ -499,7 +570,7 @@ export class SubAgentManager {
       // Check if we have stored credentials in credential store
       const storedCred = await getApiKeyCredentialAsync(
         this.workspaceId,
-        this.activeAgent.agentId!,
+        effectiveAgentId,
         api.name
       );
       if (!storedCred) {

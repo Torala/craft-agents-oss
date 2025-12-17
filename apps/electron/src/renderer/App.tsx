@@ -207,13 +207,14 @@ export default function App() {
     return cleanup
   }, [])
 
-  const handleCreateSession = useCallback(async (workspaceId: string, agentId?: string) => {
-    // Find agent name if agent is provided
+  const handleCreateSession = useCallback(async (workspaceId: string, agentId?: string): Promise<Session> => {
+    // Find agent if provided - prefer displayName for human-readable title
     const agent = agentId ? agents.find(a => a.id === agentId) : undefined
-    const agentName = agent?.name
+    const agentName = agent?.displayName || agent?.name
     // Pass agentName to main process so it's stored in the session
     const session = await window.electronAPI.createSession(workspaceId, agentId, agentName)
     setSessions(prev => [session, ...prev])
+    return session
   }, [agents])
 
   const handleDeleteSession = useCallback(async (sessionId: string) => {
@@ -237,7 +238,10 @@ export default function App() {
 
   const handleRenameSession = useCallback(async (sessionId: string, name: string) => {
     await window.electronAPI.renameSession(sessionId, name)
-    // The title_generated event will update the state
+    // Update state immediately (don't rely on event timing)
+    setSessions(prev => prev.map(s =>
+      s.id === sessionId ? { ...s, name } : s
+    ))
   }, [])
 
   const handleSendMessage = useCallback(async (sessionId: string, message: string, attachments?: FileAttachment[]) => {
@@ -329,8 +333,8 @@ export default function App() {
           : s
       ))
 
-      // Step 4: Send to Claude with processed attachments
-      await window.electronAPI.sendMessage(sessionId, message, processedAttachments)
+      // Step 4: Send to Claude with processed attachments + stored attachments for persistence
+      await window.electronAPI.sendMessage(sessionId, message, processedAttachments, storedAttachments)
     } catch (error) {
       console.error('Failed to send message:', error)
       setSessions(prev => prev.map(s =>

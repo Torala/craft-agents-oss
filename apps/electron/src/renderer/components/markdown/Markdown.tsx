@@ -4,6 +4,9 @@ import remarkGfm from 'remark-gfm'
 import { cn } from '@/lib/utils'
 import { CodeBlock, InlineCode } from './CodeBlock'
 import { preprocessLinks } from './linkify'
+import remarkCollapsibleSections from './remarkCollapsibleSections'
+import { CollapsibleSection } from './CollapsibleSection'
+import { useCollapsibleMarkdown } from './CollapsibleMarkdownContext'
 
 /**
  * Render modes for markdown content:
@@ -40,6 +43,18 @@ interface MarkdownProps {
    * Callback when a file path is clicked
    */
   onFileClick?: (path: string) => void
+  /**
+   * Enable collapsible headings
+   * Requires wrapping in CollapsibleMarkdownProvider
+   * @default false
+   */
+  collapsible?: boolean
+}
+
+/** Context for collapsible sections */
+interface CollapsibleContext {
+  collapsedSections: Set<string>
+  toggleSection: (id: string) => void
 }
 
 // File path detection regex - matches paths starting with /, ~/, or ./
@@ -51,9 +66,32 @@ const FILE_PATH_REGEX = /^(?:\/|~\/|\.\/)[\w\-./@]+\.(?:ts|tsx|js|jsx|mjs|cjs|md
 function createComponents(
   mode: RenderMode,
   onUrlClick?: (url: string) => void,
-  onFileClick?: (path: string) => void
+  onFileClick?: (path: string) => void,
+  collapsibleContext?: CollapsibleContext | null
 ): Partial<Components> {
   const baseComponents: Partial<Components> = {
+    // Section wrapper for collapsible headings
+    div: ({ node, children, ...props }) => {
+      const sectionId = (props as Record<string, unknown>)['data-section-id'] as string | undefined
+      const headingLevel = (props as Record<string, unknown>)['data-heading-level'] as number | undefined
+
+      // If this is a collapsible section div and we have context
+      if (sectionId && headingLevel && collapsibleContext) {
+        return (
+          <CollapsibleSection
+            sectionId={sectionId}
+            headingLevel={headingLevel}
+            isCollapsed={collapsibleContext.collapsedSections.has(sectionId)}
+            onToggle={collapsibleContext.toggleSection}
+          >
+            {children}
+          </CollapsibleSection>
+        )
+      }
+
+      // Regular div
+      return <div {...props}>{children}</div>
+    },
     // Links: Make clickable with callbacks
     a: ({ href, children }) => {
       const handleClick = (e: React.MouseEvent) => {
@@ -150,10 +188,10 @@ function createComponents(
       td: ({ children }) => (
         <td className="py-2 px-3 border-b border-border/50">{children}</td>
       ),
-      // Headings
-      h1: ({ children }) => <h1 className="text-xl font-bold mt-4 mb-2">{children}</h1>,
-      h2: ({ children }) => <h2 className="text-lg font-bold mt-3 mb-2">{children}</h2>,
-      h3: ({ children }) => <h3 className="text-base font-semibold mt-3 mb-1">{children}</h3>,
+      // Headings - H1/H2 same size, differentiated by weight
+      h1: ({ children }) => <h1 className="font-sans text-[16px] font-bold mt-5 mb-3">{children}</h1>,
+      h2: ({ children }) => <h2 className="font-sans text-[16px] font-semibold mt-4 mb-3">{children}</h2>,
+      h3: ({ children }) => <h3 className="font-sans text-[15px] font-semibold mt-4 mb-2">{children}</h3>,
       // Blockquotes
       blockquote: ({ children }) => (
         <blockquote className="border-l-2 border-muted-foreground/30 pl-3 my-2 text-muted-foreground italic">
@@ -213,18 +251,18 @@ function createComponents(
     tr: ({ children }) => (
       <tr className="hover:bg-muted/30 transition-colors">{children}</tr>
     ),
-    // Rich headings
+    // Rich headings - H1/H2 same size, differentiated by weight
     h1: ({ children }) => (
-      <h1 className="text-2xl font-bold mt-6 mb-3 pb-2 border-b">{children}</h1>
+      <h1 className="font-sans text-[16px] font-bold mt-7 mb-4">{children}</h1>
     ),
     h2: ({ children }) => (
-      <h2 className="text-xl font-bold mt-5 mb-2">{children}</h2>
+      <h2 className="font-sans text-[16px] font-semibold mt-6 mb-3">{children}</h2>
     ),
     h3: ({ children }) => (
-      <h3 className="text-lg font-semibold mt-4 mb-2">{children}</h3>
+      <h3 className="font-sans text-[15px] font-semibold mt-5 mb-3">{children}</h3>
     ),
     h4: ({ children }) => (
-      <h4 className="text-base font-semibold mt-3 mb-1">{children}</h4>
+      <h4 className="text-[14px] font-semibold mt-3 mb-1">{children}</h4>
     ),
     // Styled blockquotes
     blockquote: ({ children }) => (
@@ -272,10 +310,14 @@ export function Markdown({
   id,
   onUrlClick,
   onFileClick,
+  collapsible = false,
 }: MarkdownProps) {
+  // Get collapsible context if enabled
+  const collapsibleContext = useCollapsibleMarkdown()
+
   const components = React.useMemo(
-    () => createComponents(mode, onUrlClick, onFileClick),
-    [mode, onUrlClick, onFileClick]
+    () => createComponents(mode, onUrlClick, onFileClick, collapsible ? collapsibleContext : null),
+    [mode, onUrlClick, onFileClick, collapsible, collapsibleContext]
   )
 
   // Preprocess to convert raw URLs and file paths to markdown links
@@ -284,10 +326,16 @@ export function Markdown({
     [children]
   )
 
+  // Conditionally include the collapsible sections plugin
+  const remarkPlugins = React.useMemo(
+    () => collapsible ? [remarkGfm, remarkCollapsibleSections] : [remarkGfm],
+    [collapsible]
+  )
+
   return (
     <div className={cn('markdown-content', className)}>
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={remarkPlugins}
         components={components}
       >
         {processedContent}
@@ -324,3 +372,4 @@ MemoizedMarkdown.displayName = 'MemoizedMarkdown'
 
 // Re-export for convenience
 export { CodeBlock, InlineCode } from './CodeBlock'
+export { CollapsibleMarkdownProvider } from './CollapsibleMarkdownContext'

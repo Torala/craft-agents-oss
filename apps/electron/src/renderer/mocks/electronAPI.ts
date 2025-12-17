@@ -209,6 +209,85 @@ export const mockElectronAPI: ElectronAPI = {
     return { needsAuth: false }
   },
 
+  async getAgentSetupStatus(_workspaceId: string, _agentId: string) {
+    await sleep(100)
+    // Mock: assume agents are already set up
+    return { needsSetup: false, needsAuth: false }
+  },
+
+  async getAgentAuthStatus(_workspaceId: string, _agentId: string) {
+    await sleep(100)
+    // Mock: return mock auth status
+    return {
+      mcpServers: [
+        { name: 'Mock MCP', url: 'https://mcp.example.com', requiresAuth: true, hasAuth: true }
+      ],
+      apis: []
+    }
+  },
+
+  async getAgentDefinition(_workspaceId: string, agentId: string) {
+    await sleep(300)
+    // Mock: return a fake agent definition
+    const agent = mockAgents.find(a => a.id === agentId)
+    if (!agent) return null
+    return {
+      name: agent.name,
+      instructions: `This is a mock agent for ${agent.name}`,
+      mcpServers: [],
+      apis: [],
+      capabilities: ['Mock capability 1', 'Mock capability 2'],
+      info: ['This is a mock agent for testing purposes'],
+      rawContent: '',
+      parsedAt: Date.now(),
+    }
+  },
+
+  async reloadAgent(_workspaceId: string, _agentId: string) {
+    await sleep(500)
+    console.log('[Mock] Reload agent called')
+    return true
+  },
+
+  async resetAgent(_workspaceId: string, _agentId: string) {
+    await sleep(500)
+    console.log('[Mock] Reset agent called')
+    return true
+  },
+
+  // ===== Agent Authentication =====
+
+  async getAgentAuthRequirements(_workspaceId: string, _agentId: string) {
+    await sleep(200)
+    console.log('[Mock] getAgentAuthRequirements called')
+    // Mock: return empty arrays (no auth needed)
+    return { mcpServers: [], apis: [] }
+  },
+
+  async startMcpOAuth(_workspaceId: string, _agentId: string, _serverUrl: string, serverName: string) {
+    await sleep(1000)
+    console.log('[Mock] startMcpOAuth called for:', serverName)
+    // Mock: simulate successful OAuth
+    return { success: true }
+  },
+
+  async saveMcpBearer(_workspaceId: string, _agentId: string, serverName: string, _token: string) {
+    await sleep(200)
+    console.log('[Mock] saveMcpBearer called for:', serverName)
+  },
+
+  async saveApiCredentials(_workspaceId: string, _agentId: string, apiName: string, _credential: string) {
+    await sleep(200)
+    console.log('[Mock] saveApiCredentials called for:', apiName)
+  },
+
+  async validateMcpConnection(_serverUrl: string, _accessToken?: string) {
+    await sleep(300)
+    console.log('[Mock] validateMcpConnection called')
+    // Mock: return success
+    return { success: true, tools: ['mock_tool_1', 'mock_tool_2'] }
+  },
+
   // ===== Event Listener =====
 
   onSessionEvent(callback: (event: SessionEvent) => void): () => void {
@@ -282,6 +361,13 @@ console.log(example);
       thumbnailPath: attachment.type === 'image' ? `/mock/attachments/${mockId}_thumb.png` : undefined,
       markdownPath: attachment.type === 'office' ? `/mock/attachments/${mockId}_${attachment.name}.md` : undefined,
     }
+  },
+
+  async generateThumbnail(_base64: string, _mimeType: string): Promise<string | null> {
+    await sleep(100)
+    // Mock: return null (no thumbnail generated in browser mode)
+    console.log('[Mock] generateThumbnail called - returning null (browser mode)')
+    return null
   },
 
   // ===== Theme =====

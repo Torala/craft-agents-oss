@@ -117,9 +117,10 @@ export function registerIpcHandlers(sessionManager: SessionManager): void {
   // Send a message to a session (with optional file attachments)
   // Note: We intentionally don't await here - the response is streamed via events.
   // The IPC handler returns immediately, and results come through SESSION_EVENT channel.
-  ipcMain.handle(IPC_CHANNELS.SEND_MESSAGE, async (_event, sessionId: string, message: string, attachments?: FileAttachment[]) => {
+  // attachments: FileAttachment[] for Claude (has content), storedAttachments: StoredAttachment[] for persistence (has thumbnailBase64)
+  ipcMain.handle(IPC_CHANNELS.SEND_MESSAGE, async (_event, sessionId: string, message: string, attachments?: FileAttachment[], storedAttachments?: StoredAttachment[]) => {
     // Start processing in background, errors are sent via event stream
-    sessionManager.sendMessage(sessionId, message, attachments).catch(err => {
+    sessionManager.sendMessage(sessionId, message, attachments, storedAttachments).catch(err => {
       console.error('[IPC] Error in sendMessage:', err)
       // Send error to renderer so user sees it (not just logged to console)
       const mainWindow = BrowserWindow.getAllWindows()[0]
@@ -188,16 +189,60 @@ export function registerIpcHandlers(sessionManager: SessionManager): void {
     return result.canceled ? [] : result.filePaths
   })
 
-  // Read file and return as FileAttachment (uses shared utility from src/utils/files.ts)
+  // Read file and return as FileAttachment with Quick Look thumbnail
   ipcMain.handle(IPC_CHANNELS.READ_FILE_ATTACHMENT, async (_event, path: string) => {
     try {
       // Validate path first to prevent path traversal
       const safePath = await validateFilePath(path)
       // Use shared utility that handles file type detection, encoding, etc.
-      return await readFileAttachment(safePath)
+      const attachment = await readFileAttachment(safePath)
+      if (!attachment) return null
+
+      // Generate Quick Look thumbnail for preview (works for images, PDFs, Office docs on macOS)
+      try {
+        const thumbnail = await nativeImage.createThumbnailFromPath(safePath, { width: 200, height: 200 })
+        if (!thumbnail.isEmpty()) {
+          ;(attachment as { thumbnailBase64?: string }).thumbnailBase64 = thumbnail.toPNG().toString('base64')
+        }
+      } catch (thumbError) {
+        // Thumbnail generation failed - this is ok, we'll show an icon fallback
+        console.log('[IPC] Quick Look thumbnail failed (using fallback):', thumbError instanceof Error ? thumbError.message : thumbError)
+      }
+
+      return attachment
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error'
       console.error('[IPC] readFileAttachment error:', message)
+      return null
+    }
+  })
+
+  // Generate thumbnail from base64 data (for drag-drop files where we don't have a path)
+  ipcMain.handle(IPC_CHANNELS.GENERATE_THUMBNAIL, async (_event, base64: string, mimeType: string): Promise<string | null> => {
+    // Save to temp file, generate thumbnail, clean up
+    const tempDir = tmpdir()
+    const ext = mimeType.split('/')[1] || 'bin'
+    const tempPath = join(tempDir, `craft-thumb-${randomUUID()}.${ext}`)
+
+    try {
+      // Write base64 to temp file
+      const buffer = Buffer.from(base64, 'base64')
+      await writeFile(tempPath, buffer)
+
+      // Generate thumbnail using Quick Look
+      const thumbnail = await nativeImage.createThumbnailFromPath(tempPath, { width: 200, height: 200 })
+
+      // Clean up temp file
+      await unlink(tempPath).catch(() => {})
+
+      if (!thumbnail.isEmpty()) {
+        return thumbnail.toPNG().toString('base64')
+      }
+      return null
+    } catch (error) {
+      // Clean up temp file on error
+      await unlink(tempPath).catch(() => {})
+      console.log('[IPC] generateThumbnail failed:', error instanceof Error ? error.message : error)
       return null
     }
   })
@@ -244,13 +289,16 @@ export function registerIpcHandlers(sessionManager: SessionManager): void {
 
       // 2. Generate thumbnail using native OS APIs (Quick Look on macOS, Shell handlers on Windows)
       let thumbnailPath: string | undefined
+      let thumbnailBase64: string | undefined
       const thumbFileName = `${id}_thumb.png`
       const thumbPath = join(attachmentsDir, thumbFileName)
       try {
         const thumbnail = await nativeImage.createThumbnailFromPath(storedPath, { width: 200, height: 200 })
         if (!thumbnail.isEmpty()) {
-          await writeFile(thumbPath, thumbnail.toPNG())
+          const pngBuffer = thumbnail.toPNG()
+          await writeFile(thumbPath, pngBuffer)
           thumbnailPath = thumbPath
+          thumbnailBase64 = pngBuffer.toString('base64')
           filesToCleanup.push(thumbPath)
         }
       } catch (thumbError) {
@@ -283,7 +331,7 @@ export function registerIpcHandlers(sessionManager: SessionManager): void {
         }
       }
 
-      // Return StoredAttachment metadata (no base64 - that stays on disk!)
+      // Return StoredAttachment metadata
       return {
         id,
         type: attachment.type,
@@ -292,6 +340,7 @@ export function registerIpcHandlers(sessionManager: SessionManager): void {
         size: attachment.size,
         storedPath,
         thumbnailPath,
+        thumbnailBase64,
         markdownPath,
       }
     } catch (error) {
@@ -324,6 +373,56 @@ export function registerIpcHandlers(sessionManager: SessionManager): void {
   // Check if an agent needs authentication
   ipcMain.handle(IPC_CHANNELS.CHECK_AGENT_AUTH, async (_event, workspaceId: string, agentId: string) => {
     return agentService.checkAgentAuthStatus(workspaceId, agentId)
+  })
+
+  // Get detailed setup status (distinguishes setup needed vs auth needed)
+  ipcMain.handle(IPC_CHANNELS.GET_AGENT_SETUP_STATUS, async (_event, workspaceId: string, agentId: string) => {
+    return agentService.getAgentSetupStatus(workspaceId, agentId)
+  })
+
+  // Get auth status for all MCP servers and APIs (for Info dialog)
+  ipcMain.handle(IPC_CHANNELS.GET_AGENT_AUTH_STATUS, async (_event, workspaceId: string, agentId: string) => {
+    return agentService.getAgentAuthStatus(workspaceId, agentId)
+  })
+
+  // Get full agent definition for Info display
+  ipcMain.handle(IPC_CHANNELS.GET_AGENT_DEFINITION, async (_event, workspaceId: string, agentId: string) => {
+    return agentService.getAgentDefinition(workspaceId, agentId)
+  })
+
+  // Reload agent (clear cache, re-extract from Craft)
+  ipcMain.handle(IPC_CHANNELS.RELOAD_AGENT, async (_event, workspaceId: string, agentId: string) => {
+    return agentService.reloadAgent(workspaceId, agentId)
+  })
+
+  // Reset agent (clear all cached data including credentials)
+  ipcMain.handle(IPC_CHANNELS.RESET_AGENT, async (_event, workspaceId: string, agentId: string) => {
+    return agentService.resetAgent(workspaceId, agentId)
+  })
+
+  // Agent authentication - get detailed requirements
+  ipcMain.handle(IPC_CHANNELS.GET_AGENT_AUTH_REQUIREMENTS, async (_event, workspaceId: string, agentId: string) => {
+    return agentService.getAuthRequirements(workspaceId, agentId)
+  })
+
+  // Agent authentication - start OAuth flow for MCP server
+  ipcMain.handle(IPC_CHANNELS.START_MCP_OAUTH, async (_event, workspaceId: string, agentId: string, serverUrl: string, serverName: string) => {
+    return agentService.startMcpOAuth(workspaceId, agentId, serverUrl, serverName)
+  })
+
+  // Agent authentication - save bearer token for MCP server
+  ipcMain.handle(IPC_CHANNELS.SAVE_MCP_BEARER, async (_event, workspaceId: string, agentId: string, serverName: string, token: string) => {
+    return agentService.saveMcpBearer(workspaceId, agentId, serverName, token)
+  })
+
+  // Agent authentication - save API credentials
+  ipcMain.handle(IPC_CHANNELS.SAVE_API_CREDENTIALS, async (_event, workspaceId: string, agentId: string, apiName: string, credential: string) => {
+    return agentService.saveApiCredentials(workspaceId, agentId, apiName, credential)
+  })
+
+  // Agent authentication - validate MCP connection
+  ipcMain.handle(IPC_CHANNELS.VALIDATE_MCP_CONNECTION, async (_event, serverUrl: string, accessToken?: string) => {
+    return agentService.validateMcpConnectionStatus(serverUrl, accessToken)
   })
 
   // Shell operations - open URL in external browser

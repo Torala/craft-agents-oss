@@ -28,7 +28,7 @@ import { getCraftToken } from '../../../../src/auth/craft-token'
 import { CraftMcpClient } from '../../../../src/mcp/client'
 import { SubAgentManager, type SubAgentManagerConfig } from '../../../../src/agents/manager'
 import type { SubAgentDefinition } from '../../../../src/agents/types'
-import { type Session, type Message, type SessionEvent, type FileAttachment, IPC_CHANNELS, generateMessageId } from '../shared/types'
+import { type Session, type Message, type SessionEvent, type FileAttachment, type StoredAttachment, IPC_CHANNELS, generateMessageId } from '../shared/types'
 import { generateSessionTitle } from '../../../../src/utils/title-generator'
 import { DEFAULT_MODEL } from '../../../../src/config/models'
 
@@ -405,6 +405,9 @@ export class SessionManager {
           const manager = await this.getAgentManager(managed.workspace)
           if (manager) {
             try {
+              // Set the active agent so credential lookups work
+              manager.setActiveAgentId(managed.agentId)
+
               // Build MCP server configs with auth
               const mcpServers = await manager.buildMcpServerConfig(definition)
               // Build API servers (in-process MCP servers for REST APIs)
@@ -475,7 +478,7 @@ export class SessionManager {
     }
   }
 
-  async sendMessage(sessionId: string, message: string, attachments?: FileAttachment[]): Promise<void> {
+  async sendMessage(sessionId: string, message: string, attachments?: FileAttachment[], storedAttachments?: StoredAttachment[]): Promise<void> {
     const managed = this.sessions.get(sessionId)
     if (!managed) {
       throw new Error(`Session ${sessionId} not found`)
@@ -485,12 +488,13 @@ export class SessionManager {
       throw new Error('Session is already processing')
     }
 
-    // Add user message
+    // Add user message with stored attachments for persistence
     const userMessage: Message = {
       id: generateMessageId(),
       role: 'user',
       content: message,
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      attachments: storedAttachments, // Include for persistence (has thumbnailBase64)
     }
     managed.messages.push(userMessage)
     managed.lastMessageAt = Date.now()

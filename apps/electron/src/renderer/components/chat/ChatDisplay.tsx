@@ -23,6 +23,12 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu"
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -33,11 +39,12 @@ import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { cn } from "@/lib/utils"
-import { Markdown, type RenderMode } from "@/components/markdown"
-import { AttachmentPreview, FileTypeIcon } from "./AttachmentPreview"
+import { Markdown, CollapsibleMarkdownProvider, type RenderMode } from "@/components/markdown"
+import { AttachmentPreview, FileTypeIcon, getFileTypeLabel } from "./AttachmentPreview"
 import { useFocusZone } from "@/hooks/keyboard"
 import type { Session, Message, FileAttachment, StoredAttachment } from "../../../shared/types"
 import { MODELS, getModelDisplayName } from "@config/models"
+import { getSessionTitle } from "@/utils/session"
 
 interface ChatDisplayProps {
   session: Session | null
@@ -53,6 +60,8 @@ interface ChatDisplayProps {
   onDelete?: () => void
   /** Ref for the textarea, used for external focus control */
   textareaRef?: React.RefObject<HTMLTextAreaElement>
+  /** When true, disables input (e.g., when agent needs setup) */
+  disabled?: boolean
 }
 
 /**
@@ -76,10 +85,14 @@ export function ChatDisplay({
   onArchive,
   onDelete,
   textareaRef: externalTextareaRef,
+  disabled = false,
 }: ChatDisplayProps) {
+  // Input is disabled when explicitly disabled prop is true OR session is processing
+  const isInputDisabled = disabled || session?.isProcessing
   const [input, setInput] = React.useState("")
   const [attachments, setAttachments] = React.useState<FileAttachment[]>([])
   const [isDraggingOver, setIsDraggingOver] = React.useState(false)
+  const [loadingCount, setLoadingCount] = React.useState(0)
   const messagesEndRef = React.useRef<HTMLDivElement>(null)
   const prevSessionIdRef = React.useRef<string | null>(null)
   const internalTextareaRef = React.useRef<HTMLTextAreaElement>(null)
@@ -108,8 +121,8 @@ export function ChatDisplay({
   // File attachment handlers
   const handleAttachClick = async () => {
     console.log('[ChatDisplay] Attach button clicked')
-    if (session?.isProcessing) {
-      console.log('[ChatDisplay] Session is processing, ignoring click')
+    if (isInputDisabled) {
+      console.log('[ChatDisplay] Input is disabled, ignoring click')
       return
     }
     try {
@@ -157,27 +170,91 @@ export function ChatDisplay({
     e.stopPropagation()
   }
 
+  // Helper to read a File using FileReader API (for when Electron's file.path isn't available)
+  const readFileAsAttachment = async (file: File): Promise<FileAttachment | null> => {
+    return new Promise((resolve) => {
+      const reader = new FileReader()
+      reader.onload = async () => {
+        const result = reader.result as ArrayBuffer
+        const base64 = btoa(
+          new Uint8Array(result).reduce((data, byte) => data + String.fromCharCode(byte), '')
+        )
+
+        // Determine type from MIME
+        let type: FileAttachment['type'] = 'unknown'
+        if (file.type.startsWith('image/')) type = 'image'
+        else if (file.type === 'application/pdf') type = 'pdf'
+        else if (file.type.includes('text') || file.name.match(/\.(txt|md|json|js|ts|tsx|py|css|html)$/i)) type = 'text'
+        else if (file.type.includes('officedocument') || file.name.match(/\.(docx?|xlsx?|pptx?)$/i)) type = 'office'
+
+        const mimeType = file.type || 'application/octet-stream'
+
+        // Generate thumbnail via IPC (uses Quick Look on macOS)
+        let thumbnailBase64: string | undefined
+        try {
+          const thumb = await window.electronAPI.generateThumbnail(base64, mimeType)
+          if (thumb) {
+            thumbnailBase64 = thumb
+          }
+        } catch (err) {
+          console.log('[ChatDisplay] Thumbnail generation failed:', err)
+        }
+
+        resolve({
+          type,
+          path: file.name, // Use name as path since we don't have the real path
+          name: file.name,
+          mimeType,
+          base64,
+          size: file.size,
+          thumbnailBase64,
+        })
+      }
+      reader.onerror = () => resolve(null)
+      reader.readAsArrayBuffer(file)
+    })
+  }
+
   const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
     dragCounterRef.current = 0
     setIsDraggingOver(false)
-    if (session?.isProcessing) return
+    if (isInputDisabled) return
 
     const files = Array.from(e.dataTransfer.files)
+    console.log('[ChatDisplay] Dropped files:', files.map(f => ({ name: f.name, path: (f as any).path })))
+
+    // Show loading indicators for all files
+    setLoadingCount(files.length)
+
     for (const file of files) {
-      // In Electron, dropped files have a path property
+      // In Electron, dropped files have a path property - try it first
       const filePath = (file as File & { path?: string }).path
       if (filePath) {
         try {
           const attachment = await window.electronAPI.readFileAttachment(filePath)
           if (attachment) {
             setAttachments(prev => [...prev, attachment])
+            setLoadingCount(prev => prev - 1)
+            continue
           }
         } catch (error) {
-          console.error('Failed to read dropped file:', error)
+          console.error('[ChatDisplay] Failed to read via IPC:', error)
         }
       }
+
+      // Fallback: read file directly using FileReader API
+      console.log('[ChatDisplay] Using FileReader fallback for:', file.name)
+      try {
+        const attachment = await readFileAsAttachment(file)
+        if (attachment) {
+          setAttachments(prev => [...prev, attachment])
+        }
+      } catch (error) {
+        console.error('[ChatDisplay] Failed to read dropped file:', error)
+      }
+      setLoadingCount(prev => prev - 1)
     }
   }
 
@@ -214,7 +291,7 @@ export function ChatDisplay({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     const hasContent = input.trim() || attachments.length > 0
-    if (!hasContent || session?.isProcessing) return
+    if (!hasContent || isInputDisabled) return
     onSendMessage(input.trim(), attachments.length > 0 ? attachments : undefined)
     setInput("")
     setAttachments([])
@@ -245,8 +322,8 @@ export function ChatDisplay({
             {session.agentName ? (
               <Bot className="h-4 w-4 text-muted-foreground" />
             ) : null}
-            <div className="font-semibold font-sans text-sm">
-              {session.name || session.agentName || session.workspaceName || 'Chat'}
+            <div className="font-semibold font-sans text-sm truncate">
+              {getSessionTitle(session)}
             </div>
             {session.agentName && (
               <Badge variant="secondary" className="text-[10px] px-1.5 py-0">Agent</Badge>
@@ -261,7 +338,7 @@ export function ChatDisplay({
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-7 w-7"
+                  className="h-7 w-7 titlebar-no-drag"
                   onClick={(e) => {
                     e.preventDefault()
                     const rect = e.currentTarget.getBoundingClientRect()
@@ -302,14 +379,20 @@ export function ChatDisplay({
 
           {/* === MESSAGES AREA: Scrollable list of message bubbles === */}
           <ScrollArea className="flex-1 min-w-0">
-            <div className="p-4 space-y-4 min-w-0">
+            <div className="px-5 py-4 space-y-4 min-w-0">
               {session.messages.length === 0 ? (
                 /* Empty State: Welcome message for new sessions */
                 <div className="flex flex-col items-center justify-center h-64 text-muted-foreground px-8">
                   <div className="size-14 rounded-xl bg-muted flex items-center justify-center mb-3">
-                    <MessageSquare className="size-7 text-muted-foreground/50" />
+                    {session.agentName ? (
+                      <Bot className="size-7 text-muted-foreground/50" />
+                    ) : (
+                      <MessageSquare className="size-7 text-muted-foreground/50" />
+                    )}
                   </div>
-                  <p className="text-sm font-medium text-foreground">Welcome to {session.workspaceName}</p>
+                  <p className="text-sm font-medium text-foreground">
+                    {session.agentName ? `Chat with ${session.agentName}` : `Welcome to ${session.workspaceName}`}
+                  </p>
                   <p className="text-xs mt-1 text-center">Start a conversation by typing a message below.</p>
                 </div>
               ) : (
@@ -328,15 +411,16 @@ export function ChatDisplay({
             </div>
           </ScrollArea>
 
-          <Separator className="mt-auto" />
+          {/* Fade gradient - overlays bottom of scroll area */}
+          <div className="h-8 -mt-8 bg-gradient-to-t from-background to-transparent pointer-events-none" />
 
           {/* === INPUT CONTAINER: Textarea + Bottom row with controls === */}
-          <div className="p-4">
+          <div className="px-4 pb-4">
             <form onSubmit={handleSubmit}>
               <div
                 className={cn(
-                  "rounded-xl border bg-background overflow-hidden transition-colors",
-                  isDraggingOver && "border-primary border-2 bg-primary/5"
+                  "rounded-xl border bg-background overflow-hidden transition-all",
+                  isDraggingOver && "ring-2 ring-primary ring-offset-2 ring-offset-background bg-primary/5"
                 )}
                 onDragEnter={handleDragEnter}
                 onDragLeave={handleDragLeave}
@@ -347,7 +431,8 @@ export function ChatDisplay({
                 <AttachmentPreview
                   attachments={attachments}
                   onRemove={handleRemoveAttachment}
-                  disabled={session.isProcessing}
+                  disabled={isInputDisabled}
+                  loadingCount={loadingCount}
                 />
 
                 {/* Textarea - 4 lines minimum height */}
@@ -358,8 +443,10 @@ export function ChatDisplay({
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  disabled={session.isProcessing}
-                  rows={4}
+                  onDragOver={handleDragOver}
+                  onDrop={handleDrop}
+                  disabled={isInputDisabled}
+                  rows={3}
                 />
 
                 {/* Bottom Row: Attach, Model selector, Send */}
@@ -371,47 +458,36 @@ export function ChatDisplay({
                     size="icon"
                     className="h-7 w-7 shrink-0"
                     onClick={handleAttachClick}
-                    disabled={session.isProcessing}
+                    disabled={isInputDisabled}
                   >
                     <Paperclip className="h-4 w-4" />
                   </Button>
 
                   {/* Model Selector Dropdown */}
-                  <ContextMenu>
-                    <ContextMenuTrigger asChild>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="h-7 gap-1 text-xs shrink-0"
-                        onClick={(e) => {
-                          e.preventDefault()
-                          const rect = e.currentTarget.getBoundingClientRect()
-                          const event = new MouseEvent('contextmenu', {
-                            bubbles: true,
-                            cancelable: true,
-                            clientX: rect.left,
-                            clientY: rect.bottom,
-                          })
-                          e.currentTarget.dispatchEvent(event)
-                        }}
+                        className="h-7 gap-1 text-xs shrink-0 data-[state=open]:bg-accent"
                       >
                         <Sparkles className="h-3.5 w-3.5" />
                         {getModelDisplayName(currentModel)}
                         <ChevronDown className="h-3 w-3 opacity-50" />
                       </Button>
-                    </ContextMenuTrigger>
-                    <ContextMenuContent>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent side="top" align="start" sideOffset={8}>
                       {MODELS.map((model) => (
-                        <ContextMenuItem
+                        <DropdownMenuItem
                           key={model.id}
                           onClick={() => onModelChange(model.id)}
                           className={cn(currentModel === model.id && "bg-accent")}
                         >
                           {model.name}
-                        </ContextMenuItem>
+                        </DropdownMenuItem>
                       ))}
-                    </ContextMenuContent>
-                  </ContextMenu>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
 
                   {/* Spacer */}
                   <div className="flex-1" />
@@ -421,7 +497,7 @@ export function ChatDisplay({
                     type="submit"
                     size="icon"
                     className="h-7 w-7 rounded-full shrink-0"
-                    disabled={(!input.trim() && attachments.length === 0) || session.isProcessing}
+                    disabled={(!input.trim() && attachments.length === 0) || isInputDisabled}
                   >
                     <ArrowUp className="h-4 w-4" />
                   </Button>
@@ -487,9 +563,6 @@ interface MessageBubbleProps {
 }
 
 function MessageBubble({ message, onOpenFile, onOpenUrl, renderMode = 'minimal' }: MessageBubbleProps) {
-  // Track which thumbnails failed to load (by attachment ID)
-  const [thumbnailErrors, setThumbnailErrors] = useState<Record<string, boolean>>({})
-
   // === USER MESSAGE: Right-aligned blue bubble with attachments above ===
   if (message.role === 'user') {
     const hasAttachments = message.attachments && message.attachments.length > 0
@@ -500,8 +573,8 @@ function MessageBubble({ message, onOpenFile, onOpenUrl, renderMode = 'minimal' 
         {hasAttachments && (
           <div className="flex gap-2 justify-end max-w-[80%] flex-wrap">
             {message.attachments!.map((att, i) => {
-              const thumbnailFailed = att.id ? thumbnailErrors[att.id] : false
-              const showThumbnail = att.thumbnailPath && !thumbnailFailed
+              const isImage = att.type === 'image'
+              const hasThumbnail = !!att.thumbnailBase64
 
               return (
                 <div
@@ -510,25 +583,43 @@ function MessageBubble({ message, onOpenFile, onOpenUrl, renderMode = 'minimal' 
                   onClick={() => att.storedPath && onOpenFile(att.storedPath)}
                   title={`Click to open ${att.name}`}
                 >
-                  {showThumbnail ? (
-                    // Use OS-generated thumbnail from disk
+                  {isImage ? (
+                    /* IMAGE: Square thumbnail only */
                     <div className="h-14 w-14 rounded-lg overflow-hidden border bg-muted">
-                      <img
-                        src={`file://${att.thumbnailPath}`}
-                        alt={att.name}
-                        className="h-full w-full object-cover"
-                        onError={() => {
-                          if (att.id) {
-                            setThumbnailErrors(prev => ({ ...prev, [att.id!]: true }))
-                          }
-                        }}
-                      />
+                      {hasThumbnail ? (
+                        <img
+                          src={`data:image/png;base64,${att.thumbnailBase64}`}
+                          alt={att.name}
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <div className="h-full w-full flex items-center justify-center">
+                          <FileTypeIcon type={att.type} mimeType={att.mimeType} className="h-5 w-5" />
+                        </div>
+                      )}
                     </div>
                   ) : (
-                    // Fallback: icon + filename for files without thumbnails or failed loads
-                    <div className="flex items-center gap-2 rounded-lg border bg-primary/10 px-3 py-2">
-                      <FileTypeIcon type={att.type} mimeType={att.mimeType} />
-                      <span className="text-xs truncate max-w-[100px] text-muted-foreground">{att.name}</span>
+                    /* DOCUMENT: Bubble with thumbnail/icon + 2-line text */
+                    <div className="flex items-center gap-2.5 rounded-xl border bg-muted/50 pl-1.5 pr-3 py-1.5">
+                      <div className="h-11 w-11 rounded-lg overflow-hidden bg-muted flex items-center justify-center shrink-0">
+                        {hasThumbnail ? (
+                          <img
+                            src={`data:image/png;base64,${att.thumbnailBase64}`}
+                            alt={att.name}
+                            className="h-full w-full object-cover object-top"
+                          />
+                        ) : (
+                          <FileTypeIcon type={att.type} mimeType={att.mimeType} className="h-5 w-5" />
+                        )}
+                      </div>
+                      <div className="flex flex-col min-w-0 max-w-[120px]">
+                        <span className="text-xs font-medium line-clamp-2 break-all" title={att.name}>
+                          {att.name}
+                        </span>
+                        <span className="text-[10px] text-muted-foreground">
+                          {getFileTypeLabel(att.type, att.mimeType, att.name)}
+                        </span>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -537,7 +628,7 @@ function MessageBubble({ message, onOpenFile, onOpenUrl, renderMode = 'minimal' 
           </div>
         )}
         {/* Text content bubble */}
-        <div className="max-w-[80%] bg-primary text-primary-foreground rounded-lg pl-5 pr-4 py-2 break-words min-w-0">
+        <div className="max-w-[80%] bg-primary text-primary-foreground rounded-lg px-4 py-1 break-words min-w-0">
           <Markdown
             mode="minimal"
             onUrlClick={onOpenUrl}
@@ -555,16 +646,19 @@ function MessageBubble({ message, onOpenFile, onOpenUrl, renderMode = 'minimal' 
   if (message.role === 'assistant') {
     return (
       <div className="flex justify-start">
-        <div className="max-w-[80%] bg-muted rounded-lg pl-5 pr-4 py-2 break-words min-w-0">
-          <Markdown
-            mode={renderMode}
-            onUrlClick={onOpenUrl}
-            onFileClick={onOpenFile}
-            id={message.id}
-            className="text-sm"
-          >
-            {message.content}
-          </Markdown>
+        <div className="max-w-[80%] bg-muted rounded-lg pl-6 pr-4 py-3 break-words min-w-0">
+          <CollapsibleMarkdownProvider>
+            <Markdown
+              mode={renderMode}
+              onUrlClick={onOpenUrl}
+              onFileClick={onOpenFile}
+              id={message.id}
+              className="text-sm"
+              collapsible
+            >
+              {message.content}
+            </Markdown>
+          </CollapsibleMarkdownProvider>
           {/* Streaming Cursor: Pulsing bar while response is being generated */}
           {message.isStreaming && (
             <span className="inline-block w-2 h-4 bg-primary ml-1 animate-pulse rounded-sm" />

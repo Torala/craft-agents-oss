@@ -40,7 +40,7 @@ function AnimatedCollapsibleContent({
           exit={{ height: 0, opacity: 0 }}
           transition={springTransition}
           className={className}
-          style={{ overflow: "hidden" }}
+          style={{ clipPath: "inset(0 -20px)" }}
         >
           {children}
         </motion.div>

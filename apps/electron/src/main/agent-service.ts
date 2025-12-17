@@ -8,7 +8,11 @@ import { DEFAULT_MODEL } from '../../../../src/config/models'
 import { getCredentialManager } from '../../../../src/credentials'
 import { CraftMcpClient } from '../../../../src/mcp/client'
 import { SubAgentManager, type SubAgentManagerConfig } from '../../../../src/agents/manager'
-import type { SubAgentMetadata } from '../../../../src/agents/types'
+import type { SubAgentMetadata, SubAgentDefinition } from '../../../../src/agents/types'
+import { clearDefinition, clearAgentCredentialsAsync, saveServerCredentialsAsync, saveApiKeyCredentialAsync } from '../../../../src/agents/cache'
+import { CraftOAuth, getMcpBaseUrl } from '../../../../src/auth/oauth'
+import { validateMcpConnection } from '../../../../src/mcp/validation'
+import type { AgentAuthRequirements, AgentSetupStatus, AgentAuthStatus, OAuthResult, McpValidationResult } from '../shared/types'
 
 /**
  * Cached agent manager per workspace
@@ -159,6 +163,261 @@ export class AgentService {
     } catch (error) {
       console.error('[AgentService] Error checking auth status:', error)
       return { needsAuth: false }
+    }
+  }
+
+  /**
+   * Get detailed setup status for an agent
+   * Distinguishes between "needs setup" (no definition extracted) and "needs auth" (definition exists but missing credentials)
+   */
+  async getAgentSetupStatus(workspaceId: string, agentId: string): Promise<AgentSetupStatus> {
+    try {
+      const manager = await this.getManager(workspaceId)
+
+      // Check if definition exists in cache (needsSetup = no cached definition)
+      const needsSetup = manager.needsFreshExtraction(agentId)
+
+      if (needsSetup) {
+        return {
+          needsSetup: true,
+          needsAuth: false,
+          reason: 'Agent needs initial setup'
+        }
+      }
+
+      // Definition exists, check if auth is needed
+      const definition = await manager.getDefinition(agentId)
+      if (!definition) {
+        // Failed to load definition
+        return {
+          needsSetup: true,
+          needsAuth: false,
+          reason: 'Failed to load agent definition'
+        }
+      }
+
+      // Check MCP servers and APIs needing auth (pass agentId since agent isn't activated)
+      const mcpNeedingAuth = await manager.getMcpServersNeedingAuth(definition, agentId)
+      const apisNeedingAuth = await manager.getApisNeedingAuth(definition, agentId)
+
+      if (mcpNeedingAuth.length > 0 || apisNeedingAuth.length > 0) {
+        const services = [
+          ...mcpNeedingAuth.map(s => s.name || 'MCP Server'),
+          ...apisNeedingAuth.map(a => a.name || 'API')
+        ]
+        return {
+          needsSetup: false,
+          needsAuth: true,
+          reason: `Requires authentication: ${services.join(', ')}`
+        }
+      }
+
+      return { needsSetup: false, needsAuth: false }
+    } catch (error) {
+      console.error('[AgentService] Error getting setup status:', error)
+      return { needsSetup: false, needsAuth: false }
+    }
+  }
+
+  /**
+   * Get auth status for all MCP servers and APIs in an agent
+   * Used by Info dialog to show which have auth configured
+   */
+  async getAgentAuthStatus(workspaceId: string, agentId: string): Promise<AgentAuthStatus> {
+    try {
+      const manager = await this.getManager(workspaceId)
+      const definition = await manager.getDefinition(agentId)
+
+      if (!definition) {
+        return { mcpServers: [], apis: [] }
+      }
+
+      const mcpServers = await manager.getMcpServersWithAuthStatus(definition, agentId)
+      const apis = await manager.getApisWithAuthStatus(definition, agentId)
+
+      return {
+        mcpServers: mcpServers.map(s => ({
+          name: s.name,
+          url: s.url,
+          requiresAuth: s.requiresAuth,
+          hasAuth: s.hasAuth,
+          tools: s.tools,
+        })),
+        apis: apis.map(a => ({
+          name: a.name,
+          baseUrl: a.baseUrl,
+          auth: a.auth,
+          hasAuth: a.hasAuth,
+        })),
+      }
+    } catch (error) {
+      console.error('[AgentService] Error getting auth status:', error)
+      return { mcpServers: [], apis: [] }
+    }
+  }
+
+  /**
+   * Get full agent definition for Info display
+   * Returns cached definition if available, otherwise extracts fresh
+   */
+  async getAgentDefinition(workspaceId: string, agentId: string): Promise<SubAgentDefinition | null> {
+    try {
+      const manager = await this.getManager(workspaceId)
+      return await manager.getDefinition(agentId)
+    } catch (error) {
+      console.error('[AgentService] Error getting agent definition:', error)
+      return null
+    }
+  }
+
+  /**
+   * Reload agent: clear definition cache, re-extract from Craft
+   * Does not clear credentials
+   */
+  async reloadAgent(workspaceId: string, agentId: string): Promise<boolean> {
+    try {
+      // Clear definition cache
+      clearDefinition(workspaceId, agentId)
+      console.log(`[AgentService] Cleared definition cache for agent ${agentId}`)
+
+      // Force re-extraction by requesting definition
+      const manager = await this.getManager(workspaceId)
+      const definition = await manager.getDefinition(agentId)
+      return definition !== null
+    } catch (error) {
+      console.error('[AgentService] Error reloading agent:', error)
+      return false
+    }
+  }
+
+  /**
+   * Reset agent: clear ALL cached data (definition + credentials)
+   * User will need to re-authenticate on next activation
+   */
+  async resetAgent(workspaceId: string, agentId: string): Promise<boolean> {
+    try {
+      // Clear definition cache
+      clearDefinition(workspaceId, agentId)
+      console.log(`[AgentService] Cleared definition cache for agent ${agentId}`)
+
+      // Clear all credentials for this agent
+      await clearAgentCredentialsAsync(workspaceId, agentId)
+      console.log(`[AgentService] Cleared credentials for agent ${agentId}`)
+
+      return true
+    } catch (error) {
+      console.error('[AgentService] Error resetting agent:', error)
+      return false
+    }
+  }
+
+  /**
+   * Get detailed auth requirements for an agent
+   * Returns list of MCP servers and APIs that need credentials
+   */
+  async getAuthRequirements(workspaceId: string, agentId: string): Promise<AgentAuthRequirements> {
+    try {
+      const manager = await this.getManager(workspaceId)
+      const definition = await manager.getDefinition(agentId)
+
+      if (!definition) {
+        return { mcpServers: [], apis: [] }
+      }
+
+      // Pass agentId since agent isn't activated yet
+      const mcpServers = await manager.getMcpServersNeedingAuth(definition, agentId)
+      const apis = await manager.getApisNeedingAuth(definition, agentId)
+
+      return {
+        mcpServers: mcpServers.map(s => ({ name: s.name, url: s.url, requiresAuth: s.requiresAuth })),
+        apis: apis.map(a => ({ name: a.name, auth: a.auth }))
+      }
+    } catch (error) {
+      console.error('[AgentService] Error getting auth requirements:', error)
+      return { mcpServers: [], apis: [] }
+    }
+  }
+
+  /**
+   * Start OAuth flow for an MCP server
+   * Opens browser and waits for OAuth callback
+   */
+  async startMcpOAuth(workspaceId: string, agentId: string, serverUrl: string, serverName: string): Promise<OAuthResult> {
+    try {
+      const mcpBaseUrl = getMcpBaseUrl(serverUrl)
+      const oauth = new CraftOAuth(
+        { mcpBaseUrl },
+        {
+          onStatus: (msg) => console.log('[AgentService] OAuth:', msg),
+          onError: (err) => console.error('[AgentService] OAuth error:', err),
+        }
+      )
+
+      const { tokens, clientId } = await oauth.authenticate()
+
+      // Save credentials
+      await saveServerCredentialsAsync(workspaceId, agentId, serverName, {
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        expiresAt: tokens.expiresAt,
+        clientId,
+      })
+
+      console.log(`[AgentService] OAuth successful for ${serverName}`)
+      return { success: true }
+    } catch (error) {
+      console.error('[AgentService] OAuth failed:', error)
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'OAuth failed'
+      }
+    }
+  }
+
+  /**
+   * Save bearer token for an MCP server (fallback when OAuth fails)
+   */
+  async saveMcpBearer(workspaceId: string, agentId: string, serverName: string, token: string): Promise<void> {
+    await saveServerCredentialsAsync(workspaceId, agentId, serverName, {
+      accessToken: token,
+    })
+    console.log(`[AgentService] Saved bearer token for ${serverName}`)
+  }
+
+  /**
+   * Save API credentials (API key or basic auth JSON)
+   */
+  async saveApiCredentials(workspaceId: string, agentId: string, apiName: string, credential: string): Promise<void> {
+    await saveApiKeyCredentialAsync(workspaceId, agentId, apiName, credential)
+    console.log(`[AgentService] Saved credentials for API ${apiName}`)
+  }
+
+  /**
+   * Validate MCP connection with optional access token
+   */
+  async validateMcpConnectionStatus(serverUrl: string, accessToken?: string): Promise<McpValidationResult> {
+    try {
+      const credManager = getCredentialManager()
+      await credManager.initialize()
+
+      const result = await validateMcpConnection({
+        mcpUrl: serverUrl,
+        mcpAccessToken: accessToken,
+        claudeApiKey: await credManager.getApiKey() || undefined,
+        claudeOAuthToken: await credManager.getClaudeOAuth() || undefined,
+      })
+
+      return {
+        success: result.success,
+        error: result.error,
+        tools: result.tools,
+      }
+    } catch (error) {
+      console.error('[AgentService] Validation error:', error)
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Validation failed'
+      }
     }
   }
 }

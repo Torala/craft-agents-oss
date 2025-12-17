@@ -25,27 +25,8 @@ import { Input } from "@/components/ui/input"
 import { useSession } from "@/hooks/useSession"
 import { useFocusZone, useRovingTabIndex } from "@/hooks/keyboard"
 import { useFocusContext } from "@/context/FocusContext"
+import { getSessionTitle } from "@/utils/session"
 import type { Session } from "../../../shared/types"
-
-/**
- * Get display title for a session.
- * Priority: custom name > first user message > "New thread"
- */
-function getSessionTitle(item: Session): string {
-  if (item.name) {
-    return item.name
-  }
-
-  const firstUserMessage = item.messages.find(m => m.role === 'user')
-  if (firstUserMessage?.content) {
-    const trimmed = firstUserMessage.content.slice(0, 50)
-    return trimmed.length < firstUserMessage.content.length
-      ? trimmed + '…'
-      : trimmed
-  }
-
-  return 'New thread'
-}
 
 interface SessionItemProps {
   item: Session
