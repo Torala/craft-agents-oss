@@ -3,6 +3,7 @@ import { Box, Text, useInput } from 'ink';
 import { getCommandHint, getAgentHint, getTabCompletion, type HintData } from '../utils/filtering.ts';
 import { TextInput } from './TextInput.tsx';
 import { isHistorySearch, isAbort } from '../keyboard/index.ts';
+import { debug } from '../utils/debug.ts';
 
 export interface InputProps {
   onSubmit: (input: string) => void;
@@ -138,11 +139,16 @@ export const Input: React.FC<InputProps> = ({
 
   useInput(
     (input, key) => {
-      if (disabled) return;
+      if (disabled) {
+        debug('[Input] useInput disabled, ignoring input');
+        return;
+      }
 
       // Handle Ctrl+C for exit warning / double-press exit
       const isCtrlC = input === '\x03' || (key.ctrl && input === 'c');
+      debug('[Input] useInput received:', { input: input.charCodeAt(0), isCtrlC, hasOnCtrlC: !!onCtrlC, disabled });
       if (isCtrlC && onCtrlC) {
+        debug('[Input] Ctrl+C detected, calling onCtrlC');
         // Clear input if there's text
         if (value.length > 0) {
           setValue('');
