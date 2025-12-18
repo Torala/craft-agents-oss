@@ -58,7 +58,7 @@ function saveTheme(theme: StoredTheme): void {
   }
 }
 
-function applyThemeToDOM(resolvedMode: 'light' | 'dark', colorTheme: string): void {
+function applyThemeToDOM(resolvedMode: 'light' | 'dark', colorTheme: string, mode: ThemeMode): void {
   const root = document.documentElement
 
   // Apply mode
@@ -70,6 +70,14 @@ function applyThemeToDOM(resolvedMode: 'light' | 'dark', colorTheme: string): vo
     root.dataset.theme = colorTheme
   } else {
     delete root.dataset.theme
+  }
+
+  // Mark as theme override when user explicitly sets light/dark (not system)
+  // This increases sidebar opacity to reduce color bleed
+  if (mode !== 'system') {
+    root.dataset.themeOverride = 'true'
+  } else {
+    delete root.dataset.themeOverride
   }
 }
 
@@ -87,10 +95,10 @@ export function ThemeProvider({
   // Resolve the actual mode to apply
   const resolvedMode = mode === 'system' ? systemPreference : mode
 
-  // Apply theme to DOM whenever resolved mode or color theme changes
+  // Apply theme to DOM whenever resolved mode, color theme, or mode changes
   useEffect(() => {
-    applyThemeToDOM(resolvedMode, colorTheme)
-  }, [resolvedMode, colorTheme])
+    applyThemeToDOM(resolvedMode, colorTheme, mode)
+  }, [resolvedMode, colorTheme, mode])
 
   // Listen for system preference changes
   useEffect(() => {

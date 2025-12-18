@@ -267,6 +267,11 @@ function toCurl(url: string, init?: RequestInit): string {
 async function logResponse(response: Response, url: string, startTime: number): Promise<Response> {
   const duration = Date.now() - startTime;
 
+  // Log response status for API requests (stderr to avoid polluting SDK JSON on stdout)
+  if (url.includes('api.anthropic.com') || url.includes('api.craft.do') || url.includes('gateway.craft.do')) {
+    console.error(`[Interceptor] Response ${response.status} ${response.statusText} (${duration}ms) from ${url}`);
+  }
+
   // Capture API errors (runs regardless of DEBUG mode)
   if (shouldCaptureApiErrors(url) && response.status >= 400) {
     debugLog(`  [Attempting to capture error for ${response.status} response]`);
@@ -359,6 +364,11 @@ async function interceptedFetch(
 
   const startTime = Date.now();
 
+  // Log Anthropic/Craft API requests to stderr for debugging (stdout is used for SDK JSON communication)
+  if (url.includes('api.anthropic.com') || url.includes('api.craft.do') || url.includes('gateway.craft.do')) {
+    console.error(`[Interceptor] ${init?.method || 'GET'} ${url}`);
+  }
+
   // Log all requests as cURL commands
   if (DEBUG) {
     debugLog('\n' + '='.repeat(80));
@@ -387,6 +397,7 @@ async function interceptedFetch(
           ...JSON.parse(JSON.stringify(headers)),
           'authorization': `${process.env.CRAFT_API_GATEWAY_TOKEN}`,
         };
+        console.error('[Interceptor] Redirecting to Craft AI Gateway');
         debugLog('  [Redirecting to Craft AI Gateway]');
       }
       const body = typeof init.body === 'string' ? init.body : undefined;

@@ -191,6 +191,44 @@ export const mockElectronAPI: ElectronAPI = {
     return [...mockWorkspaces]
   },
 
+  // ===== Window Management =====
+
+  async getWindowWorkspace(): Promise<string | null> {
+    // Read workspaceId from URL query params (same as Electron)
+    const params = new URLSearchParams(window.location.search)
+    const workspaceId = params.get('workspaceId')
+    console.log('[Mock] getWindowWorkspace:', workspaceId)
+    return workspaceId
+  },
+
+  async openWorkspace(workspaceId: string): Promise<void> {
+    console.log('[Mock] openWorkspace called:', workspaceId)
+    // In browser dev mode, we can't open a new Electron window
+    // Just update the URL and reload (simulates opening a new window)
+    window.location.href = `${window.location.pathname}?workspaceId=${encodeURIComponent(workspaceId)}`
+  },
+
+  async getWindowMode(): Promise<string | null> {
+    // Read mode from URL query params
+    const params = new URLSearchParams(window.location.search)
+    const mode = params.get('mode')
+    console.log('[Mock] getWindowMode:', mode)
+    return mode
+  },
+
+  async openAddWorkspaceWindow(): Promise<void> {
+    console.log('[Mock] openAddWorkspaceWindow called')
+    // In browser dev mode, simulate opening add workspace by updating URL
+    window.location.href = `${window.location.pathname}?mode=add-workspace`
+  },
+
+  async closeWindow(): Promise<void> {
+    console.log('[Mock] closeWindow called')
+    // In browser dev mode, we can't close the window
+    // Navigate back to the main view
+    window.location.href = `${window.location.pathname}?workspaceId=ws-personal`
+  },
+
   // ===== Agent Management =====
 
   async getAgents(_workspaceId: string) {
@@ -288,7 +326,7 @@ export const mockElectronAPI: ElectronAPI = {
     return { success: true, tools: ['mock_tool_1', 'mock_tool_2'] }
   },
 
-  // ===== Event Listener =====
+  // ===== Event Listeners =====
 
   onSessionEvent(callback: (event: SessionEvent) => void): () => void {
     eventCallback = callback
@@ -297,6 +335,16 @@ export const mockElectronAPI: ElectronAPI = {
     return () => {
       eventCallback = null
     }
+  },
+
+  onAgentAuthChanged(_callback: (workspaceId: string, agentId: string) => void): () => void {
+    // Mock: no-op - auth changes won't happen in browser mock mode
+    return () => {}
+  },
+
+  onAgentStatusChanged(_callback: (workspaceId: string, agentId: string, status: import('../../shared/types').AgentStatus) => void): () => void {
+    // Mock: no-op - status changes won't happen in browser mock mode
+    return () => {}
   },
 
   // ===== File Operations =====
@@ -417,14 +465,14 @@ console.log(example);
     return true
   },
 
-  // ===== Agent State Management =====
+  // ===== Agent State Management (agent-scoped) =====
 
-  async getAgentStatus(_sessionId: string): Promise<import('../../shared/types').AgentStatus> {
+  async getAgentStatus(_workspaceId: string, _agentId: string): Promise<import('../../shared/types').AgentStatus> {
     await sleep(100)
     return { status: 'idle' }
   },
 
-  async activateAgent(_sessionId: string, agentId: string, _options?: import('../../shared/types').AgentActivateOptions): Promise<import('../../shared/types').AgentStatus> {
+  async activateAgent(_workspaceId: string, agentId: string, _options?: import('../../shared/types').AgentActivateOptions): Promise<import('../../shared/types').AgentStatus> {
     await sleep(300)
     console.log('[Mock] activateAgent called for:', agentId)
     // Return a mock 'active' status with required fields
@@ -445,39 +493,39 @@ console.log(example);
     }
   },
 
-  async continueAfterReview(_sessionId: string, _answers: Record<string, string>): Promise<import('../../shared/types').AgentStatus> {
+  async continueAfterReview(_workspaceId: string, _agentId: string, _answers: Record<string, string>): Promise<import('../../shared/types').AgentStatus> {
     await sleep(200)
     console.log('[Mock] continueAfterReview called')
     return { status: 'idle' }
   },
 
-  async continueAfterMcpAuth(_sessionId: string): Promise<import('../../shared/types').AgentStatus> {
+  async continueAfterMcpAuth(_workspaceId: string, _agentId: string): Promise<import('../../shared/types').AgentStatus> {
     await sleep(200)
     console.log('[Mock] continueAfterMcpAuth called')
     return { status: 'idle' }
   },
 
-  async continueAfterApiAuth(_sessionId: string): Promise<import('../../shared/types').AgentStatus> {
+  async continueAfterApiAuth(_workspaceId: string, _agentId: string): Promise<import('../../shared/types').AgentStatus> {
     await sleep(200)
     console.log('[Mock] continueAfterApiAuth called')
     return { status: 'idle' }
   },
 
-  async deactivateAgent(_sessionId: string): Promise<void> {
+  async deactivateAgent(_workspaceId: string, _agentId: string): Promise<void> {
     console.log('[Mock] deactivateAgent called')
   },
 
-  async reloadAgentState(_sessionId: string): Promise<import('../../shared/types').AgentStatus> {
+  async reloadAgentState(_workspaceId: string, _agentId: string): Promise<import('../../shared/types').AgentStatus> {
     await sleep(300)
     console.log('[Mock] reloadAgentState called')
     return { status: 'idle' }
   },
 
-  async resetAgentState(_sessionId: string): Promise<void> {
+  async resetAgentState(_workspaceId: string, _agentId: string): Promise<void> {
     console.log('[Mock] resetAgentState called')
   },
 
-  async markAgentActive(_sessionId: string): Promise<void> {
+  async markAgentActive(_workspaceId: string, _agentId: string): Promise<void> {
     console.log('[Mock] markAgentActive called')
   },
 
@@ -694,5 +742,21 @@ console.log(example);
     await sleep(200)
     console.log('[Mock] updateBillingMethod called:', authType, credential ? '(with credential)' : '(no credential)')
     // Mock: just log, no actual update
+  },
+
+  // ===== User Preferences =====
+
+  async readPreferences() {
+    await sleep(100)
+    console.log('[Mock] readPreferences called')
+    // Mock: return default empty preferences
+    return { content: '{}', exists: false }
+  },
+
+  async writePreferences(content: string) {
+    await sleep(100)
+    console.log('[Mock] writePreferences called:', content.slice(0, 100))
+    // Mock: just log, no actual write
+    return { success: true }
   },
 }

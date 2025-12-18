@@ -1,14 +1,16 @@
 import { ipcMain, nativeTheme, nativeImage, dialog, shell, BrowserWindow } from 'electron'
 import { readFile, realpath, mkdir, writeFile, unlink, rm } from 'fs/promises'
-import { normalize, isAbsolute, join, basename } from 'path'
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
+import { normalize, isAbsolute, join, basename, dirname } from 'path'
 import { homedir, tmpdir } from 'os'
 import { randomUUID } from 'crypto'
 import { SessionManager } from './sessions'
+import { WindowManager } from './window-manager'
 import { agentService } from './agent-service'
 import { registerOnboardingHandlers } from './onboarding'
 import { IPC_CHANNELS, type FileAttachment, type StoredAttachment, type AgentActivateOptions, type AuthType, type BillingMethodInfo } from '../shared/types'
 import { readFileAttachment } from '@craft-agent/shared/utils'
-import { getSessionAttachmentsPath, getAuthType, setAuthType } from '@craft-agent/shared/config'
+import { getSessionAttachmentsPath, getAuthType, setAuthType, getPreferencesPath } from '@craft-agent/shared/config'
 import { getCredentialManager } from '@craft-agent/shared/credentials'
 import { MarkItDown } from 'markitdown-js'
 
@@ -95,7 +97,7 @@ async function validateFilePath(filePath: string): Promise<string> {
   return realPath
 }
 
-export function registerIpcHandlers(sessionManager: SessionManager): void {
+export function registerIpcHandlers(sessionManager: SessionManager, windowManager: WindowManager): void {
   // Get all sessions
   ipcMain.handle(IPC_CHANNELS.GET_SESSIONS, async () => {
     return sessionManager.getSessions()
@@ -104,6 +106,35 @@ export function registerIpcHandlers(sessionManager: SessionManager): void {
   // Get workspaces
   ipcMain.handle(IPC_CHANNELS.GET_WORKSPACES, async () => {
     return sessionManager.getWorkspaces()
+  })
+
+  // ============================================================
+  // Window Management
+  // ============================================================
+
+  // Get workspace ID for the calling window
+  ipcMain.handle(IPC_CHANNELS.GET_WINDOW_WORKSPACE, (event) => {
+    return windowManager.getWorkspaceForWindow(event.sender.id)
+  })
+
+  // Open workspace in new window (or focus existing)
+  ipcMain.handle(IPC_CHANNELS.OPEN_WORKSPACE, async (_event, workspaceId: string) => {
+    windowManager.focusOrCreateWindow(workspaceId)
+  })
+
+  // Get mode for the calling window
+  ipcMain.handle(IPC_CHANNELS.GET_WINDOW_MODE, (event) => {
+    return windowManager.getModeForWindow(event.sender.id)
+  })
+
+  // Open add workspace wizard in new window
+  ipcMain.handle(IPC_CHANNELS.OPEN_ADD_WORKSPACE, async () => {
+    windowManager.createWindow('', 'add-workspace')
+  })
+
+  // Close the calling window
+  ipcMain.handle(IPC_CHANNELS.CLOSE_WINDOW, (event) => {
+    windowManager.closeWindow(event.sender.id)
   })
 
   // Create a new session (with optional agent assignment)
@@ -120,20 +151,25 @@ export function registerIpcHandlers(sessionManager: SessionManager): void {
   // Note: We intentionally don't await here - the response is streamed via events.
   // The IPC handler returns immediately, and results come through SESSION_EVENT channel.
   // attachments: FileAttachment[] for Claude (has content), storedAttachments: StoredAttachment[] for persistence (has thumbnailBase64)
-  ipcMain.handle(IPC_CHANNELS.SEND_MESSAGE, async (_event, sessionId: string, message: string, attachments?: FileAttachment[], storedAttachments?: StoredAttachment[]) => {
+  ipcMain.handle(IPC_CHANNELS.SEND_MESSAGE, async (event, sessionId: string, message: string, attachments?: FileAttachment[], storedAttachments?: StoredAttachment[]) => {
+    // Capture the workspace from the calling window for error routing
+    const callingWorkspaceId = windowManager.getWorkspaceForWindow(event.sender.id)
+
     // Start processing in background, errors are sent via event stream
     sessionManager.sendMessage(sessionId, message, attachments, storedAttachments).catch(err => {
       console.error('[IPC] Error in sendMessage:', err)
-      // Send error to renderer so user sees it (not just logged to console)
-      const mainWindow = BrowserWindow.getAllWindows()[0]
-      if (mainWindow) {
-        mainWindow.webContents.send(IPC_CHANNELS.SESSION_EVENT, {
+      // Send error to renderer so user sees it (route to correct window)
+      const window = callingWorkspaceId
+        ? windowManager.getWindowByWorkspace(callingWorkspaceId)
+        : BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0]
+      if (window && !window.isDestroyed()) {
+        window.webContents.send(IPC_CHANNELS.SESSION_EVENT, {
           type: 'error',
           sessionId,
           error: err instanceof Error ? err.message : 'Unknown error'
         })
         // Also send complete event to clear processing state
-        mainWindow.webContents.send(IPC_CHANNELS.SESSION_EVENT, {
+        window.webContents.send(IPC_CHANNELS.SESSION_EVENT, {
           type: 'complete',
           sessionId
         })
@@ -415,17 +451,35 @@ export function registerIpcHandlers(sessionManager: SessionManager): void {
 
   // Agent authentication - start OAuth flow for MCP server
   ipcMain.handle(IPC_CHANNELS.START_MCP_OAUTH, async (_event, workspaceId: string, agentId: string, serverUrl: string, serverName: string) => {
-    return agentService.startMcpOAuth(workspaceId, agentId, serverUrl, serverName)
+    const result = await agentService.startMcpOAuth(workspaceId, agentId, serverUrl, serverName)
+    // Notify renderer of auth change on success (only to workspace's window)
+    if (result.success) {
+      const window = windowManager.getWindowByWorkspace(workspaceId)
+      if (window) {
+        window.webContents.send(IPC_CHANNELS.AGENT_AUTH_CHANGED, workspaceId, agentId)
+      }
+    }
+    return result
   })
 
   // Agent authentication - save bearer token for MCP server
   ipcMain.handle(IPC_CHANNELS.SAVE_MCP_BEARER, async (_event, workspaceId: string, agentId: string, serverName: string, token: string) => {
-    return agentService.saveMcpBearer(workspaceId, agentId, serverName, token)
+    await agentService.saveMcpBearer(workspaceId, agentId, serverName, token)
+    // Notify renderer of auth change (only to workspace's window)
+    const window = windowManager.getWindowByWorkspace(workspaceId)
+    if (window) {
+      window.webContents.send(IPC_CHANNELS.AGENT_AUTH_CHANGED, workspaceId, agentId)
+    }
   })
 
   // Agent authentication - save API credentials
   ipcMain.handle(IPC_CHANNELS.SAVE_API_CREDENTIALS, async (_event, workspaceId: string, agentId: string, apiName: string, credential: string) => {
-    return agentService.saveApiCredentials(workspaceId, agentId, apiName, credential)
+    await agentService.saveApiCredentials(workspaceId, agentId, apiName, credential)
+    // Notify renderer of auth change (only to workspace's window)
+    const window = windowManager.getWindowByWorkspace(workspaceId)
+    if (window) {
+      window.webContents.send(IPC_CHANNELS.AGENT_AUTH_CHANGED, workspaceId, agentId)
+    }
   })
 
   // Agent authentication - validate MCP connection
@@ -434,52 +488,52 @@ export function registerIpcHandlers(sessionManager: SessionManager): void {
   })
 
   // ============================================================
-  // Agent State Management (unified state machine)
+  // Agent State Management (agent-scoped, unified state machine)
   // ============================================================
 
-  // Get current agent status for a session
-  ipcMain.handle(IPC_CHANNELS.AGENT_GET_STATUS, async (_event, sessionId: string) => {
-    return sessionManager.getAgentStatus(sessionId)
+  // Get current agent status (agent-scoped)
+  ipcMain.handle(IPC_CHANNELS.AGENT_GET_STATUS, async (_event, workspaceId: string, agentId: string) => {
+    return sessionManager.getAgentStatus(workspaceId, agentId)
   })
 
-  // Start agent activation flow
-  ipcMain.handle(IPC_CHANNELS.AGENT_ACTIVATE, async (_event, sessionId: string, agentId: string, options?: AgentActivateOptions) => {
-    return sessionManager.activateAgentForSession(sessionId, agentId, options)
+  // Start agent activation flow (agent-scoped)
+  ipcMain.handle(IPC_CHANNELS.AGENT_ACTIVATE, async (_event, workspaceId: string, agentId: string, options?: AgentActivateOptions) => {
+    return sessionManager.activateAgent(workspaceId, agentId, options)
   })
 
-  // Continue after user completes review
-  ipcMain.handle(IPC_CHANNELS.AGENT_CONTINUE_REVIEW, async (_event, sessionId: string, answers: Record<string, string>) => {
-    return sessionManager.continueAfterReview(sessionId, answers)
+  // Continue after user completes review (agent-scoped)
+  ipcMain.handle(IPC_CHANNELS.AGENT_CONTINUE_REVIEW, async (_event, workspaceId: string, agentId: string, answers: Record<string, string>) => {
+    return sessionManager.continueAfterReview(workspaceId, agentId, answers)
   })
 
-  // Continue after MCP server auth completes
-  ipcMain.handle(IPC_CHANNELS.AGENT_CONTINUE_MCP_AUTH, async (_event, sessionId: string) => {
-    return sessionManager.continueAfterMcpAuth(sessionId)
+  // Continue after MCP server auth completes (agent-scoped)
+  ipcMain.handle(IPC_CHANNELS.AGENT_CONTINUE_MCP_AUTH, async (_event, workspaceId: string, agentId: string) => {
+    return sessionManager.continueAfterMcpAuth(workspaceId, agentId)
   })
 
-  // Continue after API auth completes
-  ipcMain.handle(IPC_CHANNELS.AGENT_CONTINUE_API_AUTH, async (_event, sessionId: string) => {
-    return sessionManager.continueAfterApiAuth(sessionId)
+  // Continue after API auth completes (agent-scoped)
+  ipcMain.handle(IPC_CHANNELS.AGENT_CONTINUE_API_AUTH, async (_event, workspaceId: string, agentId: string) => {
+    return sessionManager.continueAfterApiAuth(workspaceId, agentId)
   })
 
-  // Deactivate agent for a session
-  ipcMain.handle(IPC_CHANNELS.AGENT_DEACTIVATE, async (_event, sessionId: string) => {
-    return sessionManager.deactivateAgentForSession(sessionId)
+  // Deactivate agent (agent-scoped)
+  ipcMain.handle(IPC_CHANNELS.AGENT_DEACTIVATE, async (_event, workspaceId: string, agentId: string) => {
+    return sessionManager.deactivateAgent(workspaceId, agentId)
   })
 
-  // Reload agent (clear cache, re-extract)
-  ipcMain.handle(IPC_CHANNELS.AGENT_RELOAD, async (_event, sessionId: string) => {
-    return sessionManager.reloadAgentForSession(sessionId)
+  // Reload agent (clear cache, re-extract) (agent-scoped)
+  ipcMain.handle(IPC_CHANNELS.AGENT_RELOAD, async (_event, workspaceId: string, agentId: string) => {
+    return sessionManager.reloadAgent(workspaceId, agentId)
   })
 
-  // Reset agent (clear cache AND credentials)
-  ipcMain.handle(IPC_CHANNELS.AGENT_RESET, async (_event, sessionId: string) => {
-    return sessionManager.resetAgentForSession(sessionId)
+  // Reset agent (clear cache AND credentials) (agent-scoped)
+  ipcMain.handle(IPC_CHANNELS.AGENT_RESET, async (_event, workspaceId: string, agentId: string) => {
+    return sessionManager.resetAgent(workspaceId, agentId)
   })
 
-  // Mark agent as active (after definition applied to CraftAgent)
-  ipcMain.handle(IPC_CHANNELS.AGENT_MARK_ACTIVE, async (_event, sessionId: string) => {
-    return sessionManager.markAgentActive(sessionId)
+  // Mark agent as active (agent-scoped)
+  ipcMain.handle(IPC_CHANNELS.AGENT_MARK_ACTIVE, async (_event, workspaceId: string, agentId: string) => {
+    return sessionManager.markAgentActive(workspaceId, agentId)
   })
 
   // Shell operations - open URL in external browser
@@ -518,17 +572,16 @@ export function registerIpcHandlers(sessionManager: SessionManager): void {
 
   // Show logout confirmation dialog
   ipcMain.handle(IPC_CHANNELS.SHOW_LOGOUT_CONFIRMATION, async () => {
-    const mainWindow = BrowserWindow.getAllWindows()[0]
-    const result = await dialog.showMessageBox(mainWindow, {
+    const window = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0]
+    const result = await dialog.showMessageBox(window, {
       type: 'warning',
       buttons: ['Cancel', 'Log Out'],
       defaultId: 0,
       cancelId: 0,
-      destructiveId: 1,  // Makes "Log Out" button red on macOS
       title: 'Log Out',
       message: 'Are you sure you want to log out?',
       detail: 'All conversations will be deleted. This action cannot be undone.',
-    })
+    } as Electron.MessageBoxOptions)
     // result.response is the index of the clicked button
     // 0 = Cancel, 1 = Log Out
     return result.response === 1
@@ -607,6 +660,32 @@ export function registerIpcHandlers(sessionManager: SessionManager): void {
     }
 
     console.log(`[IPC] Billing method updated to: ${authType}`)
+  })
+
+  // ============================================================
+  // User Preferences
+  // ============================================================
+
+  // Read user preferences file
+  ipcMain.handle(IPC_CHANNELS.PREFERENCES_READ, async () => {
+    const path = getPreferencesPath()
+    if (!existsSync(path)) {
+      return { content: '{}', exists: false }
+    }
+    return { content: readFileSync(path, 'utf-8'), exists: true }
+  })
+
+  // Write user preferences file (validates JSON before saving)
+  ipcMain.handle(IPC_CHANNELS.PREFERENCES_WRITE, async (_, content: string) => {
+    try {
+      JSON.parse(content) // Validate JSON
+      const path = getPreferencesPath()
+      mkdirSync(dirname(path), { recursive: true })
+      writeFileSync(path, content, 'utf-8')
+      return { success: true }
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' }
+    }
   })
 
   // Register onboarding handlers

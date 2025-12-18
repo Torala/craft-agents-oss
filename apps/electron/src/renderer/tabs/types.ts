@@ -13,6 +13,7 @@ export type TabType =
   | 'agent-setup'
   | 'file'
   | 'browser'
+  | 'preferences'
 
 /**
  * Base interface for all tab types
@@ -70,6 +71,8 @@ export interface AgentSetupTab extends TabBase {
   type: 'agent-setup'
   agentId: string
   workspaceId: string
+  /** Agent display name (for UI before definition is loaded) */
+  agentName: string
 }
 
 /**
@@ -89,6 +92,13 @@ export interface BrowserTab extends TabBase {
 }
 
 /**
+ * Preferences tab - edits user preferences file (singleton)
+ */
+export interface PreferencesTab extends TabBase {
+  type: 'preferences'
+}
+
+/**
  * Union type of all tab types
  */
 export type Tab =
@@ -99,6 +109,7 @@ export type Tab =
   | AgentSetupTab
   | FileTab
   | BrowserTab
+  | PreferencesTab
 
 /**
  * Tab state stored in Jotai atom
@@ -166,6 +177,11 @@ export const TAB_DEFINITIONS: Record<TabType, TabDefinition> = {
   browser: {
     type: 'browser',
     singleton: false,
+    defaultClosable: true,
+  },
+  preferences: {
+    type: 'preferences',
+    singleton: true,
     defaultClosable: true,
   },
 }

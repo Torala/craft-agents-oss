@@ -7,6 +7,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { getAiCreditsBalance } from '../auth/balance.ts';
 import { isWorkspaceTokenExpiredAsync, loadStoredConfig, getAnthropicApiKey, getClaudeOAuthToken, type AuthType } from '../config/storage.ts';
 import { getCredentialManager } from '../credentials/index.ts';
+import { setAnthropicOptionsEnv } from './options.ts';
 
 export type DiagnosticCode =
   | 'credits_exhausted'
@@ -226,7 +227,7 @@ async function checkMcpConnectivity(mcpUrl: string): Promise<CheckResult> {
   }
 }
 
-/** Check if Craft token is present (for craft_credits auth) */
+/** Check if Craft token is present and valid (for craft_credits auth) */
 async function checkCraftToken(): Promise<CheckResult> {
   try {
     const manager = getCredentialManager();
@@ -240,16 +241,61 @@ async function checkCraftToken(): Promise<CheckResult> {
         failMessage: 'Your Craft authentication is missing. Please log in again.',
       };
     }
-    return { ok: true, detail: '✓ Craft token: Present' };
+
+    // Actually validate the token by calling a lightweight API endpoint
+    const { CraftApi } = await import('../clients/craftApi.ts');
+    const craftApi = new CraftApi();
+
+    try {
+      await craftApi.getProfile(token);
+      return { ok: true, detail: '✓ Craft token: Valid' };
+    } catch (validationError) {
+      const validationMsg = validationError instanceof Error ? validationError.message : String(validationError);
+
+      // 401/403 = Token is invalid or expired - try to refresh
+      if (validationMsg.includes('401') || validationMsg.includes('403') || validationMsg.includes('Unauthorized') || validationMsg.includes('Forbidden')) {
+        try {
+          // Try to refresh the token
+          const newToken = await craftApi.renewSession(token);
+
+          // Validate the new token
+          await craftApi.getProfile(newToken);
+
+          // Save the refreshed token
+          await manager.setCraftOAuth(newToken);
+
+          // Update SDK options so next chat uses the new token
+          setAnthropicOptionsEnv({
+            USE_CRAFT_AI_GATEWAY: 'true',
+            CRAFT_API_GATEWAY_TOKEN: newToken,
+          });
+
+          return { ok: true, detail: '✓ Craft token: Refreshed' };
+        } catch (refreshError) {
+          // Refresh failed - token is too old or invalid
+          return {
+            ok: false,
+            detail: '✗ Craft token: Expired (refresh failed)',
+            failCode: 'invalid_credentials',
+            failTitle: 'Craft Session Expired',
+            failMessage: 'Your Craft session has expired and could not be refreshed. Please log in again.',
+          };
+        }
+      }
+
+      // Other validation errors - just note, don't fail
+      return { ok: true, detail: `✓ Craft token: Present (validation skipped: ${validationMsg.slice(0, 30)})` };
+    }
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
-    return { ok: true, detail: `✓ Craft token: Check failed (${msg})` };
+    // Network errors - just note, don't fail
+    return { ok: true, detail: `✓ Craft token: Check failed (${msg.slice(0, 30)})` };
   }
 }
 
 /**
- * Validate the Craft AI gateway by making a test request.
- * The gateway uses the Anthropic API format but authenticates via Craft token.
+ * Validate the Craft AI gateway by making a simple connectivity test.
+ * Uses a HEAD request to check if the gateway is reachable.
  */
 async function validateCraftGateway(): Promise<CheckResult> {
   try {
@@ -260,46 +306,41 @@ async function validateCraftGateway(): Promise<CheckResult> {
       return { ok: true, detail: '✓ Craft gateway: Skipped (no token)' };
     }
 
-    // Test the gateway by making a models.list() request through it
-    const client = new Anthropic({
-      apiKey: 'craft-credits-placeholder', // Required by SDK but ignored by gateway
-      baseURL: 'https://gateway.craft.do/v1',
-      defaultHeaders: {
-        'X-Craft-Token': token, // token is already the access token string
-      },
-    });
+    // Simple connectivity test - HEAD request to gateway
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 4000);
 
-    const result = await client.models.list();
-    const modelCount = result.data?.length ?? 0;
-    return {
-      ok: true,
-      detail: `✓ Craft gateway: Valid (${modelCount} models)`,
-    };
+    try {
+      const response = await fetch('https://gateway.craft.do/v1', {
+        method: 'HEAD',
+        headers: {
+          'X-Craft-Token': token,
+        },
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      // Any response means gateway is reachable
+      return { ok: true, detail: `✓ Craft gateway: Reachable (${response.status})` };
+    } catch (fetchError) {
+      clearTimeout(timeoutId);
+
+      if (fetchError instanceof Error && fetchError.name === 'AbortError') {
+        return { ok: true, detail: '✓ Craft gateway: Timeout (4s)' };
+      }
+
+      const fetchMsg = fetchError instanceof Error ? fetchError.message : String(fetchError);
+      return { ok: true, detail: `✓ Craft gateway: Skipped (${fetchMsg.slice(0, 40)})` };
+    }
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
-
-    // 401/403 = Authentication failed
-    if (msg.includes('401') || msg.includes('403') || msg.includes('Unauthorized') || msg.includes('Forbidden')) {
-      return {
-        ok: false,
-        detail: '✗ Craft gateway: Authentication failed',
-        failCode: 'invalid_credentials',
-        failTitle: 'Craft Authentication Failed',
-        failMessage: 'Your Craft session may have expired. Please log in again.',
-      };
-    }
-
-    // Network error or gateway down - don't fail, just note it
-    return {
-      ok: true,
-      detail: `✓ Craft gateway: Skipped (${msg.slice(0, 50)})`,
-    };
+    return { ok: true, detail: `✓ Craft gateway: Check failed (${msg.slice(0, 40)})` };
   }
 }
 
 /**
  * Run error diagnostics to identify the specific cause of a failure.
- * All checks run in parallel with timeouts (3s for API validation, 2s for others).
+ * All checks run in parallel with 5s timeouts.
  */
 export async function runErrorDiagnostics(config: DiagnosticConfig): Promise<DiagnosticResult> {
   const { authType, workspaceId, mcpUrl, rawError } = config;
@@ -311,19 +352,19 @@ export async function runErrorDiagnostics(config: DiagnosticConfig): Promise<Dia
 
   // 1. Credits and gateway validation (only for craft_credits)
   if (authType === 'craft_credits') {
-    checks.push(withTimeout(checkCredits(), 2000, defaultResult));
-    checks.push(withTimeout(checkCraftToken(), 2000, defaultResult));
-    checks.push(withTimeout(validateCraftGateway(), 3000, defaultResult)); // 3s for API call
+    checks.push(withTimeout(checkCredits(), 5000, defaultResult));
+    checks.push(withTimeout(checkCraftToken(), 5000, defaultResult));
+    checks.push(withTimeout(validateCraftGateway(), 5000, defaultResult));
   }
 
   // 2. API key check with validation (only for api_key auth)
   if (authType === 'api_key') {
-    checks.push(withTimeout(checkApiKey(), 3000, defaultResult)); // 3s for API call
+    checks.push(withTimeout(checkApiKey(), 5000, defaultResult));
   }
 
   // 3. OAuth token check (only for oauth_token auth)
   if (authType === 'oauth_token') {
-    checks.push(withTimeout(checkOAuthToken(), 2000, defaultResult));
+    checks.push(withTimeout(checkOAuthToken(), 5000, defaultResult));
   }
 
   // 4. Workspace token check (if workspace is configured with OAuth)
@@ -333,13 +374,13 @@ export async function runErrorDiagnostics(config: DiagnosticConfig): Promise<Dia
     const mcpAuthType = workspace?.mcpAuthType ?? 'workspace_oauth';
 
     if (mcpAuthType === 'workspace_oauth') {
-      checks.push(withTimeout(checkWorkspaceToken(workspaceId), 2000, defaultResult));
+      checks.push(withTimeout(checkWorkspaceToken(workspaceId), 5000, defaultResult));
     }
   }
 
   // 5. MCP connectivity check (if URL provided)
   if (mcpUrl) {
-    checks.push(withTimeout(checkMcpConnectivity(mcpUrl), 3000, defaultResult));
+    checks.push(withTimeout(checkMcpConnectivity(mcpUrl), 5000, defaultResult));
   }
 
   // Run all checks in parallel

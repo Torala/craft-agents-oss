@@ -79,14 +79,18 @@ export function TabContainer({ className }: TabContainerProps) {
       case 'browser':
         return (tab as BrowserTab).url
       case 'agent-info':
+        return 'Agent'
       case 'agent-setup':
-        return `@${(tab as { agentId: string }).agentId}`
+        return 'Agent Setup'
       case 'shortcuts':
         return 'Reference'
       case 'settings':
         return 'Preferences'
       case 'chat': {
         const session = getChatSession(tab)
+        if (session?.agentName) {
+          return `@${session.agentName}`
+        }
         return session?.workspaceName || 'Conversation'
       }
       default:

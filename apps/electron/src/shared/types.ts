@@ -238,6 +238,13 @@ export const IPC_CHANNELS = {
   // Workspace management
   GET_WORKSPACES: 'workspaces:get',
 
+  // Window management
+  GET_WINDOW_WORKSPACE: 'window:getWorkspace',
+  GET_WINDOW_MODE: 'window:getMode',
+  OPEN_WORKSPACE: 'window:openWorkspace',
+  OPEN_ADD_WORKSPACE: 'window:openAddWorkspace',
+  CLOSE_WINDOW: 'window:close',
+
   // Agent management
   GET_AGENTS: 'agents:get',
   REFRESH_AGENTS: 'agents:refresh',
@@ -255,19 +262,21 @@ export const IPC_CHANNELS = {
   SAVE_API_CREDENTIALS: 'agents:saveApiCredentials',
   VALIDATE_MCP_CONNECTION: 'agents:validateMcpConnection',
 
-  // Agent state management (unified state machine)
-  AGENT_GET_STATUS: 'agent:getStatus',
-  AGENT_ACTIVATE: 'agent:activate',
-  AGENT_CONTINUE_REVIEW: 'agent:continueReview',
-  AGENT_CONTINUE_MCP_AUTH: 'agent:continueMcpAuth',
-  AGENT_CONTINUE_API_AUTH: 'agent:continueApiAuth',
-  AGENT_DEACTIVATE: 'agent:deactivate',
-  AGENT_RELOAD: 'agent:reload',
-  AGENT_RESET: 'agent:reset',
-  AGENT_MARK_ACTIVE: 'agent:markActive',
+  // Agent state management (unified state machine, agent-scoped by workspaceId:agentId)
+  AGENT_GET_STATUS: 'agent:getStatus',           // (workspaceId, agentId) → AgentStatus
+  AGENT_ACTIVATE: 'agent:activate',               // (workspaceId, agentId, options?) → AgentStatus
+  AGENT_CONTINUE_REVIEW: 'agent:continueReview',  // (workspaceId, agentId, answers) → AgentStatus
+  AGENT_CONTINUE_MCP_AUTH: 'agent:continueMcpAuth', // (workspaceId, agentId) → AgentStatus
+  AGENT_CONTINUE_API_AUTH: 'agent:continueApiAuth', // (workspaceId, agentId) → AgentStatus
+  AGENT_DEACTIVATE: 'agent:deactivate',           // (workspaceId, agentId) → void
+  AGENT_RELOAD: 'agent:reload',                   // (workspaceId, agentId) → AgentStatus
+  AGENT_RESET: 'agent:reset',                     // (workspaceId, agentId) → void
+  AGENT_MARK_ACTIVE: 'agent:markActive',          // (workspaceId, agentId) → void
 
   // Events from main to renderer
   SESSION_EVENT: 'session:event',
+  AGENT_STATUS_CHANGED: 'agent:statusChanged',    // Broadcast: { workspaceId, agentId, status }
+  AGENT_AUTH_CHANGED: 'agent:authChanged',
 
   // File operations
   READ_FILE: 'file:read',
@@ -314,6 +323,10 @@ export const IPC_CHANNELS = {
   // Settings - Billing
   SETTINGS_GET_BILLING_METHOD: 'settings:getBillingMethod',
   SETTINGS_UPDATE_BILLING_METHOD: 'settings:updateBillingMethod',
+
+  // User Preferences
+  PREFERENCES_READ: 'preferences:read',
+  PREFERENCES_WRITE: 'preferences:write',
 } as const
 
 // Re-import types for ElectronAPI
@@ -336,6 +349,13 @@ export interface ElectronAPI {
   // Workspace management
   getWorkspaces(): Promise<Workspace[]>
 
+  // Window management
+  getWindowWorkspace(): Promise<string | null>
+  getWindowMode(): Promise<string | null>
+  openWorkspace(workspaceId: string): Promise<void>
+  openAddWorkspaceWindow(): Promise<void>
+  closeWindow(): Promise<void>
+
   // Agent management
   getAgents(workspaceId: string): Promise<SubAgentMetadata[]>
   refreshAgents(workspaceId: string): Promise<SubAgentMetadata[]>
@@ -353,19 +373,21 @@ export interface ElectronAPI {
   saveApiCredentials(workspaceId: string, agentId: string, apiName: string, credential: string): Promise<void>
   validateMcpConnection(serverUrl: string, accessToken?: string): Promise<McpValidationResult>
 
-  // Agent state management (unified state machine)
-  getAgentStatus(sessionId: string): Promise<AgentStatus>
-  activateAgent(sessionId: string, agentId: string, options?: AgentActivateOptions): Promise<AgentStatus>
-  continueAfterReview(sessionId: string, answers: Record<string, string>): Promise<AgentStatus>
-  continueAfterMcpAuth(sessionId: string): Promise<AgentStatus>
-  continueAfterApiAuth(sessionId: string): Promise<AgentStatus>
-  deactivateAgent(sessionId: string): Promise<void>
-  reloadAgentState(sessionId: string): Promise<AgentStatus>
-  resetAgentState(sessionId: string): Promise<void>
-  markAgentActive(sessionId: string): Promise<void>
+  // Agent state management (unified state machine, agent-scoped)
+  getAgentStatus(workspaceId: string, agentId: string): Promise<AgentStatus>
+  activateAgent(workspaceId: string, agentId: string, options?: AgentActivateOptions): Promise<AgentStatus>
+  continueAfterReview(workspaceId: string, agentId: string, answers: Record<string, string>): Promise<AgentStatus>
+  continueAfterMcpAuth(workspaceId: string, agentId: string): Promise<AgentStatus>
+  continueAfterApiAuth(workspaceId: string, agentId: string): Promise<AgentStatus>
+  deactivateAgent(workspaceId: string, agentId: string): Promise<void>
+  reloadAgentState(workspaceId: string, agentId: string): Promise<AgentStatus>
+  resetAgentState(workspaceId: string, agentId: string): Promise<void>
+  markAgentActive(workspaceId: string, agentId: string): Promise<void>
 
-  // Event listener
+  // Event listeners
   onSessionEvent(callback: (event: SessionEvent) => void): () => void
+  onAgentStatusChanged(callback: (workspaceId: string, agentId: string, status: AgentStatus) => void): () => void
+  onAgentAuthChanged(callback: (workspaceId: string, agentId: string) => void): () => void
 
   // File operations
   readFile(path: string): Promise<string>
@@ -417,6 +439,10 @@ export interface ElectronAPI {
   // Settings - Billing
   getBillingMethod(): Promise<BillingMethodInfo>
   updateBillingMethod(authType: AuthType, credential?: string): Promise<void>
+
+  // User Preferences
+  readPreferences(): Promise<{ content: string; exists: boolean }>
+  writePreferences(content: string): Promise<{ success: boolean; error?: string }>
 }
 
 /**

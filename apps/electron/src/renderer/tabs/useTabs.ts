@@ -31,6 +31,7 @@ import type {
   AgentSetupTab,
   FileTab,
   BrowserTab,
+  PreferencesTab,
   OpenChatTabOptions,
 } from './types'
 
@@ -168,6 +169,7 @@ export function useTabs() {
         type: 'agent-setup',
         agentId,
         workspaceId,
+        agentName,
         label: `Setup ${agentName}`,
         closable: true,
       }
@@ -216,6 +218,19 @@ export function useTabs() {
     },
     [openTab]
   )
+
+  /**
+   * Open the preferences editor tab (singleton)
+   */
+  const openPreferencesTab = useCallback(() => {
+    const tab: PreferencesTab = {
+      id: 'preferences',
+      type: 'preferences',
+      label: 'User Preferences',
+      closable: true,
+    }
+    openTab(tab)
+  }, [openTab])
 
   /**
    * Update a chat tab's label (e.g., when session is renamed)
@@ -284,6 +299,7 @@ export function useTabs() {
     openAgentSetupTab,
     openFileTab,
     openBrowserTab,
+    openPreferencesTab,
 
     // Helpers
     updateChatTabLabel,

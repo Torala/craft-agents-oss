@@ -1552,6 +1552,9 @@ export class CraftAgent {
           yield { type: 'complete' };
         }
       } catch (sdkError) {
+        // Debug: log inner catch trigger (stderr to avoid SDK JSON pollution)
+        console.error(`[CraftAgent] INNER CATCH triggered: ${sdkError instanceof Error ? sdkError.message : String(sdkError)}`);
+
         // Handle user interruption
         if (sdkError instanceof AbortError) {
           yield { type: 'status', message: 'Interrupted' };
@@ -1695,6 +1698,10 @@ export class CraftAgent {
       }
 
     } catch (error) {
+      // Debug: log outer catch trigger (stderr to avoid SDK JSON pollution)
+      console.error(`[CraftAgent] OUTER CATCH triggered: ${error instanceof Error ? error.message : String(error)}`);
+      console.error(`[CraftAgent] Error stack: ${error instanceof Error ? error.stack : 'no stack'}`);
+
       // Check if this is a recognizable error type
       const typedError = parseError(error);
       if (typedError.code !== 'unknown_error') {
@@ -2031,6 +2038,9 @@ export class CraftAgent {
       }
 
       case 'result': {
+        // Debug: log result message details (stderr to avoid SDK JSON pollution)
+        console.error(`[CraftAgent] result message: subtype=${message.subtype}, errors=${'errors' in message ? JSON.stringify((message as any).errors) : 'none'}`);
+
         // Build usage info with all token types
         // Total input = input_tokens + cache_creation + cache_read
         const cacheRead = message.usage.cache_read_input_tokens ?? 0;

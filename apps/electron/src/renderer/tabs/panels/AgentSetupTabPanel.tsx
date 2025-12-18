@@ -2,40 +2,48 @@
  * AgentSetupTabPanel
  *
  * Multi-step agent setup flow in a tab.
- * Uses useAgentSetup hook for agent-scoped setup (no session required).
+ * Uses useAgentState hook (agent-scoped) as the single source of truth.
+ * Maintains local UI state for per-item auth tracking (mcpServerStatus, apiStatus).
  * Session is created only when user clicks "Start Chat".
  */
 
 import * as React from 'react'
-import { useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import type { Tab, AgentSetupTab } from '../types'
 import { useTabs } from '../useTabs'
-import { useAgentSetup, type SetupStep } from '../../hooks/useAgentSetup'
+import { useChatContext } from '../../context/ChatContext'
+import { useAgentState } from '../../hooks/useAgentState'
 import {
   AgentSetupWizard,
   type AgentSetupState,
   type AgentSetupStep,
 } from '../../components/agent-setup'
+import type { AgentStatus } from '../../../shared/types'
 
 interface AgentSetupTabPanelProps {
   tab: Tab
 }
 
+// Local UI state types for per-item tracking
+type McpServerAuthStatus = 'pending' | 'authenticating' | 'authenticated' | 'skipped' | 'bearer-input'
+type ApiAuthStatus = 'pending' | 'configured' | 'skipped'
+
 /**
- * Map hook step to wizard step
+ * Map agent status to wizard step
  */
-function mapToWizardStep(step: SetupStep): AgentSetupStep {
-  switch (step) {
+function mapStatusToWizardStep(status: AgentStatus): AgentSetupStep {
+  switch (status.status) {
     case 'idle':
     case 'extracting':
       return 'extracting'
-    case 'review':
+    case 'needs_review':
       return 'review'
-    case 'mcp-auth':
+    case 'needs_mcp_auth':
       return 'mcp-auth'
-    case 'api-auth':
+    case 'needs_api_auth':
       return 'api-auth'
     case 'ready':
+    case 'active':
       return 'ready'
     case 'error':
       return 'error'
@@ -46,47 +54,151 @@ function mapToWizardStep(step: SetupStep): AgentSetupStep {
 
 export default function AgentSetupTabPanel({ tab }: AgentSetupTabPanelProps) {
   const setupTab = tab as AgentSetupTab
-  const { workspaceId, agentId } = setupTab
+  const { workspaceId, agentId, agentName } = setupTab
 
-  const setup = useAgentSetup(workspaceId, agentId)
+  // Primary state from main process (single source of truth)
+  const agentState = useAgentState(workspaceId, agentId)
+
+  // Local UI state for per-item tracking
+  const [mcpServerStatus, setMcpServerStatus] = useState<Record<string, McpServerAuthStatus>>({})
+  const [apiStatus, setApiStatus] = useState<Record<string, ApiAuthStatus>>({})
+
   const { openChatTab, closeTab } = useTabs()
+  const { onCreateSession } = useChatContext()
 
-  // Auto-start setup on mount
+  // Auto-activate on mount when idle
   useEffect(() => {
-    if (setup.step === 'idle') {
-      setup.startSetup()
+    if (agentState.isIdle) {
+      agentState.activate()
     }
-  }, [setup.step, setup.startSetup])
+  }, [agentState.isIdle, agentState.activate])
 
-  // Build wizard state from hook
-  const wizardState: AgentSetupState = {
-    step: mapToWizardStep(setup.step),
-    agentId,
-    agentName: setup.definition?.name || agentId.split('/').pop() || agentId,
-    extractionMessage: setup.extractionMessage || undefined,
-    concerns: setup.concerns,
-    mcpServers: setup.mcpServers,
-    mcpServerStatus: setup.mcpServerStatus,
-    apis: setup.apis,
-    apiStatus: setup.apiStatus,
-    capabilities: setup.definition?.capabilities || [],
-    errorMessage: setup.errorMessage || undefined,
-    isLoading: setup.isLoading,
-  }
+  // Initialize per-item status when agent status changes
+  useEffect(() => {
+    if (agentState.status.status === 'needs_mcp_auth' && agentState.pendingMcpServers) {
+      const initialStatus: Record<string, McpServerAuthStatus> = {}
+      for (const server of agentState.pendingMcpServers) {
+        if (!(server.name in mcpServerStatus)) {
+          initialStatus[server.name] = 'pending'
+        }
+      }
+      if (Object.keys(initialStatus).length > 0) {
+        setMcpServerStatus(prev => ({ ...prev, ...initialStatus }))
+      }
+    }
+  }, [agentState.status.status, agentState.pendingMcpServers, mcpServerStatus])
+
+  useEffect(() => {
+    if (agentState.status.status === 'needs_api_auth' && agentState.pendingApis) {
+      const initialStatus: Record<string, ApiAuthStatus> = {}
+      for (const api of agentState.pendingApis) {
+        if (!(api.name in apiStatus)) {
+          initialStatus[api.name] = 'pending'
+        }
+      }
+      if (Object.keys(initialStatus).length > 0) {
+        setApiStatus(prev => ({ ...prev, ...initialStatus }))
+      }
+    }
+  }, [agentState.status.status, agentState.pendingApis, apiStatus])
+
+  // MCP OAuth handler
+  const handleStartMcpOAuth = useCallback(async (serverName: string) => {
+    const server = agentState.pendingMcpServers?.find(s => s.name === serverName)
+    if (!server) return
+
+    setMcpServerStatus(prev => ({ ...prev, [serverName]: 'authenticating' }))
+
+    try {
+      const result = await window.electronAPI.startMcpOAuth(workspaceId, agentId, server.url, serverName)
+      if (result.success) {
+        setMcpServerStatus(prev => ({ ...prev, [serverName]: 'authenticated' }))
+      } else {
+        // Fall back to bearer input on failure
+        setMcpServerStatus(prev => ({ ...prev, [serverName]: 'bearer-input' }))
+        console.warn('[AgentSetupTabPanel] OAuth failed, falling back to bearer:', result.error)
+      }
+    } catch (error) {
+      console.error('[AgentSetupTabPanel] OAuth error:', error)
+      setMcpServerStatus(prev => ({ ...prev, [serverName]: 'bearer-input' }))
+    }
+  }, [workspaceId, agentId, agentState.pendingMcpServers])
+
+  // MCP Bearer token handler
+  const handleSubmitMcpBearer = useCallback(async (serverName: string, token: string) => {
+    try {
+      await window.electronAPI.saveMcpBearer(workspaceId, agentId, serverName, token)
+      setMcpServerStatus(prev => ({ ...prev, [serverName]: 'authenticated' }))
+    } catch (error) {
+      console.error('[AgentSetupTabPanel] Bearer save error:', error)
+    }
+  }, [workspaceId, agentId])
+
+  // Skip MCP server
+  const handleSkipMcpServer = useCallback((serverName: string) => {
+    setMcpServerStatus(prev => ({ ...prev, [serverName]: 'skipped' }))
+  }, [])
+
+  // Complete MCP auth - notify main process to continue
+  const handleMcpAuthComplete = useCallback(async () => {
+    await agentState.continueAfterMcpAuth()
+  }, [agentState])
+
+  // API credentials handler
+  const handleSubmitApiCredentials = useCallback(async (
+    apiName: string,
+    credentials: string | { username: string; password: string }
+  ) => {
+    try {
+      const credString = typeof credentials === 'string' ? credentials : JSON.stringify(credentials)
+      await window.electronAPI.saveApiCredentials(workspaceId, agentId, apiName, credString)
+      setApiStatus(prev => ({ ...prev, [apiName]: 'configured' }))
+    } catch (error) {
+      console.error('[AgentSetupTabPanel] API credentials save error:', error)
+    }
+  }, [workspaceId, agentId])
+
+  // Skip API
+  const handleSkipApi = useCallback((apiName: string) => {
+    setApiStatus(prev => ({ ...prev, [apiName]: 'skipped' }))
+  }, [])
+
+  // Complete API auth - notify main process to continue
+  const handleApiAuthComplete = useCallback(async () => {
+    await agentState.continueAfterApiAuth()
+  }, [agentState])
+
+  // Review submission handler
+  const handleSubmitReview = useCallback(async (answers: Record<number, string>) => {
+    // Convert numeric keys to string keys for the API
+    const stringAnswers: Record<string, string> = {}
+    for (const [key, value] of Object.entries(answers)) {
+      stringAnswers[String(key)] = value
+    }
+    await agentState.continueAfterReview(stringAnswers)
+  }, [agentState])
+
+  // Retry handler
+  const handleRetry = useCallback(async () => {
+    // Reset local state
+    setMcpServerStatus({})
+    setApiStatus({})
+    // Re-activate
+    await agentState.activate()
+  }, [agentState])
 
   // Handle "Start Chat" - create session and switch to chat tab
-  const handleStartChat = async () => {
+  const handleStartChat = useCallback(async () => {
     try {
-      const session = await window.electronAPI.createSession(
-        workspaceId,
-        agentId,
-        setup.definition?.name
-      )
+      // Mark agent as active in main process
+      agentState.markActive()
+      // Use context's onCreateSession which updates the sessions state
+      const session = await onCreateSession(workspaceId, agentId)
       // Open chat tab with the new session
       openChatTab(
         session.id,
         workspaceId,
-        session.name || setup.definition?.name || 'New Chat',
+        session.name || agentState.agentName || agentName,
         agentId
       )
       // Close setup tab
@@ -94,11 +206,29 @@ export default function AgentSetupTabPanel({ tab }: AgentSetupTabPanelProps) {
     } catch (error) {
       console.error('[AgentSetupTabPanel] Error creating session:', error)
     }
-  }
+  }, [agentState, workspaceId, agentId, agentName, onCreateSession, openChatTab, closeTab, tab.id])
 
   // Handle close/cancel
-  const handleClose = () => {
+  const handleClose = useCallback(() => {
     closeTab(tab.id)
+  }, [closeTab, tab.id])
+
+  // Build wizard state from agent state
+  // For mcpServers and apis, prefer definition when available (ready state),
+  // otherwise use pending lists (auth steps)
+  const wizardState: AgentSetupState = {
+    step: mapStatusToWizardStep(agentState.status),
+    agentId,
+    agentName: agentState.agentName || agentName,
+    extractionMessage: agentState.extractionMessage || undefined,
+    concerns: agentState.pendingConcerns || [],
+    mcpServers: agentState.activeDefinition?.mcpServers || agentState.pendingMcpServers || [],
+    mcpServerStatus,
+    apis: agentState.activeDefinition?.apis || agentState.pendingApis || [],
+    apiStatus,
+    capabilities: agentState.activeDefinition?.capabilities || [],
+    errorMessage: agentState.errorMessage || undefined,
+    isLoading: agentState.isLoading,
   }
 
   return (
@@ -107,16 +237,16 @@ export default function AgentSetupTabPanel({ tab }: AgentSetupTabPanelProps) {
         state={wizardState}
         onCancel={handleClose}
         onBack={handleClose}
-        onSubmitReview={setup.submitReview}
-        onStartMcpOAuth={setup.startMcpOAuth}
-        onSubmitMcpBearer={setup.submitMcpBearer}
-        onSkipMcpServer={setup.skipMcpServer}
-        onMcpAuthComplete={setup.completeMcpAuth}
-        onSubmitApiCredentials={setup.submitApiCredentials}
-        onSkipApi={setup.skipApi}
-        onApiAuthComplete={setup.completeApiAuth}
+        onSubmitReview={handleSubmitReview}
+        onStartMcpOAuth={handleStartMcpOAuth}
+        onSubmitMcpBearer={handleSubmitMcpBearer}
+        onSkipMcpServer={handleSkipMcpServer}
+        onMcpAuthComplete={handleMcpAuthComplete}
+        onSubmitApiCredentials={handleSubmitApiCredentials}
+        onSkipApi={handleSkipApi}
+        onApiAuthComplete={handleApiAuthComplete}
         onActivate={handleStartChat}
-        onRetry={setup.retry}
+        onRetry={handleRetry}
         onStartChat={handleStartChat}
         onClose={handleClose}
         className="h-full"

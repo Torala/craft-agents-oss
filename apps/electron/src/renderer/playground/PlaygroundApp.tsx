@@ -6,13 +6,41 @@ import { ComponentPreview } from './ComponentPreview'
 import { PropsPanel } from './PropsPanel'
 import { getCategories, getComponentById, type ComponentVariant } from './registry'
 
+const SELECTED_STORAGE_KEY = 'playground-selected-component'
+
 export function PlaygroundApp() {
   const categories = React.useMemo(() => getCategories(), [])
-  const [selectedId, setSelectedId] = React.useState<string | null>(
-    categories[0]?.components[0]?.id ?? null
-  )
+  const [selectedId, setSelectedId] = React.useState<string | null>(() => {
+    // Try to restore from localStorage
+    try {
+      const stored = localStorage.getItem(SELECTED_STORAGE_KEY)
+      if (stored) {
+        // Verify the component still exists
+        const component = getComponentById(stored)
+        if (component) {
+          return stored
+        }
+      }
+    } catch {
+      // Ignore parse errors
+    }
+    return null
+  })
   const [props, setProps] = React.useState<Record<string, unknown>>({})
   const [selectedVariant, setSelectedVariant] = React.useState<string | null>(null)
+
+  // Persist selected component to localStorage
+  React.useEffect(() => {
+    try {
+      if (selectedId) {
+        localStorage.setItem(SELECTED_STORAGE_KEY, selectedId)
+      } else {
+        localStorage.removeItem(SELECTED_STORAGE_KEY)
+      }
+    } catch {
+      // Ignore storage errors
+    }
+  }, [selectedId])
 
   const selectedComponent = selectedId ? getComponentById(selectedId) : null
 

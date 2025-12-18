@@ -204,8 +204,15 @@ export function AgentSetupWizard({
     }
   }
 
+  // Don't center vertically for steps that fill height
+  const centerVertically = step !== 'ready'
+
   return (
-    <div className={cn("flex h-full flex-col items-center justify-center p-8", className)}>
+    <div className={cn(
+      "flex h-full flex-col items-center p-8",
+      centerVertically && "justify-center",
+      className
+    )}>
       {renderStep()}
     </div>
   )

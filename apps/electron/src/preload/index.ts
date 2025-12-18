@@ -17,6 +17,13 @@ const api: ElectronAPI = {
   // Workspace management
   getWorkspaces: () => ipcRenderer.invoke(IPC_CHANNELS.GET_WORKSPACES),
 
+  // Window management
+  getWindowWorkspace: () => ipcRenderer.invoke(IPC_CHANNELS.GET_WINDOW_WORKSPACE),
+  getWindowMode: () => ipcRenderer.invoke(IPC_CHANNELS.GET_WINDOW_MODE),
+  openWorkspace: (workspaceId: string) => ipcRenderer.invoke(IPC_CHANNELS.OPEN_WORKSPACE, workspaceId),
+  openAddWorkspaceWindow: () => ipcRenderer.invoke(IPC_CHANNELS.OPEN_ADD_WORKSPACE),
+  closeWindow: () => ipcRenderer.invoke(IPC_CHANNELS.CLOSE_WINDOW),
+
   // Agent management
   getAgents: (workspaceId: string) => ipcRenderer.invoke(IPC_CHANNELS.GET_AGENTS, workspaceId),
   refreshAgents: (workspaceId: string) => ipcRenderer.invoke(IPC_CHANNELS.REFRESH_AGENTS, workspaceId),
@@ -34,18 +41,18 @@ const api: ElectronAPI = {
   saveApiCredentials: (workspaceId: string, agentId: string, apiName: string, credential: string) => ipcRenderer.invoke(IPC_CHANNELS.SAVE_API_CREDENTIALS, workspaceId, agentId, apiName, credential),
   validateMcpConnection: (serverUrl: string, accessToken?: string) => ipcRenderer.invoke(IPC_CHANNELS.VALIDATE_MCP_CONNECTION, serverUrl, accessToken),
 
-  // Agent state management (unified state machine)
-  getAgentStatus: (sessionId: string) => ipcRenderer.invoke(IPC_CHANNELS.AGENT_GET_STATUS, sessionId),
-  activateAgent: (sessionId: string, agentId: string, options?: AgentActivateOptions) => ipcRenderer.invoke(IPC_CHANNELS.AGENT_ACTIVATE, sessionId, agentId, options),
-  continueAfterReview: (sessionId: string, answers: Record<string, string>) => ipcRenderer.invoke(IPC_CHANNELS.AGENT_CONTINUE_REVIEW, sessionId, answers),
-  continueAfterMcpAuth: (sessionId: string) => ipcRenderer.invoke(IPC_CHANNELS.AGENT_CONTINUE_MCP_AUTH, sessionId),
-  continueAfterApiAuth: (sessionId: string) => ipcRenderer.invoke(IPC_CHANNELS.AGENT_CONTINUE_API_AUTH, sessionId),
-  deactivateAgent: (sessionId: string) => ipcRenderer.invoke(IPC_CHANNELS.AGENT_DEACTIVATE, sessionId),
-  reloadAgentState: (sessionId: string) => ipcRenderer.invoke(IPC_CHANNELS.AGENT_RELOAD, sessionId),
-  resetAgentState: (sessionId: string) => ipcRenderer.invoke(IPC_CHANNELS.AGENT_RESET, sessionId),
-  markAgentActive: (sessionId: string) => ipcRenderer.invoke(IPC_CHANNELS.AGENT_MARK_ACTIVE, sessionId),
+  // Agent state management (unified state machine, agent-scoped)
+  getAgentStatus: (workspaceId: string, agentId: string) => ipcRenderer.invoke(IPC_CHANNELS.AGENT_GET_STATUS, workspaceId, agentId),
+  activateAgent: (workspaceId: string, agentId: string, options?: AgentActivateOptions) => ipcRenderer.invoke(IPC_CHANNELS.AGENT_ACTIVATE, workspaceId, agentId, options),
+  continueAfterReview: (workspaceId: string, agentId: string, answers: Record<string, string>) => ipcRenderer.invoke(IPC_CHANNELS.AGENT_CONTINUE_REVIEW, workspaceId, agentId, answers),
+  continueAfterMcpAuth: (workspaceId: string, agentId: string) => ipcRenderer.invoke(IPC_CHANNELS.AGENT_CONTINUE_MCP_AUTH, workspaceId, agentId),
+  continueAfterApiAuth: (workspaceId: string, agentId: string) => ipcRenderer.invoke(IPC_CHANNELS.AGENT_CONTINUE_API_AUTH, workspaceId, agentId),
+  deactivateAgent: (workspaceId: string, agentId: string) => ipcRenderer.invoke(IPC_CHANNELS.AGENT_DEACTIVATE, workspaceId, agentId),
+  reloadAgentState: (workspaceId: string, agentId: string) => ipcRenderer.invoke(IPC_CHANNELS.AGENT_RELOAD, workspaceId, agentId),
+  resetAgentState: (workspaceId: string, agentId: string) => ipcRenderer.invoke(IPC_CHANNELS.AGENT_RESET, workspaceId, agentId),
+  markAgentActive: (workspaceId: string, agentId: string) => ipcRenderer.invoke(IPC_CHANNELS.AGENT_MARK_ACTIVE, workspaceId, agentId),
 
-  // Event listener
+  // Event listeners
   onSessionEvent: (callback: (event: SessionEvent) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, sessionEvent: SessionEvent) => {
       callback(sessionEvent)
@@ -54,6 +61,24 @@ const api: ElectronAPI = {
     // Return cleanup function
     return () => {
       ipcRenderer.removeListener(IPC_CHANNELS.SESSION_EVENT, handler)
+    }
+  },
+  onAgentStatusChanged: (callback: (workspaceId: string, agentId: string, status: import('../shared/types').AgentStatus) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, workspaceId: string, agentId: string, status: import('../shared/types').AgentStatus) => {
+      callback(workspaceId, agentId, status)
+    }
+    ipcRenderer.on(IPC_CHANNELS.AGENT_STATUS_CHANGED, handler)
+    return () => {
+      ipcRenderer.removeListener(IPC_CHANNELS.AGENT_STATUS_CHANGED, handler)
+    }
+  },
+  onAgentAuthChanged: (callback: (workspaceId: string, agentId: string) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, workspaceId: string, agentId: string) => {
+      callback(workspaceId, agentId)
+    }
+    ipcRenderer.on(IPC_CHANNELS.AGENT_AUTH_CHANGED, handler)
+    return () => {
+      ipcRenderer.removeListener(IPC_CHANNELS.AGENT_AUTH_CHANGED, handler)
     }
   },
 
@@ -137,6 +162,10 @@ const api: ElectronAPI = {
   getBillingMethod: () => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_GET_BILLING_METHOD),
   updateBillingMethod: (authType: AuthType, credential?: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_UPDATE_BILLING_METHOD, authType, credential),
+
+  // User Preferences
+  readPreferences: () => ipcRenderer.invoke(IPC_CHANNELS.PREFERENCES_READ),
+  writePreferences: (content: string) => ipcRenderer.invoke(IPC_CHANNELS.PREFERENCES_WRITE, content),
 }
 
 contextBridge.exposeInMainWorld('electronAPI', api)

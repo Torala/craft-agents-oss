@@ -1,21 +1,17 @@
-import { app, BrowserWindow, shell, nativeTheme } from 'electron'
+import { app, BrowserWindow } from 'electron'
 import { join } from 'path'
 import { existsSync } from 'fs'
 import { SessionManager } from './sessions'
 import { registerIpcHandlers } from './ipc'
 import { createApplicationMenu } from './menu'
-import { IPC_CHANNELS } from '../shared/types'
-
-// Check if running in development mode
-const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged
-
-// Vite dev server URL for hot reload
-const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL
+import { WindowManager } from './window-manager'
+import { loadWindowState, saveWindowState } from './window-state'
+import { getWorkspaces } from '@craft-agent/shared/config'
 
 // Custom URL scheme for deeplinks (e.g., craftagents://auth-complete)
 const DEEPLINK_SCHEME = 'craftagents'
 
-let mainWindow: BrowserWindow | null = null
+let windowManager: WindowManager | null = null
 let sessionManager: SessionManager | null = null
 
 // Register as default protocol client for craftagents:// URLs
@@ -35,10 +31,14 @@ app.on('open-url', (event, url) => {
   event.preventDefault()
   console.log('[Main] Received deeplink:', url)
 
-  // Bring the app to focus
-  if (mainWindow) {
-    if (mainWindow.isMinimized()) mainWindow.restore()
-    mainWindow.focus()
+  // Focus any window or create one if none exist
+  if (windowManager) {
+    const windows = windowManager.getAllWindows()
+    if (windows.length > 0) {
+      const win = windows[0].window
+      if (win.isMinimized()) win.restore()
+      win.focus()
+    }
   }
 })
 
@@ -55,93 +55,51 @@ if (!gotTheLock) {
       console.log('[Main] Received deeplink from second instance:', url)
     }
 
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore()
-      mainWindow.focus()
+    // Focus any window or create one if none exist
+    if (windowManager) {
+      const windows = windowManager.getAllWindows()
+      if (windows.length > 0) {
+        const win = windows[0].window
+        if (win.isMinimized()) win.restore()
+        win.focus()
+      }
     }
   })
 }
 
-function createWindow(): void {
-  // Load platform-specific app icon
-  const getIconPath = () => {
-    const resourcesDir = join(__dirname, '../resources')
-    if (process.platform === 'darwin') {
-      return join(resourcesDir, 'icon.icns')
-    } else if (process.platform === 'win32') {
-      return join(resourcesDir, 'icon.ico')
-    } else {
-      return join(resourcesDir, 'icon.png')
+// Helper to create initial windows on startup
+async function createInitialWindows(): Promise<void> {
+  if (!windowManager) return
+
+  // Load saved window state
+  const savedState = loadWindowState()
+  const workspaces = getWorkspaces()
+
+  if (workspaces.length === 0) {
+    // No workspaces configured - create window without workspace (will show onboarding)
+    windowManager.createWindow('')
+    return
+  }
+
+  if (savedState?.openWorkspaceIds.length) {
+    // Restore windows from saved state
+    // Filter to only workspaces that still exist
+    const validWorkspaceIds = savedState.openWorkspaceIds.filter(
+      wsId => workspaces.some(ws => ws.id === wsId)
+    )
+
+    if (validWorkspaceIds.length > 0) {
+      for (const wsId of validWorkspaceIds) {
+        windowManager.createWindow(wsId)
+      }
+      console.log(`[Main] Restored ${validWorkspaceIds.length} window(s) from saved state`)
+      return
     }
   }
 
-  const iconPath = getIconPath()
-  const iconExists = existsSync(iconPath)
-
-  if (!iconExists) {
-    console.warn('[Main] App icon not found at:', iconPath)
-  }
-
-  mainWindow = new BrowserWindow({
-    width: 1400,
-    height: 900,
-    minWidth: 800,
-    minHeight: 600,
-    title: '',
-    icon: iconExists ? iconPath : undefined,
-    titleBarStyle: 'hiddenInset',
-    trafficLightPosition: { x: 18, y: 18 },
-    vibrancy: 'under-window',
-    visualEffectState: 'active',
-    webPreferences: {
-      preload: join(__dirname, 'preload.cjs'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      webviewTag: true // Enable webview for browser panel
-    }
-  })
-
-  // Open external links in default browser
-  mainWindow.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url)
-    return { action: 'deny' }
-  })
-
-  // Handle navigation in webviews to external URLs
-  mainWindow.webContents.on('will-navigate', (event, url) => {
-    // Allow navigation within the app, but open external URLs in browser
-    if (!url.startsWith('file://')) {
-      event.preventDefault()
-      shell.openExternal(url)
-    }
-  })
-
-  // Load the renderer - from Vite dev server in dev mode, or file in production
-  if (VITE_DEV_SERVER_URL) {
-    mainWindow.loadURL(VITE_DEV_SERVER_URL)
-  } else {
-    mainWindow.loadFile(join(__dirname, 'renderer/index.html'))
-  }
-
-  // Open DevTools only in development mode
-  if (isDev) {
-    mainWindow.webContents.openDevTools()
-  }
-
-  // Handle window close
-  mainWindow.on('closed', () => {
-    mainWindow = null
-  })
-
-  // Update session manager with new window reference
-  if (sessionManager) {
-    sessionManager.setMainWindow(mainWindow)
-  }
-
-  // Listen for system theme changes and notify renderer
-  nativeTheme.on('updated', () => {
-    mainWindow?.webContents.send(IPC_CHANNELS.SYSTEM_THEME_CHANGED, nativeTheme.shouldUseDarkColors)
-  })
+  // Default: open window for first workspace
+  windowManager.createWindow(workspaces[0].id)
+  console.log(`[Main] Created window for first workspace: ${workspaces[0].name}`)
 }
 
 app.whenReady().then(async () => {
@@ -159,14 +117,18 @@ app.whenReady().then(async () => {
   }
 
   try {
-    // Initialize session manager first
+    // Initialize window manager
+    windowManager = new WindowManager()
+
+    // Initialize session manager
     sessionManager = new SessionManager()
+    sessionManager.setWindowManager(windowManager)
 
     // Register IPC handlers (must happen before window creation)
-    registerIpcHandlers(sessionManager)
+    registerIpcHandlers(sessionManager, windowManager)
 
-    // Create the main window
-    createWindow()
+    // Create initial windows (restores from saved state or opens first workspace)
+    await createInitialWindows()
 
     // Initialize auth (must happen after window creation for error reporting)
     await sessionManager.initialize()
@@ -179,8 +141,19 @@ app.whenReady().then(async () => {
 
   // macOS: Re-create window when dock icon is clicked
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow()
+    if (!windowManager?.hasWindows()) {
+      // Open first workspace or last focused
+      const workspaces = getWorkspaces()
+      if (workspaces.length > 0 && windowManager) {
+        const savedState = loadWindowState()
+        const wsId = savedState?.lastFocusedWorkspaceId || workspaces[0].id
+        // Verify workspace still exists
+        if (workspaces.some(ws => ws.id === wsId)) {
+          windowManager.createWindow(wsId)
+        } else {
+          windowManager.createWindow(workspaces[0].id)
+        }
+      }
     }
   })
 })
@@ -189,6 +162,25 @@ app.on('window-all-closed', () => {
   // On macOS, apps typically stay active until explicitly quit
   if (process.platform !== 'darwin') {
     app.quit()
+  }
+})
+
+// Save window state before quitting
+app.on('before-quit', () => {
+  if (windowManager) {
+    const openWorkspaceIds = windowManager.getOpenWorkspaceIds()
+    // Get the focused window's workspace as last focused
+    const focusedWindow = BrowserWindow.getFocusedWindow()
+    let lastFocusedWorkspaceId: string | undefined
+    if (focusedWindow) {
+      lastFocusedWorkspaceId = windowManager.getWorkspaceForWindow(focusedWindow.webContents.id) ?? undefined
+    }
+
+    saveWindowState({
+      openWorkspaceIds,
+      lastFocusedWorkspaceId,
+    })
+    console.log('[Main] Saved window state:', openWorkspaceIds.length, 'workspaces')
   }
 })
 

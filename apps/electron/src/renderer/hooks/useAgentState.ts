@@ -1,12 +1,12 @@
 /**
  * useAgentState - React hook for agent activation state management (Electron)
  *
- * Provides the same interface as the TUI useAgentState hook but communicates
- * via IPC with the main process where AgentStateManager lives.
+ * Agent-scoped: One state per (workspaceId, agentId) pair.
+ * This is the single source of truth for agent activation state.
  *
  * Usage:
  * ```tsx
- * const agentState = useAgentState(sessionId);
+ * const agentState = useAgentState(workspaceId, agentId);
  *
  * // Check status
  * if (agentState.isNeedsMcpAuth) {
@@ -14,7 +14,7 @@
  * }
  *
  * // Trigger activation
- * await agentState.activate(agentId);
+ * await agentState.activate();
  * ```
  */
 
@@ -56,44 +56,51 @@ export interface UseAgentStateResult {
   pendingMcpServers: McpServerConfig[] | null
   pendingApis: ApiConfig[] | null
 
-  // Actions
-  activate: (agentId: string, options?: AgentActivateOptions) => Promise<AgentStatus>
+  // Actions (no agentId param needed - it's in the hook signature)
+  activate: (options?: AgentActivateOptions) => Promise<AgentStatus>
   continueAfterReview: (answers: Record<string, string>) => Promise<AgentStatus>
   skipReview: () => Promise<AgentStatus>
   continueAfterMcpAuth: () => Promise<AgentStatus>
   continueAfterApiAuth: () => Promise<AgentStatus>
-  deactivate: () => Promise<void>
+  deactivate: () => void
   reload: () => Promise<AgentStatus>
   reset: () => Promise<void>
-  markActive: () => Promise<void>
+  markActive: () => void
 
   // Loading state for async operations
   isLoading: boolean
 }
 
-export function useAgentState(sessionId: string | null): UseAgentStateResult {
+/**
+ * Hook for managing agent activation state.
+ * Agent-scoped: keyed by (workspaceId, agentId).
+ *
+ * @param workspaceId - The workspace ID (or null if not selected)
+ * @param agentId - The agent ID (or null if not selected)
+ */
+export function useAgentState(workspaceId: string | null, agentId: string | null): UseAgentStateResult {
   const [status, setStatus] = useState<AgentStatus>({ status: 'idle' })
   const [isLoading, setIsLoading] = useState(false)
 
-  // Subscribe to agent_status events from main process
+  // Subscribe to agent status changes from main process
   useEffect(() => {
-    if (!sessionId) {
+    if (!workspaceId || !agentId) {
       setStatus({ status: 'idle' })
       return
     }
 
     // Get initial status
-    window.electronAPI.getAgentStatus(sessionId).then(setStatus).catch(console.error)
+    window.electronAPI.getAgentStatus(workspaceId, agentId).then(setStatus).catch(console.error)
 
-    // Listen for status updates via session events
-    const cleanup = window.electronAPI.onSessionEvent((event) => {
-      if (event.type === 'agent_status' && event.sessionId === sessionId) {
-        setStatus(event.status)
+    // Listen for status updates via AGENT_STATUS_CHANGED broadcast
+    const cleanup = window.electronAPI.onAgentStatusChanged((ws, agent, newStatus) => {
+      if (ws === workspaceId && agent === agentId) {
+        setStatus(newStatus)
       }
     })
 
     return cleanup
-  }, [sessionId])
+  }, [workspaceId, agentId])
 
   // Derive convenience booleans from status
   const isIdle = status.status === 'idle'
@@ -109,8 +116,8 @@ export function useAgentState(sessionId: string | null): UseAgentStateResult {
   const activeDefinition =
     status.status === 'ready' || status.status === 'active' ? status.definition : null
 
-  const agentId = 'agentId' in status ? status.agentId : null
-  const agentName = 'agentName' in status ? status.agentName : null
+  const derivedAgentId = 'agentId' in status ? status.agentId : null
+  const derivedAgentName = 'agentName' in status ? status.agentName : null
 
   const extractionMessage = status.status === 'extracting' ? status.message : null
   const errorMessage = status.status === 'error' ? status.error : null
@@ -119,39 +126,39 @@ export function useAgentState(sessionId: string | null): UseAgentStateResult {
   const pendingMcpServers = status.status === 'needs_mcp_auth' ? status.servers : null
   const pendingApis = status.status === 'needs_api_auth' ? status.apis : null
 
-  // Actions
+  // Actions - now use (workspaceId, agentId) from hook params
   const activate = useCallback(
-    async (agentIdToActivate: string, options?: AgentActivateOptions): Promise<AgentStatus> => {
-      if (!sessionId) {
+    async (options?: AgentActivateOptions): Promise<AgentStatus> => {
+      if (!workspaceId || !agentId) {
         return { status: 'idle' }
       }
       setIsLoading(true)
       try {
-        const result = await window.electronAPI.activateAgent(sessionId, agentIdToActivate, options)
+        const result = await window.electronAPI.activateAgent(workspaceId, agentId, options)
         setStatus(result)
         return result
       } finally {
         setIsLoading(false)
       }
     },
-    [sessionId]
+    [workspaceId, agentId]
   )
 
   const continueAfterReview = useCallback(
     async (answers: Record<string, string>): Promise<AgentStatus> => {
-      if (!sessionId) {
+      if (!workspaceId || !agentId) {
         return status
       }
       setIsLoading(true)
       try {
-        const result = await window.electronAPI.continueAfterReview(sessionId, answers)
+        const result = await window.electronAPI.continueAfterReview(workspaceId, agentId, answers)
         setStatus(result)
         return result
       } finally {
         setIsLoading(false)
       }
     },
-    [sessionId, status]
+    [workspaceId, agentId, status]
   )
 
   const skipReview = useCallback(async (): Promise<AgentStatus> => {
@@ -159,69 +166,69 @@ export function useAgentState(sessionId: string | null): UseAgentStateResult {
   }, [continueAfterReview])
 
   const continueAfterMcpAuth = useCallback(async (): Promise<AgentStatus> => {
-    if (!sessionId) {
+    if (!workspaceId || !agentId) {
       return status
     }
     setIsLoading(true)
     try {
-      const result = await window.electronAPI.continueAfterMcpAuth(sessionId)
+      const result = await window.electronAPI.continueAfterMcpAuth(workspaceId, agentId)
       setStatus(result)
       return result
     } finally {
       setIsLoading(false)
     }
-  }, [sessionId, status])
+  }, [workspaceId, agentId, status])
 
   const continueAfterApiAuth = useCallback(async (): Promise<AgentStatus> => {
-    if (!sessionId) {
+    if (!workspaceId || !agentId) {
       return status
     }
     setIsLoading(true)
     try {
-      const result = await window.electronAPI.continueAfterApiAuth(sessionId)
+      const result = await window.electronAPI.continueAfterApiAuth(workspaceId, agentId)
       setStatus(result)
       return result
     } finally {
       setIsLoading(false)
     }
-  }, [sessionId, status])
+  }, [workspaceId, agentId, status])
 
-  const deactivate = useCallback(async (): Promise<void> => {
-    if (!sessionId) {
+  const deactivate = useCallback((): void => {
+    if (!workspaceId || !agentId) {
       return
     }
-    await window.electronAPI.deactivateAgent(sessionId)
+    window.electronAPI.deactivateAgent(workspaceId, agentId)
     setStatus({ status: 'idle' })
-  }, [sessionId])
+  }, [workspaceId, agentId])
 
   const reload = useCallback(async (): Promise<AgentStatus> => {
-    if (!sessionId) {
+    if (!workspaceId || !agentId) {
       return status
     }
     setIsLoading(true)
     try {
-      const result = await window.electronAPI.reloadAgentState(sessionId)
+      const result = await window.electronAPI.reloadAgentState(workspaceId, agentId)
       setStatus(result)
       return result
     } finally {
       setIsLoading(false)
     }
-  }, [sessionId, status])
+  }, [workspaceId, agentId, status])
 
   const reset = useCallback(async (): Promise<void> => {
-    if (!sessionId) {
+    if (!workspaceId || !agentId) {
       return
     }
-    await window.electronAPI.resetAgentState(sessionId)
+    await window.electronAPI.resetAgentState(workspaceId, agentId)
     setStatus({ status: 'idle' })
-  }, [sessionId])
+  }, [workspaceId, agentId])
 
-  const markActive = useCallback(async (): Promise<void> => {
-    if (!sessionId) {
+  const markActive = useCallback((): void => {
+    if (!workspaceId || !agentId) {
       return
     }
-    await window.electronAPI.markAgentActive(sessionId)
-  }, [sessionId])
+    window.electronAPI.markAgentActive(workspaceId, agentId)
+  }, [workspaceId, agentId])
 
   return {
     status,
@@ -234,8 +241,8 @@ export function useAgentState(sessionId: string | null): UseAgentStateResult {
     isActive,
     isError,
     activeDefinition,
-    agentId,
-    agentName,
+    agentId: derivedAgentId,
+    agentName: derivedAgentName,
     extractionMessage,
     errorMessage,
     pendingConcerns,

@@ -638,6 +638,10 @@ export interface StoredMessage {
   isError?: boolean;
   /** Stored attachments for user messages (persisted to disk) */
   attachments?: StoredAttachment[];
+  /** Tool use ID for deduplication (SDK sends duplicate tool_start events) */
+  toolUseId?: string;
+  /** Tool result content (for tool messages) */
+  toolResult?: string;
 }
 
 export interface WorkspaceConversation {

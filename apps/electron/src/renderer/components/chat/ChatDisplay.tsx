@@ -1,18 +1,24 @@
 import * as React from "react"
 import { useEffect } from "react"
+import { useAtom } from "jotai"
 import {
   MessageSquare,
   Sparkles,
   ChevronDown,
+  ChevronUp,
   ChevronRight,
   Paperclip,
   ArrowUp,
   Square,
   Bot,
   AlertTriangle,
+  CheckCircle2,
+  XCircle,
+  Loader2,
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { compactToolDisplayAtom } from "@/tabs/atoms"
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -73,6 +79,7 @@ export function ChatDisplay({
   // Input is only disabled when explicitly disabled (e.g., agent needs activation)
   // User can type during streaming - submitting will stop the stream and send
   const isInputDisabled = disabled
+  const [compactToolDisplay] = useAtom(compactToolDisplayAtom)
   const [input, setInput] = React.useState("")
   const [attachments, setAttachments] = React.useState<FileAttachment[]>([])
   const [isDraggingOver, setIsDraggingOver] = React.useState(false)
@@ -327,15 +334,56 @@ export function ChatDisplay({
                   <p className="text-xs mt-1 text-center">Start a conversation by typing a message below.</p>
                 </div>
               ) : (
-                /* Message List */
-                session.messages.map(message => (
-                  <MessageBubble
-                    key={message.id}
-                    message={message}
-                    onOpenFile={onOpenFile}
-                    onOpenUrl={onOpenUrl}
+                /* Message List - group consecutive tool messages */
+                (() => {
+                  const elements: React.ReactNode[] = []
+                  let toolGroup: Message[] = []
+
+                  const flushToolGroup = () => {
+                    if (toolGroup.length > 0) {
+                      elements.push(
+                        <ToolGroup
+                          key={`tool-group-${toolGroup[0].id}`}
+                          messages={toolGroup}
+                          onOpenFile={onOpenFile}
+                          onOpenUrl={onOpenUrl}
+                        />
+                      )
+                      toolGroup = []
+                    }
+                  }
+
+                  session.messages.forEach(message => {
+                    if (message.role === 'tool' && compactToolDisplay) {
+                      toolGroup.push(message)
+                    } else {
+                      flushToolGroup()
+                      elements.push(
+                        <MessageBubble
+                          key={message.id}
+                          message={message}
+                          onOpenFile={onOpenFile}
+                          onOpenUrl={onOpenUrl}
+                          compactToolDisplay={compactToolDisplay}
+                        />
+                      )
+                    }
+                  })
+                  flushToolGroup()
+
+                  return elements
+                })()
+              )}
+              {/* Thinking Indicator - shows when processing and not streaming */}
+              {session.isProcessing && !session.messages.some(m => m.isStreaming) && (
+                <div className="flex justify-start pl-1">
+                  <LoadingIndicator
+                    label="Thinking..."
+                    showElapsed
+                    className="text-sm"
+                    spinnerClassName="text-[10px]"
                   />
-                ))
+                </div>
               )}
               {/* Scroll Anchor: For auto-scroll to bottom */}
               <div ref={messagesEndRef} />
@@ -473,6 +521,85 @@ export function ChatDisplay({
 }
 
 /**
+ * ToolGroup - Collapsible group of consecutive tool calls
+ * Shows first few tools with expand/collapse toggle
+ */
+interface ToolGroupProps {
+  messages: Message[]
+  onOpenFile: (path: string) => void
+  onOpenUrl: (url: string) => void
+}
+
+function ToolGroup({ messages, onOpenFile, onOpenUrl }: ToolGroupProps) {
+  const [expanded, setExpanded] = React.useState(false)
+  const COLLAPSED_COUNT = 3
+
+  // Check if any tool is still running
+  // Note: We check toolResult specifically because content is always set
+  // (to a placeholder like "Running toolName...") even while running
+  const hasRunningTool = messages.some(m => !m.toolResult)
+  const allCompleted = messages.every(m => !!m.toolResult)
+  const hasError = messages.some(m => m.isError)
+
+  // Show all if expanded, still running, or few tools
+  const shouldShowAll = expanded || hasRunningTool || messages.length <= COLLAPSED_COUNT
+  const visibleMessages = shouldShowAll ? messages : messages.slice(0, COLLAPSED_COUNT)
+  const hiddenCount = messages.length - COLLAPSED_COUNT
+
+  return (
+    <div className="my-2">
+      <div className="border rounded-lg overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center gap-2 px-3 py-1.5 bg-muted/50 border-b">
+          <div className={cn(
+            "w-2 h-2 rounded-full",
+            hasRunningTool ? "bg-amber-500 animate-pulse" :
+            hasError ? "bg-destructive" : "bg-green-500"
+          )} />
+          <span className="text-xs font-medium text-muted-foreground">
+            {hasRunningTool ? 'Running tools...' :
+             `${messages.length} tool${messages.length > 1 ? 's' : ''} completed`}
+          </span>
+        </div>
+
+        {/* Tool list */}
+        <div className="py-1">
+          {visibleMessages.map(msg => (
+            <MessageBubble
+              key={msg.id}
+              message={msg}
+              onOpenFile={onOpenFile}
+              onOpenUrl={onOpenUrl}
+              compactToolDisplay={true}
+            />
+          ))}
+        </div>
+
+        {/* Show more/less toggle */}
+        {messages.length > COLLAPSED_COUNT && allCompleted && (
+          <button
+            onClick={() => setExpanded(!expanded)}
+            className="w-full px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted/50 border-t transition-colors flex items-center justify-center gap-1"
+          >
+            {expanded ? (
+              <>
+                <ChevronUp className="w-3 h-3" />
+                Show less
+              </>
+            ) : (
+              <>
+                <ChevronDown className="w-3 h-3" />
+                Show {hiddenCount} more
+              </>
+            )}
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/**
  * MessageBubble - Renders a single message based on its role
  *
  * Message Roles & Styles:
@@ -491,6 +618,11 @@ interface MessageBubbleProps {
    * @default 'minimal'
    */
   renderMode?: RenderMode
+  /**
+   * Tool display mode: compact (single line) or verbose (expanded with input/output)
+   * @default true
+   */
+  compactToolDisplay?: boolean
 }
 
 /**
@@ -538,7 +670,13 @@ function ErrorMessage({ message }: { message: Message }) {
   )
 }
 
-function MessageBubble({ message, onOpenFile, onOpenUrl, renderMode = 'minimal' }: MessageBubbleProps) {
+function MessageBubble({
+  message,
+  onOpenFile,
+  onOpenUrl,
+  renderMode = 'minimal',
+  compactToolDisplay = true,
+}: MessageBubbleProps) {
   // === USER MESSAGE: Right-aligned blue bubble with attachments above ===
   if (message.role === 'user') {
     const hasAttachments = message.attachments && message.attachments.length > 0
@@ -644,42 +782,130 @@ function MessageBubble({ message, onOpenFile, onOpenUrl, renderMode = 'minimal' 
     )
   }
 
-  // === TOOL MESSAGE: Bordered card with header + result preview ===
+  // === TOOL MESSAGE: Compact (single line) or Verbose (expanded with input/output) ===
   if (message.role === 'tool') {
+    // Check toolResult specifically because content is always set
+    // (to a placeholder like "Running toolName...") even while running
+    const isRunning = !message.toolResult
+    const result = message.toolResult || message.content
+    const isError = message.isError
+
+    // Get friendly tool name
+    const getToolDisplayName = (name: string): string => {
+      // Strip MCP prefixes (mcp__craft__, mcp__docs__, etc.)
+      const stripped = name.replace(/^mcp__[^_]+__/, '')
+      // Special display names for common tools
+      const displayNames: Record<string, string> = {
+        'WebFetch': 'Fetching',
+        'WebSearch': 'Searching',
+        'Read': 'Reading',
+        'Write': 'Writing',
+        'Edit': 'Editing',
+        'Glob': 'Finding files',
+        'Grep': 'Searching code',
+        'Bash': 'Running command',
+      }
+      return displayNames[stripped] || stripped
+    }
+
+    // Format tool input for display
+    const formatToolInput = (input?: Record<string, unknown>): string => {
+      if (!input || Object.keys(input).length === 0) return ''
+      const parts: string[] = []
+      for (const [key, value] of Object.entries(input)) {
+        if (key === '_intent' || value === undefined || value === null) continue
+        let valStr = typeof value === 'string'
+          ? value.replace(/\s+/g, ' ').trim()
+          : JSON.stringify(value)
+        if (valStr.length > 60) valStr = valStr.slice(0, 60) + '...'
+        parts.push(`${key}: ${valStr}`)
+      }
+      return parts.join(', ')
+    }
+
+    // Get status icon
+    const StatusIcon = isRunning
+      ? () => <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-500" />
+      : isError
+        ? () => <XCircle className="w-3.5 h-3.5 text-destructive" />
+        : () => <CheckCircle2 className="w-3.5 h-3.5 text-green-500" />
+
+    const displayName = getToolDisplayName(message.toolName || 'unknown')
+    const inputSummary = formatToolInput(message.toolInput)
+
+    // === COMPACT MODE: Single line with status icon ===
+    if (compactToolDisplay) {
+      return (
+        <div className="flex justify-start">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground py-0.5 px-2">
+            <StatusIcon />
+            <span className="font-medium">{displayName}</span>
+            {inputSummary && (
+              <span className="text-xs opacity-70 truncate max-w-[300px]">{inputSummary}</span>
+            )}
+            {isError && result && (
+              <span className="text-xs text-destructive truncate max-w-[200px]">
+                — {result.replace(/\n/g, ' ').slice(0, 50)}
+              </span>
+            )}
+          </div>
+        </div>
+      )
+    }
+
+    // === VERBOSE MODE: Expanded card with input/output ===
     return (
       <div className="flex justify-start">
         <div className="max-w-[85%] border rounded-lg overflow-hidden">
-          {/* Tool Header: Gear icon + tool name */}
+          {/* Tool Header: Status icon + tool name */}
           <div className="flex items-center gap-2 pl-4 pr-3 py-2 bg-muted/50 border-b">
-            <div className="p-1 rounded bg-primary/10 text-primary">
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
-            </div>
+            <StatusIcon />
             <span className="text-xs font-semibold uppercase tracking-wide">{message.toolName}</span>
           </div>
-          {/* Tool Result: Shows preview (max 500 chars) or "Running..." spinner */}
-          <div className="pl-4 pr-3 py-2 min-w-0">
-            {(() => {
-              // Check both toolResult and content for backwards compat with old persisted sessions
-              const result = message.toolResult || message.content
-              if (result) {
-                return (
-                  <pre className="text-xs text-muted-foreground max-h-48 overflow-y-auto font-mono bg-muted/30 p-2 rounded whitespace-pre-wrap break-words">
-                    {result.slice(0, 500)}
-                    {result.length > 500 && '...'}
-                  </pre>
-                )
-              }
-              /* Running Indicator: Braille spinner + "Running..." text */
-              return (
-                <LoadingIndicator
-                  label="Running..."
-                  className="text-sm text-muted-foreground"
-                />
-              )
-            })()}
+
+          <div className="pl-4 pr-3 py-2 min-w-0 space-y-2">
+            {/* Input section */}
+            {message.toolInput && Object.keys(message.toolInput).length > 0 && (
+              <div>
+                <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-1">Input</div>
+                <div className="text-xs font-mono bg-muted/30 p-2 rounded space-y-0.5">
+                  {Object.entries(message.toolInput).map(([key, value]) => {
+                    if (key === '_intent') return null
+                    const valStr = typeof value === 'string' ? value : JSON.stringify(value)
+                    return (
+                      <div key={key} className="flex gap-2">
+                        <span className="text-cyan-600 dark:text-cyan-400 shrink-0">{key}:</span>
+                        <span className="text-muted-foreground break-all">{valStr.slice(0, 200)}{valStr.length > 200 && '...'}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Result section */}
+            {result ? (
+              <div>
+                <div className={cn(
+                  "text-[10px] font-semibold uppercase tracking-wide mb-1",
+                  isError ? "text-destructive" : "text-muted-foreground"
+                )}>
+                  {isError ? 'Error' : 'Result'}
+                </div>
+                <pre className={cn(
+                  "text-xs max-h-48 overflow-y-auto font-mono p-2 rounded whitespace-pre-wrap break-words",
+                  isError ? "bg-destructive/10 text-destructive" : "bg-muted/30 text-muted-foreground"
+                )}>
+                  {result.slice(0, 500)}
+                  {result.length > 500 && '...'}
+                </pre>
+              </div>
+            ) : (
+              <LoadingIndicator
+                label="Running..."
+                className="text-sm text-muted-foreground"
+              />
+            )}
           </div>
         </div>
       </div>

@@ -69,6 +69,8 @@ export interface LoadingIndicatorProps {
   ultrathink?: boolean
   /** Additional className for the container */
   className?: string
+  /** Additional className for the spinner (e.g., "text-xs" to make it smaller) */
+  spinnerClassName?: string
 }
 
 /**
@@ -88,6 +90,7 @@ export function LoadingIndicator({
   showElapsed = false,
   ultrathink = false,
   className,
+  spinnerClassName,
 }: LoadingIndicatorProps) {
   const [gradientOffset, setGradientOffset] = React.useState(0)
   const [elapsed, setElapsed] = React.useState(0)
@@ -131,7 +134,7 @@ export function LoadingIndicator({
     <span className={cn("inline-flex items-center gap-2", className)}>
       {/* Spinner */}
       {animated ? (
-        <Spinner className={ultrathink ? "text-fuchsia-500" : undefined} />
+        <Spinner className={cn(spinnerClassName, ultrathink && "text-fuchsia-500")} />
       ) : (
         <span className="inline-flex items-center justify-center w-[1em] h-[1em]">●</span>
       )}

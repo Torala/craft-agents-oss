@@ -63,9 +63,9 @@ export default function AgentInfoTabPanel({ tab }: AgentInfoTabPanelProps) {
 
   return (
     <ScrollArea className="h-full">
-      <div className="p-6 max-w-lg mx-auto">
-        {/* Agent ID subtitle */}
-        <p className="text-sm text-muted-foreground mb-4">@{agentId}</p>
+      <div className="px-8 p-6  mx-auto">
+        {/* Agent name as title */}
+        <h2 className="text-lg font-semibold mb-4">{agentInfoTab.label}</h2>
 
         {loading && (
           <div className="flex items-center justify-center py-8">
@@ -86,12 +86,9 @@ export default function AgentInfoTabPanel({ tab }: AgentInfoTabPanelProps) {
             {definition.capabilities && definition.capabilities.length > 0 && (
               <div>
                 <h4 className="text-sm font-medium mb-2">Capabilities</h4>
-                <ul className="space-y-1.5">
+                <ul className="text-sm space-y-1.5 list-disc pl-5">
                   {definition.capabilities.map((cap, i) => (
-                    <li key={i} className="flex items-start gap-2 text-sm">
-                      <span className="text-muted-foreground mt-0.5">•</span>
-                      <span>{cap}</span>
-                    </li>
+                    <li key={i}>{cap}</li>
                   ))}
                 </ul>
               </div>
@@ -123,7 +120,7 @@ export default function AgentInfoTabPanel({ tab }: AgentInfoTabPanelProps) {
               {authStatus?.mcpServers && authStatus.mcpServers.length > 0 ? (
                 <ul className="text-sm space-y-2">
                   {authStatus.mcpServers.map((server, i) => (
-                    <li key={i} className="bg-muted/50 rounded-md p-2">
+                    <li key={i} className="bg-muted/50 rounded-md px-4 py-3 select-none">
                       <div className="font-medium">{server.name}</div>
                       <div className="text-xs text-muted-foreground truncate">
                         {server.url}

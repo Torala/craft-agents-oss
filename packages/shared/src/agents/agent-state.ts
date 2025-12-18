@@ -176,17 +176,19 @@ export class AgentStateManager extends TypedEventEmitter<AgentStateEvents> {
       }
 
       this.pendingAgentId = agentId;
-      this.pendingAgentName = agent.name;
+      // Use displayName (original document title) if available, fallback to normalized name
+      this.pendingAgentName = agent.displayName || agent.name;
 
       // Check if extraction is needed
       const needsExtraction = options?.forceExtraction || this.subAgentManager.needsFreshExtraction(agentId);
       debug('[AgentStateManager.activate] needsExtraction:', needsExtraction);
 
       // Set extracting status
+      const displayName = agent.displayName || agent.name;
       this.setStatus({
         status: 'extracting',
         agentId,
-        agentName: agent.name,
+        agentName: displayName,
         message: needsExtraction ? 'Loading agent instructions...' : 'Loading cached definition...',
       });
 
@@ -202,7 +204,7 @@ export class AgentStateManager extends TypedEventEmitter<AgentStateEvents> {
           this.setStatus({
             status: 'extracting',
             agentId,
-            agentName: agent.name,
+            agentName: displayName,
             message: event.message,
           });
         }
@@ -212,7 +214,7 @@ export class AgentStateManager extends TypedEventEmitter<AgentStateEvents> {
         const errorStatus: AgentStatus = {
           status: 'error',
           agentId,
-          agentName: agent.name,
+          agentName: displayName,
           error: 'Failed to load agent definition',
         };
         this.setStatus(errorStatus);
@@ -230,7 +232,7 @@ export class AgentStateManager extends TypedEventEmitter<AgentStateEvents> {
         const reviewStatus: AgentStatus = {
           status: 'needs_review',
           agentId,
-          agentName: agent.name,
+          agentName: displayName,
           definition,
           concerns: definition.concerns,
         };
@@ -239,7 +241,7 @@ export class AgentStateManager extends TypedEventEmitter<AgentStateEvents> {
       }
 
       // Continue to auth checks
-      return this.checkAuthAndProceed(agentId, agent.name, definition);
+      return this.checkAuthAndProceed(agentId, displayName, definition);
     } finally {
       this.isActivating = false;
     }

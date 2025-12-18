@@ -6,7 +6,7 @@ import {
   StyledDropdownMenuItem,
   StyledDropdownMenuSeparator,
 } from "@/components/ui/styled-dropdown"
-import { ChevronDown, Settings, Keyboard, HelpCircle, ExternalLink, LogOut } from "lucide-react"
+import { ChevronDown, Settings, Keyboard, HelpCircle, ExternalLink, LogOut, User } from "lucide-react"
 import { CraftAgentsSymbol } from "./icons/CraftAgentsSymbol"
 import { SquarePenRounded } from "./icons/SquarePenRounded"
 
@@ -14,6 +14,7 @@ interface AppMenuProps {
   onNewChat: () => void
   onOpenSettings: () => void
   onOpenKeyboardShortcuts: () => void
+  onOpenStoredUserPreferences: () => void
   onOpenHelp: () => void
   onOpenCraft: () => void
   onLogout: () => void
@@ -29,6 +30,7 @@ export function AppMenu({
   onNewChat,
   onOpenSettings,
   onOpenKeyboardShortcuts,
+  onOpenStoredUserPreferences,
   onOpenHelp,
   onOpenCraft,
   onLogout,
@@ -64,6 +66,10 @@ export function AppMenu({
           <Keyboard className="h-3.5 w-3.5" />
           Keyboard Shortcuts
           <DropdownMenuShortcut className="pl-6">⌘/</DropdownMenuShortcut>
+        </StyledDropdownMenuItem>
+        <StyledDropdownMenuItem onClick={onOpenStoredUserPreferences}>
+          <User className="h-3.5 w-3.5" />
+          Stored User Preferences
         </StyledDropdownMenuItem>
 
         <StyledDropdownMenuSeparator />

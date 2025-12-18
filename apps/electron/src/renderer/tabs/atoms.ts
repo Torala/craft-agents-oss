@@ -3,11 +3,40 @@
  *
  * Uses atomWithStorage for automatic localStorage persistence.
  * Tab state survives app restarts.
+ *
+ * Storage is workspace-scoped: each window stores its tabs under
+ * 'craft-tabs-{workspaceId}' to prevent cross-workspace tab leakage
+ * in multi-window architecture.
  */
 
 import { atom } from 'jotai'
 import { atomWithStorage } from 'jotai/utils'
 import type { Tab, TabState, ChatTab } from './types'
+
+// ============================================================
+// Settings Atoms (global, not workspace-scoped)
+// ============================================================
+
+/**
+ * Tool display mode: compact (single line) or verbose (expanded with input/output)
+ * Default: true (compact mode)
+ */
+export const compactToolDisplayAtom = atomWithStorage<boolean>(
+  'craft-compact-tool-display',
+  true
+)
+
+/**
+ * Get workspace ID from URL query params (set by WindowManager)
+ * This is read synchronously on module load for the storage key.
+ */
+function getWindowWorkspaceId(): string {
+  const params = new URLSearchParams(window.location.search)
+  return params.get('workspaceId') || 'default'
+}
+
+const WORKSPACE_ID = getWindowWorkspaceId()
+const STORAGE_KEY = `craft-tabs-${WORKSPACE_ID}`
 
 /**
  * Default empty tab state
@@ -19,9 +48,10 @@ const DEFAULT_TAB_STATE: TabState = {
 
 /**
  * Main tab state atom with localStorage persistence
+ * Uses workspace-specific key to isolate tabs per window
  */
 export const tabStateAtom = atomWithStorage<TabState>(
-  'craft-tabs',
+  STORAGE_KEY,
   DEFAULT_TAB_STATE
 )
 

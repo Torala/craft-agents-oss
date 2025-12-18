@@ -29,7 +29,13 @@ export function ExtractingStep({
         </div>
       }
       title={`Activating ${agentName}`}
-      description={message}
+      description={
+        <>
+          {message}
+          <br />
+          This may take a few minutes.
+        </>
+      }
       actions={
         onCancel && (
           <BackButton onClick={onCancel}>Cancel</BackButton>

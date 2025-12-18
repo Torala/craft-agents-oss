@@ -133,6 +133,8 @@ interface StepFormLayoutProps {
   children?: React.ReactNode
   /** Whether children should grow to fill available space (for scrollable content) */
   grow?: boolean
+  /** Whether to fill parent height without max-height limit */
+  fillHeight?: boolean
   className?: string
 }
 
@@ -154,12 +156,14 @@ export function StepFormLayout({
   actions,
   children,
   grow = false,
+  fillHeight = false,
   className
 }: StepFormLayoutProps) {
   return (
     <div className={cn(
       "flex w-[28rem] flex-col items-center",
-      grow && "h-full max-h-[600px]",
+      grow && !fillHeight && "h-full max-h-[600px]",
+      fillHeight && "h-full",
       className
     )}>
       {iconElement && (
@@ -180,7 +184,7 @@ export function StepFormLayout({
       {children && (
         <div className={cn(
           "mt-6 w-full",
-          grow && "flex-1 min-h-0"
+          (grow || fillHeight) && "flex-1 min-h-0"
         )}>
           {children}
         </div>

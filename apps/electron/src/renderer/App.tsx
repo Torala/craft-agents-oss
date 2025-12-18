@@ -3,12 +3,11 @@ import type { Session, Workspace, SessionEvent, Message, SubAgentMetadata, FileA
 import { generateMessageId } from '../shared/types'
 import { Chat } from '@/components/chat/Chat'
 import { OnboardingWizard } from '@/components/onboarding'
-import { AddWorkspaceWizard } from '@/components/AddWorkspaceWizard'
+import { AddWorkspaceFlow } from '@/components/AddWorkspaceFlow'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { FocusProvider } from '@/context/FocusContext'
 import { useGlobalShortcuts } from '@/hooks/keyboard'
 import { useOnboarding } from '@/hooks/useOnboarding'
-import { useAddWorkspace } from '@/hooks/useAddWorkspace'
 import { useTabs } from '@/tabs'
 import { Spinner } from '@/components/ui/loading-indicator'
 import { DEFAULT_MODEL } from '@config/models'
@@ -24,7 +23,10 @@ export default function App() {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [agents, setAgents] = useState<SubAgentMetadata[]>([])
   const [isLoadingAgents, setIsLoadingAgents] = useState(false)
-  const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null)
+  // Window's workspace ID - fixed for this window (multi-window architecture)
+  const [windowWorkspaceId, setWindowWorkspaceId] = useState<string | null>(null)
+  // Window mode - 'add-workspace' opens the wizard in a new window
+  const [windowMode, setWindowMode] = useState<string | null>(null)
   const [currentModel, setCurrentModel] = useState(DEFAULT_MODEL)
   const [menuNewChatTrigger, setMenuNewChatTrigger] = useState(0)
   // Permission requests per session (queue to handle multiple concurrent requests)
@@ -32,14 +34,16 @@ export default function App() {
 
   // Handle onboarding completion
   const handleOnboardingComplete = useCallback(() => {
-    setAppState('ready')
-    // Reload workspaces and sessions after onboarding
+    // Reload workspaces after onboarding
     window.electronAPI.getWorkspaces().then((ws) => {
       setWorkspaces(ws)
       if (ws.length > 0) {
-        setActiveWorkspaceId(ws[0].id)
+        // Open the new workspace's window (this will focus/create it)
+        // and the current onboarding window will be replaced
+        window.electronAPI.openWorkspace(ws[0].id)
       }
     })
+    setAppState('ready')
     window.electronAPI.getSessions().then(setSessions)
   }, [])
 
@@ -51,33 +55,53 @@ export default function App() {
 
   // Add workspace completion handler
   const handleAddWorkspaceComplete = useCallback(() => {
-    setAppState('ready')
     // Reload workspaces after adding
     window.electronAPI.getWorkspaces().then((ws) => {
       setWorkspaces(ws)
-      // Switch to the newly added workspace (last one)
       if (ws.length > 0) {
-        setActiveWorkspaceId(ws[ws.length - 1].id)
+        // Get the newly added workspace (last one in list)
+        const newWorkspace = ws[ws.length - 1]
+        // If this was an add-workspace window, transition to the new workspace
+        // by opening it (which will update this window's workspace)
+        window.electronAPI.openWorkspace(newWorkspace.id)
       }
     })
+    // Note: Don't setAppState('ready') here - the window will be reloaded by openWorkspace
   }, [])
 
   // Add workspace cancel handler
   const handleAddWorkspaceCancel = useCallback(() => {
-    setAppState('ready')
-  }, [])
+    // If this was an add-workspace window, close it
+    if (windowMode === 'add-workspace') {
+      window.electronAPI.closeWindow()
+    } else {
+      // Fallback for in-app flow (shouldn't happen anymore)
+      setAppState('ready')
+    }
+  }, [windowMode])
 
-  // Add workspace hook (separate from onboarding)
-  const addWorkspace = useAddWorkspace({
-    onComplete: handleAddWorkspaceComplete,
-    onCancel: handleAddWorkspaceCancel,
-    existingWorkspaceNames: workspaces.map(w => w.name),
-  })
 
-  // Check auth state on mount
+  // Check auth state and get window's workspace ID on mount
   useEffect(() => {
-    const checkAuthState = async () => {
+    const initialize = async () => {
       try {
+        // Get this window's workspace ID (passed via URL query param from main process)
+        const wsId = await window.electronAPI.getWindowWorkspace()
+        setWindowWorkspaceId(wsId)
+
+        // Get window mode (e.g., 'add-workspace' for wizard window)
+        const mode = await window.electronAPI.getWindowMode()
+        setWindowMode(mode)
+
+        // If this is an add-workspace window, show the wizard directly
+        if (mode === 'add-workspace') {
+          // Load workspaces for duplicate name validation
+          const ws = await window.electronAPI.getWorkspaces()
+          setWorkspaces(ws)
+          setAppState('adding-workspace')
+          return
+        }
+
         const needs = await window.electronAPI.getSetupNeeds()
         setSetupNeeds(needs)
 
@@ -93,11 +117,11 @@ export default function App() {
       }
     }
 
-    checkAuthState()
+    initialize()
   }, [])
 
   // Tab system
-  const { openShortcutsTab, closeChatTabBySession } = useTabs()
+  const { openSettingsTab, openShortcutsTab, openPreferencesTab, closeChatTabBySession } = useTabs()
 
   // Global shortcut: Cmd+/ to show keyboard shortcuts
   useGlobalShortcuts({
@@ -114,31 +138,22 @@ export default function App() {
   useEffect(() => {
     if (appState !== 'ready') return
 
-    window.electronAPI.getWorkspaces().then((ws) => {
-      setWorkspaces(ws)
-      // Set first workspace as active if none selected
-      setActiveWorkspaceId(current => {
-        if (!current && ws.length > 0) {
-          return ws[0].id
-        }
-        return current
-      })
-    })
+    window.electronAPI.getWorkspaces().then(setWorkspaces)
     window.electronAPI.getSessions().then(setSessions)
   }, [appState])
 
-  // Load agents when workspace changes
+  // Load agents when window's workspace is set
   useEffect(() => {
-    if (activeWorkspaceId) {
+    if (windowWorkspaceId) {
       setIsLoadingAgents(true)
-      window.electronAPI.getAgents(activeWorkspaceId)
+      window.electronAPI.getAgents(windowWorkspaceId)
         .then(setAgents)
         .finally(() => setIsLoadingAgents(false))
     } else {
       setAgents([])
       setIsLoadingAgents(false)
     }
-  }, [activeWorkspaceId])
+  }, [windowWorkspaceId])
 
   // Listen for session events
   useEffect(() => {
@@ -215,7 +230,23 @@ export default function App() {
               return session
             }
 
-            case 'tool_start':
+            case 'tool_start': {
+              // Check if a message with this toolUseId already exists
+              // SDK sends two events per tool: first from stream_event (empty input),
+              // second from assistant message (complete input)
+              const existingIndex = session.messages.findIndex(m => m.toolUseId === event.toolUseId)
+              if (existingIndex !== -1) {
+                // Update existing message with complete input (second event has full input)
+                return {
+                  ...session,
+                  messages: session.messages.map((m, i) =>
+                    i === existingIndex
+                      ? { ...m, toolInput: event.toolInput }
+                      : m
+                  )
+                }
+              }
+              // First event - create new message
               return {
                 ...session,
                 messages: [
@@ -231,6 +262,7 @@ export default function App() {
                   }
                 ]
               }
+            }
 
             case 'tool_result': {
               const toolMsgs = session.messages
@@ -518,11 +550,11 @@ export default function App() {
   }, [])
 
   const handleRefreshAgents = useCallback(async () => {
-    if (activeWorkspaceId) {
-      const refreshedAgents = await window.electronAPI.refreshAgents(activeWorkspaceId)
+    if (windowWorkspaceId) {
+      const refreshedAgents = await window.electronAPI.refreshAgents(windowWorkspaceId)
       setAgents(refreshedAgents)
     }
-  }, [activeWorkspaceId])
+  }, [windowWorkspaceId])
 
   const handleRespondToPermission = useCallback(async (sessionId: string, requestId: string, allowed: boolean, alwaysAllow: boolean) => {
     // Send response to main process
@@ -576,13 +608,16 @@ export default function App() {
   }, [])
 
   const handleOpenSettings = useCallback(() => {
-    console.log('Open settings')
-    // TODO: Implement settings panel
-  }, [])
+    openSettingsTab()
+  }, [openSettingsTab])
 
   const handleOpenKeyboardShortcuts = useCallback(() => {
     openShortcutsTab()
   }, [openShortcutsTab])
+
+  const handleOpenStoredUserPreferences = useCallback(() => {
+    openPreferencesTab()
+  }, [openPreferencesTab])
 
   const handleLogout = useCallback(async () => {
     try {
@@ -595,7 +630,7 @@ export default function App() {
       setSessions([])
       setWorkspaces([])
       setAgents([])
-      setActiveWorkspaceId(null)
+      setWindowWorkspaceId(null)
       // Reset setupNeeds to force fresh onboarding start
       setSetupNeeds({
         needsCraftAuth: true,
@@ -611,10 +646,18 @@ export default function App() {
     }
   }, [onboarding])
 
-  // Start add workspace flow (separate from onboarding)
+  // Start add workspace flow (opens in new window)
   const handleAddWorkspace = useCallback(() => {
-    setAppState('adding-workspace')
+    window.electronAPI.openAddWorkspaceWindow()
   }, [])
+
+  // Handle workspace selection - opens workspace in its own window (multi-window architecture)
+  const handleSelectWorkspace = useCallback((workspaceId: string) => {
+    // If selecting current workspace, do nothing
+    if (workspaceId === windowWorkspaceId) return
+    // Open (or focus) the window for the selected workspace
+    window.electronAPI.openWorkspace(workspaceId)
+  }, [windowWorkspaceId])
 
   // Handle cancel during onboarding
   const handleOnboardingCancel = useCallback(() => {
@@ -659,16 +702,13 @@ export default function App() {
   }
 
   // Add workspace state (separate from onboarding)
+  // Render AddWorkspaceFlow only when visible so the hook mounts/unmounts properly
   if (appState === 'adding-workspace') {
     return (
-      <AddWorkspaceWizard
-        state={addWorkspace.state}
-        spaceCategories={addWorkspace.spaceCategories}
-        onLogin={addWorkspace.handleLogin}
-        onSelectSpace={addWorkspace.handleSelectSpace}
-        onContinue={addWorkspace.handleContinue}
-        onBack={addWorkspace.handleBack}
-        onCancel={addWorkspace.handleCancel}
+      <AddWorkspaceFlow
+        onComplete={handleAddWorkspaceComplete}
+        onCancel={handleAddWorkspaceCancel}
+        existingWorkspaceNames={workspaces.map(w => w.name)}
       />
     )
   }
@@ -683,12 +723,12 @@ export default function App() {
             sessions={sessions}
             agents={agents}
             isLoadingAgents={isLoadingAgents}
-            activeWorkspaceId={activeWorkspaceId}
+            activeWorkspaceId={windowWorkspaceId}
             defaultLayout={[20, 32, 48]}
             currentModel={currentModel}
             menuNewChatTrigger={menuNewChatTrigger}
             onModelChange={setCurrentModel}
-            onSelectWorkspace={setActiveWorkspaceId}
+            onSelectWorkspace={handleSelectWorkspace}
             onCreateSession={handleCreateSession}
             onDeleteSession={handleDeleteSession}
             onArchiveSession={handleArchiveSession}
@@ -699,6 +739,7 @@ export default function App() {
             onOpenUrl={handleOpenUrl}
             onOpenSettings={handleOpenSettings}
             onOpenKeyboardShortcuts={handleOpenKeyboardShortcuts}
+            onOpenStoredUserPreferences={handleOpenStoredUserPreferences}
             onRefreshAgents={handleRefreshAgents}
             onLogout={handleLogout}
             onAddWorkspace={handleAddWorkspace}

@@ -52,7 +52,8 @@
   --chart-3: oklch(0.65 0.20 293);
   --chart-4: oklch(0.45 0.15 293);
   --chart-5: oklch(0.70 0.18 293);
-  --sidebar: oklch(0.98 0.003 265 / 0.6);
+  --sidebar-alpha: 0.6;
+  --sidebar: oklch(0.98 0.003 265 / var(--sidebar-alpha));
   --sidebar-foreground: oklch(0.185 0.01 270);
   --sidebar-primary: oklch(0.25 0.01 270);
   --sidebar-primary-foreground: oklch(0.98 0.003 265);
@@ -110,30 +111,48 @@
 }
 
 /* Dark Mode - Craft Documentation Theme
-   Background: #0e0d12 (very dark blue-black)
-   Text: light with purple tint
+   Background: #1a1a1a (very dark neutral grey)
+   Text: light neutral
    Accent: #8B5CF6 / #A78BFA (purple - used very sparingly)
 */
 .dark {
-  --background: oklch(0.127 0.012 290);
-  --foreground: oklch(0.92 0.008 300);
-  --card: oklch(0.16 0.012 290);
-  --card-foreground: oklch(0.92 0.008 300);
-  --popover: oklch(0.18 0.012 290);
-  --popover-foreground: oklch(0.92 0.008 300);
-  --primary: oklch(0.88 0.008 300);
-  --primary-foreground: oklch(0.15 0.012 290);
-  --secondary: oklch(0.20 0.012 290);
-  --secondary-foreground: oklch(0.88 0.008 300);
-  --muted: oklch(0.20 0.012 290);
-  --muted-foreground: oklch(0.58 0.008 290);
-  --accent: oklch(0.24 0.015 290);
-  --accent-foreground: oklch(0.88 0.008 300);
+  /* Base color parameters - adjust these to change the overall feel */
+  --dark-c: 0.005;      /* chroma (saturation) - near 0 = neutral grey */
+  --dark-h: 270;        /* hue - 270 = neutral */
+
+  /* Lightness scale - from darkest to lightest */
+  --dark-l-bg: 0.18;        /* background */
+  --dark-l-surface-1: 0.18; /* primary-foreground, destructive-foreground */
+  --dark-l-surface-2: 0.19; /* card */
+  --dark-l-surface-3: 0.21; /* popover */
+  --dark-l-surface-4: 0.23; /* secondary, muted */
+  --dark-l-surface-5: 0.27; /* accent */
+  --dark-l-border: 0.29;    /* border */
+  --dark-l-input: 0.33;     /* input */
+  --dark-l-muted-fg: 0.58;  /* muted foreground */
+  --dark-l-primary: 0.88;   /* primary text */
+  --dark-l-fg: 0.92;        /* foreground text */
+
+  /* Semantic colors composed from base parameters */
+  --background: oklch(var(--dark-l-bg) var(--dark-c) var(--dark-h));
+  --foreground: oklch(var(--dark-l-fg) var(--dark-c) var(--dark-h));
+  --card: oklch(var(--dark-l-surface-2) var(--dark-c) var(--dark-h));
+  --card-foreground: oklch(var(--dark-l-fg) var(--dark-c) var(--dark-h));
+  --popover: oklch(var(--dark-l-surface-3) var(--dark-c) var(--dark-h));
+  --popover-foreground: oklch(var(--dark-l-fg) var(--dark-c) var(--dark-h));
+  --primary: oklch(var(--dark-l-primary) var(--dark-c) var(--dark-h));
+  --primary-foreground: oklch(var(--dark-l-surface-1) var(--dark-c) var(--dark-h));
+  --secondary: oklch(var(--dark-l-surface-4) var(--dark-c) var(--dark-h));
+  --secondary-foreground: oklch(var(--dark-l-primary) var(--dark-c) var(--dark-h));
+  --muted: oklch(var(--dark-l-surface-4) var(--dark-c) var(--dark-h));
+  --muted-foreground: oklch(var(--dark-l-muted-fg) var(--dark-c) var(--dark-h));
+  --accent: oklch(var(--dark-l-surface-5) var(--dark-c) var(--dark-h));
+  --accent-foreground: oklch(var(--dark-l-primary) var(--dark-c) var(--dark-h));
   --destructive: oklch(0.7022 0.1892 22.2279);
-  --destructive-foreground: oklch(0.15 0.012 290);
-  --border: oklch(0.26 0.012 290);
-  --input: oklch(0.30 0.012 290);
-  --ring: oklch(0.92 0.008 300 / 0.3);
+  --destructive-foreground: oklch(var(--dark-l-surface-1) var(--dark-c) var(--dark-h));
+  --border: oklch(var(--dark-l-border) var(--dark-c) var(--dark-h));
+  --input: oklch(var(--dark-l-input) var(--dark-c) var(--dark-h));
+  --ring: oklch(var(--dark-l-fg) var(--dark-c) var(--dark-h) / 0.3);
   --ring-width: 1px;
   --ring-offset: 0px;
   --chart-1: oklch(0.65 0.20 293);
@@ -141,23 +160,24 @@
   --chart-3: oklch(0.70 0.18 293);
   --chart-4: oklch(0.50 0.15 293);
   --chart-5: oklch(0.75 0.16 293);
-  --sidebar: oklch(0.127 0.012 290 / 0.6);
-  --sidebar-foreground: oklch(0.92 0.008 300);
-  --sidebar-primary: oklch(0.88 0.008 300);
-  --sidebar-primary-foreground: oklch(0.15 0.012 290);
-  --sidebar-accent: oklch(0.24 0.015 290 / 0.5);
-  --sidebar-accent-foreground: oklch(0.88 0.008 300);
-  --sidebar-border: oklch(0.92 0.008 300 / 0.1);
-  --sidebar-ring: oklch(0.92 0.008 300 / 0.3);
+  --sidebar-alpha: 0.6;
+  --sidebar: oklch(var(--dark-l-bg) var(--dark-c) var(--dark-h) / var(--sidebar-alpha));
+  --sidebar-foreground: oklch(var(--dark-l-fg) var(--dark-c) var(--dark-h));
+  --sidebar-primary: oklch(var(--dark-l-primary) var(--dark-c) var(--dark-h));
+  --sidebar-primary-foreground: oklch(var(--dark-l-surface-1) var(--dark-c) var(--dark-h));
+  --sidebar-accent: oklch(var(--dark-l-surface-5) var(--dark-c) var(--dark-h) / 0.5);
+  --sidebar-accent-foreground: oklch(var(--dark-l-primary) var(--dark-c) var(--dark-h));
+  --sidebar-border: oklch(var(--dark-l-fg) var(--dark-c) var(--dark-h) / 0.1);
+  --sidebar-ring: oklch(var(--dark-l-fg) var(--dark-c) var(--dark-h) / 0.3);
 
   /* Highlight - the vibrant purple accent, use VERY sparingly */
   --highlight: oklch(0.65 0.20 293);
-  --highlight-foreground: oklch(0.98 0.005 300);
+  --highlight-foreground: oklch(0.98 var(--dark-c) var(--dark-h));
   --highlight-muted: oklch(0.65 0.20 293 / 0.15);
 
   /* Markdown list markers */
-  --md-bullets: oklch(0.55 0.008 290);
-  --md-counters: oklch(0.55 0.008 290);
+  --md-bullets: oklch(var(--dark-l-muted-fg) var(--dark-c) var(--dark-h));
+  --md-counters: oklch(var(--dark-l-muted-fg) var(--dark-c) var(--dark-h));
 
   /* Fonts (same as light) */
   --font-sans: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -185,6 +205,12 @@
   --shadow-lg: 0px 1px 0px 0px hsl(0 0% 0% / 0.00), 0px 4px 6px -1px hsl(0 0% 0% / 0.00);
   --shadow-xl: 0px 1px 0px 0px hsl(0 0% 0% / 0.00), 0px 8px 10px -1px hsl(0 0% 0% / 0.00);
   --shadow-2xl: 0px 1px 0px 0px hsl(0 0% 0% / 0.00);
+}
+
+/* Theme Override - Higher sidebar opacity when user explicitly sets light/dark mode
+   This reduces color bleed between app and desktop when themes don't match */
+html[data-theme-override] {
+  --sidebar-alpha: 0.9;
 }
 
 /* Theme integration for Tailwind v4 */

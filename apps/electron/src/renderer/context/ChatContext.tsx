@@ -26,6 +26,7 @@ export interface ChatContextType {
   pendingPermissions: Map<string, PermissionRequest[]>
 
   // Session callbacks
+  onCreateSession: (workspaceId: string, agentId?: string) => Promise<Session>
   onSendMessage: (sessionId: string, message: string, attachments?: FileAttachment[]) => void
   onRenameSession: (sessionId: string, name: string) => void
   onArchiveSession: (sessionId: string) => void

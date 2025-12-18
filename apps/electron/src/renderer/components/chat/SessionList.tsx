@@ -3,7 +3,6 @@ import { formatDistanceToNow } from "date-fns"
 import { Archive, ArchiveRestore, Trash2, Bot, Pencil, MoreHorizontal } from "lucide-react"
 
 import { cn } from "@/lib/utils"
-import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { Button } from "@/components/ui/button"
@@ -96,12 +95,12 @@ function SessionItem({
         {/* Card Header Row */}
         <div className="flex w-full flex-col gap-0.5 pr-6">
           <div className="flex items-center gap-2">
-            <div className="font-semibold font-sans truncate">
-              {getSessionTitle(item)}
-            </div>
             {item.isProcessing && (
               <span className="flex h-2 w-2 rounded-full bg-primary animate-pulse shrink-0" />
             )}
+            <div className="font-semibold font-sans truncate">
+              {getSessionTitle(item)}
+            </div>
           </div>
           <div className="flex items-center gap-2 text-xs text-muted-foreground/70">
             <span>
@@ -122,12 +121,6 @@ function SessionItem({
         <div className="line-clamp-2 text-xs text-muted-foreground">
           {preview}
         </div>
-        {/* Processing Badge */}
-        {item.isProcessing && (
-          <div className="flex items-center gap-2">
-            <Badge variant="secondary">Processing</Badge>
-          </div>
-        )}
         {/* More menu dropdown - visible on hover or when menu is open */}
         <DropdownMenu onOpenChange={setMenuOpen}>
           <DropdownMenuTrigger asChild>
