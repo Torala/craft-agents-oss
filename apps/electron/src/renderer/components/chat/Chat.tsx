@@ -94,6 +94,11 @@ interface ChatProps {
   // Permission handling (queue to support multiple concurrent requests)
   pendingPermissions?: Map<string, PermissionRequest[]>
   onRespondToPermission?: (sessionId: string, requestId: string, allowed: boolean, alwaysAllow: boolean) => void
+  // Advanced options
+  ultrathinkEnabled?: boolean
+  onUltrathinkChange?: (enabled: boolean) => void
+  skipPermissions?: boolean
+  onSkipPermissionsChange?: (enabled: boolean) => void
 }
 
 /**
@@ -457,6 +462,11 @@ export function Chat({
   onAddWorkspace,
   pendingPermissions,
   onRespondToPermission,
+  // Advanced options
+  ultrathinkEnabled = false,
+  onUltrathinkChange,
+  skipPermissions = false,
+  onSkipPermissionsChange,
 }: ChatProps) {
   const [isSidebarVisible, setIsSidebarVisible] = React.useState(!defaultCollapsed)
   const [sidebarWidth, setSidebarWidth] = React.useState(() => {
@@ -777,6 +787,9 @@ export function Chat({
     activeWorkspaceId,
     currentModel,
     pendingPermissions: pendingPermissions || new Map(),
+    // Advanced options
+    ultrathinkEnabled,
+    skipPermissions,
     onCreateSession,
     onSendMessage,
     onRenameSession,
@@ -788,6 +801,9 @@ export function Chat({
     onOpenFile,
     onOpenUrl,
     onModelChange,
+    // Advanced options callbacks
+    onUltrathinkChange: onUltrathinkChange || (() => {}),
+    onSkipPermissionsChange: onSkipPermissionsChange || (() => {}),
     textareaRef: chatInputRef,
   }), [
     sessions,
@@ -796,6 +812,8 @@ export function Chat({
     activeWorkspaceId,
     currentModel,
     pendingPermissions,
+    ultrathinkEnabled,
+    skipPermissions,
     onCreateSession,
     onSendMessage,
     onRenameSession,
@@ -807,6 +825,8 @@ export function Chat({
     onOpenFile,
     onOpenUrl,
     onModelChange,
+    onUltrathinkChange,
+    onSkipPermissionsChange,
   ])
 
   // Group agents for tree view

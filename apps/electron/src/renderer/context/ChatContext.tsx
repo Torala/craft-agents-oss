@@ -25,6 +25,10 @@ export interface ChatContextType {
   currentModel: string
   pendingPermissions: Map<string, PermissionRequest[]>
 
+  // Advanced options
+  ultrathinkEnabled: boolean
+  skipPermissions: boolean
+
   // Session callbacks
   onCreateSession: (workspaceId: string, agentId?: string) => Promise<Session>
   onSendMessage: (sessionId: string, message: string, attachments?: FileAttachment[]) => void
@@ -48,6 +52,10 @@ export interface ChatContextType {
 
   // Model
   onModelChange: (model: string) => void
+
+  // Advanced options callbacks
+  onUltrathinkChange: (enabled: boolean) => void
+  onSkipPermissionsChange: (enabled: boolean) => void
 
   // Chat input ref (for focusing)
   textareaRef?: React.RefObject<HTMLTextAreaElement>

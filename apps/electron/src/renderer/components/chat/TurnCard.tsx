@@ -15,6 +15,25 @@ import { Spinner } from '@/components/ui/loading-indicator'
 import { stripMarkdown } from '@/utils/text'
 
 // ============================================================================
+// Size Configuration
+// ============================================================================
+
+/**
+ * Global size configuration for TurnCard components.
+ * Adjust these values to scale the entire component uniformly.
+ */
+const SIZE_CONFIG = {
+  /** Base font size class for all text */
+  fontSize: 'text-[13px]',
+  /** Icon size class (width and height) */
+  iconSize: 'w-3 h-3',
+  /** Spinner text size class */
+  spinnerSize: 'text-[10px]',
+  /** Small spinner for header */
+  spinnerSizeSmall: 'text-[8px]',
+} as const
+
+// ============================================================================
 // Types
 // ============================================================================
 
@@ -299,17 +318,17 @@ function getFailedCount(activities: ActivityItem[]): number {
 function ActivityStatusIcon({ status }: { status: ActivityStatus }) {
   switch (status) {
     case 'pending':
-      return <Circle className="w-3 h-3 text-muted-foreground/50" />
+      return <Circle className={cn(SIZE_CONFIG.iconSize, "text-muted-foreground/50")} />
     case 'running':
       return (
-        <div className="w-3 h-3 flex items-center justify-center">
-          <Spinner className="text-[10px] text-amber-500" />
+        <div className={cn(SIZE_CONFIG.iconSize, "flex items-center justify-center")}>
+          <Spinner className={cn(SIZE_CONFIG.spinnerSize, "text-amber-500")} />
         </div>
       )
     case 'completed':
-      return <CheckCircle2 className="w-3 h-3 text-green-500" />
+      return <CheckCircle2 className={cn(SIZE_CONFIG.iconSize, "text-green-500")} />
     case 'error':
-      return <XCircle className="w-3 h-3 text-destructive" />
+      return <XCircle className={cn(SIZE_CONFIG.iconSize, "text-destructive")} />
   }
 }
 
@@ -321,13 +340,13 @@ function ActivityRow({ activity }: { activity: ActivityItem }) {
     const isThinking = activity.status === 'running'
     const displayContent = isThinking ? 'Thinking...' : stripMarkdown(activity.content || '')
     return (
-      <div className="flex items-center gap-2 py-0.5 text-xs text-muted-foreground/70">
+      <div className={cn("flex items-center gap-2 py-0.5 text-muted-foreground/70", SIZE_CONFIG.fontSize)}>
         {isThinking ? (
-          <div className="w-3 h-3 flex items-center justify-center shrink-0">
-            <Spinner className="text-[10px]" />
+          <div className={cn(SIZE_CONFIG.iconSize, "flex items-center justify-center shrink-0")}>
+            <Spinner className={SIZE_CONFIG.spinnerSize} />
           </div>
         ) : (
-          <MessageCircleDashed className="w-3 h-3 shrink-0" />
+          <MessageCircleDashed className={cn(SIZE_CONFIG.iconSize, "shrink-0")} />
         )}
         <span className="truncate">{displayContent}</span>
       </div>
@@ -344,7 +363,7 @@ function ActivityRow({ activity }: { activity: ActivityItem }) {
   const inputSummary = formatToolInput(activity.toolInput)
 
   return (
-    <div className="flex items-center gap-2 py-0.5 text-xs text-muted-foreground">
+    <div className={cn("flex items-center gap-2 py-0.5 text-muted-foreground", SIZE_CONFIG.fontSize)}>
       <ActivityStatusIcon status={activity.status} />
       <span className="font-medium">{displayName}</span>
       {inputSummary && (
@@ -443,9 +462,9 @@ function StreamingResponsePreview({
         </div>
 
         {/* Footer with actions */}
-        <div className="px-4 py-2 border-t border-border/30 flex items-center justify-between bg-muted/20">
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <CheckCircle2 className="w-3 h-3 text-green-500" />
+        <div className={cn("px-4 py-2 border-t border-border/30 flex items-center justify-between bg-muted/20", SIZE_CONFIG.fontSize)}>
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <CheckCircle2 className={cn(SIZE_CONFIG.iconSize, "text-green-500")} />
             <span>Completed</span>
           </div>
 
@@ -453,12 +472,12 @@ function StreamingResponsePreview({
             <button
               onClick={onPopOut}
               className={cn(
-                "flex items-center gap-1.5 text-xs transition-colors",
+                "flex items-center gap-1.5 transition-colors",
                 "text-muted-foreground hover:text-foreground",
                 "focus:outline-none focus-visible:underline"
               )}
             >
-              <ExternalLink className="w-3 h-3" />
+              <ExternalLink className={SIZE_CONFIG.iconSize} />
               <span>Open in Editor</span>
             </button>
           )}
@@ -485,9 +504,9 @@ function StreamingResponsePreview({
       </div>
 
       {/* Footer */}
-      <div className="px-4 py-2 border-t border-border/30 flex items-center bg-muted/20">
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <Spinner className="text-xs" />
+      <div className={cn("px-4 py-2 border-t border-border/30 flex items-center bg-muted/20", SIZE_CONFIG.fontSize)}>
+        <div className="flex items-center gap-2 text-muted-foreground">
+          <Spinner className={SIZE_CONFIG.spinnerSize} />
           <span>Streaming...</span>
         </div>
       </div>
@@ -579,35 +598,38 @@ export function TurnCard({
             onClick={() => setIsExpanded(!isExpanded)}
             className={cn(
               "flex items-center gap-2 w-full px-3 py-1.5 rounded-[8px] text-left",
-              "text-xs text-muted-foreground",
+              SIZE_CONFIG.fontSize,
+              "text-muted-foreground",
               "hover:bg-muted/50 transition-colors",
               "focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             )}
           >
             {/* Chevron with rotation animation - fixed size wrapper prevents layout shift */}
-            <div className="w-3 h-3 flex items-center justify-center shrink-0">
+            <div className={cn(SIZE_CONFIG.iconSize, "flex items-center justify-center shrink-0")}>
               <motion.div
                 initial={false}
                 animate={{ rotate: isExpanded ? 90 : 0 }}
                 transition={{ duration: 0.15, ease: 'easeOut' }}
               >
-                <ChevronRight className="w-3 h-3" />
+                <ChevronRight className={SIZE_CONFIG.iconSize} />
               </motion.div>
             </div>
 
-            {/* Preview text with cross-fade + inline failure count */}
-            <AnimatePresence mode="wait">
-              <motion.span
-                key={previewText}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.15 }}
-                className="truncate"
-              >
-                {previewText}
-              </motion.span>
-            </AnimatePresence>
+            {/* Preview text with crossfade + inline failure count */}
+            <span className="relative flex-1 min-w-0 h-5 flex items-center">
+              <AnimatePresence initial={false}>
+                <motion.span
+                  key={previewText}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="absolute inset-0 truncate"
+                >
+                  {previewText}
+                </motion.span>
+              </AnimatePresence>
+            </span>
 
             {/* Failure count - shown inline after preview text */}
             {failedCount > 0 && !isExpanded && (
@@ -621,7 +643,7 @@ export function TurnCard({
 
             {/* Streaming indicator */}
             {isStreaming && !isComplete && (
-              <Spinner className="text-[8px] text-muted-foreground" />
+              <Spinner className={cn(SIZE_CONFIG.spinnerSizeSmall, "text-muted-foreground")} />
             )}
           </button>
 
@@ -656,9 +678,9 @@ export function TurnCard({
                       initial={{ opacity: 0, x: -8 }}
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ delay: sortedActivities.length * 0.03 }}
-                      className="flex items-center gap-2 py-0.5 text-xs text-muted-foreground/70"
+                      className={cn("flex items-center gap-2 py-0.5 text-muted-foreground/70", SIZE_CONFIG.fontSize)}
                     >
-                      <Spinner className="text-[10px]" />
+                      <Spinner className={SIZE_CONFIG.spinnerSize} />
                       <span>{isBuffering ? 'Preparing response...' : 'Thinking...'}</span>
                     </motion.div>
                   )}
@@ -671,8 +693,8 @@ export function TurnCard({
 
       {/* Standalone thinking indicator - when no activities but still working */}
       {!hasActivities && isThinking && (
-        <div className="flex items-center gap-2 px-3 py-1.5 text-xs text-muted-foreground">
-          <Spinner className="text-[10px]" />
+        <div className={cn("flex items-center gap-2 px-3 py-1.5 text-muted-foreground", SIZE_CONFIG.fontSize)}>
+          <Spinner className={SIZE_CONFIG.spinnerSize} />
           <span>{isBuffering ? 'Preparing response...' : 'Thinking...'}</span>
         </div>
       )}

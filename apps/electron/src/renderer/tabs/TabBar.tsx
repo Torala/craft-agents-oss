@@ -10,8 +10,10 @@ import * as React from 'react'
 import { X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useTabs } from './useTabs'
-import type { Tab } from './types'
+import type { ChatTab, Tab } from './types'
 import { FadingText } from '@/components/ui/fading-text'
+import { useChatContext } from '@/context/ChatContext'
+import { getSessionTitle } from '@/utils/session'
 
 const MIN_TAB_WIDTH = 120
 const MAX_TAB_WIDTH = 200
@@ -28,6 +30,16 @@ interface TabBarProps {
 
 export function TabBar({ className, onClose }: TabBarProps) {
   const { tabs, activeTabId, setActiveTab, closeTab, isTabBarVisible } = useTabs()
+  const { sessions } = useChatContext()
+
+  // Get tab label - for chat tabs, look up session title dynamically
+  const getTabLabel = React.useCallback((tab: Tab): string => {
+    if (tab.type === 'chat') {
+      const session = sessions.find(s => s.id === (tab as ChatTab).sessionId)
+      return session ? getSessionTitle(session) : tab.label
+    }
+    return tab.label
+  }, [sessions])
 
   // Use custom onClose if provided, otherwise use default closeTab
   const handleClose = onClose ?? closeTab
@@ -96,6 +108,7 @@ export function TabBar({ className, onClose }: TabBarProps) {
             <TabItem
               key={tab.id}
               tab={tab}
+              label={getTabLabel(tab)}
               isActive={isActive}
               isLast={isLast}
               hideSeparator={hideSeparator}
@@ -114,6 +127,7 @@ export function TabBar({ className, onClose }: TabBarProps) {
 
 interface TabItemProps {
   tab: Tab
+  label: string
   isActive: boolean
   isLast: boolean
   hideSeparator: boolean
@@ -124,7 +138,7 @@ interface TabItemProps {
   width?: number
 }
 
-function TabItem({ tab, isActive, isLast, hideSeparator, onActivate, onClose, onMouseEnter, onMouseLeave, width }: TabItemProps) {
+function TabItem({ tab, label, isActive, isLast, hideSeparator, onActivate, onClose, onMouseEnter, onMouseLeave, width }: TabItemProps) {
   return (
     <button
       data-tab-id={tab.id}
@@ -166,7 +180,7 @@ function TabItem({ tab, isActive, isLast, hideSeparator, onActivate, onClose, on
         </span>
       )}
       {/* Tab label - centered */}
-      <FadingText className="flex-1 text-center min-w-0">{tab.label}</FadingText>
+      <FadingText className="flex-1 text-center min-w-0">{label}</FadingText>
       {/* Dirty indicator */}
       {tab.dirty && (
         <span className="h-1.5 w-1.5 rounded-full bg-foreground/50 shrink-0" />

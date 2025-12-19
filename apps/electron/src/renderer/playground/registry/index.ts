@@ -3,6 +3,7 @@ import { onboardingComponents } from './onboarding'
 import { agentSetupComponents } from './agent-setup'
 import { chatComponents } from './chat'
 import { turnCardComponents } from './turn-card'
+import { messagesComponents } from './messages'
 import { markdownComponents } from './markdown'
 import { iconComponents } from './icons'
 import { settingsComponents } from './settings'
@@ -14,6 +15,7 @@ export const componentRegistry: ComponentEntry[] = [
   ...agentSetupComponents,
   ...chatComponents,
   ...turnCardComponents,
+  ...messagesComponents,
   ...markdownComponents,
   ...iconComponents,
   ...settingsComponents,

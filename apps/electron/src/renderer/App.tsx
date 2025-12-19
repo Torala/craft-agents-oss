@@ -32,10 +32,19 @@ export default function App() {
   const [menuNewChatTrigger, setMenuNewChatTrigger] = useState(0)
   // Permission requests per session (queue to handle multiple concurrent requests)
   const [pendingPermissions, setPendingPermissions] = useState<Map<string, PermissionRequest[]>>(new Map())
+  // Advanced options
+  const [ultrathinkEnabled, setUltrathinkEnabled] = useState(false)
+  const [skipPermissions, setSkipPermissions] = useState(false)
 
   // Queue for tool_result events that arrive before their tool_start (out-of-order handling)
   // Using ref to avoid stale closure issues in the useEffect event handler
   const orphanedToolResultsRef = useRef<Map<string, { result: string; toolName: string; turnId?: string }>>(new Map())
+  // Ref for skipPermissions to access current value in event handlers without re-registering
+  const skipPermissionsRef = useRef(skipPermissions)
+  // Keep ref in sync with state
+  useEffect(() => {
+    skipPermissionsRef.current = skipPermissions
+  }, [skipPermissions])
 
   // Handle onboarding completion
   const handleOnboardingComplete = useCallback(() => {
@@ -204,6 +213,12 @@ export default function App() {
       // Handle permission requests separately (outside session state)
       // Use a queue to handle multiple concurrent permission requests
       if (event.type === 'permission_request') {
+        // Auto-approve if skipPermissions is enabled
+        if (skipPermissionsRef.current) {
+          console.log('[App] Skip permissions enabled - auto-approving:', event.request.command)
+          window.electronAPI.respondToPermission(event.sessionId, event.request.requestId, true, false)
+          return
+        }
         setPendingPermissions(prev => {
           const next = new Map(prev)
           const existingQueue = next.get(event.sessionId) || []
@@ -641,7 +656,14 @@ export default function App() {
       ))
 
       // Step 4: Send to Claude with processed attachments + stored attachments for persistence
-      await window.electronAPI.sendMessage(sessionId, message, processedAttachments, storedAttachments)
+      await window.electronAPI.sendMessage(sessionId, message, processedAttachments, storedAttachments, {
+        ultrathinkEnabled,
+      })
+
+      // Auto-disable ultrathink after sending (single-shot activation)
+      if (ultrathinkEnabled) {
+        setUltrathinkEnabled(false)
+      }
     } catch (error) {
       console.error('Failed to send message:', error)
       setSessions(prev => prev.map(s =>
@@ -662,7 +684,7 @@ export default function App() {
           : s
       ))
     }
-  }, [])
+  }, [ultrathinkEnabled])
 
   const handleRefreshAgents = useCallback(async () => {
     if (windowWorkspaceId) {
@@ -680,6 +702,14 @@ export default function App() {
     setCurrentModel(model)
     // Persist to config so it's remembered across launches
     window.electronAPI.setModel(model)
+  }, [])
+
+  const handleUltrathinkChange = useCallback((enabled: boolean) => {
+    setUltrathinkEnabled(enabled)
+  }, [])
+
+  const handleSkipPermissionsChange = useCallback((enabled: boolean) => {
+    setSkipPermissions(enabled)
   }, [])
 
   const handleRespondToPermission = useCallback(async (sessionId: string, requestId: string, allowed: boolean, alwaysAllow: boolean) => {
@@ -884,6 +914,11 @@ export default function App() {
             onAddWorkspace={handleAddWorkspace}
             pendingPermissions={pendingPermissions}
             onRespondToPermission={handleRespondToPermission}
+            // Advanced options
+            ultrathinkEnabled={ultrathinkEnabled}
+            onUltrathinkChange={handleUltrathinkChange}
+            skipPermissions={skipPermissions}
+            onSkipPermissionsChange={handleSkipPermissionsChange}
           />
         </div>
       </TooltipProvider>

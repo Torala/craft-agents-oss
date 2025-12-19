@@ -6,7 +6,6 @@ import { cn } from "@/lib/utils"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { Button } from "@/components/ui/button"
-import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip"
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -144,42 +143,8 @@ function SessionItem({
             menuOpen ? "opacity-100" : "opacity-0 group-hover:opacity-100"
           )}
         >
-          {/* Button group: Archive + More */}
+          {/* More menu */}
           <div className="flex items-center rounded-[8px] overflow-hidden border border-transparent hover:border-border/50">
-            {/* Archive/Unarchive button */}
-            {onArchive && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <div
-                    className="p-1.5 hover:bg-foreground/10 cursor-pointer"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onArchive(item.id)
-                    }}
-                  >
-                    <Archive className="h-4 w-4 text-muted-foreground" />
-                  </div>
-                </TooltipTrigger>
-                <TooltipContent>Archive</TooltipContent>
-              </Tooltip>
-            )}
-            {onUnarchive && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <div
-                    className="p-1.5 hover:bg-foreground/10 cursor-pointer"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onUnarchive(item.id)
-                    }}
-                  >
-                    <ArchiveRestore className="h-4 w-4 text-muted-foreground" />
-                  </div>
-                </TooltipTrigger>
-                <TooltipContent>Unarchive</TooltipContent>
-              </Tooltip>
-            )}
-            {/* More menu */}
             <DropdownMenu onOpenChange={setMenuOpen}>
               <DropdownMenuTrigger asChild>
                 <div className="p-1.5 hover:bg-foreground/10 data-[state=open]:bg-foreground/10 cursor-pointer">

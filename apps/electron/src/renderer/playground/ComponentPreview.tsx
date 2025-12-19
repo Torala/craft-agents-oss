@@ -13,10 +13,29 @@ const MIN_WIDTH = 100
 const MIN_HEIGHT = 100
 const DEFAULT_WIDTH = 800
 const DEFAULT_HEIGHT = 600
+const STORAGE_KEY = 'playground-preview-size'
+
+function loadSavedSize(): { width: number; height: number } {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY)
+    if (saved) {
+      const parsed = JSON.parse(saved)
+      if (typeof parsed.width === 'number' && typeof parsed.height === 'number') {
+        return {
+          width: Math.max(MIN_WIDTH, parsed.width),
+          height: Math.max(MIN_HEIGHT, parsed.height),
+        }
+      }
+    }
+  } catch {
+    // Ignore parse errors
+  }
+  return { width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT }
+}
 
 export function ComponentPreview({ component, props }: ComponentPreviewProps) {
   const [bgStyle, setBgStyle] = React.useState<BackgroundStyle>('default')
-  const [size, setSize] = React.useState({ width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT })
+  const [size, setSize] = React.useState(loadSavedSize)
   const containerRef = React.useRef<HTMLDivElement>(null)
   const isDraggingRef = React.useRef<'right' | 'bottom' | 'corner' | null>(null)
   const startPosRef = React.useRef({ x: 0, y: 0 })
@@ -73,6 +92,13 @@ export function ComponentPreview({ component, props }: ComponentPreviewProps) {
     }
 
     const handleMouseUp = () => {
+      if (isDraggingRef.current) {
+        // Save size to localStorage when drag ends
+        setSize(currentSize => {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(currentSize))
+          return currentSize
+        })
+      }
       isDraggingRef.current = null
     }
 
@@ -105,7 +131,10 @@ export function ComponentPreview({ component, props }: ComponentPreviewProps) {
               {Math.round(size.width)} × {Math.round(size.height)}
             </span>
             <button
-              onClick={() => setSize({ width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT })}
+              onClick={() => {
+                setSize({ width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT })
+                localStorage.removeItem(STORAGE_KEY)
+              }}
               className="px-2 py-1 rounded text-xs text-muted-foreground hover:text-foreground hover:bg-foreground/5 transition-colors"
             >
               Reset

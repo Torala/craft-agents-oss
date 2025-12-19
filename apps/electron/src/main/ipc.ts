@@ -9,7 +9,7 @@ import { WindowManager } from './window-manager'
 import { PreviewWindowManager } from './preview-window'
 import { agentService } from './agent-service'
 import { registerOnboardingHandlers } from './onboarding'
-import { IPC_CHANNELS, type FileAttachment, type StoredAttachment, type AgentActivateOptions, type AuthType, type BillingMethodInfo } from '../shared/types'
+import { IPC_CHANNELS, type FileAttachment, type StoredAttachment, type AgentActivateOptions, type AuthType, type BillingMethodInfo, type SendMessageOptions } from '../shared/types'
 import { readFileAttachment } from '@craft-agent/shared/utils'
 import { getAiCreditTopUpUrl } from '@craft-agent/shared/auth'
 import { getSessionAttachmentsPath, getAuthType, setAuthType, getPreferencesPath, getModel, setModel } from '@craft-agent/shared/config'
@@ -153,12 +153,12 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
   // Note: We intentionally don't await here - the response is streamed via events.
   // The IPC handler returns immediately, and results come through SESSION_EVENT channel.
   // attachments: FileAttachment[] for Claude (has content), storedAttachments: StoredAttachment[] for persistence (has thumbnailBase64)
-  ipcMain.handle(IPC_CHANNELS.SEND_MESSAGE, async (event, sessionId: string, message: string, attachments?: FileAttachment[], storedAttachments?: StoredAttachment[]) => {
+  ipcMain.handle(IPC_CHANNELS.SEND_MESSAGE, async (event, sessionId: string, message: string, attachments?: FileAttachment[], storedAttachments?: StoredAttachment[], options?: SendMessageOptions) => {
     // Capture the workspace from the calling window for error routing
     const callingWorkspaceId = windowManager.getWorkspaceForWindow(event.sender.id)
 
     // Start processing in background, errors are sent via event stream
-    sessionManager.sendMessage(sessionId, message, attachments, storedAttachments).catch(err => {
+    sessionManager.sendMessage(sessionId, message, attachments, storedAttachments, options).catch(err => {
       console.error('[IPC] Error in sendMessage:', err)
       // Send error to renderer so user sees it (route to correct window)
       const window = callingWorkspaceId

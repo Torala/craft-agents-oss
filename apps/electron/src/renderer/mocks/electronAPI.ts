@@ -1,4 +1,4 @@
-import type { ElectronAPI, Session, SessionEvent, FileAttachment, StoredAttachment } from '../../shared/types'
+import type { ElectronAPI, Session, SessionEvent, FileAttachment, StoredAttachment, SendMessageOptions } from '../../shared/types'
 import { generateMessageId } from '../../shared/types'
 import { mockWorkspaces, mockSessions, mockStreamingResponses } from './dummyData'
 
@@ -149,7 +149,7 @@ export const mockElectronAPI: ElectronAPI = {
     }
   },
 
-  async sendMessage(sessionId: string, message: string, _attachments?: FileAttachment[]): Promise<void> {
+  async sendMessage(sessionId: string, message: string, _attachments?: FileAttachment[], _storedAttachments?: StoredAttachment[], _options?: SendMessageOptions): Promise<void> {
     // This returns immediately - results stream via events
     const session = sessions.find(s => s.id === sessionId)
     if (!session) {

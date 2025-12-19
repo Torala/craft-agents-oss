@@ -10,8 +10,10 @@ import {
   AlertTriangle,
   ExternalLink,
   CircleSlash,
+  Zap,
+  ShieldOff,
 } from "lucide-react"
-import { AnimatePresence } from "motion/react"
+import { motion } from "motion/react"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -23,7 +25,6 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { cn } from "@/lib/utils"
 import { Markdown, CollapsibleMarkdownProvider, StreamingMarkdown, type RenderMode } from "@/components/markdown"
-import { IntermediateMessage } from "./IntermediateMessage"
 import { AnimatedCollapsibleContent } from "@/components/ui/collapsible"
 import { AttachmentPreview, FileTypeIcon, getFileTypeLabel } from "./AttachmentPreview"
 import { Spinner } from "@/components/ui/loading-indicator"
@@ -64,6 +65,13 @@ interface ChatDisplayProps {
   onRespondToPermission?: (sessionId: string, requestId: string, allowed: boolean, alwaysAllow: boolean) => void
   /** Agent setup state - when present, shows setup indicator in input area */
   agentSetupState?: AgentSetupState
+  // Advanced options
+  /** Enable ultrathink mode for extended reasoning */
+  ultrathinkEnabled?: boolean
+  onUltrathinkChange?: (enabled: boolean) => void
+  /** Skip all permission prompts automatically */
+  skipPermissions?: boolean
+  onSkipPermissionsChange?: (enabled: boolean) => void
 }
 
 /**
@@ -82,7 +90,7 @@ function ThinkingIndicator() {
   }, [])
 
   return (
-    <div className="flex items-center gap-2 px-3 py-1 -mb-1 text-xs text-muted-foreground">
+    <div className="flex items-center gap-2 px-3 py-1 -mb-1 text-[13px] text-muted-foreground">
       {/* Spinner in same location as TurnCard chevron */}
       <div className="w-3 h-3 flex items-center justify-center shrink-0">
         <Spinner className="text-[10px]" />
@@ -120,6 +128,11 @@ export function ChatDisplay({
   pendingPermission,
   onRespondToPermission,
   agentSetupState,
+  // Advanced options
+  ultrathinkEnabled = false,
+  onUltrathinkChange,
+  skipPermissions = false,
+  onSkipPermissionsChange,
 }: ChatDisplayProps) {
   // Input is only disabled when explicitly disabled (e.g., agent needs activation)
   // User can type during streaming - submitting will stop the stream and send
@@ -354,6 +367,9 @@ export function ChatDisplay({
     onSendMessage(input.trim(), attachments.length > 0 ? attachments : undefined)
     setInput("")
     setAttachments([])
+
+    // Scroll to bottom with animation when sending a message
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }
 
   const handleStop = () => {
@@ -466,29 +482,56 @@ export function ChatDisplay({
 
           {/* === INPUT CONTAINER: Textarea + Bottom row with controls === */}
           <div className="max-w-[960px] mx-auto w-full px-4 pb-4 mt-1">
-            <AnimatePresence>
-            {/* Permission Banner - replaces input when agent needs approval for a command */}
-            {pendingPermission && onRespondToPermission ? (
-              <PermissionBanner
-                key="permission-banner"
-                request={pendingPermission}
-                onRespond={(allowed, alwaysAllow) =>
-                  onRespondToPermission(pendingPermission.sessionId, pendingPermission.requestId, allowed, alwaysAllow)
-                }
-              />
-            ) : agentSetupState && agentSetupState.state !== 'hidden' ? (
-              /* Agent Setup Banner - shown instead of input when agent needs setup */
-              <SetupAuthBanner
-                key="setup-auth-banner"
-                state={agentSetupState.state}
-                agentName={agentSetupState.agentName}
-                reason={agentSetupState.reason}
-                onAction={agentSetupState.onAction}
-                variant="inputAreaCover"
-              />
-            ) : (
-              /* Normal Input Form */
-              <form key="input-form" onSubmit={handleSubmit}>
+            <div className="relative">
+              {/* Permission Banner - crossfades with input, anchored to bottom */}
+              {pendingPermission && onRespondToPermission && (
+                <motion.div
+                  initial={false}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
+                  className="absolute inset-x-0 bottom-0 z-10"
+                >
+                  <PermissionBanner
+                    request={pendingPermission}
+                    onRespond={(allowed, alwaysAllow) =>
+                      onRespondToPermission(pendingPermission.sessionId, pendingPermission.requestId, allowed, alwaysAllow)
+                    }
+                  />
+                </motion.div>
+              )}
+
+              {/* Agent Setup Banner - shown instead of input when agent needs setup */}
+              {agentSetupState && agentSetupState.state !== 'hidden' && !pendingPermission && (
+                <motion.div
+                  initial={false}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
+                  className="absolute inset-x-0 bottom-0 z-10"
+                >
+                  <SetupAuthBanner
+                    state={agentSetupState.state}
+                    agentName={agentSetupState.agentName}
+                    reason={agentSetupState.reason}
+                    onAction={agentSetupState.onAction}
+                    variant="inputAreaCover"
+                  />
+                </motion.div>
+              )}
+
+              {/* Normal Input Form - fades when permission/setup shows */}
+              <motion.form
+                initial={false}
+                animate={{
+                  opacity: (pendingPermission || (agentSetupState && agentSetupState.state !== 'hidden')) ? 0 : 1
+                }}
+                transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
+                onSubmit={handleSubmit}
+                style={{
+                  pointerEvents: (pendingPermission || (agentSetupState && agentSetupState.state !== 'hidden')) ? 'none' : 'auto'
+                }}
+              >
                 <div
                   className={cn(
                     "rounded-[8px] bg-background overflow-hidden transition-all shadow-middle",
@@ -510,7 +553,7 @@ export function ChatDisplay({
                   {/* Textarea - 4 lines minimum height */}
                   <textarea
                     ref={textareaRef}
-                    className="w-full min-h-[100px] pl-5 pr-4 pt-4 pb-3 bg-transparent outline-none text-sm placeholder:text-muted-foreground resize-none focus-visible:ring-0"
+                    className="w-full min-h-[72px] pl-5 pr-4 pt-4 pb-3 bg-transparent outline-none text-sm placeholder:text-muted-foreground resize-none focus-visible:ring-0"
                     placeholder={`Message ${session.agentName || session.workspaceName || 'Chat'}...`}
                     value={input}
                     onChange={(e) => {
@@ -567,6 +610,35 @@ export function ChatDisplay({
                       </StyledDropdownMenuContent>
                     </DropdownMenu>
 
+                    {/* Advanced Options - Clickable Tags */}
+                    <button
+                      type="button"
+                      onClick={() => onUltrathinkChange?.(!ultrathinkEnabled)}
+                      className={cn(
+                        "h-6 px-2.5 text-[11px] font-medium rounded-[4px] flex items-center gap-1.5 transition-all",
+                        ultrathinkEnabled
+                          ? "bg-gradient-to-r from-violet-500/20 via-fuchsia-500/20 to-pink-500/20 text-fuchsia-500 border border-fuchsia-500/30 shadow-[0_0_12px_rgba(217,70,239,0.2)]"
+                          : "text-muted-foreground hover:bg-foreground/5 hover:text-foreground border border-transparent"
+                      )}
+                    >
+                      <Zap className={cn("h-3 w-3", ultrathinkEnabled && "fill-fuchsia-500")} />
+                      <span>Ultrathink</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => onSkipPermissionsChange?.(!skipPermissions)}
+                      className={cn(
+                        "h-6 px-2.5 text-[11px] font-medium rounded-[4px] flex items-center gap-1.5 transition-all",
+                        skipPermissions
+                          ? "bg-red-500/10 text-red-500 border border-red-500/30"
+                          : "text-muted-foreground hover:bg-foreground/5 hover:text-foreground border border-transparent"
+                      )}
+                    >
+                      <ShieldOff className="h-3 w-3" />
+                      <span>Skip Permissions</span>
+                    </button>
+
                     {/* Spacer */}
                     <div className="flex-1" />
 
@@ -601,9 +673,8 @@ export function ChatDisplay({
                     })()}
                   </div>
                 </div>
-              </form>
-            )}
-            </AnimatePresence>
+              </motion.form>
+            </div>
           </div>
         </div>
       ) : null}
@@ -646,11 +717,9 @@ function ErrorMessage({ message }: { message: Message }) {
 
   return (
     <div className="flex justify-start">
-      <div className="max-w-[80%] bg-destructive/10 border border-destructive/20 rounded-lg pl-5 pr-4 py-2 break-words">
-        {/* Error Header: Warning icon + title */}
-        <div className="flex items-center gap-2 text-xs text-destructive mb-1 font-semibold">
-          <AlertTriangle className="w-4 h-4" />
-          <span>{message.errorTitle || 'Error'}</span>
+      <div className="max-w-[80%] bg-destructive/10 rounded-[8px] pl-5 pr-4 pt-2 pb-3 break-words">
+        <div className="text-xs text-destructive/50 mb-0.5 font-semibold">
+          {message.errorTitle || 'Error'}
         </div>
         <p className="text-sm text-destructive">{message.content}</p>
 
@@ -770,17 +839,6 @@ function MessageBubble({
 
   // === ASSISTANT MESSAGE: Left-aligned gray bubble with markdown rendering ===
   if (message.role === 'assistant') {
-    // Intermediate messages (commentary between tool calls) get special treatment
-    if (message.isIntermediate) {
-      return (
-        <IntermediateMessage
-          content={message.content}
-          onOpenUrl={onOpenUrl}
-          onOpenFile={onOpenFile}
-        />
-      )
-    }
-
     return (
       <div className="flex justify-start group">
         <div className="relative max-w-[80%] bg-white shadow-minimal rounded-[8px] pl-6 pr-4 py-3 break-words min-w-0">
@@ -830,7 +888,7 @@ function MessageBubble({
   // === STATUS MESSAGE: Matches ThinkingIndicator layout for visual consistency ===
   if (message.role === 'status') {
     return (
-      <div className="flex items-center gap-2 px-3 py-1 -mb-1 text-xs text-muted-foreground">
+      <div className="flex items-center gap-2 px-3 py-1 -mb-1 text-[13px] text-muted-foreground">
         {/* Spinner in same location as TurnCard chevron */}
         <div className="w-3 h-3 flex items-center justify-center shrink-0">
           <Spinner className="text-[10px]" />
@@ -843,7 +901,7 @@ function MessageBubble({
   // === INFO MESSAGE: Matches TurnCard header style ===
   if (message.role === 'info') {
     return (
-      <div className="flex items-center gap-2 px-3 py-1 text-xs text-muted-foreground">
+      <div className="flex items-center gap-2 px-3 py-1 text-[13px] text-muted-foreground">
         <div className="w-3 h-3 flex items-center justify-center shrink-0">
           <CircleSlash className="w-3 h-3" />
         </div>
@@ -852,17 +910,13 @@ function MessageBubble({
     )
   }
 
-  // === WARNING MESSAGE: Amber bordered bubble with warning icon ===
+  // === WARNING MESSAGE: Amber themed bubble ===
   if (message.role === 'warning') {
     return (
       <div className="flex justify-start">
-        <div className="max-w-[80%] bg-amber-500/10 border border-amber-500/20 rounded-lg pl-5 pr-4 py-2 break-words">
-          {/* Warning Header: Triangle icon + "Warning" label */}
-          <div className="flex items-center gap-2 text-xs text-amber-600 dark:text-amber-500 mb-1 font-semibold">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-            </svg>
-            <span>Warning</span>
+        <div className="max-w-[80%] bg-amber-500/10 rounded-[8px] pl-5 pr-4 pt-2 pb-3 break-words">
+          <div className="text-xs text-amber-600/50 dark:text-amber-500/50 mb-0.5 font-semibold">
+            Warning
           </div>
           <p className="text-sm text-amber-700 dark:text-amber-400">{message.content}</p>
         </div>

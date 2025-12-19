@@ -30,6 +30,11 @@ export default function ChatTabPanel({ tab }: ChatTabPanelProps) {
     onModelChange,
     onRespondToPermission,
     textareaRef,
+    // Advanced options
+    ultrathinkEnabled,
+    skipPermissions,
+    onUltrathinkChange,
+    onSkipPermissionsChange,
   } = useChatContext()
 
   const { closeTab, openAgentSetupTab } = useTabs()
@@ -155,6 +160,11 @@ export default function ChatTabPanel({ tab }: ChatTabPanelProps) {
       pendingPermission={pendingPermission}
       onRespondToPermission={onRespondToPermission}
       agentSetupState={agentSetupState}
+      // Advanced options
+      ultrathinkEnabled={ultrathinkEnabled}
+      onUltrathinkChange={onUltrathinkChange}
+      skipPermissions={skipPermissions}
+      onSkipPermissionsChange={onSkipPermissionsChange}
     />
   )
 }

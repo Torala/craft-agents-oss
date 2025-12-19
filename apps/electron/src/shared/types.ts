@@ -226,6 +226,12 @@ export type SessionEvent =
   | { type: 'agent_status'; sessionId: string; status: AgentStatus }
   | { type: 'permission_request'; sessionId: string; request: PermissionRequest }
 
+// Options for sendMessage
+export interface SendMessageOptions {
+  /** Enable ultrathink mode for extended reasoning */
+  ultrathinkEnabled?: boolean
+}
+
 // IPC channel names
 export const IPC_CHANNELS = {
   // Session management
@@ -362,7 +368,7 @@ export interface ElectronAPI {
   createSession(workspaceId: string, agentId?: string, agentName?: string): Promise<Session>
   deleteSession(sessionId: string): Promise<void>
   renameSession(sessionId: string, name: string): Promise<void>
-  sendMessage(sessionId: string, message: string, attachments?: FileAttachment[], storedAttachments?: StoredAttachmentType[]): Promise<void>
+  sendMessage(sessionId: string, message: string, attachments?: FileAttachment[], storedAttachments?: StoredAttachmentType[], options?: SendMessageOptions): Promise<void>
   cancelProcessing(sessionId: string): Promise<void>
   archiveSession(sessionId: string): Promise<void>
   unarchiveSession(sessionId: string): Promise<void>

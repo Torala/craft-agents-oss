@@ -32,7 +32,7 @@ import { CraftMcpClient } from '@craft-agent/shared/mcp'
 import { SubAgentManager, type SubAgentManagerConfig } from '@craft-agent/shared/agents'
 import type { SubAgentDefinition, AgentStatus, AgentActivateOptions } from '@craft-agent/shared/agents'
 import { AgentStateManager, loadRegistry, invalidateDefinition } from '@craft-agent/shared/agents'
-import { type Session, type Message, type SessionEvent, type FileAttachment, type StoredAttachment, IPC_CHANNELS, generateMessageId } from '../shared/types'
+import { type Session, type Message, type SessionEvent, type FileAttachment, type StoredAttachment, type SendMessageOptions, IPC_CHANNELS, generateMessageId } from '../shared/types'
 import { generateSessionTitle } from '@craft-agent/shared/utils'
 import { DEFAULT_MODEL } from '@craft-agent/shared/config'
 
@@ -780,7 +780,7 @@ export class SessionManager {
     }
   }
 
-  async sendMessage(sessionId: string, message: string, attachments?: FileAttachment[], storedAttachments?: StoredAttachment[]): Promise<void> {
+  async sendMessage(sessionId: string, message: string, attachments?: FileAttachment[], storedAttachments?: StoredAttachment[], options?: SendMessageOptions): Promise<void> {
     const managed = this.sessions.get(sessionId)
     if (!managed) {
       throw new Error(`Session ${sessionId} not found`)
@@ -885,6 +885,12 @@ export class SessionManager {
       console.log('[SessionManager] Message:', message)
       console.log('[SessionManager] Agent model:', agent.getModel())
       console.log('[SessionManager] process.cwd():', process.cwd())
+
+      // Set ultrathink mode if enabled (single-shot - resets after query)
+      if (options?.ultrathinkEnabled) {
+        console.log('[SessionManager] Ultrathink mode ENABLED')
+        agent.setUltrathinkMode(true)
+      }
 
       // Process the message through the agent
       console.log('[SessionManager] Calling agent.chat()...')
