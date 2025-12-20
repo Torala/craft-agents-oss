@@ -683,7 +683,37 @@ export function saveWorkspaceConversation(
     savedAt: Date.now(),
   };
 
-  writeFileSync(filePath, JSON.stringify(conversation, null, 2), 'utf-8');
+  try {
+    writeFileSync(filePath, JSON.stringify(conversation, null, 2), 'utf-8');
+  } catch (e) {
+    // Handle cyclic structures or other serialization errors
+    console.error(`[storage] [CYCLIC STRUCTURE] Failed to save workspace conversation:`, e);
+    console.error(`[storage] Message count: ${messages.length}, message types: ${messages.map(m => m.type).join(', ')}`);
+    // Try to save with sanitized messages
+    try {
+      const sanitizedMessages = messages.map((m, i) => {
+        let safeToolInput = m.toolInput;
+        if (m.toolInput) {
+          try {
+            JSON.stringify(m.toolInput);
+          } catch (inputErr) {
+            console.error(`[storage] [CYCLIC STRUCTURE] in message ${i} toolInput (tool: ${m.toolName}), keys: ${Object.keys(m.toolInput).join(', ')}, error: ${inputErr}`);
+            safeToolInput = { error: '[non-serializable input]' };
+          }
+        }
+        return { ...m, toolInput: safeToolInput };
+      });
+      const sanitizedConversation: WorkspaceConversation = {
+        messages: sanitizedMessages,
+        tokenUsage,
+        savedAt: Date.now(),
+      };
+      writeFileSync(filePath, JSON.stringify(sanitizedConversation, null, 2), 'utf-8');
+      console.error(`[storage] Saved sanitized workspace conversation successfully`);
+    } catch (e2) {
+      console.error(`[storage] Failed to save even sanitized workspace conversation:`, e2);
+    }
+  }
 }
 
 // Load workspace conversation
@@ -1186,7 +1216,37 @@ export function saveSession(session: StoredSession): void {
   ensureSessionsDir();
   const filePath = join(SESSIONS_DIR, `${session.id}.json`);
   session.lastUsedAt = Date.now();
-  writeFileSync(filePath, JSON.stringify(session, null, 2), 'utf-8');
+  try {
+    writeFileSync(filePath, JSON.stringify(session, null, 2), 'utf-8');
+  } catch (e) {
+    // Handle cyclic structures or other serialization errors
+    console.error(`[storage] [CYCLIC STRUCTURE] Failed to save session ${session.id}:`, e);
+    console.error(`[storage] Session has ${session.messages.length} messages, types: ${session.messages.map(m => m.type).join(', ')}`);
+    // Try to save a minimal version with sanitized messages
+    try {
+      const minimalSession = {
+        ...session,
+        messages: session.messages.map((m, i) => {
+          // Safely serialize toolInput which could have complex objects
+          let safeToolInput = m.toolInput;
+          if (m.toolInput) {
+            try {
+              JSON.stringify(m.toolInput);
+            } catch (inputErr) {
+              console.error(`[storage] [CYCLIC STRUCTURE] in session message ${i} toolInput (tool: ${m.toolName}), keys: ${Object.keys(m.toolInput).join(', ')}, error: ${inputErr}`);
+              safeToolInput = { error: '[non-serializable input]' };
+            }
+          }
+          return { ...m, toolInput: safeToolInput };
+        }),
+      };
+      writeFileSync(filePath, JSON.stringify(minimalSession, null, 2), 'utf-8');
+      console.error(`[storage] Saved sanitized session ${session.id} successfully`);
+    } catch (e2) {
+      // If even minimal save fails, just log and continue
+      console.error(`[storage] Failed to save even minimal session ${session.id}:`, e2);
+    }
+  }
 }
 
 // Load session by ID

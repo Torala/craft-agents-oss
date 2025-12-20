@@ -124,7 +124,17 @@ function isOpusModel(model: string): boolean {
 function debugLog(...args: unknown[]) {
   if (!DEBUG) return;
   const timestamp = new Date().toISOString();
-  const message = `${timestamp} [cache-interceptor] ${args.map((a) => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' ')}\n`;
+  const message = `${timestamp} [cache-interceptor] ${args.map((a) => {
+    if (typeof a === 'object') {
+      try {
+        return JSON.stringify(a);
+      } catch (e) {
+        const keys = a && typeof a === 'object' ? Object.keys(a as object).join(', ') : 'unknown';
+        return `[CYCLIC STRUCTURE in cache-interceptor debugLog, keys: ${keys}] (error: ${e})`;
+      }
+    }
+    return String(a);
+  }).join(' ')}\n`;
   try {
     appendFileSync(LOG_FILE, message);
   } catch {

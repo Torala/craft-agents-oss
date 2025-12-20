@@ -749,7 +749,17 @@ export class CraftAgent {
   ): Promise<{ allowed: boolean; updatedInput: Record<string, unknown> }> {
     // Bash commands require permission
     if (toolName === 'Bash') {
-      const command = typeof input.command === 'string' ? input.command : JSON.stringify(input);
+      let command: string;
+      if (typeof input.command === 'string') {
+        command = input.command;
+      } else {
+        try {
+          command = JSON.stringify(input);
+        } catch (e) {
+          this.onDebug?.(`[CYCLIC STRUCTURE] in checkToolPermission Bash input, keys: ${Object.keys(input).join(', ')}, error: ${e}`);
+          command = '[non-serializable input]';
+        }
+      }
       const baseCommand = command.trim().split(/\s+/)[0] || command;
       const requestId = `perm-${toolUseId}`;
 
@@ -875,8 +885,9 @@ export class CraftAgent {
 
       const agentMcpServers = this.getAgentMcpServers();
       const agentApiServers = this.getAgentApiServers();
-      debug('[chat] agentMcpServers:', agentMcpServers);
-      debug('[chat] agentApiServers:', agentApiServers);
+      // Only log keys - SDK MCP servers contain cyclic references and can't be serialized
+      debug('[chat] agentMcpServers:', Object.keys(agentMcpServers));
+      debug('[chat] agentApiServers:', Object.keys(agentApiServers));
 
       const hasActiveAgent = this.activeAgentDefinition !== null;
       const mcpServers: Options['mcpServers'] = {
@@ -1254,9 +1265,17 @@ export class CraftAgent {
               // For Bash, check if we need permission
               if (input.tool_name === 'Bash') {
                 // Extract command and base command
-                const command = typeof input.tool_input === 'object' && input.tool_input !== null
-                  ? (input.tool_input as Record<string, unknown>).command
-                  : JSON.stringify(input.tool_input);
+                let command: unknown;
+                if (typeof input.tool_input === 'object' && input.tool_input !== null) {
+                  command = (input.tool_input as Record<string, unknown>).command;
+                } else {
+                  try {
+                    command = JSON.stringify(input.tool_input);
+                  } catch (e) {
+                    this.onDebug?.(`[CYCLIC STRUCTURE] in PreToolUse Bash tool_input, type: ${typeof input.tool_input}, error: ${e}`);
+                    command = '[non-serializable input]';
+                  }
+                }
                 const commandStr = String(command);
                 const baseCommand = this.getBaseCommand(commandStr);
 
@@ -1330,9 +1349,17 @@ export class CraftAgent {
               // But we want Claude to present the plan and wait for explicit user approval
               if (input.tool_name === 'ExitPlanMode') {
                 this.onDebug?.('PostToolUse: Overriding ExitPlanMode result to require user approval');
-                const planContent = typeof input.tool_response === 'string'
-                  ? input.tool_response
-                  : JSON.stringify(input.tool_response);
+                let planContent: string;
+                if (typeof input.tool_response === 'string') {
+                  planContent = input.tool_response;
+                } else {
+                  try {
+                    planContent = JSON.stringify(input.tool_response);
+                  } catch (e) {
+                    this.onDebug?.(`[CYCLIC STRUCTURE] in PostToolUse ExitPlanMode tool_response, type: ${typeof input.tool_response}, error: ${e}`);
+                    planContent = '[non-serializable response]';
+                  }
+                }
 
                 return {
                   continue: true,

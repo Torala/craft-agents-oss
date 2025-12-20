@@ -27,9 +27,18 @@ export function debug(message: string, ...args: unknown[]): void {
 
   const timestamp = new Date().toISOString();
   const formatted = args.length > 0
-    ? `${timestamp} ${message} ${args.map(a =>
-        typeof a === 'object' ? JSON.stringify(a) : String(a)
-      ).join(' ')}\n`
+    ? `${timestamp} ${message} ${args.map(a => {
+        if (typeof a === 'object') {
+          try {
+            return JSON.stringify(a);
+          } catch (e) {
+            // Log cyclic structure detection to help debug
+            const keys = a && typeof a === 'object' ? Object.keys(a as object).join(', ') : 'unknown';
+            return `[non-serializable object with keys: ${keys}] (error: ${e})`;
+          }
+        }
+        return String(a);
+      }).join(' ')}\n`
     : `${timestamp} ${message}\n`;
 
   try {

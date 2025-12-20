@@ -84,10 +84,19 @@ export async function summarizeLargeResult(
     return response.substring(0, 40000) + '\n\n[Result truncated due to size - smart summarization requires API key auth]';
   }
 
-  // Build context from tool input
-  const inputContext = context.input
-    ? `Request parameters: ${JSON.stringify(context.input)}`
-    : 'No specific parameters provided.';
+  // Build context from tool input (safely stringify to handle cyclic structures)
+  let inputContext = 'No specific parameters provided.';
+  if (context.input) {
+    try {
+      inputContext = `Request parameters: ${JSON.stringify(context.input)}`;
+    } catch (e) {
+      // Log the error with context to help debug where cyclic structures originate
+      debug(`[summarize] CYCLIC STRUCTURE DETECTED in context.input for tool ${context.toolName}`);
+      debug(`[summarize] Input keys: ${Object.keys(context.input).join(', ')}`);
+      debug(`[summarize] Error: ${e}`);
+      inputContext = 'Request parameters: [non-serializable input - contains cyclic references]';
+    }
+  }
 
   const endpointContext = context.path
     ? `Endpoint: ${context.path}`
