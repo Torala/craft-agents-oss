@@ -27,9 +27,13 @@ export interface ChatContextType {
   /** Draft input text per session - preserved across mode switches and conversation changes */
   sessionDrafts: Map<string, string>
 
-  // Advanced options
-  ultrathinkEnabled: boolean
-  skipPermissions: boolean
+  // Advanced options (all session-scoped)
+  /** Session IDs that have ultrathink enabled (session-scoped, single-shot per message) */
+  ultrathinkSessions: Set<string>
+  /** Session IDs that have skip permissions enabled (session-scoped) */
+  skipPermissionsSessions: Set<string>
+  /** Session IDs that have plan mode enabled (session-scoped) */
+  planModeSessions: Set<string>
 
   // Session callbacks
   onCreateSession: (workspaceId: string, agentId?: string) => Promise<Session>
@@ -55,9 +59,10 @@ export interface ChatContextType {
   // Model
   onModelChange: (model: string) => void
 
-  // Advanced options callbacks
-  onUltrathinkChange: (enabled: boolean) => void
-  onSkipPermissionsChange: (enabled: boolean) => void
+  // Advanced options callbacks (all session-scoped)
+  onUltrathinkChange: (sessionId: string, enabled: boolean) => void
+  onSkipPermissionsChange: (sessionId: string, enabled: boolean) => void
+  onPlanModeChange: (sessionId: string, enabled: boolean) => void
 
   // Input draft callback
   onInputChange: (sessionId: string, value: string) => void

@@ -208,6 +208,8 @@ export interface Session {
   agentName?: string
   isArchived?: boolean
   isFlagged?: boolean
+  // Advanced options (persisted per session)
+  skipPermissions?: boolean
 }
 
 // Events sent from main to renderer
@@ -246,6 +248,7 @@ export const IPC_CHANNELS = {
   UNARCHIVE_SESSION: 'sessions:unarchive',
   FLAG_SESSION: 'sessions:flag',
   UNFLAG_SESSION: 'sessions:unflag',
+  SET_SKIP_PERMISSIONS: 'sessions:setSkipPermissions',
   RESPOND_TO_PERMISSION: 'sessions:respondToPermission',
 
   // Workspace management
@@ -362,6 +365,7 @@ export const IPC_CHANNELS = {
   PREVIEW_GET_CONTENT: 'preview:getContent',
   PREVIEW_SAVE: 'preview:save',
   PREVIEW_MESSAGE_UPDATED: 'preview:messageUpdated',
+
 } as const
 
 // Re-import types for ElectronAPI

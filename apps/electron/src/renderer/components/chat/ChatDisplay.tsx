@@ -2,12 +2,15 @@ import * as React from "react"
 import { useEffect } from "react"
 import {
   AlertTriangle,
+  Brain,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
   CircleAlert,
   ExternalLink,
   Info,
+  ShieldOff,
+  X,
 } from "lucide-react"
 import { motion, AnimatePresence } from "motion/react"
 
@@ -21,7 +24,7 @@ import { useFocusZone } from "@/hooks/keyboard"
 import type { Session, Message, FileAttachment, StoredAttachment, PermissionRequest } from "../../../shared/types"
 import { SetupAuthBanner, type BannerState } from "./SetupAuthBanner"
 import { TurnCard } from "./TurnCard"
-import { groupMessagesByTurn, type Turn, type AssistantTurn, type UserTurn, type SystemTurn } from "./turn-utils"
+import { groupMessagesByTurn, formatTurnAsMarkdown, formatActivityAsMarkdown, type Turn, type AssistantTurn, type UserTurn, type SystemTurn } from "./turn-utils"
 import { InputContainer, type StructuredInputState, type StructuredResponse, type PermissionResponse } from "./input"
 
 /** Agent setup state for showing setup indicator in input area */
@@ -373,10 +376,24 @@ export function ChatDisplay({
     : undefined
 
   // Memoize turn grouping - avoids O(n) iteration on every render/keystroke
-  const turns = React.useMemo(
-    () => session ? groupMessagesByTurn(session.messages) : [],
-    [session?.messages]
-  )
+  const turns = React.useMemo(() => {
+    if (!session) return []
+
+    // Debug: Log when groupMessagesByTurn is called to track memoization invalidation
+    const toolMsgs = session.messages.filter(m => m.role === 'tool')
+    console.log('[ChatDisplay] groupMessagesByTurn called:', {
+      sessionId: session.id,
+      messageCount: session.messages.length,
+      toolMessages: toolMsgs.map(m => ({
+        toolUseId: m.toolUseId,
+        toolName: m.toolName,
+        toolStatus: m.toolStatus,
+        hasResult: m.toolResult !== undefined,
+      })),
+    })
+
+    return groupMessagesByTurn(session.messages)
+  }, [session?.messages])
 
   return (
     <div ref={zoneRef} className="flex h-full flex-col min-w-0" data-focus-zone="chat">
@@ -441,6 +458,18 @@ export function ChatDisplay({
                             window.electronAPI.openPreview(session.id, turn.turnId, text)
                           }
                         }}
+                        onOpenDetails={() => {
+                          if (session) {
+                            const markdown = formatTurnAsMarkdown(turn)
+                            window.electronAPI.openPreview(session.id, `details-${turn.turnId}`, markdown)
+                          }
+                        }}
+                        onOpenActivityDetails={(activity) => {
+                          if (session) {
+                            const markdown = formatActivityAsMarkdown(activity)
+                            window.electronAPI.openPreview(session.id, `activity-${activity.id}`, markdown)
+                          }
+                        }}
                       />
                     )
                   })
@@ -472,8 +501,49 @@ export function ChatDisplay({
                 variant="inputAreaCover"
               />
             ) : (
-              <InputContainer
-                placeholder={`Message ${session.agentName || session.workspaceName || 'Chat'}...`}
+              <>
+                {/* Active option badges - positioned above input */}
+                {(ultrathinkEnabled || planModeEnabled || skipPermissions) && (
+                  <div className="flex justify-start gap-2 mb-2">
+                    {ultrathinkEnabled && (
+                      <button
+                        type="button"
+                        onClick={() => onUltrathinkChange?.(false)}
+                        className="h-[30px] pl-2.5 pr-2 text-xs font-medium rounded-[8px] flex items-center gap-1.5 transition-all bg-gradient-to-r from-blue-600/10 via-purple-600/10 to-pink-600/10 hover:from-blue-600/15 hover:via-purple-600/15 hover:to-pink-600/15 shadow-tinted"
+                        style={{ '--shadow-color': '147, 51, 234' } as React.CSSProperties}
+                      >
+                        <span className="bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 bg-clip-text text-transparent">Ultrathink</span>
+                        <X className="h-3 w-3 text-purple-500 opacity-60 hover:opacity-100 translate-y-px" />
+                      </button>
+                    )}
+                    {planModeEnabled && (
+                      <button
+                        type="button"
+                        onClick={() => onPlanModeChange?.(false)}
+                        className="h-[30px] pl-2.5 pr-2 text-xs font-medium rounded-[8px] flex items-center gap-1.5 transition-all bg-emerald-500/5 text-emerald-700 hover:bg-emerald-500/10 shadow-tinted"
+                        style={{ '--shadow-color': '6, 95, 70' } as React.CSSProperties}
+                      >
+                        <Brain className="h-3.5 w-3.5" />
+                        <span>Plan Mode</span>
+                        <X className="h-3.5 w-3.5 opacity-60 hover:opacity-100" />
+                      </button>
+                    )}
+                    {skipPermissions && (
+                      <button
+                        type="button"
+                        onClick={() => onSkipPermissionsChange?.(false)}
+                        className="h-[30px] pl-2.5 pr-2 text-xs font-medium rounded-[8px] flex items-center gap-1.5 transition-all bg-amber-500/5 text-amber-700 hover:bg-amber-500/10 shadow-tinted"
+                        style={{ '--shadow-color': '146, 64, 14' } as React.CSSProperties}
+                      >
+                        <ShieldOff className="h-3.5 w-3.5" />
+                        <span>Skipping Permissions</span>
+                        <X className="h-3.5 w-3.5 opacity-60 hover:opacity-100" />
+                      </button>
+                    )}
+                  </div>
+                )}
+                <InputContainer
+                  placeholder={`Message ${session.agentName || session.workspaceName || 'Chat'}...`}
                 disabled={isInputDisabled}
                 isProcessing={session.isProcessing}
                 onSubmit={handleSubmit}
@@ -492,6 +562,7 @@ export function ChatDisplay({
                 inputValue={inputValue}
                 onInputChange={onInputChange}
               />
+              </>
             )}
           </div>
         </div>
@@ -581,7 +652,7 @@ function MessageBubble({
     const hasAttachments = message.attachments && message.attachments.length > 0
 
     return (
-      <div className="flex flex-col items-end gap-1">
+      <div className="flex flex-col items-end gap-3">
         {/* Attachment preview row - stored attachments with thumbnails */}
         {hasAttachments && (
           <div className="flex gap-2 justify-end max-w-[80%] flex-wrap">
@@ -598,7 +669,7 @@ function MessageBubble({
                 >
                   {isImage ? (
                     /* IMAGE: Square thumbnail only */
-                    <div className="h-14 w-14 rounded-lg overflow-hidden border bg-muted">
+                    <div className="h-14 w-14 rounded-[8px] overflow-hidden bg-white shadow-minimal">
                       {hasThumbnail ? (
                         <img
                           src={`data:image/png;base64,${att.thumbnailBase64}`}
@@ -613,8 +684,8 @@ function MessageBubble({
                     </div>
                   ) : (
                     /* DOCUMENT: Bubble with thumbnail/icon + 2-line text */
-                    <div className="flex items-center gap-2.5 rounded-xl border bg-muted/50 pl-1.5 pr-3 py-1.5">
-                      <div className="h-11 w-11 rounded-lg overflow-hidden bg-muted flex items-center justify-center shrink-0">
+                    <div className="flex items-center gap-2.5 rounded-[8px] bg-foreground/5 pl-1.5 pr-3 py-1.5">
+                      <div className="h-11 w-8 rounded-[6px] overflow-hidden bg-white shadow-minimal flex items-center justify-center shrink-0">
                         {hasThumbnail ? (
                           <img
                             src={`data:image/png;base64,${att.thumbnailBase64}`}

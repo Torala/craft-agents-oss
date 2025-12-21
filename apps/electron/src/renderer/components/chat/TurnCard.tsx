@@ -8,6 +8,7 @@ import {
   Circle,
   MessageCircleDashed,
   ExternalLink,
+  ArrowUpRight,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Markdown } from '@/components/markdown'
@@ -83,6 +84,10 @@ export interface TurnCardProps {
   onOpenUrl?: (url: string) => void
   /** Callback to open response in Monaco editor */
   onPopOut?: (text: string) => void
+  /** Callback to open turn details in a new window */
+  onOpenDetails?: () => void
+  /** Callback to open individual activity details in Monaco */
+  onOpenActivityDetails?: (activity: ActivityItem) => void
 }
 
 // ============================================================================
@@ -288,6 +293,17 @@ function getPreviewText(
   // Check if we're in responding state
   if (isStreaming && hasResponse) return 'Responding...'
 
+  // While still streaming, show the latest intermediate message content
+  // This gives visibility into what the LLM is "thinking"
+  if (isStreaming && !isComplete) {
+    const latestIntermediate = [...activities]
+      .reverse()
+      .find(a => a.type === 'intermediate' && a.content)
+    if (latestIntermediate?.content) {
+      return latestIntermediate.content
+    }
+  }
+
   // Get running and completed tools (not intermediate messages)
   const runningTools = activities.filter(a => a.status === 'running' && a.toolName)
   const errorCount = activities.filter(a => a.status === 'error').length
@@ -334,15 +350,22 @@ function ActivityStatusIcon({ status }: { status: ActivityStatus }) {
   }
 }
 
+interface ActivityRowProps {
+  activity: ActivityItem
+  /** Callback to open activity details in Monaco */
+  onOpenDetails?: () => void
+}
+
 /** Single activity row in expanded view */
-function ActivityRow({ activity }: { activity: ActivityItem }) {
+function ActivityRow({ activity, onOpenDetails }: ActivityRowProps) {
   // Intermediate messages (LLM commentary) - render with dashed circle icon
   // Show "Thinking" while streaming, stripped markdown content when complete
   if (activity.type === 'intermediate') {
     const isThinking = activity.status === 'running'
     const displayContent = isThinking ? 'Thinking...' : stripMarkdown(activity.content || '')
+    const isComplete = activity.status === 'completed'
     return (
-      <div className={cn("flex items-center gap-2 py-0.5 text-muted-foreground/70", SIZE_CONFIG.fontSize)}>
+      <div className={cn("group/row flex items-center gap-2 py-0.5 text-muted-foreground/70", SIZE_CONFIG.fontSize)}>
         {isThinking ? (
           <div className={cn(SIZE_CONFIG.iconSize, "flex items-center justify-center shrink-0")}>
             <Spinner className={SIZE_CONFIG.spinnerSize} />
@@ -350,7 +373,30 @@ function ActivityRow({ activity }: { activity: ActivityItem }) {
         ) : (
           <MessageCircleDashed className={cn(SIZE_CONFIG.iconSize, "shrink-0")} />
         )}
-        <span className="truncate">{displayContent}</span>
+        <span className="truncate flex-1">{displayContent}</span>
+        {/* Open details button */}
+        {onOpenDetails && isComplete && (
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={(e) => {
+              e.stopPropagation()
+              onOpenDetails()
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.stopPropagation()
+                onOpenDetails()
+              }
+            }}
+            className={cn(
+              "p-0.5 rounded-[3px] opacity-0 group-hover/row:opacity-100 transition-opacity shrink-0",
+              "hover:bg-muted/80 focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            )}
+          >
+            <ArrowUpRight className={SIZE_CONFIG.iconSize} />
+          </div>
+        )}
       </div>
     )
   }
@@ -363,11 +409,12 @@ function ActivityRow({ activity }: { activity: ActivityItem }) {
     : 'Processing'
 
   const inputSummary = formatToolInput(activity.toolInput)
+  const isComplete = activity.status === 'completed' || activity.status === 'error'
 
   return (
-    <div className={cn("flex items-center gap-2 py-0.5 text-muted-foreground", SIZE_CONFIG.fontSize)}>
+    <div className={cn("group/row flex items-center gap-2 py-0.5 text-muted-foreground", SIZE_CONFIG.fontSize)}>
       <ActivityStatusIcon status={activity.status} />
-      <span className="font-medium">{displayName}</span>
+      <span className="font-medium shrink-0">{displayName}</span>
       {inputSummary && (
         <span className="opacity-60 truncate flex-1 min-w-0">{inputSummary}</span>
       )}
@@ -375,6 +422,31 @@ function ActivityRow({ activity }: { activity: ActivityItem }) {
         <span className="text-destructive truncate max-w-[150px]">
           — {activity.error}
         </span>
+      )}
+      {/* Spacer when no inputSummary */}
+      {!inputSummary && <span className="flex-1" />}
+      {/* Open details button */}
+      {onOpenDetails && isComplete && (
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={(e) => {
+            e.stopPropagation()
+            onOpenDetails()
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.stopPropagation()
+              onOpenDetails()
+            }
+          }}
+          className={cn(
+            "p-0.5 rounded-[3px] opacity-0 group-hover/row:opacity-100 transition-opacity shrink-0",
+            "hover:bg-muted/80 focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          )}
+        >
+          <ArrowUpRight className={SIZE_CONFIG.iconSize} />
+        </div>
       )}
     </div>
   )
@@ -556,6 +628,8 @@ export function TurnCard({
   onOpenFile,
   onOpenUrl,
   onPopOut,
+  onOpenDetails,
+  onOpenActivityDetails,
 }: TurnCardProps) {
   const hasRunning = activities.some(a => a.status === 'running')
   const [isExpanded, setIsExpanded] = useState(defaultExpanded)
@@ -640,12 +714,33 @@ export function TurnCard({
               </AnimatePresence>
             </span>
 
-            {/* Spacer */}
-            <span className="flex-1" />
-
             {/* Streaming indicator */}
             {isStreaming && !isComplete && (
               <Spinner className={cn(SIZE_CONFIG.spinnerSizeSmall, "text-muted-foreground")} />
+            )}
+
+            {/* Open details button - shown when turn is complete */}
+            {onOpenDetails && isComplete && (
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onOpenDetails()
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.stopPropagation()
+                    onOpenDetails()
+                  }
+                }}
+                className={cn(
+                  "p-1 -m-1 rounded-[4px] opacity-0 group-hover:opacity-100 transition-opacity",
+                  "hover:bg-muted/80 focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                )}
+              >
+                <ArrowUpRight className={SIZE_CONFIG.iconSize} />
+              </div>
             )}
           </button>
 
@@ -682,7 +777,10 @@ export function TurnCard({
                       // Only first 10 items get staggered delay, rest appear simultaneously
                       transition={{ delay: index < SIZE_CONFIG.staggeredAnimationLimit ? index * 0.03 : 0.3 }}
                     >
-                      <ActivityRow activity={activity} />
+                      <ActivityRow
+                        activity={activity}
+                        onOpenDetails={onOpenActivityDetails ? () => onOpenActivityDetails(activity) : undefined}
+                      />
                     </motion.div>
                   ))}
                   {/* Thinking/Buffering indicator - shown while waiting for response */}

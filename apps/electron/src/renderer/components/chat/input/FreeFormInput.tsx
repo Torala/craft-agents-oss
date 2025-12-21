@@ -4,12 +4,7 @@ import {
   ArrowUp,
   Square,
   ChevronDown,
-  Zap,
-  ShieldOff,
   SquareSlash,
-  Brain,
-  FileCheck,
-  X,
 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -19,45 +14,18 @@ import {
   StyledDropdownMenuContent,
   StyledDropdownMenuItem,
 } from '@/components/ui/styled-dropdown'
+import {
+  SlashCommandMenu,
+  InlineSlashCommand,
+  useInlineSlashCommand,
+  DEFAULT_SLASH_COMMANDS,
+  type SlashCommandId,
+} from '@/components/ui/slash-command-menu'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
 import { AttachmentPreview } from '../AttachmentPreview'
 import { MODELS, getModelDisplayName } from '@config/models'
 import type { FileAttachment } from '../../../../shared/types'
-
-/** Slash command options */
-type SlashCommandOption = 'plan' | 'ultrathink' | 'skip-permissions'
-
-interface SlashCommandConfig {
-  id: SlashCommandOption
-  label: string
-  description: string
-  icon: React.ReactNode
-  activeStyle: string
-}
-
-const SLASH_COMMANDS: SlashCommandConfig[] = [
-  {
-    id: 'plan',
-    label: 'Plan Mode',
-    description: 'Enter planning mode for complex tasks',
-    icon: <Brain className="h-3.5 w-3.5" />,
-    activeStyle: 'bg-blue-500/10 text-blue-500 border-blue-500/30',
-  },
-  {
-    id: 'ultrathink',
-    label: 'Ultrathink',
-    description: 'Extended reasoning for complex problems',
-    icon: <Zap className="h-3.5 w-3.5" />,
-    activeStyle: 'bg-gradient-to-r from-violet-500/20 via-fuchsia-500/20 to-pink-500/20 text-fuchsia-500 border-fuchsia-500/30 shadow-[0_0_12px_rgba(217,70,239,0.2)]',
-  },
-  {
-    id: 'skip-permissions',
-    label: 'Skip Permissions',
-    description: 'Auto-approve all permission prompts',
-    icon: <ShieldOff className="h-3.5 w-3.5" />,
-    activeStyle: 'bg-red-500/10 text-red-500 border-red-500/30',
-  },
-]
 
 export interface FreeFormInputProps {
   /** Placeholder text for the textarea */
@@ -92,6 +60,8 @@ export interface FreeFormInputProps {
   unstyled?: boolean
   /** Callback when component height changes (for external animation sync) */
   onHeightChange?: (height: number) => void
+  /** Callback when focus state changes */
+  onFocusChange?: (focused: boolean) => void
 }
 
 /**
@@ -123,6 +93,7 @@ export function FreeFormInput({
   onInputChange,
   unstyled = false,
   onHeightChange,
+  onFocusChange,
 }: FreeFormInputProps) {
   // Performance optimization: Always use internal state for typing to avoid parent re-renders
   // Sync FROM parent on mount/change (for restoring drafts)
@@ -150,17 +121,26 @@ export function FreeFormInput({
     }, 300) // Debounce 300ms
   }, [onInputChange])
 
-  // Cleanup timeout on unmount
+  // Sync immediately on unmount to preserve input across mode switches
+  // Also cleanup any pending debounced sync
+  const inputRef = React.useRef(input)
+  inputRef.current = input // Keep ref in sync with state
+
   React.useEffect(() => {
     return () => {
+      // Cancel pending debounced sync
       if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current)
+      // Immediately sync current value to parent on unmount
+      // This preserves input when switching to structured input (e.g., permission request)
+      if (onInputChange && inputRef.current !== prevInputValueRef.current) {
+        onInputChange(inputRef.current)
+      }
     }
-  }, [])
+  }, [onInputChange])
   const [isDraggingOver, setIsDraggingOver] = React.useState(false)
   const [loadingCount, setLoadingCount] = React.useState(0)
-  const [slashMenuOpen, setSlashMenuOpen] = React.useState(false)
   const [slashDropdownOpen, setSlashDropdownOpen] = React.useState(false)
-  const [slashFilter, setSlashFilter] = React.useState('')
+  const [isFocused, setIsFocused] = React.useState(false)
 
   const dragCounterRef = React.useRef(0)
   const containerRef = React.useRef<HTMLDivElement>(null)
@@ -168,6 +148,29 @@ export function FreeFormInput({
   // Merge refs
   const internalRef = React.useRef<HTMLTextAreaElement>(null)
   const textareaRef = externalTextareaRef || internalRef
+
+  // Build active commands list for slash command menu
+  const activeCommands = React.useMemo(() => {
+    const active: SlashCommandId[] = []
+    if (planModeEnabled) active.push('plan')
+    if (ultrathinkEnabled) active.push('ultrathink')
+    if (skipPermissions) active.push('skip-permissions')
+    return active
+  }, [planModeEnabled, ultrathinkEnabled, skipPermissions])
+
+  // Handle slash command selection
+  const handleSlashCommand = React.useCallback((commandId: SlashCommandId) => {
+    if (commandId === 'plan') onPlanModeChange?.(!planModeEnabled)
+    else if (commandId === 'ultrathink') onUltrathinkChange?.(!ultrathinkEnabled)
+    else if (commandId === 'skip-permissions') onSkipPermissionsChange?.(!skipPermissions)
+  }, [planModeEnabled, ultrathinkEnabled, skipPermissions, onPlanModeChange, onUltrathinkChange, onSkipPermissionsChange])
+
+  // Inline slash command hook
+  const inlineSlash = useInlineSlashCommand({
+    textareaRef: textareaRef as React.RefObject<HTMLTextAreaElement>,
+    onSelect: handleSlashCommand,
+    activeCommands,
+  })
 
   // Report height changes to parent (for external animation sync)
   React.useLayoutEffect(() => {
@@ -329,6 +332,19 @@ export function FreeFormInput({
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // Don't submit when slash command menu is open - let it handle the Enter key
+    if (inlineSlash.isOpen) {
+      if (e.key === 'Enter' || e.key === 'Tab' || e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+        // These keys are handled by the InlineSlashCommand component
+        return
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        inlineSlash.close()
+        return
+      }
+    }
+
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       handleSubmit(e)
@@ -338,26 +354,16 @@ export function FreeFormInput({
       handleSubmit(e)
     }
     if (e.key === 'Escape') {
-      if (isProcessing) {
-        handleStop()
-      } else {
-        textareaRef.current?.blur()
-      }
+      textareaRef.current?.blur()
     }
   }
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     let value = e.target.value
+    const cursorPosition = e.target.selectionStart
 
-    // Check for slash command trigger
-    const slashMatch = value.match(/(?:^|\s)\/(\w*)$/)
-    if (slashMatch) {
-      setSlashMenuOpen(true)
-      setSlashFilter(slashMatch[1] || '')
-    } else if (slashMenuOpen) {
-      setSlashMenuOpen(false)
-      setSlashFilter('')
-    }
+    // Update inline slash command state
+    inlineSlash.handleInputChange(value, cursorPosition)
 
     // Auto-capitalize first letter (but not for slash commands)
     if (value.length > 0 && value.charAt(0) !== '/') {
@@ -368,6 +374,14 @@ export function FreeFormInput({
     syncToParent(value) // Debounced sync to parent for draft persistence
   }
 
+  // Handle inline slash command selection (removes the /command text)
+  const handleInlineSlashSelect = React.useCallback((commandId: SlashCommandId) => {
+    const newValue = inlineSlash.handleSelect(commandId)
+    setInput(newValue)
+    syncToParent(newValue)
+    textareaRef.current?.focus()
+  }, [inlineSlash, syncToParent, textareaRef])
+
   const hasContent = input.trim() || attachments.length > 0
 
   return (
@@ -377,7 +391,8 @@ export function FreeFormInput({
         className={cn(
           'overflow-hidden transition-all',
           // Container styling - only when not wrapped by InputContainer
-          !unstyled && 'rounded-[8px] bg-background shadow-middle',
+          !unstyled && 'rounded-[8px] shadow-middle',
+          !unstyled && (isFocused ? 'bg-white dark:bg-white' : 'bg-background'),
           isDraggingOver && 'ring-2 ring-primary ring-offset-2 ring-offset-background bg-primary/5'
         )}
         onDragEnter={handleDragEnter}
@@ -385,59 +400,16 @@ export function FreeFormInput({
         onDragOver={handleDragOver}
         onDrop={handleDrop}
       >
-        {/* Slash Command Autocomplete Menu */}
-        <DropdownMenu open={slashMenuOpen} onOpenChange={(open) => {
-          setSlashMenuOpen(open)
-          if (!open) {
-            setSlashFilter('')
-            textareaRef.current?.focus()
-          }
-        }}>
-          <DropdownMenuTrigger asChild>
-            <div className="absolute bottom-full left-4 w-0 h-0" />
-          </DropdownMenuTrigger>
-          <StyledDropdownMenuContent side="top" align="start" sideOffset={8} className="w-72 p-1">
-            {SLASH_COMMANDS.filter(cmd =>
-              !slashFilter || cmd.label.toLowerCase().includes(slashFilter.toLowerCase()) || cmd.id.includes(slashFilter.toLowerCase())
-            ).map((cmd) => {
-              const isActive =
-                (cmd.id === 'plan' && planModeEnabled) ||
-                (cmd.id === 'ultrathink' && ultrathinkEnabled) ||
-                (cmd.id === 'skip-permissions' && skipPermissions)
-              return (
-                <StyledDropdownMenuItem
-                  key={cmd.id}
-                  onClick={() => {
-                    if (cmd.id === 'plan') onPlanModeChange?.(!planModeEnabled)
-                    else if (cmd.id === 'ultrathink') onUltrathinkChange?.(!ultrathinkEnabled)
-                    else if (cmd.id === 'skip-permissions') onSkipPermissionsChange?.(!skipPermissions)
-                    const newValue = input.replace(/(?:^|\s)\/\w*$/, '').trim()
-                    setInput(newValue)
-                    syncToParent(newValue)
-                  }}
-                  className={cn(
-                    'flex items-start gap-3 px-3 py-2.5 cursor-pointer',
-                    isActive && 'bg-foreground/5'
-                  )}
-                >
-                  <div className="mt-0.5 shrink-0">{cmd.icon}</div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium">{cmd.label}</div>
-                    <div className="text-xs text-muted-foreground whitespace-normal">{cmd.description}</div>
-                  </div>
-                  {isActive && <FileCheck className="h-4 w-4 mt-0.5 shrink-0 text-green-500" />}
-                </StyledDropdownMenuItem>
-              )
-            })}
-            {SLASH_COMMANDS.filter(cmd =>
-              !slashFilter || cmd.label.toLowerCase().includes(slashFilter.toLowerCase()) || cmd.id.includes(slashFilter.toLowerCase())
-            ).length === 0 && (
-              <div className="px-3 py-3 text-sm text-muted-foreground text-center">
-                No matching commands
-              </div>
-            )}
-          </StyledDropdownMenuContent>
-        </DropdownMenu>
+        {/* Inline Slash Command Autocomplete */}
+        <InlineSlashCommand
+          open={inlineSlash.isOpen}
+          onOpenChange={(open) => !open && inlineSlash.close()}
+          commands={DEFAULT_SLASH_COMMANDS}
+          activeCommands={activeCommands}
+          onSelect={handleInlineSlashSelect}
+          filter={inlineSlash.filter}
+          position={inlineSlash.position}
+        />
 
         {/* Attachment Preview */}
         <AttachmentPreview
@@ -466,6 +438,8 @@ export function FreeFormInput({
             value={input}
             onChange={handleChange}
             onKeyDown={handleKeyDown}
+            onFocus={() => { setIsFocused(true); onFocusChange?.(true) }}
+            onBlur={() => { setIsFocused(false); onFocusChange?.(false) }}
             onDragOver={handleDragOver}
             onDrop={handleDrop}
             disabled={disabled}
@@ -476,55 +450,37 @@ export function FreeFormInput({
         {/* Bottom Row: Controls */}
         <div className="flex items-center gap-1 px-2 py-2 border-t border-border/50">
           {/* Slash Command Button */}
-          <DropdownMenu open={slashDropdownOpen} onOpenChange={setSlashDropdownOpen}>
-            <DropdownMenuTrigger asChild>
+          <Popover open={slashDropdownOpen} onOpenChange={setSlashDropdownOpen}>
+            <PopoverTrigger asChild>
               <Button
                 type="button"
                 variant="ghost"
                 size="icon"
-                className="h-7 w-7 shrink-0"
+                className="h-7 w-7 shrink-0 rounded-[4px]"
                 disabled={disabled}
               >
                 <SquareSlash className="h-4 w-4" />
               </Button>
-            </DropdownMenuTrigger>
-            <StyledDropdownMenuContent side="top" align="start" sideOffset={8} className="w-72 p-1">
-              {SLASH_COMMANDS.map((cmd) => {
-                const isActive =
-                  (cmd.id === 'plan' && planModeEnabled) ||
-                  (cmd.id === 'ultrathink' && ultrathinkEnabled) ||
-                  (cmd.id === 'skip-permissions' && skipPermissions)
-                return (
-                  <StyledDropdownMenuItem
-                    key={cmd.id}
-                    onClick={() => {
-                      if (cmd.id === 'plan') onPlanModeChange?.(!planModeEnabled)
-                      else if (cmd.id === 'ultrathink') onUltrathinkChange?.(!ultrathinkEnabled)
-                      else if (cmd.id === 'skip-permissions') onSkipPermissionsChange?.(!skipPermissions)
-                    }}
-                    className={cn(
-                      'flex items-start gap-3 px-3 py-2.5 cursor-pointer',
-                      isActive && 'bg-foreground/5'
-                    )}
-                  >
-                    <div className="mt-0.5 shrink-0">{cmd.icon}</div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium">{cmd.label}</div>
-                      <div className="text-xs text-muted-foreground whitespace-normal">{cmd.description}</div>
-                    </div>
-                    {isActive && <FileCheck className="h-4 w-4 mt-0.5 shrink-0 text-green-500" />}
-                  </StyledDropdownMenuItem>
-                )
-              })}
-            </StyledDropdownMenuContent>
-          </DropdownMenu>
+            </PopoverTrigger>
+            <PopoverContent side="top" align="start" sideOffset={8} className="p-0 w-auto border-0">
+              <SlashCommandMenu
+                commands={DEFAULT_SLASH_COMMANDS}
+                activeCommands={activeCommands}
+                onSelect={(commandId) => {
+                  handleSlashCommand(commandId)
+                  setSlashDropdownOpen(false)
+                }}
+                showFilter
+              />
+            </PopoverContent>
+          </Popover>
 
           {/* Attach File Button */}
           <Button
             type="button"
             variant="ghost"
             size="icon"
-            className="h-7 w-7 shrink-0"
+            className="h-7 w-7 shrink-0 rounded-[4px]"
             onClick={handleAttachClick}
             disabled={disabled}
           >
@@ -537,10 +493,10 @@ export function FreeFormInput({
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-7 gap-1 text-xs shrink-0 hover:bg-foreground/5 data-[state=open]:bg-foreground/5"
+                className="h-7 px-1.5 gap-0.5 text-[13px] shrink-0 rounded-[6px] hover:bg-foreground/5 data-[state=open]:bg-foreground/5"
               >
                 {getModelDisplayName(currentModel)}
-                <ChevronDown className="h-3 w-3 opacity-50" />
+                <ChevronDown className="opacity-50" style={{ width: 12, height: 12 }} />
               </Button>
             </DropdownMenuTrigger>
             <StyledDropdownMenuContent side="top" align="start" sideOffset={8}>
@@ -555,43 +511,6 @@ export function FreeFormInput({
               ))}
             </StyledDropdownMenuContent>
           </DropdownMenu>
-
-          {/* Active Options Badges */}
-          {planModeEnabled && (
-            <button
-              type="button"
-              onClick={() => onPlanModeChange?.(false)}
-              className="h-6 px-2 text-[11px] font-medium rounded-[4px] flex items-center gap-1 transition-all bg-blue-500/10 text-blue-500 border border-blue-500/30 hover:bg-blue-500/20"
-            >
-              <Brain className="h-3 w-3" />
-              <span>Plan</span>
-              <X className="h-3 w-3 ml-0.5 opacity-60 hover:opacity-100" />
-            </button>
-          )}
-
-          {ultrathinkEnabled && (
-            <button
-              type="button"
-              onClick={() => onUltrathinkChange?.(false)}
-              className="h-6 px-2 text-[11px] font-medium rounded-[4px] flex items-center gap-1 transition-all bg-gradient-to-r from-violet-500/20 via-fuchsia-500/20 to-pink-500/20 text-fuchsia-500 border border-fuchsia-500/30 shadow-[0_0_12px_rgba(217,70,239,0.2)] hover:from-violet-500/30 hover:via-fuchsia-500/30 hover:to-pink-500/30"
-            >
-              <Zap className="h-3 w-3 fill-fuchsia-500" />
-              <span>Ultrathink</span>
-              <X className="h-3 w-3 ml-0.5 opacity-60 hover:opacity-100" />
-            </button>
-          )}
-
-          {skipPermissions && (
-            <button
-              type="button"
-              onClick={() => onSkipPermissionsChange?.(false)}
-              className="h-6 px-2 text-[11px] font-medium rounded-[4px] flex items-center gap-1 transition-all bg-red-500/10 text-red-500 border border-red-500/30 hover:bg-red-500/20"
-            >
-              <ShieldOff className="h-3 w-3" />
-              <span>Skip Perms</span>
-              <X className="h-3 w-3 ml-0.5 opacity-60 hover:opacity-100" />
-            </button>
-          )}
 
           {/* Spacer */}
           <div className="flex-1" />

@@ -174,13 +174,13 @@ function SessionItem({
                   Unflag
                 </StyledDropdownMenuItem>
               )}
-              {onArchive && (
+              {onArchive && !item.isArchived && (
                 <StyledDropdownMenuItem onClick={() => onArchive(item.id)}>
                   <Archive />
                   Archive
                 </StyledDropdownMenuItem>
               )}
-              {onUnarchive && (
+              {onUnarchive && item.isArchived && (
                 <StyledDropdownMenuItem onClick={() => onUnarchive(item.id)}>
                   <ArchiveRestore />
                   Unarchive
@@ -424,7 +424,6 @@ export function SessionList({
           ref={zoneRef}
           className="flex flex-col pb-14 min-w-0 pt-2"
           data-focus-zone="session-list"
-          data-session-list
           role="listbox"
           aria-label="Sessions"
         >

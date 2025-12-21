@@ -1106,6 +1106,8 @@ export interface Session {
   agentName?: string;            // Cached agent name for display
   isArchived?: boolean;          // Whether this session is archived
   isFlagged?: boolean;           // Whether this session is flagged
+  // Advanced options (persisted per session)
+  skipPermissions?: boolean;     // Auto-approve all permission requests
 }
 
 // Stored session with conversation data

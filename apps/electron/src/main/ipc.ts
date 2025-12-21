@@ -211,6 +211,11 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
     return sessionManager.renameSession(sessionId, name)
   })
 
+  // Set skip permissions for a session
+  ipcMain.handle(IPC_CHANNELS.SET_SKIP_PERMISSIONS, async (_event, sessionId: string, enabled: boolean) => {
+    return sessionManager.setSkipPermissions(sessionId, enabled)
+  })
+
   // Respond to a permission request (bash command approval)
   // Returns true if the response was delivered, false if agent/session is gone
   ipcMain.handle(IPC_CHANNELS.RESPOND_TO_PERMISSION, async (_event, sessionId: string, requestId: string, allowed: boolean, alwaysAllow: boolean) => {

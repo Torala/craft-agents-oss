@@ -5,6 +5,7 @@ import { chatComponents } from './chat'
 import { turnCardComponents } from './turn-card'
 import { messagesComponents } from './messages'
 import { inputComponents } from './input'
+import { slashCommandComponents } from './slash-command'
 import { markdownComponents } from './markdown'
 import { iconComponents } from './icons'
 import { settingsComponents } from './settings'
@@ -18,6 +19,7 @@ export const componentRegistry: ComponentEntry[] = [
   ...turnCardComponents,
   ...messagesComponents,
   ...inputComponents,
+  ...slashCommandComponents,
   ...markdownComponents,
   ...iconComponents,
   ...settingsComponents,

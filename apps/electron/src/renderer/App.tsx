@@ -34,19 +34,23 @@ export default function App() {
   const [pendingPermissions, setPendingPermissions] = useState<Map<string, PermissionRequest[]>>(new Map())
   // Draft input text per session (preserved across mode switches and conversation changes)
   const [sessionDrafts, setSessionDrafts] = useState<Map<string, string>>(new Map())
-  // Advanced options
-  const [ultrathinkEnabled, setUltrathinkEnabled] = useState(false)
-  const [skipPermissions, setSkipPermissions] = useState(false)
+  // Advanced options (all session-scoped)
+  // Ultrathink per session (session-scoped, single-shot per message)
+  const [ultrathinkSessions, setUltrathinkSessions] = useState<Set<string>>(new Set())
+  // Skip permissions per session (session-scoped, not global)
+  const [skipPermissionsSessions, setSkipPermissionsSessions] = useState<Set<string>>(new Set())
+  // Plan mode per session (session-scoped)
+  const [planModeSessions, setPlanModeSessions] = useState<Set<string>>(new Set())
 
   // Queue for tool_result events that arrive before their tool_start (out-of-order handling)
   // Using ref to avoid stale closure issues in the useEffect event handler
   const orphanedToolResultsRef = useRef<Map<string, { result: string; toolName: string; turnId?: string }>>(new Map())
-  // Ref for skipPermissions to access current value in event handlers without re-registering
-  const skipPermissionsRef = useRef(skipPermissions)
+  // Ref for skipPermissionsSessions to access current value in event handlers without re-registering
+  const skipPermissionsSessionsRef = useRef(skipPermissionsSessions)
   // Keep ref in sync with state
   useEffect(() => {
-    skipPermissionsRef.current = skipPermissions
-  }, [skipPermissions])
+    skipPermissionsSessionsRef.current = skipPermissionsSessions
+  }, [skipPermissionsSessions])
 
   // Performance: Throttle streaming text state updates to reduce React re-renders
   // Accumulates deltas in ref, flushes to state every 200ms (or immediately on complete)
@@ -130,7 +134,16 @@ export default function App() {
       }
     })
     setAppState('ready')
-    window.electronAPI.getSessions().then(setSessions)
+    window.electronAPI.getSessions().then((loadedSessions) => {
+      setSessions(loadedSessions)
+      // Initialize skipPermissionsSessions from session data
+      const skipSessions = new Set(
+        loadedSessions.filter(s => s.skipPermissions).map(s => s.id)
+      )
+      if (skipSessions.size > 0) {
+        setSkipPermissionsSessions(skipSessions)
+      }
+    })
   }, [])
 
   // Onboarding hook
@@ -257,7 +270,14 @@ export default function App() {
     if (appState !== 'ready') return
 
     window.electronAPI.getWorkspaces().then(setWorkspaces)
-    window.electronAPI.getSessions().then(setSessions)
+    window.electronAPI.getSessions().then((loadedSessions) => {
+      setSessions(loadedSessions)
+      // Initialize skipPermissionsSessions from session data
+      const skipSessions = new Set(
+        loadedSessions.filter(s => s.skipPermissions).map(s => s.id)
+      )
+      setSkipPermissionsSessions(skipSessions)
+    })
     // Load stored model preference
     window.electronAPI.getModel().then((storedModel) => {
       if (storedModel) {
@@ -291,14 +311,22 @@ export default function App() {
       // Handle permission requests separately (outside session state)
       // Use a queue to handle multiple concurrent permission requests
       if (event.type === 'permission_request') {
-        // Auto-approve if skipPermissions is enabled
-        if (skipPermissionsRef.current) {
+        console.log('[App] permission_request received:', {
+          sessionId: event.sessionId,
+          requestId: event.request.requestId,
+          toolName: event.request.toolName,
+        })
+
+        // Auto-approve if skipPermissions is enabled for this session
+        if (skipPermissionsSessionsRef.current.has(event.sessionId)) {
+          console.log('[App] permission_request: auto-approving (skipPermissions enabled)')
           window.electronAPI.respondToPermission(event.sessionId, event.request.requestId, true, false)
           return
         }
         setPendingPermissions(prev => {
           const next = new Map(prev)
           const existingQueue = next.get(event.sessionId) || []
+          console.log('[App] permission_request: queuing, current queue size:', existingQueue.length)
           next.set(event.sessionId, [...existingQueue, event.request])
           return next
         })
@@ -419,6 +447,12 @@ export default function App() {
             }
 
             case 'tool_start': {
+              console.log('[App] tool_start received:', {
+                sessionId: session.id,
+                toolUseId: event.toolUseId,
+                toolName: event.toolName,
+              })
+
               // Check if a message with this toolUseId already exists
               // SDK sends two events per tool: first from stream_event (empty input),
               // second from assistant message (complete input)
@@ -489,7 +523,26 @@ export default function App() {
               // Explicit role check to avoid matching non-tool messages
               const matchingTool = toolMsgs.find(m => m.role === 'tool' && m.toolUseId === event.toolUseId)
 
+              // Debug logging for tool_result handling
+              const allToolMessages = toolMsgs.filter(m => m.role === 'tool')
+              console.log('[App] tool_result received:', {
+                sessionId: session.id,
+                eventToolUseId: event.toolUseId,
+                eventToolName: event.toolName,
+                foundMatch: !!matchingTool,
+                matchingToolStatus: matchingTool?.toolStatus,
+                matchingToolHasResult: matchingTool?.toolResult !== undefined,
+                allToolsCount: allToolMessages.length,
+                allToolStatuses: allToolMessages.map(m => ({
+                  toolUseId: m.toolUseId,
+                  toolName: m.toolName,
+                  toolStatus: m.toolStatus,
+                  hasResult: m.toolResult !== undefined,
+                })),
+              })
+
               if (matchingTool) {
+                console.log('[App] tool_result: marking tool as completed:', event.toolUseId)
                 // Normal case - message exists, update it
                 return {
                   ...session,
@@ -612,9 +665,22 @@ export default function App() {
 
               // Fail-safe: Mark any still-running tools as complete
               // This ensures tools never get stuck in "running" state if tool_result was lost
-              const hasRunningTools = session.messages.some(m =>
+              const runningTools = session.messages.filter(m =>
                 m.role === 'tool' && m.toolResult === undefined && m.toolStatus !== 'completed' && m.toolStatus !== 'error'
               )
+              const hasRunningTools = runningTools.length > 0
+
+              console.log('[App] complete received:', {
+                sessionId: session.id,
+                hasRunningTools,
+                runningToolIds: runningTools.map(m => m.toolUseId),
+                allToolStatuses: session.messages.filter(m => m.role === 'tool').map(m => ({
+                  toolUseId: m.toolUseId,
+                  toolName: m.toolName,
+                  toolStatus: m.toolStatus,
+                  hasResult: m.toolResult !== undefined,
+                })),
+              })
 
               if (hasRunningTools) {
                 return {
@@ -661,6 +727,24 @@ export default function App() {
 
     return cleanup
   }, [])
+
+  // Debug: Log sessions state changes to verify tool updates are persisting
+  useEffect(() => {
+    const toolMessages = sessions.flatMap(s =>
+      s.messages.filter(m => m.role === 'tool')
+    )
+    if (toolMessages.length > 0) {
+      console.log('[App] sessions state updated - tool messages:',
+        toolMessages.map(m => ({
+          sessionId: sessions.find(s => s.messages.includes(m))?.id,
+          toolUseId: m.toolUseId,
+          toolName: m.toolName,
+          toolStatus: m.toolStatus,
+          hasResult: m.toolResult !== undefined,
+        }))
+      )
+    }
+  }, [sessions])
 
   // Listen for menu bar events
   useEffect(() => {
@@ -715,7 +799,7 @@ export default function App() {
   const handleArchiveSession = useCallback(async (sessionId: string) => {
     await window.electronAPI.archiveSession(sessionId)
     setSessions(prev => prev.map(s =>
-      s.id === sessionId ? { ...s, isArchived: true } : s
+      s.id === sessionId ? { ...s, isArchived: true, isFlagged: false } : s
     ))
   }, [])
 
@@ -822,13 +906,17 @@ export default function App() {
         )
       }
 
-      // Step 3: Create user message with StoredAttachments (for UI display)
+      // Step 3: Check if ultrathink is enabled for this session
+      const isUltrathink = ultrathinkSessions.has(sessionId)
+
+      // Step 4: Create user message with StoredAttachments (for UI display)
       const userMessage: Message = {
         id: generateMessageId(),
         role: 'user',
         content: message,
         timestamp: Date.now(),
         attachments: storedAttachments,
+        ultrathink: isUltrathink || undefined,  // Only set if true
       }
 
       setSessions(prev => prev.map(s =>
@@ -837,14 +925,18 @@ export default function App() {
           : s
       ))
 
-      // Step 4: Send to Claude with processed attachments + stored attachments for persistence
+      // Step 5: Send to Claude with processed attachments + stored attachments for persistence
       await window.electronAPI.sendMessage(sessionId, message, processedAttachments, storedAttachments, {
-        ultrathinkEnabled,
+        ultrathinkEnabled: isUltrathink,
       })
 
       // Auto-disable ultrathink after sending (single-shot activation)
-      if (ultrathinkEnabled) {
-        setUltrathinkEnabled(false)
+      if (isUltrathink) {
+        setUltrathinkSessions(prev => {
+          const next = new Set(prev)
+          next.delete(sessionId)
+          return next
+        })
       }
     } catch (error) {
       console.error('Failed to send message:', error)
@@ -866,7 +958,7 @@ export default function App() {
           : s
       ))
     }
-  }, [ultrathinkEnabled])
+  }, [ultrathinkSessions])
 
   const handleRefreshAgents = useCallback(async () => {
     if (windowWorkspaceId) {
@@ -886,12 +978,42 @@ export default function App() {
     window.electronAPI.setModel(model)
   }, [])
 
-  const handleUltrathinkChange = useCallback((enabled: boolean) => {
-    setUltrathinkEnabled(enabled)
+  const handleUltrathinkChange = useCallback((sessionId: string, enabled: boolean) => {
+    setUltrathinkSessions(prev => {
+      const next = new Set(prev)
+      if (enabled) {
+        next.add(sessionId)
+      } else {
+        next.delete(sessionId)
+      }
+      return next
+    })
   }, [])
 
-  const handleSkipPermissionsChange = useCallback((enabled: boolean) => {
-    setSkipPermissions(enabled)
+  const handleSkipPermissionsChange = useCallback((sessionId: string, enabled: boolean) => {
+    setSkipPermissionsSessions(prev => {
+      const next = new Set(prev)
+      if (enabled) {
+        next.add(sessionId)
+      } else {
+        next.delete(sessionId)
+      }
+      return next
+    })
+    // Persist to backend
+    window.electronAPI.setSkipPermissions(sessionId, enabled)
+  }, [])
+
+  const handlePlanModeChange = useCallback((sessionId: string, enabled: boolean) => {
+    setPlanModeSessions(prev => {
+      const next = new Set(prev)
+      if (enabled) {
+        next.add(sessionId)
+      } else {
+        next.delete(sessionId)
+      }
+      return next
+    })
   }, [])
 
   // Handle input draft changes per session with debounced persistence
@@ -931,7 +1053,10 @@ export default function App() {
   }, [])
 
   const handleRespondToPermission = useCallback(async (sessionId: string, requestId: string, allowed: boolean, alwaysAllow: boolean) => {
+    console.log('[App] handleRespondToPermission called:', { sessionId, requestId, allowed, alwaysAllow })
+
     const success = await window.electronAPI.respondToPermission(sessionId, requestId, allowed, alwaysAllow)
+    console.log('[App] handleRespondToPermission IPC result:', { success })
 
     if (success) {
       // Remove only the first permission from the queue (the one we just responded to)
@@ -939,6 +1064,7 @@ export default function App() {
         const next = new Map(prev)
         const queue = next.get(sessionId) || []
         const remainingQueue = queue.slice(1) // Remove first item
+        console.log('[App] handleRespondToPermission: clearing permission from queue, remaining:', remainingQueue.length)
         if (remainingQueue.length === 0) {
           next.delete(sessionId)
         } else {
@@ -947,6 +1073,7 @@ export default function App() {
         return next
       })
       // Force sessions state refresh to ensure React processes any pending tool_result updates
+      console.log('[App] handleRespondToPermission: forcing sessions state refresh')
       setSessions(prev => [...prev])
     } else {
       // Response failed (agent/session gone) - clear the permission anyway
@@ -1132,11 +1259,13 @@ export default function App() {
             onAddWorkspace={handleAddWorkspace}
             pendingPermissions={pendingPermissions}
             onRespondToPermission={handleRespondToPermission}
-            // Advanced options
-            ultrathinkEnabled={ultrathinkEnabled}
+            // Advanced options (all session-scoped)
+            ultrathinkSessions={ultrathinkSessions}
             onUltrathinkChange={handleUltrathinkChange}
-            skipPermissions={skipPermissions}
+            skipPermissionsSessions={skipPermissionsSessions}
             onSkipPermissionsChange={handleSkipPermissionsChange}
+            planModeSessions={planModeSessions}
+            onPlanModeChange={handlePlanModeChange}
             // Input drafts per session
             sessionDrafts={sessionDrafts}
             onInputChange={handleInputChange}

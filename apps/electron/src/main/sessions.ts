@@ -33,7 +33,7 @@ import { SubAgentManager, type SubAgentManagerConfig } from '@craft-agent/shared
 import type { SubAgentDefinition, AgentStatus, AgentActivateOptions } from '@craft-agent/shared/agents'
 import { AgentStateManager, loadRegistry, invalidateDefinition } from '@craft-agent/shared/agents'
 import { type Session, type Message, type SessionEvent, type FileAttachment, type StoredAttachment, type SendMessageOptions, IPC_CHANNELS, generateMessageId } from '../shared/types'
-import { generateSessionTitle } from '@craft-agent/shared/utils'
+import { generateSessionTitle, formatPathsToRelative, formatToolInputPaths } from '@craft-agent/shared/utils'
 import { DEFAULT_MODEL } from '@craft-agent/shared/config'
 
 /**
@@ -62,6 +62,8 @@ interface ManagedSession {
   agentName?: string
   isArchived: boolean
   isFlagged: boolean
+  // Advanced options (persisted per session)
+  skipPermissions: boolean
   // SDK session ID for conversation continuity
   sdkSessionId?: string
   // Track whether agent was successfully activated via AgentStateManager
@@ -105,6 +107,8 @@ function messageToStored(msg: Message): StoredMessage {
     errorDetails: msg.errorDetails,
     errorOriginal: msg.errorOriginal,
     errorCanRetry: msg.errorCanRetry,
+    // Ultrathink
+    ultrathink: msg.ultrathink,
   }
 }
 
@@ -134,6 +138,8 @@ function storedToMessage(stored: StoredMessage): Message {
     errorDetails: stored.errorDetails,
     errorOriginal: stored.errorOriginal,
     errorCanRetry: stored.errorCanRetry,
+    // Ultrathink
+    ultrathink: stored.ultrathink,
   }
 }
 
@@ -549,6 +555,7 @@ export class SessionManager {
           agentName: storedSession.agentName,
           isArchived: storedSession.isArchived ?? false,
           isFlagged: storedSession.isFlagged ?? false,
+          skipPermissions: storedSession.skipPermissions ?? false,
           sdkSessionId: storedSession.sdkSessionId,
           tokenUsage: storedSession.tokenUsage,
         }
@@ -580,6 +587,7 @@ export class SessionManager {
         agentName: managed.agentName,
         isArchived: managed.isArchived,
         isFlagged: managed.isFlagged,
+        skipPermissions: managed.skipPermissions,
         messages: persistableMessages.map(messageToStored),
         tokenUsage: managed.tokenUsage ?? {
           inputTokens: 0,
@@ -614,7 +622,8 @@ export class SessionManager {
         agentId: m.agentId,
         agentName: m.agentName,
         isArchived: m.isArchived,
-        isFlagged: m.isFlagged
+        isFlagged: m.isFlagged,
+        skipPermissions: m.skipPermissions,
       }))
       .sort((a, b) => b.lastMessageAt - a.lastMessageAt)
   }
@@ -640,7 +649,8 @@ export class SessionManager {
       agentId,
       agentName,
       isArchived: false,
-      isFlagged: false
+      isFlagged: false,
+      skipPermissions: false,
     }
 
     this.sessions.set(storedSession.id, managed)
@@ -660,7 +670,8 @@ export class SessionManager {
       agentId,
       agentName,
       isArchived: false,
-      isFlagged: false
+      isFlagged: false,
+      skipPermissions: false,
     }
   }
 
@@ -709,7 +720,9 @@ export class SessionManager {
     const managed = this.sessions.get(sessionId)
     if (managed) {
       managed.isArchived = true
+      managed.isFlagged = false  // Unflag when archiving
       archiveStoredSession(sessionId)
+      unflagStoredSession(sessionId)  // Persist unflag to disk
     }
   }
 
@@ -734,6 +747,14 @@ export class SessionManager {
     if (managed) {
       managed.isFlagged = false
       unflagStoredSession(sessionId)
+    }
+  }
+
+  setSkipPermissions(sessionId: string, enabled: boolean): void {
+    const managed = this.sessions.get(sessionId)
+    if (managed) {
+      managed.skipPermissions = enabled
+      this.persistSession(managed)
     }
   }
 
@@ -823,6 +844,10 @@ export class SessionManager {
     managed.isProcessing = true
     managed.streamingText = ''
     managed.abortController = new AbortController()
+
+    // Capture the abort controller reference to detect if a new request supersedes this one
+    // This prevents the finally block from clobbering state when a follow-up message arrives
+    const myAbortController = managed.abortController
 
     // Get or create the agent (lazy loading)
     const agent = await this.getOrCreateAgent(managed)
@@ -950,11 +975,14 @@ export class SessionManager {
         error: error instanceof Error ? error.message : 'Unknown error'
       }, managed.workspace.id)
     } finally {
-      managed.isProcessing = false
-      managed.abortController = undefined
-      this.sendEvent({ type: 'complete', sessionId }, managed.workspace.id)
-
-      // Persist session to disk after each message exchange
+      // Only clean up state if WE are still the active request
+      // This prevents race conditions when a follow-up message supersedes this one
+      if (managed.abortController === myAbortController) {
+        managed.isProcessing = false
+        managed.abortController = undefined
+        this.sendEvent({ type: 'complete', sessionId }, managed.workspace.id)
+      }
+      // Always persist (for aborted messages)
       this.persistSession(managed)
     }
   }
@@ -1073,9 +1101,12 @@ export class SessionManager {
         }
         break
 
-      case 'tool_start':
+      case 'tool_start': {
         // Track tool_use_id -> toolName mapping for later use in tool_result
         managed.pendingTools.set(event.toolUseId, event.toolName)
+
+        // Format tool input paths to relative for better readability
+        const formattedToolInput = formatToolInputPaths(event.input)
 
         // Check if a message with this toolUseId already exists
         // SDK sends two events per tool: first from stream_event (empty input),
@@ -1083,8 +1114,8 @@ export class SessionManager {
         const existingStartMsg = managed.messages.find(m => m.toolUseId === event.toolUseId)
         if (existingStartMsg) {
           // Update existing message with complete input (second event has full input)
-          if (event.input) {
-            existingStartMsg.toolInput = event.input
+          if (formattedToolInput) {
+            existingStartMsg.toolInput = formattedToolInput
           }
         } else {
           // Add tool message immediately (will be updated on tool_result)
@@ -1096,7 +1127,7 @@ export class SessionManager {
             timestamp: Date.now(),
             toolName: event.toolName,
             toolUseId: event.toolUseId,
-            toolInput: event.input,
+            toolInput: formattedToolInput,
             toolStatus: 'pending',
             turnId: event.turnId
           }
@@ -1108,32 +1139,36 @@ export class SessionManager {
           sessionId,
           toolName: event.toolName,
           toolUseId: event.toolUseId,
-          toolInput: event.input,
+          toolInput: formattedToolInput,
           turnId: event.turnId
         }, workspaceId)
         break
+      }
 
       case 'tool_result':
         // AgentEvent tool_result only has toolUseId, look up the toolName
         const toolName = managed.pendingTools.get(event.toolUseId) || 'unknown'
         managed.pendingTools.delete(event.toolUseId)
 
+        // Format absolute paths to relative paths for better readability
+        const formattedResult = event.result ? formatPathsToRelative(event.result) : ''
+
         // Update existing tool message (created on tool_start) instead of creating new one
         const existingToolMsg = managed.messages.find(m => m.toolUseId === event.toolUseId)
         if (existingToolMsg) {
-          existingToolMsg.content = event.result || ''
-          existingToolMsg.toolResult = event.result
+          existingToolMsg.content = formattedResult
+          existingToolMsg.toolResult = formattedResult
           existingToolMsg.toolStatus = 'completed'
         } else {
           // Fallback: create new message if not found (shouldn't happen normally)
           const toolMessage: Message = {
             id: generateMessageId(),
             role: 'tool',
-            content: event.result || '',
+            content: formattedResult,
             timestamp: Date.now(),
             toolName: toolName,
             toolUseId: event.toolUseId,
-            toolResult: event.result,
+            toolResult: formattedResult,
             toolStatus: 'completed'
           }
           managed.messages.push(toolMessage)
@@ -1144,7 +1179,7 @@ export class SessionManager {
           sessionId,
           toolUseId: event.toolUseId,
           toolName: toolName,
-          result: event.result || '',
+          result: formattedResult,
           turnId: event.turnId
         }, workspaceId)
         break

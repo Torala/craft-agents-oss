@@ -89,6 +89,8 @@ export interface Message {
   errorDetails?: string[];
   errorOriginal?: string;
   errorCanRetry?: boolean;
+  // Ultrathink mode - indicates this user message was sent with extended thinking
+  ultrathink?: boolean;
 }
 
 /**
@@ -120,6 +122,8 @@ export interface StoredMessage {
   errorDetails?: string[];
   errorOriginal?: string;
   errorCanRetry?: boolean;
+  // Ultrathink mode - indicates this user message was sent with extended thinking
+  ultrathink?: boolean;
 }
 
 /**

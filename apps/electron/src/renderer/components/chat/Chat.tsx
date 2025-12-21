@@ -94,11 +94,13 @@ interface ChatProps {
   // Permission handling (queue to support multiple concurrent requests)
   pendingPermissions?: Map<string, PermissionRequest[]>
   onRespondToPermission?: (sessionId: string, requestId: string, allowed: boolean, alwaysAllow: boolean) => void
-  // Advanced options
-  ultrathinkEnabled?: boolean
-  onUltrathinkChange?: (enabled: boolean) => void
-  skipPermissions?: boolean
-  onSkipPermissionsChange?: (enabled: boolean) => void
+  // Advanced options (all session-scoped)
+  ultrathinkSessions?: Set<string>
+  onUltrathinkChange?: (sessionId: string, enabled: boolean) => void
+  skipPermissionsSessions?: Set<string>
+  onSkipPermissionsChange?: (sessionId: string, enabled: boolean) => void
+  planModeSessions?: Set<string>
+  onPlanModeChange?: (sessionId: string, enabled: boolean) => void
   // Input drafts per session
   sessionDrafts?: Map<string, string>
   onInputChange?: (sessionId: string, value: string) => void
@@ -465,11 +467,13 @@ export function Chat({
   onAddWorkspace,
   pendingPermissions,
   onRespondToPermission,
-  // Advanced options
-  ultrathinkEnabled = false,
+  // Advanced options (all session-scoped)
+  ultrathinkSessions,
   onUltrathinkChange,
-  skipPermissions = false,
+  skipPermissionsSessions,
   onSkipPermissionsChange,
+  planModeSessions,
+  onPlanModeChange,
   // Input drafts per session
   sessionDrafts,
   onInputChange,
@@ -797,9 +801,10 @@ export function Chat({
     currentModel,
     pendingPermissions: pendingPermissions || new Map(),
     sessionDrafts: sessionDrafts || new Map(),
-    // Advanced options
-    ultrathinkEnabled,
-    skipPermissions,
+    // Advanced options (all session-scoped)
+    ultrathinkSessions: ultrathinkSessions || new Set(),
+    skipPermissionsSessions: skipPermissionsSessions || new Set(),
+    planModeSessions: planModeSessions || new Set(),
     onCreateSession,
     onSendMessage,
     onRenameSession,
@@ -814,6 +819,7 @@ export function Chat({
     // Advanced options callbacks
     onUltrathinkChange: onUltrathinkChange || (() => {}),
     onSkipPermissionsChange: onSkipPermissionsChange || (() => {}),
+    onPlanModeChange: onPlanModeChange || (() => {}),
     onInputChange: onInputChange || (() => {}),
     textareaRef: chatInputRef,
   }), [
@@ -823,8 +829,9 @@ export function Chat({
     activeWorkspaceId,
     currentModel,
     pendingPermissions,
-    ultrathinkEnabled,
-    skipPermissions,
+    ultrathinkSessions,
+    skipPermissionsSessions,
+    planModeSessions,
     onCreateSession,
     onSendMessage,
     onRenameSession,
@@ -838,6 +845,7 @@ export function Chat({
     onModelChange,
     onUltrathinkChange,
     onSkipPermissionsChange,
+    onPlanModeChange,
     sessionDrafts,
     onInputChange,
   ])
