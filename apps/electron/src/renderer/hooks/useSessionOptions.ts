@@ -126,19 +126,3 @@ export function mergeSessionOptions(
   }
 }
 
-/**
- * Helper to convert legacy separate states to unified SessionOptions
- * Used during migration from old state shape
- */
-export function legacyToSessionOptions(
-  sessionId: string,
-  ultrathinkSessions: Set<string>,
-  skipPermissionsSessions: Set<string>,
-  sessionModes: Map<string, Mode[]>
-): SessionOptions {
-  return {
-    ultrathinkEnabled: ultrathinkSessions.has(sessionId),
-    skipPermissions: skipPermissionsSessions.has(sessionId),
-    activeModes: sessionModes.get(sessionId) ?? [],
-  }
-}

@@ -735,6 +735,8 @@ export interface StoredMessage {
   errorDetails?: string[];
   errorOriginal?: string;
   errorCanRetry?: boolean;
+  /** Whether this user message was sent with ultrathink (extended thinking) enabled */
+  ultrathink?: boolean;
 }
 
 export interface WorkspaceConversation {
