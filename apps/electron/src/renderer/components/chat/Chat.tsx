@@ -671,12 +671,23 @@ export function Chat({
       const existingGmail = connections.find(
         conn => conn.type === 'gmail' && conn.gmailEmail === result.email
       )
+
       if (existingGmail) {
-        console.log('[Chat] Gmail account already connected:', result.email)
+        // Update existing connection with fresh tokens (re-auth flow)
+        const updatedConfig: ConnectionConfig = {
+          ...existingGmail,
+          gmailAccessToken: result.accessToken,
+          gmailRefreshToken: result.refreshToken,
+          gmailExpiresAt: result.expiresAt,
+          isAuthenticated: true,
+        }
+        setConnections(prev => prev.map(c => c.id === existingGmail.id ? updatedConfig : c))
+        await window.electronAPI.saveConnection(updatedConfig)
+        console.log('[Chat] Gmail connection re-authenticated:', result.email)
         return
       }
 
-      // Create Gmail connection config
+      // Create new Gmail connection config
       const config: ConnectionConfig = {
         id: crypto.randomUUID(),
         name: result.email ? `Gmail (${result.email})` : 'Gmail',

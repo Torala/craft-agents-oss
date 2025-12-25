@@ -115,15 +115,13 @@ export class ConnectionService {
       let accessToken = creds.value
 
       // Check if token is expired or about to expire
+      // If expiresAt is missing but we have a refresh token, assume expired (legacy credentials)
       const now = Date.now()
-      const isExpired = creds.expiresAt && creds.expiresAt < now + TOKEN_REFRESH_BUFFER_MS
+      const isExpired = creds.expiresAt
+        ? creds.expiresAt < now + TOKEN_REFRESH_BUFFER_MS
+        : !!creds.refreshToken // No expiresAt but have refresh token = assume expired
 
-      if (isExpired) {
-        if (!creds.refreshToken) {
-          console.warn(`[ConnectionService] Gmail token expired and no refresh token available: ${connection.name}`)
-          return null
-        }
-
+      if (isExpired && creds.refreshToken) {
         console.log(`[ConnectionService] Refreshing expired Gmail token for: ${connection.name}`)
         try {
           const refreshResult = await refreshGmailToken(creds.refreshToken)
@@ -138,8 +136,16 @@ export class ConnectionService {
           console.log(`[ConnectionService] Gmail token refreshed successfully for: ${connection.name}`)
         } catch (refreshError) {
           console.error(`[ConnectionService] Failed to refresh Gmail token for ${connection.name}:`, refreshError)
-          // Try with existing token anyway - it might still work briefly
+          // If token is definitely expired, don't try with stale token - it will just 401
+          if (creds.expiresAt && creds.expiresAt < now) {
+            console.warn(`[ConnectionService] Cannot use expired Gmail token, refresh failed: ${connection.name}`)
+            return null
+          }
+          // If no expiresAt (legacy), try anyway - might still work
         }
+      } else if (isExpired && !creds.refreshToken) {
+        console.warn(`[ConnectionService] Gmail token expired and no refresh token available: ${connection.name}`)
+        return null
       }
 
       console.log(`[ConnectionService] Creating Gmail server for connection: ${connection.name}`)
