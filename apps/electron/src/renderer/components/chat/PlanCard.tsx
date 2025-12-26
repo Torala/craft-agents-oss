@@ -4,7 +4,7 @@
  * Displays a plan submitted by the agent for user review.
  * Uses the same markdown rendering and max height as TurnCard responses.
  * Includes an "Accept Plan" button that disables Safe Mode and submits
- * "Go ahead" to begin implementation.
+ * "Plan approved, please execute." to begin implementation.
  */
 
 import * as React from 'react'
@@ -53,12 +53,12 @@ export function PlanCard({
 }: PlanCardProps) {
   const [isExpanded, setIsExpanded] = useState(true)
 
-  // Accept the plan: disable safe mode and submit "Go ahead" message
+  // Accept the plan: disable safe mode and submit "Plan approved, please execute." message
   // This uses the craft:approve-plan event which is handled by FreeFormInput
   // The sessionId ensures only the correct session processes this event
   const handleAcceptPlan = () => {
     window.dispatchEvent(new CustomEvent('craft:approve-plan', {
-      detail: { text: 'Go ahead', sessionId }
+      detail: { text: 'Plan approved, please execute.', sessionId }
     }))
   }
 

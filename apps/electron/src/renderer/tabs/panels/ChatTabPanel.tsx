@@ -10,7 +10,7 @@ import { AlertCircle, Bot } from 'lucide-react'
 import { ChatDisplay } from '@/components/chat/ChatDisplay'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/loading-indicator'
-import { useChatContext, usePendingPermission, useSessionOptionsFor } from '@/context/ChatContext'
+import { useChatContext, usePendingPermission, useSessionOptionsFor, useSession } from '@/context/ChatContext'
 import { useAgentState } from '../../hooks/useAgentState'
 import type { Tab, ChatTab } from '../types'
 import { useTabs } from '../useTabs'
@@ -22,7 +22,6 @@ interface ChatTabPanelProps {
 export default function ChatTabPanel({ tab }: ChatTabPanelProps) {
   const chatTab = tab as ChatTab
   const {
-    sessions,
     currentModel,
     onSendMessage,
     onOpenFile,
@@ -48,11 +47,9 @@ export default function ChatTabPanel({ tab }: ChatTabPanelProps) {
 
   const { closeTab, openAgentSetupTab } = useTabs()
 
-  // Memoize session lookup to prevent unnecessary re-renders of ChatDisplay
-  // Only returns a new reference when this specific session's data changes
-  const session = React.useMemo(() => {
-    return sessions.find((s) => s.id === chatTab.sessionId) || null
-  }, [sessions, chatTab.sessionId])
+  // Use per-session atom for isolated updates
+  // Only re-renders when THIS session changes, not when other sessions stream
+  const session = useSession(chatTab.sessionId)
 
   // Mark session as read when displayed (not processing)
   // This handles all navigation methods: click, keyboard, tab switch

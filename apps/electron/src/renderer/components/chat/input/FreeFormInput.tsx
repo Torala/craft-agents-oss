@@ -1,6 +1,7 @@
 import * as React from 'react'
 import * as ReactDOM from 'react-dom'
 import { Command as CommandPrimitive } from 'cmdk'
+import { toast } from 'sonner'
 import {
   Paperclip,
   ArrowUp,
@@ -217,7 +218,11 @@ export function FreeFormInput({
       if (e.detail?.sessionId && e.detail.sessionId !== sessionId) {
         return
       }
-      const text = e.detail?.text ?? 'Go ahead'
+      const text = e.detail?.text
+      if (!text) {
+        toast.error('No details provided')
+        return
+      }
       // Disable safe mode first
       onSafeModeChange?.(false)
       // Submit the message
@@ -778,9 +783,11 @@ export function FreeFormInput({
                                   key={conn.id}
                                   value={conn.id}
                                   onSelect={() => {
+                                    console.log('[FreeFormInput] onSelect fired for connection:', conn.id)
                                     const newIds = isSelected
                                       ? selectedConnectionIds.filter(id => id !== conn.id)
                                       : [...selectedConnectionIds, conn.id]
+                                    console.log('[FreeFormInput] calling onConnectionsChange with:', newIds)
                                     onConnectionsChange(newIds)
                                   }}
                                   className={cn(

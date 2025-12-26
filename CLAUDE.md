@@ -71,10 +71,24 @@ bun link                 # Creates 'craft' command
 ```
 
 **TUI CLI Flags:**
-- `--url, -u` - Override MCP server URL
-- `--token, -t` - Override bearer token (testing)
-- `--model, -m` - Override model selection
+
+*Common Options (both modes):*
+- `--agent, -a <name>` - Agent to activate (with or without @ prefix)
+- `--workspace, -w <name>` - Select workspace by name, ID, or MCP server URL
+- `--model, -m <model>` - Claude model to use
 - `--debug` - Enable debug logging to `/tmp/craft-debug.log`
+- `--session <id>` - Resume or create a specific session by ID
+
+*Interactive Mode Options:*
+- `--new` - Start a new session (instead of resuming)
+- `--list-sessions` - List available sessions and exit
+- `--token, -t` - Bearer token for MCP authentication (overrides saved config)
+
+*Print Mode (non-interactive):*
+- `--print, -p <query>` - Execute prompt and exit
+- `--output-format <fmt>` - Output: text, json, stream-json (default: text)
+- `--permission-policy <policy>` - Bash handling: deny-all, allow-safe, allow-all
+- `--session-resume` - Resume the last session (default: fresh session)
 
 ## Releasing
 
@@ -114,7 +128,11 @@ This package (`@craft-agent/shared`) contains the shared business logic used by 
 packages/shared/src/
 ├── agent/
 │   ├── craft-agent.ts        # Claude Agent SDK wrapper
-│   └── plan-tools.ts         # SubmitPlan tool and plan callbacks
+│   ├── session-scoped-tools.ts # SubmitPlan tool and plan callbacks
+│   ├── mode-manager.ts       # Safe mode management
+│   ├── diagnostics.ts        # Agent diagnostics utilities
+│   ├── errors.ts             # Error types and handling
+│   └── options.ts            # Agent configuration options
 ├── agents/
 │   ├── types.ts              # SubAgentDefinition, ApiConfig, AgentStatus interfaces
 │   ├── plan-types.ts         # Plan, PlanStep, PlanState interfaces
@@ -122,13 +140,22 @@ packages/shared/src/
 │   ├── manager.ts            # SubAgentManager - list, activate, deactivate
 │   ├── extractor.ts          # Agentic extraction from Craft documents
 │   ├── api-tools.ts          # Dynamic MCP server factory for REST APIs
+│   ├── gmail-tools.ts        # Gmail integration tools
+│   ├── parser.ts             # Agent definition parsing
+│   ├── instruction-updater.ts # Agent instruction updates
 │   └── cache.ts              # Agent definition cache
 ├── auth/
-│   └── oauth.ts              # OAuth 2.0 with PKCE
+│   ├── oauth.ts              # OAuth 2.0 with PKCE
+│   ├── gmail-oauth.ts        # Gmail OAuth flow
+│   ├── craft-token.ts        # Craft API token management
+│   ├── claude-token.ts       # Claude OAuth token management
+│   ├── balance.ts            # Account balance checking
+│   ├── state.ts              # Auth state management
+│   └── callback-server.ts    # OAuth callback server
 ├── config/
-│   ├── env.ts                # Environment validation (legacy)
 │   ├── storage.ts            # Config persistence, multi-workspace
-│   └── preferences.ts        # User preferences (name, timezone, etc.)
+│   ├── preferences.ts        # User preferences (name, timezone, etc.)
+│   └── models.ts             # Model configuration
 ├── credentials/
 │   ├── index.ts              # Public exports
 │   ├── types.ts              # CredentialId, StoredCredential interfaces
@@ -147,10 +174,29 @@ packages/shared/src/
 │   ├── runner.ts             # HeadlessRunner - non-interactive execution
 │   ├── types.ts              # HeadlessConfig, HeadlessResult, HeadlessEvent
 │   └── output.ts             # Output formatting (text, json, stream-json)
-└── utils/
-    ├── debug.ts              # Debug logging to /tmp/craft-debug.log
-    ├── files.ts              # File attachment processing (shared with TUI)
-    └── summarize.ts          # Shared summarization for large tool results
+├── utils/
+│   ├── debug.ts              # Debug logging to /tmp/craft-debug.log
+│   ├── files.ts              # File attachment processing (shared with TUI)
+│   ├── summarize.ts          # Shared summarization for large tool results
+│   ├── logo.ts               # Craft Agent logo/branding
+│   ├── title-generator.ts    # Session title generation
+│   └── toolNames.ts          # Tool name utilities
+├── clients/
+│   ├── index.ts              # Public exports
+│   └── craftApi.ts           # Craft API client
+├── subscription/
+│   ├── index.ts              # Public exports
+│   └── check.ts              # Subscription checking
+├── validation/
+│   ├── index.ts              # Public exports
+│   └── url-validator.ts      # URL validation
+├── version/
+│   ├── index.ts              # Public exports
+│   ├── version.ts            # Version utilities
+│   ├── install.ts            # Installation scripts
+│   └── manifest.ts           # Version manifest
+├── branding.ts               # Branding constants
+└── cache-ttl-interceptor.ts  # Extended prompt cache TTL
 ```
 
 > **Note:** TUI components and hooks live in `apps/tui/src/`. The `packages/shared/src/` directory contains the shared business logic used by both TUI and Electron apps, imported via `@craft-agent/shared/*`.
@@ -585,7 +631,7 @@ When safe mode is active, the hook blocks external operations:
 3. Agent can read files, query MCP, but write operations are blocked
 4. User exits safe mode via SHIFT+TAB or `/safe` to enable writes
 
-### SubmitPlan Tool (`packages/shared/src/agent/plan-tools.ts`)
+### SubmitPlan Tool (`packages/shared/src/agent/session-scoped-tools.ts`)
 
 The SubmitPlan tool allows Claude to submit structured plans for user review. This is separate from Safe Mode - plans can be created at any time.
 

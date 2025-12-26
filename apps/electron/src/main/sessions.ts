@@ -921,11 +921,17 @@ export class SessionManager {
     managed.connectionMcpServers = mcpServers
     managed.connectionApiServers = apiServers
 
+    // IMMEDIATELY update the agent's connection servers if agent exists
+    // This ensures tool blocking works even mid-conversation
+    if (managed.agent) {
+      managed.agent.setConnectionServers(mcpServers, apiServers)
+      console.log(`[SessionManager] Applied ${Object.keys(mcpServers).length} MCP + ${Object.keys(apiServers).length} API connections to active agent`)
+    }
+
     // Persist the session with updated connections
     this.persistSession(managed)
 
-    // Notify renderer of the connection change (no session restart needed)
-    // The new connections will be applied on the next message via setConnectionServers()
+    // Notify renderer of the connection change
     this.sendEvent({
       type: 'connections_changed',
       sessionId,

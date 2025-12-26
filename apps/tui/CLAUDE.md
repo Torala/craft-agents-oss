@@ -8,7 +8,7 @@ This file provides guidance to Claude Code when working with the TUI (Terminal U
 
 The TUI app is the primary terminal interface for Craft Agent. It provides an interactive CLI experience similar to Claude Code, with streaming responses, tool visualization, and multi-workspace support.
 
-**Important:** This app currently imports most business logic from the root `src/` directory via relative paths (`../../../src/`). Only UI components, hooks, and utilities specific to the terminal interface live here.
+**Important:** This app imports business logic from the `@craft-agent/shared` package. Only UI components, hooks, and utilities specific to the terminal interface live here.
 
 ## Directory Structure
 
@@ -58,21 +58,18 @@ apps/tui/
 
 ### Import Strategy
 
-The TUI app uses relative imports to access shared code from the root `src/` directory:
+The TUI app uses workspace package imports for shared logic:
 
 ```typescript
-// Imports from root src/
-import { loadStoredConfig } from '../../../src/config/storage.ts';
-import { CraftAgent } from '../../../src/agent/craft-agent.ts';
-import { debug } from '../../../src/utils/debug.ts';
-import { processInputWithFiles } from '../../../src/utils/files.ts';
+// Imports from @craft-agent/shared
+import { loadStoredConfig } from '@craft-agent/shared/config';
+import { CraftAgent } from '@craft-agent/shared/agent';
+import { debug } from '@craft-agent/shared/utils';
 
 // Local imports (TUI-specific)
 import { useAgent } from './hooks/core/useAgent.ts';
 import { renderMarkdown } from './utils/markdown.ts';
 ```
-
-**Note:** This is a transitional state. Eventually, shared logic should move to `@craft-agent/core` and be imported as a workspace dependency.
 
 ### Session-Based Architecture
 
@@ -128,7 +125,7 @@ bun start --debug
 tail -f /tmp/craft-debug.log
 ```
 
-Use `debug()` from `../../../src/utils/debug.ts` to add log entries.
+Use `debug()` from `@craft-agent/shared/utils` to add log entries.
 
 ## Dependencies
 
@@ -137,15 +134,15 @@ Use `debug()` from `../../../src/utils/debug.ts` to add log entries.
 - **Styling:** chalk for colors
 - **Markdown:** marked + marked-terminal + Shiki
 
-## Relationship to Root src/
+## Relationship to Shared Package
 
-| This App (`apps/tui/src/`) | Root (`src/`) |
-|---------------------------|---------------|
+| This App (`apps/tui/src/`) | `@craft-agent/shared` |
+|---------------------------|------------------------|
 | UI components (Ink/React) | Agent logic (`agent/`) |
 | Terminal-specific hooks   | Storage (`config/`) |
 | Keyboard handling         | Auth (`auth/`) |
 | Markdown rendering        | MCP client (`mcp/`) |
 |                           | Credentials (`credentials/`) |
 |                           | Sub-agents (`agents/`) |
-|                           | Debug utilities (`utils/debug.ts`) |
-|                           | File processing (`utils/files.ts`) |
+|                           | Debug utilities (`utils/`) |
+|                           | Headless mode (`headless/`) |

@@ -1539,14 +1539,20 @@ export class CraftAgent {
    * Only included when there are selected connections (active or inactive).
    * This informs the agent about which connections are available vs unavailable.
    */
-  private formatConnectionState(): string | null {
-    // Only show connection state if there are connections
-    if (this.activeConnectionServerNames.size === 0) {
-      return null;
+  private formatConnectionState(): string {
+    const activeNames = [...this.activeConnectionServerNames].sort();
+
+    if (activeNames.length === 0) {
+      return `<connections>
+Available: none
+Only use tools from connections listed above. If a connection was available earlier but is not listed here, it has been disabled.
+</connections>`;
     }
 
-    const activeNames = [...this.activeConnectionServerNames].sort();
-    return `<connections>\nActive: ${activeNames.join(', ')}\n</connections>`;
+    return `<connections>
+Available: ${activeNames.join(', ')}
+Only use tools from connections listed above. If a connection was available earlier but is not listed here, it has been disabled.
+</connections>`;
   }
 
   /**
@@ -1564,11 +1570,8 @@ export class CraftAgent {
     // This lightweight format replaces the verbose mode context
     parts.push(formatSessionState(this.modeSessionId));
 
-    // Add connection state if there are connections
-    const connectionState = this.formatConnectionState();
-    if (connectionState) {
-      parts.push(connectionState);
-    }
+    // Add connection state (always included to inform agent about available connections)
+    parts.push(this.formatConnectionState());
 
     // Add working directory context if set
     const workingDirContext = getWorkingDirectoryContext(this.config.session?.workingDirectory);
@@ -1609,11 +1612,8 @@ export class CraftAgent {
     // This lightweight format replaces the verbose mode context
     contentBlocks.push({ type: 'text', text: formatSessionState(this.modeSessionId) });
 
-    // Add connection state if there are connections
-    const connectionState = this.formatConnectionState();
-    if (connectionState) {
-      contentBlocks.push({ type: 'text', text: connectionState });
-    }
+    // Add connection state (always included to inform agent about available connections)
+    contentBlocks.push({ type: 'text', text: this.formatConnectionState() });
 
     // Add working directory context if set
     const workingDirContext = getWorkingDirectoryContext(this.config.session?.workingDirectory);

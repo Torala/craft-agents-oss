@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { useSetAtom } from 'jotai'
 import type { Session, Workspace, SessionEvent, Message, SubAgentMetadata, FileAttachment, StoredAttachment, PermissionRequest, SetupNeeds, TodoState, Mode } from '../shared/types'
 import type { SessionOptions, SessionOptionUpdates } from './hooks/useSessionOptions'
 import { defaultSessionOptions, mergeSessionOptions } from './hooks/useSessionOptions'
@@ -16,6 +17,14 @@ import { useDeepLinkNavigation } from '@/hooks/useDeepLinkNavigation'
 import { useTabs } from '@/tabs'
 import { Spinner } from '@/components/ui/loading-indicator'
 import { DEFAULT_MODEL } from '@config/models'
+import {
+  initializeSessionsAtom,
+  addSessionAtom,
+  removeSessionAtom,
+  updateSessionAtom,
+  updateStreamingContentAtom,
+  syncSessionsToAtomsAtom,
+} from '@/atoms/sessions'
 
 type AppState = 'loading' | 'onboarding' | 'reauth' | 'ready' | 'adding-workspace'
 
@@ -25,6 +34,22 @@ export default function App() {
   const [setupNeeds, setSetupNeeds] = useState<SetupNeeds | null>(null)
 
   const [sessions, setSessions] = useState<Session[]>([])
+
+  // Per-session Jotai atom setters for isolated updates
+  // These update individual session atoms without triggering re-renders in other sessions
+  const initializeSessions = useSetAtom(initializeSessionsAtom)
+  const addSession = useSetAtom(addSessionAtom)
+  const removeSession = useSetAtom(removeSessionAtom)
+  const updateSession = useSetAtom(updateSessionAtom)
+  const updateStreamingContent = useSetAtom(updateStreamingContentAtom)
+  const syncSessionsToAtoms = useSetAtom(syncSessionsToAtomsAtom)
+
+  // Auto-sync React state to per-session atoms
+  // This enables components using useSession(id) to get isolated updates
+  // while keeping React state as the single source of truth
+  useEffect(() => {
+    syncSessionsToAtoms(sessions)
+  }, [sessions, syncSessionsToAtoms])
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [agents, setAgents] = useState<SubAgentMetadata[]>([])
   const [isLoadingAgents, setIsLoadingAgents] = useState(false)
@@ -62,6 +87,7 @@ export default function App() {
   const streamingTextRef = useRef<Map<string, { content: string; turnId?: string; timer?: ReturnType<typeof setTimeout> }>>(new Map())
 
   // Helper to flush accumulated streaming text to React state
+  // Uses per-session atoms for isolated updates - only the streaming session re-renders
   const flushStreamingText = useCallback((sessionId: string, createNew: boolean = false) => {
     const streaming = streamingTextRef.current.get(sessionId)
     if (!streaming) return
@@ -84,7 +110,11 @@ export default function App() {
       return
     }
 
-    // Update React state with accumulated content
+    // Update per-session atom (only this session's subscribers re-render)
+    updateStreamingContent(sessionId, content, turnId)
+
+    // Also update React state for components still using sessions array
+    // TODO: Remove this once all components migrate to atoms
     setSessions(prev => prev.map(session => {
       if (session.id !== sessionId) return session
 
@@ -123,7 +153,7 @@ export default function App() {
 
       return session
     }))
-  }, [])
+  }, [updateStreamingContent])
 
   // Handle onboarding completion
   const handleOnboardingComplete = useCallback(() => {
@@ -265,6 +295,8 @@ export default function App() {
     window.electronAPI.getWorkspaces().then(setWorkspaces)
     window.electronAPI.getSessions().then((loadedSessions) => {
       setSessions(loadedSessions)
+      // Initialize per-session atoms for isolated streaming updates
+      initializeSessions(loadedSessions)
       // Initialize unified sessionOptions from session data
       const optionsMap = new Map<string, SessionOptions>()
       for (const s of loadedSessions) {
@@ -873,6 +905,8 @@ export default function App() {
     // Pass agentName to main process so it's stored in the session
     const session = await window.electronAPI.createSession(workspaceId, agentId, agentName)
     setSessions(prev => [session, ...prev])
+    // Also update per-session atom for isolated updates
+    addSession(session)
 
     // Apply session defaults to the unified sessionOptions
     const hasDefaults = session.skipPermissions || (session.activeModes && session.activeModes.length > 0)
@@ -889,7 +923,7 @@ export default function App() {
     }
 
     return session
-  }, [agents])
+  }, [agents, addSession])
 
   // Deep link navigation - handles craftagents:// URLs
   // Must be after handleCreateSession is defined
@@ -917,8 +951,10 @@ export default function App() {
     closeChatTabBySession(sessionId)
     await window.electronAPI.deleteSession(sessionId)
     setSessions(prev => prev.filter(s => s.id !== sessionId))
+    // Also remove from per-session atom
+    removeSession(sessionId)
     return true
-  }, [closeChatTabBySession, sessions])
+  }, [closeChatTabBySession, sessions, removeSession])
 
   const handleFlagSession = useCallback(async (sessionId: string) => {
     await window.electronAPI.flagSession(sessionId)

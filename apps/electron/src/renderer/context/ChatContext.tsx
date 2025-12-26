@@ -8,6 +8,7 @@
 
 import * as React from 'react'
 import { createContext, useContext, useCallback } from 'react'
+import { useAtomValue } from 'jotai'
 import type {
   Session,
   Workspace,
@@ -20,6 +21,7 @@ import type {
 } from '../../shared/types'
 import type { SessionOptions, SessionOptionUpdates } from '../hooks/useSessionOptions'
 import { defaultSessionOptions } from '../hooks/useSessionOptions'
+import { sessionAtomFamily } from '../atoms/sessions'
 
 export interface ChatContextType {
   // Data
@@ -110,9 +112,20 @@ export function useChatContext(): ChatContextType {
 }
 
 /**
- * Get a specific session by ID
+ * Get a specific session by ID using per-session atoms
+ * This hook only re-renders when the specific session changes,
+ * not when other sessions change (solves streaming isolation)
  */
 export function useSession(sessionId: string): Session | null {
+  // Use per-session atom for isolated updates
+  return useAtomValue(sessionAtomFamily(sessionId))
+}
+
+/**
+ * Get a specific session by ID from sessions array (legacy)
+ * @deprecated Use useSession() instead for better performance
+ */
+export function useSessionLegacy(sessionId: string): Session | null {
   const { sessions } = useChatContext()
   return sessions.find((s) => s.id === sessionId) || null
 }

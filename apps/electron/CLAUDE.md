@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is the Electron desktop app for Craft Agent - a GUI alternative to the TUI. It provides a multi-threaded chat interface for interacting with Claude via Craft workspaces.
 
-**Note:** This app reuses the parent `craft-tui-agent` codebase. The main process imports directly from `../../../src/` (the TUI's source). Dependencies are managed in the root `package.json`.
+**Note:** This app reuses the `@craft-agent/shared` package for core business logic. Dependencies are managed in the root `package.json`.
 
 ## UI Components
 
@@ -293,8 +293,8 @@ toast.dismiss(toastId)
 // Renderer (via Vite @config alias)
 import { MODELS, DEFAULT_MODEL, getModelDisplayName } from '@config/models'
 
-// Main process (relative path)
-import { DEFAULT_MODEL } from '../../../../src/config/models'
+// Main process (via package import)
+import { DEFAULT_MODEL } from '@craft-agent/shared/config'
 ```
 
 Available exports:
@@ -338,24 +338,44 @@ apps/electron/
 │   │   ├── menu.ts        # Application menu (File, Edit, View, Help menus)
 │   │   ├── sessions.ts    # SessionManager - CraftAgent integration
 │   │   ├── deep-link.ts   # Deep link URL parsing and handling
-│   │   └── agent-service.ts # Agent listing, caching, auth checking
+│   │   ├── agent-service.ts # Agent listing, caching, auth checking
+│   │   ├── connection-service.ts # Connection and authentication service
+│   │   ├── onboarding.ts  # Onboarding flow management
+│   │   ├── window-manager.ts # Window lifecycle management
+│   │   ├── window-state.ts # Window state persistence
+│   │   ├── preview-window.ts # Generic preview window base
+│   │   ├── code-preview-window.ts # Code preview functionality
+│   │   ├── diff-preview-window.ts # Diff preview functionality
+│   │   └── terminal-preview-window.ts # Terminal preview
 │   ├── preload/           # Context bridge (main ↔ renderer)
 │   │   └── index.ts       # Exposes electronAPI to renderer (incl. theme APIs)
 │   ├── renderer/          # React UI (browser context)
 │   │   ├── App.tsx        # Main app, session event handling
 │   │   ├── main.tsx       # React entry point, ThemeProvider
 │   │   ├── index.css      # CSS variables (:root, .dark, data-theme)
+│   │   ├── atoms/
+│   │   │   └── sessions.ts # Per-session Jotai atoms for performance isolation
 │   │   ├── components/
 │   │   │   ├── chat/      # Chat UI (Chat, ChatInput, ChatDisplay, SessionList, PermissionBanner)
 │   │   │   ├── icons/     # Custom SVG icons (PanelLeftRounded, SquarePenRounded)
 │   │   │   ├── markdown/  # Markdown renderer with syntax highlighting
+│   │   │   ├── onboarding/ # Onboarding flow components
+│   │   │   ├── agent-setup/ # Agent setup components
 │   │   │   └── ui/        # shadcn/ui components
+│   │   ├── config/        # Renderer configuration
 │   │   ├── context/
 │   │   │   ├── NavigationContext.tsx  # Agent selection
+│   │   │   ├── ChatContext.tsx        # Chat state and session management
 │   │   │   └── ThemeContext.tsx       # Theme state management
 │   │   ├── hooks/
 │   │   │   ├── useAgentState.ts  # Agent activation state machine (IPC-based)
-│   │   │   └── useDeepLinkNavigation.ts  # Deep link tab navigation
+│   │   │   ├── useDeepLinkNavigation.ts  # Deep link tab navigation
+│   │   │   ├── useSession.ts     # Session hook for isolated access
+│   │   │   ├── useOnboarding.ts  # Onboarding flow management
+│   │   │   ├── useAgentSetup.ts  # Agent setup flow
+│   │   │   └── keyboard/         # Keyboard handling hooks
+│   │   ├── tabs/          # Tab system management
+│   │   ├── utils/         # Utility functions
 │   │   └── playground/    # Component development playground
 │   │       ├── PlaygroundApp.tsx     # Main playground component
 │   │       ├── ComponentPreview.tsx  # Component preview display
@@ -661,6 +681,43 @@ if (needsAuth) {
 ```
 
 **Caching:** `SubAgentManager` is cached per workspace to avoid re-connecting to MCP servers for each session.
+
+## Session State Architecture
+
+The app uses a **hybrid React/Jotai state management** approach for session data:
+
+**Why hybrid?**
+- React state (`sessions` array in `App.tsx`) is the source of truth
+- Jotai atoms provide per-session isolation for performance
+- Without isolation, streaming in Session A would cause re-renders in Session B
+
+**Key files:**
+- `App.tsx` - React state + auto-sync effect
+- `atoms/sessions.ts` - Per-session Jotai atoms
+- `context/ChatContext.tsx` - `useSession(id)` hook for isolated access
+
+**How it works:**
+```
+setSessions() called (React state update)
+       ↓
+useEffect triggers syncSessionsToAtoms()
+       ↓
+Per-session atoms updated (only changed sessions)
+       ↓
+Components using useSession(id) re-render
+```
+
+**Component subscription patterns:**
+```typescript
+// For session lists - reads from context (React state)
+const { sessions } = useChatContext()
+
+// For chat panels - reads from atom (isolated updates)
+const session = useSession(sessionId)
+```
+
+**Adding new session updates:**
+Just use `setSessions()` - the sync effect handles atom updates automatically. No need to manually update atoms.
 
 ## Session Management
 
