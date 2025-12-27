@@ -557,6 +557,15 @@ export function Chat({
     })
   }, [activeWorkspaceId])
 
+  // Subscribe to live source updates (when sources are added/removed via agent)
+  React.useEffect(() => {
+    const cleanup = window.electronAPI.onSourcesChanged((updatedSources) => {
+      console.log('[Chat] Sources changed, updating sidebar:', updatedSources.length)
+      setSources(updatedSources || [])
+    })
+    return cleanup
+  }, [])
+
   // Handle session source selection changes
   const handleSessionSourcesChange = React.useCallback(async (sessionId: string, sourceSlugs: string[]) => {
     try {
@@ -1620,7 +1629,7 @@ export function Chat({
                               className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-foreground/5 cursor-pointer"
                             >
                               <SourceAvatar source={source} size="sm" />
-                              <span className="text-xs text-foreground truncate flex-1">
+                              <span className="text-[13px] text-foreground truncate flex-1">
                                 {source.config.name}
                               </span>
                             </div>

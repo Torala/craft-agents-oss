@@ -31,6 +31,7 @@ import {
   type TodoState,
 } from '@craft-agent/shared/sessions'
 import { loadWorkspaceSources, getSourcesBySlugs, type LoadedSource, createSourceService, type McpServerConfig } from '@craft-agent/shared/sources'
+import { ConfigWatcher, type ConfigWatcherCallbacks } from '@craft-agent/shared/config'
 import { getAuthState } from '@craft-agent/shared/auth'
 import { setAnthropicOptionsEnv, setPathToClaudeCodeExecutable, setInterceptorPath } from '@craft-agent/shared/agent'
 import { getCraftToken } from '@craft-agent/shared/auth'
@@ -192,9 +193,63 @@ export class SessionManager {
   // Delta batching for performance - reduces IPC events from 50+/sec to ~20/sec
   private pendingDeltas: Map<string, PendingDelta> = new Map()
   private deltaFlushTimers: Map<string, NodeJS.Timeout> = new Map()
+  // Config watcher for live updates (sources, agents, etc.)
+  private configWatcher: ConfigWatcher | null = null
+  private currentWatchedWorkspaceSlug: string | null = null
 
   setWindowManager(wm: WindowManager): void {
     this.windowManager = wm
+  }
+
+  /**
+   * Set up ConfigWatcher for a workspace to broadcast live updates
+   * (sources added/removed, guide.md changes, etc.)
+   * Public so ipc.ts can call it when sources are first requested
+   */
+  setupConfigWatcher(workspaceSlug: string): void {
+    // Clean up existing watcher if switching workspaces
+    if (this.configWatcher && this.currentWatchedWorkspaceSlug !== workspaceSlug) {
+      this.configWatcher.stop()
+      this.configWatcher = null
+    }
+
+    if (this.configWatcher) {
+      return // Already watching this workspace
+    }
+
+    console.log(`[SessionManager] Setting up ConfigWatcher for workspace: ${workspaceSlug}`)
+
+    const callbacks: ConfigWatcherCallbacks = {
+      onSourcesListChange: (sources: LoadedSource[]) => {
+        console.log(`[SessionManager] Sources changed, broadcasting update (${sources.length} sources)`)
+        this.broadcastSourcesChanged(sources)
+      },
+      onSourceChange: (slug: string, source: LoadedSource | null) => {
+        console.log(`[SessionManager] Source updated: ${slug}`, source ? source.config.name : '(deleted)')
+        // Broadcast updated list when individual source changes
+        const sources = loadWorkspaceSources(workspaceSlug)
+        this.broadcastSourcesChanged(sources)
+      },
+      onSourceGuideChange: (sourceSlug: string) => {
+        console.log(`[SessionManager] Source guide changed: ${sourceSlug}`)
+        // Broadcast the updated sources list so sidebar picks up guide changes
+        const sources = loadWorkspaceSources(workspaceSlug)
+        this.broadcastSourcesChanged(sources)
+      },
+    }
+
+    this.configWatcher = new ConfigWatcher(workspaceSlug, callbacks)
+    this.configWatcher.start()
+    this.currentWatchedWorkspaceSlug = workspaceSlug
+  }
+
+  /**
+   * Broadcast sources changed event to all windows
+   */
+  private broadcastSourcesChanged(sources: LoadedSource[]): void {
+    if (!this.windowManager) return
+
+    this.windowManager.broadcastToAll(IPC_CHANNELS.SOURCES_CHANGED, sources)
   }
 
   /**

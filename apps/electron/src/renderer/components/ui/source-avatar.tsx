@@ -53,6 +53,7 @@ function getSourceServiceUrl(source: LoadedSource): string | null {
   const { config } = source
   if (config.mcp?.url) return config.mcp.url
   if (config.api?.baseUrl) return config.api.baseUrl
+  if (config.local?.websiteUrl) return config.local.websiteUrl
   return null
 }
 

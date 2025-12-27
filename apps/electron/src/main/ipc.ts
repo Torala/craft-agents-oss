@@ -938,6 +938,8 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
 
   // Get all sources for a workspace
   ipcMain.handle(IPC_CHANNELS.SOURCES_GET, async (_event, workspaceSlug: string) => {
+    // Set up ConfigWatcher for this workspace to broadcast live updates
+    sessionManager.setupConfigWatcher(workspaceSlug)
     return loadWorkspaceSources(workspaceSlug)
   })
 

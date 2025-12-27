@@ -1515,6 +1515,7 @@ export function createSourceCreateTool(sessionId: string, workspaceSlug: string)
       apiAuthType: z.enum(['bearer', 'header', 'query', 'basic', 'oauth', 'none']).optional().describe('API auth type (default: none)'),
       apiHeaderName: z.string().optional().describe('Header name for header auth (e.g., "X-API-Key")'),
       localPath: z.string().optional().describe('Local path (required for type=local)'),
+      localWebsiteUrl: z.string().optional().describe('Website URL for local source favicon (e.g., "https://obsidian.md" for Obsidian vaults)'),
       enabled: z.boolean().optional().describe('Whether source is enabled (default: true)'),
     },
     async (args) => {
@@ -1530,7 +1531,7 @@ export function createSourceCreateTool(sessionId: string, workspaceSlug: string)
           type: 'mcp' | 'api' | 'local';
           mcp?: { url: string; authType: 'oauth' | 'bearer' | 'none' };
           api?: { baseUrl: string; authType: 'bearer' | 'header' | 'query' | 'basic' | 'oauth' | 'none'; headerName?: string };
-          local?: { path: string };
+          local?: { path: string; websiteUrl?: string };
           enabled?: boolean;
         } = {
           name: args.name,
@@ -1581,6 +1582,7 @@ export function createSourceCreateTool(sessionId: string, workspaceSlug: string)
           }
           input.local = {
             path: args.localPath,
+            websiteUrl: args.localWebsiteUrl,
           };
         }
 
@@ -1630,6 +1632,7 @@ Only the provided fields will be updated; others remain unchanged.`,
       mcpAuthType: z.enum(['oauth', 'bearer', 'none']).optional().describe('New MCP auth type'),
       apiBaseUrl: z.string().optional().describe('New API base URL'),
       apiAuthType: z.enum(['bearer', 'header', 'query', 'basic', 'oauth', 'none']).optional().describe('New API auth type'),
+      localWebsiteUrl: z.string().optional().describe('Website URL for local source favicon (e.g., "https://obsidian.md")'),
     },
     async (args) => {
       debug('[source_update] Updating source:', args.sourceSlug);
@@ -1658,6 +1661,10 @@ Only the provided fields will be updated; others remain unchanged.`,
         if (config.api) {
           if (args.apiBaseUrl !== undefined) config.api.baseUrl = args.apiBaseUrl;
           if (args.apiAuthType !== undefined) config.api.authType = args.apiAuthType;
+        }
+
+        if (config.local) {
+          if (args.localWebsiteUrl !== undefined) config.local.websiteUrl = args.localWebsiteUrl;
         }
 
         saveSourceConfig(workspaceSlug, config);

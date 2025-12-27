@@ -467,6 +467,7 @@ export const IPC_CHANNELS = {
   SOURCES_DELETE: 'sources:delete',
   SOURCES_START_OAUTH: 'sources:startOAuth',
   SOURCES_SAVE_CREDENTIALS: 'sources:saveCredentials',
+  SOURCES_CHANGED: 'sources:changed',
 
   // Session sources
   SESSION_SET_SOURCES: 'sessions:setSources',
@@ -738,6 +739,9 @@ export interface ElectronAPI {
   // Session sources
   setSessionSources(sessionId: string, sourceSlugs: string[]): Promise<void>
   getSessionSources(sessionId: string): Promise<string[]>
+
+  // Sources change listener (live updates when sources are added/removed)
+  onSourcesChanged(callback: (sources: LoadedSource[]) => void): () => void
 }
 
 /**

@@ -68,6 +68,7 @@ export interface ApiSourceConfig {
 export interface LocalSourceConfig {
   path: string;
   format?: string; // Optional hint: 'filesystem' | 'obsidian' | 'git' | 'sqlite' | etc.
+  websiteUrl?: string; // Website URL for favicon (e.g., "https://obsidian.md" for Obsidian vaults)
 }
 
 /**

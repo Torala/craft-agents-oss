@@ -248,6 +248,17 @@ const api: ElectronAPI = {
     ipcRenderer.invoke(IPC_CHANNELS.SESSION_SET_SOURCES, sessionId, sourceSlugs),
   getSessionSources: (sessionId: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.SESSION_GET_SOURCES, sessionId),
+
+  // Sources change listener (live updates when sources are added/removed)
+  onSourcesChanged: (callback: (sources: import('@craft-agent/shared/sources').LoadedSource[]) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, sources: import('@craft-agent/shared/sources').LoadedSource[]) => {
+      callback(sources)
+    }
+    ipcRenderer.on(IPC_CHANNELS.SOURCES_CHANGED, handler)
+    return () => {
+      ipcRenderer.removeListener(IPC_CHANNELS.SOURCES_CHANGED, handler)
+    }
+  },
 }
 
 contextBridge.exposeInMainWorld('electronAPI', api)
