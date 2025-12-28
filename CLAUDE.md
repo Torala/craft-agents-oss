@@ -143,10 +143,13 @@ packages/shared/src/
 │   ├── api-tools.ts          # Dynamic MCP server factory for REST APIs
 │   ├── gmail-tools.ts        # Gmail integration tools
 │   ├── parser.ts             # Agent definition parsing
+│   ├── builtin-agents.ts     # Built-in agent definitions (.source-setup, etc.)
 │   └── instruction-updater.ts # Agent instruction updates
 ├── sources/
-│   ├── types.ts              # Source types and interfaces
-│   └── storage.ts            # Load sources from disk
+│   ├── index.ts              # Public exports
+│   ├── types.ts              # Source types and interfaces (SourceType, LoadedSource)
+│   ├── storage.ts            # Load sources from disk
+│   └── service.ts            # Source service (createSourceService)
 ├── auth/
 │   ├── oauth.ts              # OAuth 2.0 with PKCE
 │   ├── gmail-oauth.ts        # Gmail OAuth flow
@@ -460,34 +463,42 @@ Questions (from `AskUserQuestion` tool) return empty answers in headless mode.
 Agents are specialized configurations that extend the base agent with custom instructions, MCP servers, and REST APIs. Agents are stored as folders on disk for easy editing and version control.
 
 **Architecture:**
-- **Folder-based agents** stored at `~/.craft-agent/agents/{slug}/`
-- **Sources** are unified MCP/API abstractions at `~/.craft-agent/sources/{slug}/`
+- **Folder-based agents** stored at `~/.craft-agent/workspaces/{workspaceSlug}/agents/{agentSlug}/`
+- **Sources** are unified MCP/API abstractions at `~/.craft-agent/workspaces/{workspaceSlug}/sources/{sourceSlug}/`
 - **Hot-reloading** via `ConfigWatcher` for live updates
 
 **Key files:**
-- `folder-types.ts` - `AgentDefinition`, `LoadedAgent`, `LoadedSource` interfaces
+- `folder-types.ts` - `AgentDefinition`, `LoadedAgent`, `FolderAgentConfig` interfaces
 - `folder-storage.ts` - Load agents/sources from disk
 - `folder-manager.ts` - `FolderAgentManager` for listing, activating, deactivating agents
 - `agent-state.ts` - `AgentStateManager` - activation state machine
 - `api-tools.ts` - Single flexible tool factory for REST APIs
+- `builtin-agents.ts` - Built-in agent definitions (`.source-setup`, etc.)
 - `types.ts` - `SubAgentDefinition`, `ApiConfig` (compatibility layer)
 
-**Agent folder structure:**
+**Key files in `sources/`:**
+- `types.ts` - `SourceType`, `LoadedSource`, `FolderSourceConfig` interfaces
+- `storage.ts` - Load sources from disk
+- `service.ts` - `createSourceService()` for source management
+
+**Agent folder structure (workspace-scoped):**
 ```
-~/.craft-agent/agents/{slug}/
+~/.craft-agent/workspaces/{workspaceSlug}/agents/{agentSlug}/
 ├── config.json       # Agent metadata (name, enabled, useSources)
 ├── instructions.md   # Agent instructions (editable markdown)
+├── icon.png          # Optional custom icon
 └── sources/          # Optional: agent-scoped sources
-    └── {source}/
+    └── {sourceSlug}/
         ├── config.json
         └── guide.md
 ```
 
-**Source folder structure:**
+**Source folder structure (workspace-scoped):**
 ```
-~/.craft-agent/sources/{slug}/
+~/.craft-agent/workspaces/{workspaceSlug}/sources/{sourceSlug}/
 ├── config.json       # Source metadata (type, url, auth)
-└── guide.md          # Usage documentation + YAML frontmatter cache
+├── guide.md          # Usage documentation + YAML frontmatter cache
+└── icon.png          # Optional custom icon
 ```
 
 **Source types:**
@@ -501,20 +512,22 @@ Agents are specialized configurations that extend the base agent with custom ins
   "id": "uuid",
   "slug": "exa",
   "name": "Exa Search",
+  "provider": "exa",
   "type": "api",
-  "url": "https://api.exa.ai",
-  "auth": {
-    "type": "header",
-    "headerName": "x-api-key",
-    "credentialLabel": "API Key"
-  }
+  "enabled": true,
+  "api": {
+    "baseUrl": "https://api.exa.ai",
+    "authType": "header",
+    "headerName": "x-api-key"
+  },
+  "createdAt": 1703001234567,
+  "updatedAt": 1703001234567
 }
 ```
 
 **Agent config example (`config.json`):**
 ```json
 {
-  "id": "uuid",
   "name": "Research Assistant",
   "slug": "researcher",
   "enabled": true,
