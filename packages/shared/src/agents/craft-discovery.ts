@@ -211,20 +211,29 @@ export class CraftAgentDiscovery {
     try {
       console.log('[CraftAgentDiscovery] Listing documents in folder:', folderId);
 
-      // Use documents_list with folder parameter to filter by folder
-      const result = await this.client.callTool('documents_list', {
-        folder: folderId,
+      // Use blocks_get on the folder to get its contents (documents)
+      // This returns the folder content including links to documents inside
+      const result = await this.client.callTool('blocks_get', {
+        id: folderId,
+        type: 'folder',
       });
 
       const content = this.extractToolContent(result);
-      console.log('[CraftAgentDiscovery] Documents list response:', content?.substring(0, 2000));
+      console.log('[CraftAgentDiscovery] Folder content response:', content?.substring(0, 2000));
       if (!content) return [];
+
+      // Check for error
+      if (content.startsWith('error(')) {
+        console.error('[CraftAgentDiscovery] blocks_get folder returned error:', content);
+        return [];
+      }
 
       const documents: Array<{ id: string; title: string }> = [];
 
-      // Try parsing as JSON first (the actual format returned by Craft MCP)
+      // Try parsing as JSON first
       try {
         const parsed = JSON.parse(content);
+        // Handle various JSON response formats
         if (parsed.documents && Array.isArray(parsed.documents)) {
           for (const doc of parsed.documents) {
             if (doc.id && doc.title) {
@@ -234,6 +243,18 @@ export class CraftAgentDiscovery {
               });
             }
           }
+        } else if (parsed.blocks && Array.isArray(parsed.blocks)) {
+          // Blocks format - look for document references
+          for (const block of parsed.blocks) {
+            if (block.type === 'document' || block.documentId) {
+              documents.push({
+                id: String(block.documentId || block.id),
+                title: String(block.title || block.name || 'Untitled'),
+              });
+            }
+          }
+        }
+        if (documents.length > 0) {
           console.log('[CraftAgentDiscovery] Parsed', documents.length, 'documents from JSON');
           return documents;
         }
@@ -241,7 +262,7 @@ export class CraftAgentDiscovery {
         // Not JSON, try markdown patterns
       }
 
-      // Fallback: Parse markdown format - [Title](craft://document/ID)
+      // Parse markdown format - [Title](craft://document/ID)
       const docPattern = /\[([^\]]+)\]\(craft:\/\/document\/([a-zA-Z0-9-]+)\)/g;
       let match;
       while ((match = docPattern.exec(content)) !== null) {
