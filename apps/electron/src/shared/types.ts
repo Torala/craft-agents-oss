@@ -371,6 +371,8 @@ export type SessionEvent =
   | { type: 'ask_question_request'; sessionId: string; request: AskQuestionRequest }
   // Source events
   | { type: 'sources_changed'; sessionId: string; enabledSourceSlugs: string[] }
+  // Todo state events (from session_status tool)
+  | { type: 'todo_state_changed'; sessionId: string; todoState: TodoState }
 
 // Options for sendMessage
 export interface SendMessageOptions {

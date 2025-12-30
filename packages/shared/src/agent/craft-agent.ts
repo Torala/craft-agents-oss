@@ -48,6 +48,7 @@ import {
 } from '../config/watcher.ts';
 import type { ValidationIssue } from '../config/validators.ts';
 import type { LoadedSource } from '../sources/types.ts';
+import type { SessionStatus } from '@craft-agent/core/types';
 import type { LoadedAgent } from '../agents/folder-types.ts';
 
 // Re-export mode functions for TUI/Electron usage
@@ -617,6 +618,9 @@ export class CraftAgent {
   // Callback when agents are created/synced/deleted via session tools - triggers reload
   public onAgentsChanged: (() => Promise<void>) | null = null;
 
+  // Callback when session status changes via session_status tool
+  public onStatusChange: ((status: SessionStatus) => Promise<void>) | null = null;
+
   constructor(config: CraftAgentConfig) {
     this.config = config;
     this.isHeadless = config.isHeadless ?? false;
@@ -677,6 +681,12 @@ export class CraftAgent {
         this.onDebug?.('[CraftAgent] onAgentsChanged received - notifying listener');
         if (this.onAgentsChanged) {
           await this.onAgentsChanged();
+        }
+      },
+      onStatusChange: async (status: SessionStatus) => {
+        this.onDebug?.(`[CraftAgent] onStatusChange received: ${status}`);
+        if (this.onStatusChange) {
+          await this.onStatusChange(status);
         }
       },
     });
