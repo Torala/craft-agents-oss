@@ -14,9 +14,11 @@
  * - config_validate: Validate configuration files
  * - source_test: Test a source connection (MCP or API)
  * - oauth_trigger: Start OAuth authentication for a source
+ * - session_status: Update the session's workflow status
  */
 
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
+import type { SessionStatus } from '@craft-agent/core/types';
 import { z } from 'zod';
 import { existsSync, readFileSync, statSync } from 'fs';
 import { getSessionPlansPath } from '../sessions/storage.ts';
@@ -52,7 +54,8 @@ import {
   saveSourceConfigWithContext,
   type SourceWithContext,
 } from '../sources/storage.ts';
-import type { FolderSourceConfig, SourceGuide } from '../sources/types.ts';
+import type { FolderSourceConfig, SourceGuide, LoadedSource } from '../sources/types.ts';
+import { createSourceService } from '../sources/service.ts';
 import { CraftOAuth, getMcpBaseUrl, type OAuthConfig, type OAuthCallbacks } from '../auth/oauth.ts';
 import { startGmailOAuth } from '../auth/gmail-oauth.ts';
 
@@ -118,6 +121,8 @@ export interface SessionScopedToolCallbacks {
   onSourceActivated?: (sourceSlug: string) => Promise<void>;
   /** Called when agents change (created/synced/deleted) - triggers reload of agent list */
   onAgentsChanged?: () => Promise<void>;
+  /** Called when session status changes - updates session in UI and persists */
+  onStatusChange?: (status: SessionStatus) => Promise<void>;
 }
 
 /**
@@ -269,6 +274,12 @@ Brief description of what this plan accomplishes.
         debug('[SubmitPlan] Callback completed');
       } else {
         debug('[SubmitPlan] No callback registered for session');
+      }
+
+      // Automatically set status to needs_review when plan is submitted
+      if (callbacks?.onStatusChange) {
+        await callbacks.onStatusChange('needs_review');
+        debug('[SubmitPlan] Status set to needs_review');
       }
 
       return {
@@ -744,7 +755,7 @@ Returns structured validation results with errors, warnings, and suggestions.
 async function testApiSource(
   source: FolderSourceConfig,
   workspaceSlug: string
-): Promise<{ success: boolean; status?: number; error?: string }> {
+): Promise<{ success: boolean; status?: number; error?: string; credentialType?: string }> {
   if (!source.api?.baseUrl) {
     return { success: false, error: 'No API URL configured' };
   }
@@ -754,23 +765,42 @@ async function testApiSource(
       'Accept': 'application/json',
     };
 
-    // Get credentials if needed
+    let credentialType: string | undefined;
+    let credValue: string | undefined;
+
+    // Get credentials if needed - try multiple credential types
     if (source.api.authType && source.api.authType !== 'none') {
       const credentialManager = getCredentialManager();
-      // Try different source credential types based on auth type
-      const credType = source.api.authType === 'oauth' ? 'source_oauth' : 'source_bearer';
-      const cred = await credentialManager.get({
-        type: credType,
-        workspaceSlug,
-        sourceSlug: source.slug,
-      });
+      const baseId = { workspaceSlug, sourceSlug: source.slug };
 
-      if (cred?.value) {
-        if (source.api.authType === 'bearer') {
+      // Try credential types in order of preference
+      const credTypesToTry: Array<'source_oauth' | 'source_bearer' | 'source_apikey' | 'source_basic'> = [
+        'source_oauth',
+        'source_bearer',
+        'source_apikey',
+        'source_basic',
+      ];
+
+      for (const credType of credTypesToTry) {
+        const cred = await credentialManager.get({ type: credType, ...baseId });
+        if (cred?.value) {
+          credValue = cred.value;
+          credentialType = credType;
+          debug(`[testApiSource] Found credential type ${credType} for ${source.slug}`);
+          break;
+        }
+      }
+
+      if (credValue) {
+        // Apply credential based on authType config
+        if (source.api.authType === 'bearer' || source.api.authType === 'oauth') {
           const scheme = source.api.authScheme || 'Bearer';
-          headers['Authorization'] = `${scheme} ${cred.value}`;
+          headers['Authorization'] = `${scheme} ${credValue}`;
         } else if (source.api.authType === 'header' && source.api.headerName) {
-          headers[source.api.headerName] = cred.value;
+          headers[source.api.headerName] = credValue;
+        } else if (source.api.authType === 'basic') {
+          // Basic auth - credValue should already be base64 encoded
+          headers['Authorization'] = `Basic ${credValue}`;
         }
         // Query param auth would need URL modification, skip for now
       }
@@ -789,11 +819,12 @@ async function testApiSource(
       return {
         success: response.ok,
         status: response.status,
-        error: response.ok ? undefined : `HTTP ${response.status} - Authentication may be required`
+        error: response.ok ? undefined : `HTTP ${response.status} - Authentication may be required`,
+        credentialType,
       };
     }
 
-    return { success: false, status: response.status, error: `HTTP ${response.status}` };
+    return { success: false, status: response.status, error: `HTTP ${response.status}`, credentialType };
   } catch (error) {
     return {
       success: false,
@@ -848,15 +879,56 @@ export function createSourceTestTool(sessionId: string, workspaceSlug: string, a
         if (source.type === 'api') {
           const result = await testApiSource(source, workspaceSlug);
 
-          // Update the source's lastTestedAt timestamp
+          // Update the source's status and timestamp
           source.lastTestedAt = Date.now();
+          if (result.success) {
+            source.connectionStatus = 'connected';
+            source.connectionError = undefined;
+          } else {
+            source.connectionStatus = 'failed';
+            source.connectionError = result.error;
+          }
           saveSourceConfigWithContext(workspaceSlug, source, sourceContext);
 
           if (result.success) {
+            const lines: string[] = [
+              `**API Source '${args.sourceSlug}' is working**`,
+              '',
+              `URL: ${source.api?.baseUrl}`,
+              `Status: ${result.status}`,
+            ];
+
+            if (result.credentialType) {
+              lines.push(`Credential: ${result.credentialType}`);
+            }
+
+            // Verify the source can be built for session use
+            const sourceService = createSourceService(workspaceSlug);
+            const loadedSource: LoadedSource = {
+              config: source,
+              guide: null,
+              folderPath: '', // Not needed for credential lookup
+              workspaceSlug,
+              agentSlug: sourceContext.agentSlug,
+            };
+            const apiServer = await sourceService.buildApiServer(loadedSource);
+
+            if (!apiServer) {
+              lines.push('');
+              lines.push('⚠️ **Warning**: API is reachable, but session credential lookup failed.');
+              lines.push('The source may not work in this session. Try re-authenticating with the correct auth type.');
+              if (source.api?.authType) {
+                lines.push(`Current authType: ${source.api.authType}`);
+              }
+            } else {
+              lines.push('');
+              lines.push('✓ Source is ready for session use.');
+            }
+
             return {
               content: [{
                 type: 'text' as const,
-                text: `**API Source '${args.sourceSlug}' is working**\n\nURL: ${source.api?.baseUrl}\nStatus: ${result.status}`,
+                text: lines.join('\n'),
               }],
               isError: false,
             };
@@ -873,6 +945,12 @@ export function createSourceTestTool(sessionId: string, workspaceSlug: string, a
 
         // Handle local sources
         if (source.type === 'local') {
+          // Update status - local sources are always connected
+          source.lastTestedAt = Date.now();
+          source.connectionStatus = 'connected';
+          source.connectionError = undefined;
+          saveSourceConfigWithContext(workspaceSlug, source, sourceContext);
+
           return {
             content: [{
               type: 'text' as const,
@@ -949,8 +1027,18 @@ export function createSourceTestTool(sessionId: string, workspaceSlug: string, a
           claudeOAuthToken: claudeOAuthToken ?? undefined,
         });
 
-        // Update the source's lastTestedAt timestamp
+        // Update the source's status and timestamp
         source.lastTestedAt = Date.now();
+        if (result.success) {
+          source.connectionStatus = 'connected';
+          source.connectionError = undefined;
+        } else if (result.errorType === 'needs-auth') {
+          source.connectionStatus = 'needs_auth';
+          source.connectionError = undefined;
+        } else {
+          source.connectionStatus = 'failed';
+          source.connectionError = getValidationErrorMessage(result);
+        }
         saveSourceConfigWithContext(workspaceSlug, source, sourceContext);
 
         if (result.success) {
@@ -973,6 +1061,30 @@ export function createSourceTestTool(sessionId: string, workspaceSlug: string, a
             if (result.tools.length > 5) {
               lines.push(`  ... and ${result.tools.length - 5} more`);
             }
+          }
+
+          // Verify the source can be built for session use
+          // This checks if credentials are properly configured for the session's credential lookup
+          const sourceService = createSourceService(workspaceSlug);
+          const loadedSource: LoadedSource = {
+            config: source,
+            guide: null,
+            folderPath: '', // Not needed for credential lookup
+            workspaceSlug,
+            agentSlug: sourceContext.agentSlug,
+          };
+          const mcpConfig = await sourceService.buildMcpServerConfig(loadedSource);
+
+          if (!mcpConfig) {
+            lines.push('');
+            lines.push('⚠️ **Warning**: MCP server is reachable, but session credential lookup failed.');
+            lines.push('The source may not work in this session. Try re-authenticating with the correct auth type.');
+            if (source.mcp?.authType) {
+              lines.push(`Current authType: ${source.mcp.authType}`);
+            }
+          } else {
+            lines.push('');
+            lines.push('✓ Source is ready for session use.');
           }
 
           return {
@@ -1165,6 +1277,8 @@ A browser window will open for the user to complete authentication.
 
         // Update source status
         source.isAuthenticated = true;
+        source.connectionStatus = 'connected';
+        source.connectionError = undefined;
         source.updatedAt = Date.now();
         saveSourceConfigWithContext(workspaceSlug, source, sourceContext);
 
@@ -1306,6 +1420,8 @@ After successful authentication, the tokens are stored and the source is marked 
 
         // Update source status with email info
         source.isAuthenticated = true;
+        source.connectionStatus = 'connected';
+        source.connectionError = undefined;
         source.updatedAt = Date.now();
         saveSourceConfigWithContext(workspaceSlug, source, sourceContext);
 
@@ -1813,8 +1929,12 @@ ${scopeDescription}
         // Determine effective agent slug for scoping:
         // 1. If explicit agentSlug provided, use it
         // 2. If scope is 'workspace', no agent scoping
-        // 3. Otherwise, default to activeAgentSlug (if in agent context)
-        const effectiveAgentSlug = args.agentSlug ?? (args.scope === 'workspace' ? undefined : activeAgentSlug);
+        // 3. If active agent is a built-in (dot-prefixed like .source-setup), default to workspace
+        // 4. Otherwise, default to activeAgentSlug (if in agent context)
+        const isBuiltinAgent = activeAgentSlug?.startsWith('.');
+        const effectiveAgentSlug = args.agentSlug ?? (
+          args.scope === 'workspace' || isBuiltinAgent ? undefined : activeAgentSlug
+        );
 
         // Create source: agent-scoped or workspace-scoped
         const config = effectiveAgentSlug
@@ -2017,6 +2137,159 @@ export function createSourceDeleteTool(sessionId: string, workspaceSlug: string)
 }
 
 // ============================================================
+// Source Safe Mode Tool
+// ============================================================
+
+/**
+ * Create or update Safe Mode rules for a source.
+ * Creates a safe-mode.json file in the source folder with Zod validation.
+ */
+export function createSourceSafeModeUpdateTool(sessionId: string, workspaceSlug: string, activeAgentSlug?: string) {
+  return tool(
+    'source_safe_mode_update',
+    `Create or update Safe Mode rules for a source.
+
+Safe Mode is a read-only exploration mode. Custom rules let you allow specific operations that would otherwise be blocked.
+
+**Rule Types:**
+- \`allowedMcpPatterns\`: Regex patterns for MCP tool names to allow (e.g., \`^mcp__linear__list\`)
+- \`allowedApiEndpoints\`: Fine-grained API rules with method + path pattern (e.g., POST /search)
+- \`allowedBashPatterns\`: Regex patterns for bash commands to allow
+- \`blockedTools\`: Additional tools to block (rarely needed)
+
+Rules are additive - they extend the defaults to make Safe Mode more permissive for this source.`,
+    {
+      sourceSlug: z.string().describe('The slug of the source to configure'),
+      allowedMcpPatterns: z.array(z.object({
+        pattern: z.string().describe('Regex pattern for tool names (e.g., ^mcp__linear__list)'),
+        comment: z.string().optional().describe('Optional comment explaining the pattern'),
+      })).optional().describe('MCP tool patterns to allow'),
+      allowedApiEndpoints: z.array(z.object({
+        method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']).describe('HTTP method'),
+        path: z.string().describe('Regex pattern for API path (e.g., ^/search, ^/v1/query)'),
+        comment: z.string().optional().describe('Optional comment explaining the rule'),
+      })).optional().describe('API endpoint rules (method + path pattern)'),
+      allowedBashPatterns: z.array(z.object({
+        pattern: z.string().describe('Regex pattern for bash commands'),
+        comment: z.string().optional().describe('Optional comment explaining the pattern'),
+      })).optional().describe('Bash command patterns to allow'),
+      blockedTools: z.array(z.string()).optional().describe('Additional tools to block'),
+    },
+    async (args) => {
+      debug('[source_safe_mode_update] Updating safe mode for source:', args.sourceSlug);
+
+      try {
+        const { existsSync, writeFileSync, mkdirSync, readFileSync } = await import('fs');
+        const { join } = await import('path');
+        const { getSourcePath, getAgentSourcePath, sourceExists, agentSourceExists } = await import('../sources/storage.ts');
+        const { validateSafeModeConfig } = await import('./safe-mode-config.ts');
+
+        // Check if source exists (agent-scoped first if activeAgentSlug, then workspace)
+        // Skip agent scope check for built-in agents (dot-prefixed like .source-setup)
+        let sourcePath: string;
+        let sourceName = args.sourceSlug;
+        const isBuiltinAgent = activeAgentSlug?.startsWith('.');
+
+        if (activeAgentSlug && !isBuiltinAgent && agentSourceExists(workspaceSlug, activeAgentSlug, args.sourceSlug)) {
+          sourcePath = getAgentSourcePath(workspaceSlug, activeAgentSlug, args.sourceSlug);
+        } else if (sourceExists(workspaceSlug, args.sourceSlug)) {
+          sourcePath = getSourcePath(workspaceSlug, args.sourceSlug);
+        } else {
+          return {
+            content: [{
+              type: 'text' as const,
+              text: `Source '${args.sourceSlug}' not found.`,
+            }],
+            isError: true,
+          };
+        }
+
+        // Try to get source name from config
+        try {
+          const configPath = join(sourcePath, 'config.json');
+          if (existsSync(configPath)) {
+            const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+            sourceName = config.name || args.sourceSlug;
+          }
+        } catch {
+          // Ignore, use slug as name
+        }
+
+        // Build the JSON config object
+        const config: Record<string, unknown> = {};
+
+        if (args.allowedMcpPatterns && args.allowedMcpPatterns.length > 0) {
+          config.allowedMcpPatterns = args.allowedMcpPatterns;
+        }
+
+        if (args.allowedApiEndpoints && args.allowedApiEndpoints.length > 0) {
+          config.allowedApiEndpoints = args.allowedApiEndpoints;
+        }
+
+        if (args.allowedBashPatterns && args.allowedBashPatterns.length > 0) {
+          config.allowedBashPatterns = args.allowedBashPatterns;
+        }
+
+        if (args.blockedTools && args.blockedTools.length > 0) {
+          config.blockedTools = args.blockedTools;
+        }
+
+        // Validate the config before writing
+        const errors = validateSafeModeConfig(config);
+        if (errors.length > 0) {
+          return {
+            content: [{
+              type: 'text' as const,
+              text: `Invalid safe mode configuration:\n${errors.map(e => `- ${e}`).join('\n')}`,
+            }],
+            isError: true,
+          };
+        }
+
+        // Write the JSON file
+        const safeModePath = join(sourcePath, 'safe-mode.json');
+        mkdirSync(sourcePath, { recursive: true });
+        writeFileSync(safeModePath, JSON.stringify(config, null, 2), 'utf-8');
+
+        debug('[source_safe_mode_update] Created safe-mode.json at:', safeModePath);
+
+        // Build summary of what was configured
+        const summary: string[] = [];
+        if (args.allowedMcpPatterns?.length) {
+          summary.push(`${args.allowedMcpPatterns.length} MCP pattern(s)`);
+        }
+        if (args.allowedApiEndpoints?.length) {
+          summary.push(`${args.allowedApiEndpoints.length} API endpoint(s)`);
+        }
+        if (args.allowedBashPatterns?.length) {
+          summary.push(`${args.allowedBashPatterns.length} bash pattern(s)`);
+        }
+        if (args.blockedTools?.length) {
+          summary.push(`${args.blockedTools.length} blocked tool(s)`);
+        }
+
+        return {
+          content: [{
+            type: 'text' as const,
+            text: `**Safe Mode rules created for '${sourceName}'**\n\nConfigured: ${summary.join(', ') || 'empty config'}\n\nFile: \`${safeModePath}\`\n\nThese rules will be applied when Safe Mode is active.`,
+          }],
+          isError: false,
+        };
+      } catch (error) {
+        debug('[source_safe_mode_update] Error:', error);
+        return {
+          content: [{
+            type: 'text' as const,
+            text: `Error creating Safe Mode rules: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          }],
+          isError: true,
+        };
+      }
+    }
+  );
+}
+
+// ============================================================
 // Credential Prompt Tool
 // ============================================================
 
@@ -2107,6 +2380,11 @@ credential_prompt({
           headerName: source.api?.headerName,
         };
 
+        // Automatically set status to needs_review when waiting for credentials
+        if (callbacks?.onStatusChange) {
+          await callbacks.onStatusChange('needs_review');
+        }
+
         // Wait for user response
         const response = await callbacks.onCredentialRequest(request);
 
@@ -2143,8 +2421,18 @@ credential_prompt({
           );
         }
 
-        // Mark source as authenticated
+        // Update source authType to match the credential mode
+        // This ensures getCredentialId() returns the correct credential type later
+        if (source.type === 'mcp' && source.mcp) {
+          source.mcp.authType = args.mode === 'bearer' ? 'bearer' : source.mcp.authType;
+        } else if (source.type === 'api' && source.api) {
+          source.api.authType = args.mode;
+        }
+
+        // Mark source as authenticated and connected
         source.isAuthenticated = true;
+        source.connectionStatus = 'connected';
+        source.connectionError = undefined;
         source.updatedAt = Date.now();
         saveSourceConfigWithContext(workspaceSlug, source, sourceContext);
 
@@ -2197,7 +2485,7 @@ export function createAgentListTool(sessionId: string, workspaceSlug: string) {
     `List all agents in the workspace.
 
 Returns a list of all agents with their name, slug, enabled status, and source info.
-Use this to discover what agents are available before creating or syncing.`,
+Use this to discover what agents are available before creating new ones.`,
     {},
     async () => {
       debug('[agent_list] Listing agents in workspace:', workspaceSlug);
@@ -2379,6 +2667,92 @@ export function createAgentDeleteTool(sessionId: string, workspaceSlug: string) 
 }
 
 // ============================================================
+// Session Status Tool
+// ============================================================
+
+/**
+ * Create a session-scoped session_status tool.
+ * Allows agents to update the conversation's workflow status.
+ */
+export function createSessionStatusTool(sessionId: string) {
+  return tool(
+    'session_status',
+    `Update the session's workflow status to reflect the current state of the conversation.
+
+**Available statuses:**
+- \`todo\`: Task is pending, not yet started
+- \`in_progress\`: Currently working on the task
+- \`needs_review\`: Work is complete but needs user review
+- \`done\`: Task is fully completed
+- \`cancelled\`: Task was cancelled or abandoned
+
+**When to update status:**
+- Set to \`in_progress\` when you start working on a task
+- Set to \`needs_review\` when you've completed work that needs user verification
+- Set to \`needs_review\` when asking for permission or requiring user input to continue
+- Set to \`done\` when the user confirms the task is complete
+- Set to \`cancelled\` if the user asks to stop or abandon the task
+
+**Examples:**
+- User asks "Write a new feature" → set \`in_progress\` while working
+- You finish implementation → set \`needs_review\`
+- You need user input or permission → set \`needs_review\`
+- User says "looks good" → set \`done\`
+- User says "never mind" → set \`cancelled\``,
+    {
+      status: z.enum(['todo', 'in_progress', 'needs_review', 'done', 'cancelled'])
+        .describe('The new status for this session'),
+      reason: z.string().optional()
+        .describe('Optional reason for the status change (shown in UI)'),
+    },
+    async (args) => {
+      debug('[session_status] Updating status:', args.status, args.reason);
+
+      const callbacks = getSessionScopedToolCallbacks(sessionId);
+
+      if (!callbacks?.onStatusChange) {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: `Status update to '${args.status}' noted, but no handler is registered.`,
+          }],
+          isError: false,
+        };
+      }
+
+      try {
+        await callbacks.onStatusChange(args.status as SessionStatus);
+
+        const statusLabels: Record<string, string> = {
+          todo: 'To Do',
+          in_progress: 'In Progress',
+          needs_review: 'Needs Review',
+          done: 'Done',
+          cancelled: 'Cancelled',
+        };
+
+        return {
+          content: [{
+            type: 'text' as const,
+            text: `Session status updated to **${statusLabels[args.status]}**${args.reason ? `: ${args.reason}` : ''}.`,
+          }],
+          isError: false,
+        };
+      } catch (error) {
+        debug('[session_status] Error:', error);
+        return {
+          content: [{
+            type: 'text' as const,
+            text: `Error updating status: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          }],
+          isError: true,
+        };
+      }
+    }
+  );
+}
+
+// ============================================================
 // Session-Scoped Tools Provider
 // ============================================================
 
@@ -2428,10 +2802,13 @@ export function getSessionScopedTools(sessionId: string, workspaceSlug: string, 
         createSourceCreateTool(sessionId, workspaceSlug, activeAgentSlug),
         createSourceUpdateTool(sessionId, workspaceSlug, activeAgentSlug),
         createSourceDeleteTool(sessionId, workspaceSlug),
+        createSourceSafeModeUpdateTool(sessionId, workspaceSlug, activeAgentSlug),
         // Agent tools
         createAgentListTool(sessionId, workspaceSlug),
         createAgentCreateTool(sessionId, workspaceSlug),
         createAgentDeleteTool(sessionId, workspaceSlug),
+        // Session status tool
+        createSessionStatusTool(sessionId),
       ],
     });
     sessionScopedToolsCache.set(cacheKey, cached);

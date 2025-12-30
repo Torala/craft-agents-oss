@@ -797,6 +797,7 @@ export function FreeFormInput({
                                     <SourceAvatar
                                       source={source}
                                       size="sm"
+                                      showStatus
                                     />
                                   </div>
                                   <div className="flex-1 min-w-0 truncate">{source.config.name}</div>

@@ -13,6 +13,7 @@ export type {
   McpSourceConfig,
   ApiSourceConfig,
   LocalSourceConfig,
+  SourceConnectionStatus,
   FolderSourceConfig,
   SourceGuide,
   LoadedSource,

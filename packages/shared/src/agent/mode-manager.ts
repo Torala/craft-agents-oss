@@ -14,6 +14,7 @@
  */
 
 import { debug } from '../utils/debug.ts';
+import type { SafeModeContext, MergedSafeModeConfig } from './safe-mode-config.ts';
 
 // ============================================================
 // Mode Types
@@ -44,6 +45,14 @@ export interface ModeCallbacks {
 }
 
 /**
+ * Compiled API endpoint rule for runtime checking
+ */
+export interface CompiledApiEndpointRule {
+  method: string;
+  pathPattern: RegExp;
+}
+
+/**
  * Mode configuration - defines behavior for each mode
  */
 export interface ModeConfig {
@@ -53,8 +62,10 @@ export interface ModeConfig {
   readOnlyBashPatterns: RegExp[];
   /** Read-only MCP patterns (tools matching these are allowed) */
   readOnlyMcpPatterns: RegExp[];
-  /** Read-only API methods */
+  /** Read-only API methods (legacy, coarse-grained) */
   readOnlyApiMethods: Set<string>;
+  /** Fine-grained API endpoint rules (method + path pattern) */
+  allowedApiEndpoints: CompiledApiEndpointRule[];
   /** User-friendly name */
   displayName: string;
   /** Keyboard shortcut hint */
@@ -231,6 +242,7 @@ export const MODE_CONFIGS: Record<Mode, ModeConfig> = {
       /^mcp__docs__/,
     ],
     readOnlyApiMethods: new Set(['GET']),
+    allowedApiEndpoints: [], // Use safe-mode.json to add endpoint-specific rules
     displayName: 'Safe Mode',
     shortcutHint: 'SHIFT+TAB',
   },
@@ -435,29 +447,62 @@ export function cleanupModeState(sessionId: string): void {
 // ============================================================
 
 /**
- * Check if a Bash command is read-only in a specific mode
+ * Config type that works with both ModeConfig and MergedSafeModeConfig
  */
-function isReadOnlyBashCommand(command: string, mode: Mode): boolean {
-  const config = MODE_CONFIGS[mode];
-  // Trim and get the command (handle leading whitespace)
+type ToolCheckConfig = ModeConfig | MergedSafeModeConfig;
+
+/**
+ * Check if a Bash command is read-only using the given config
+ */
+function isReadOnlyBashCommandWithConfig(command: string, config: ToolCheckConfig): boolean {
   const trimmedCommand = command.trim();
   return config.readOnlyBashPatterns.some(pattern => pattern.test(trimmedCommand));
 }
 
 /**
- * Check if an MCP tool is read-only in a specific mode
+ * Check if an MCP tool is read-only using the given config
  */
-function isReadOnlyMcpTool(toolName: string, mode: Mode): boolean {
-  const config = MODE_CONFIGS[mode];
+function isReadOnlyMcpToolWithConfig(toolName: string, config: ToolCheckConfig): boolean {
   return config.readOnlyMcpPatterns.some(pattern => pattern.test(toolName));
 }
 
 /**
- * Check if an API method is read-only in a specific mode
+ * Check if an API call is allowed using the given config
+ * Checks both legacy method-based rules and fine-grained endpoint rules
  */
-function isReadOnlyApiMethod(method: string, mode: Mode): boolean {
-  const config = MODE_CONFIGS[mode];
-  return config.readOnlyApiMethods.has(method.toUpperCase());
+function isApiCallAllowedWithConfig(method: string, path: string | undefined, config: ToolCheckConfig): boolean {
+  const upperMethod = method.toUpperCase();
+
+  // GET is always allowed
+  if (upperMethod === 'GET') return true;
+
+  // Check legacy method-based rules
+  if (config.readOnlyApiMethods.has(upperMethod)) return true;
+
+  // Check fine-grained endpoint rules (if path is available)
+  if (path && config.allowedApiEndpoints) {
+    for (const rule of config.allowedApiEndpoints) {
+      if (rule.method === upperMethod && rule.pathPattern.test(path)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Check if a Bash command is read-only in a specific mode (legacy, uses default config)
+ */
+function isReadOnlyBashCommand(command: string, mode: Mode): boolean {
+  return isReadOnlyBashCommandWithConfig(command, MODE_CONFIGS[mode]);
+}
+
+/**
+ * Check if an MCP tool is read-only in a specific mode (legacy, uses default config)
+ */
+function isReadOnlyMcpTool(toolName: string, mode: Mode): boolean {
+  return isReadOnlyMcpToolWithConfig(toolName, MODE_CONFIGS[mode]);
 }
 
 /**
@@ -477,14 +522,29 @@ const ALWAYS_ALLOWED_TOOLS = new Set([
  *
  * This is the single source of truth for tool permissions in modes.
  * Returns { allowed: true } or { allowed: false, reason: string }
+ *
+ * When safeModeContext is provided, uses custom per-workspace and per-source configs.
+ * Otherwise falls back to default MODE_CONFIGS.
  */
 export function shouldAllowToolInMode(
   toolName: string,
   toolInput: unknown,
   mode: Mode,
-  options?: { plansFolderPath?: string }
+  options?: {
+    plansFolderPath?: string;
+    safeModeContext?: SafeModeContext;
+  }
 ): { allowed: true } | { allowed: false; reason: string } {
-  const config = MODE_CONFIGS[mode];
+  // Get config: merged custom if context provided, otherwise defaults
+  let config: ToolCheckConfig;
+
+  if (options?.safeModeContext) {
+    // Lazy import to avoid circular dependency
+    const { safeModeConfigCache } = require('./safe-mode-config.ts');
+    config = safeModeConfigCache.getMergedConfig(options.safeModeContext);
+  } else {
+    config = MODE_CONFIGS[mode];
+  }
 
   // Always-allowed tools (read-only by nature)
   if (ALWAYS_ALLOWED_TOOLS.has(toolName)) {
@@ -502,7 +562,7 @@ export function shouldAllowToolInMode(
   if (toolName === 'Bash') {
     const input = toolInput as Record<string, unknown> | null;
     const command = input?.command;
-    if (typeof command === 'string' && isReadOnlyBashCommand(command, mode)) {
+    if (typeof command === 'string' && isReadOnlyBashCommandWithConfig(command, config)) {
       return { allowed: true };
     }
     return {
@@ -532,7 +592,7 @@ export function shouldAllowToolInMode(
   if (config.blockedTools.has(toolName)) {
     return {
       allowed: false,
-      reason: getBlockReason(toolName, mode)
+      reason: getBlockReasonWithConfig(toolName, config)
     };
   }
 
@@ -543,7 +603,7 @@ export function shouldAllowToolInMode(
       return { allowed: true };
     }
 
-    if (isReadOnlyMcpTool(toolName, mode)) {
+    if (isReadOnlyMcpToolWithConfig(toolName, config)) {
       return { allowed: true };
     }
     return {
@@ -552,16 +612,17 @@ export function shouldAllowToolInMode(
     };
   }
 
-  // Handle API tools - allow GET, block mutations
+  // Handle API tools - allow GET, block mutations unless endpoint is whitelisted
   if (toolName.startsWith('api_')) {
     const input = toolInput as Record<string, unknown> | null;
     const method = (input?.method as string) || 'GET';
-    if (isReadOnlyApiMethod(method, mode)) {
+    const path = input?.path as string | undefined;
+    if (isApiCallAllowedWithConfig(method, path, config)) {
       return { allowed: true };
     }
     return {
       allowed: false,
-      reason: `API mutations are blocked in ${config.displayName}. Exit ${config.displayName} (${config.shortcutHint}) to make changes.`
+      reason: `API ${method} ${path ?? ''} is blocked in ${config.displayName}. Exit ${config.displayName} (${config.shortcutHint}) to make changes.`
     };
   }
 
@@ -570,10 +631,9 @@ export function shouldAllowToolInMode(
 }
 
 /**
- * Get a user-friendly message explaining why a tool is blocked
+ * Get a user-friendly message explaining why a tool is blocked (using config)
  */
-export function getBlockReason(toolName: string, mode: Mode): string {
-  const config = MODE_CONFIGS[mode];
+function getBlockReasonWithConfig(toolName: string, config: ToolCheckConfig): string {
   const displayName = config.displayName;
   const shortcut = config.shortcutHint;
 
@@ -590,6 +650,13 @@ export function getBlockReason(toolName: string, mode: Mode): string {
     return `API mutations are blocked in ${displayName}. Exit ${displayName} (${shortcut}) to make changes.`;
   }
   return `${toolName} is blocked in ${displayName}. Exit ${displayName} (${shortcut}) to use this tool.`;
+}
+
+/**
+ * Get a user-friendly message explaining why a tool is blocked
+ */
+export function getBlockReason(toolName: string, mode: Mode): string {
+  return getBlockReasonWithConfig(toolName, MODE_CONFIGS[mode]);
 }
 
 /**

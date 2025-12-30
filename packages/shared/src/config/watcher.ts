@@ -2,17 +2,19 @@
  * Config File Watcher
  *
  * Watches configuration files for changes and triggers callbacks.
- * Used for hot-reloading config changes made by agents or external tools.
+ * Uses recursive directory watching for simplicity and reliability.
  *
- * Watched paths (workspace-scoped):
+ * Watched paths:
  * - ~/.craft-agent/config.json - Main app configuration
  * - ~/.craft-agent/preferences.json - User preferences
- * - ~/.craft-agent/workspaces/{slug}/sources/ - Source folders for current workspace
- * - ~/.craft-agent/workspaces/{slug}/agents/ - Agent folders for current workspace
+ * - ~/.craft-agent/workspaces/{slug}/ - Workspace directory (recursive)
+ *   - sources/{slug}/config.json, guide.md, safe-mode.json
+ *   - agents/{slug}/config.json, instructions.md
+ *   - safe-mode.json
  */
 
 import { watch, existsSync, readdirSync, statSync, readFileSync, mkdirSync } from 'fs';
-import { join, dirname, basename } from 'path';
+import { join, dirname, basename, relative } from 'path';
 import { homedir } from 'os';
 import type { FSWatcher } from 'fs';
 import { debug } from '../utils/debug.ts';
@@ -28,7 +30,8 @@ import type { LoadedSource, SourceGuide } from '../sources/types.ts';
 import type { LoadedAgent } from '../agents/folder-types.ts';
 import { loadSource, loadWorkspaceSources, loadSourceGuide } from '../sources/storage.ts';
 import { loadAgent, loadWorkspaceAgents, loadAgentInstructions } from '../agents/folder-storage.ts';
-import { getWorkspaceSourcesPath, getWorkspaceAgentsPath } from '../workspaces/storage.ts';
+import { safeModeConfigCache } from '../agent/safe-mode-config.ts';
+import { getWorkspacePath, getWorkspaceSourcesPath, getWorkspaceAgentsPath } from '../workspaces/storage.ts';
 
 // ============================================================
 // Constants
@@ -86,6 +89,12 @@ export interface ConfigWatcherCallbacks {
   /** Called when the agents list changes (add/remove folders) */
   onAgentsListChange?: (agents: LoadedAgent[]) => void;
 
+  // Safe Mode callbacks
+  /** Called when workspace safe-mode.json changes */
+  onWorkspaceSafeModeChange?: (workspaceSlug: string) => void;
+  /** Called when a source's safe-mode.json changes */
+  onSourceSafeModeChange?: (sourceSlug: string) => void;
+
   // Error callbacks
   /** Called when a validation error occurs */
   onValidationError?: (file: string, result: ValidationResult) => void;
@@ -120,14 +129,12 @@ export function loadPreferences(): UserPreferences | null {
 
 /**
  * Watches config files and triggers callbacks on changes.
- * Workspace-scoped: watches sources and agents within a specific workspace.
+ * Uses recursive directory watching for workspace files.
  */
 export class ConfigWatcher {
   private workspaceSlug: string;
   private callbacks: ConfigWatcherCallbacks;
   private watchers: FSWatcher[] = [];
-  private sourceWatchers: Map<string, FSWatcher[]> = new Map();
-  private agentWatchers: Map<string, FSWatcher[]> = new Map();
   private debounceTimers: Map<string, NodeJS.Timeout> = new Map();
   private isRunning = false;
 
@@ -136,12 +143,14 @@ export class ConfigWatcher {
   private knownAgents: Set<string> = new Set();
 
   // Computed paths
+  private workspaceDir: string;
   private sourcesDir: string;
   private agentsDir: string;
 
   constructor(workspaceSlug: string, callbacks: ConfigWatcherCallbacks) {
     this.workspaceSlug = workspaceSlug;
     this.callbacks = callbacks;
+    this.workspaceDir = getWorkspacePath(workspaceSlug);
     this.sourcesDir = getWorkspaceSourcesPath(workspaceSlug);
     this.agentsDir = getWorkspaceAgentsPath(workspaceSlug);
   }
@@ -164,19 +173,18 @@ export class ConfigWatcher {
     this.isRunning = true;
     debug('[ConfigWatcher] Starting for workspace:', this.workspaceSlug);
 
-    // Watch config.json
-    this.watchFile(CONFIG_FILE, 'config.json', () => this.handleConfigChange());
+    // Ensure workspace directory exists
+    if (!existsSync(this.workspaceDir)) {
+      mkdirSync(this.workspaceDir, { recursive: true });
+    }
 
-    // Watch preferences.json
-    this.watchFile(PREFERENCES_FILE, 'preferences.json', () => this.handlePreferencesChange());
+    // Watch global config files
+    this.watchGlobalConfigs();
 
-    // Watch sources directory
-    this.watchSourcesDir();
+    // Watch workspace directory recursively
+    this.watchWorkspaceDir();
 
-    // Watch agents directory
-    this.watchAgentsDir();
-
-    // Initial scan
+    // Initial scan to populate known sources/agents
     this.scanSources();
     this.scanAgents();
 
@@ -205,22 +213,6 @@ export class ConfigWatcher {
     }
     this.watchers = [];
 
-    // Close source watchers
-    for (const watchers of this.sourceWatchers.values()) {
-      for (const watcher of watchers) {
-        watcher.close();
-      }
-    }
-    this.sourceWatchers.clear();
-
-    // Close agent watchers
-    for (const watchers of this.agentWatchers.values()) {
-      for (const watcher of watchers) {
-        watcher.close();
-      }
-    }
-    this.agentWatchers.clear();
-
     this.knownSources.clear();
     this.knownAgents.clear();
 
@@ -228,77 +220,105 @@ export class ConfigWatcher {
   }
 
   /**
-   * Watch a single file with debouncing.
-   * If file doesn't exist, watches the parent directory for file creation.
+   * Watch global config files (config.json, preferences.json)
    */
-  private watchFile(filePath: string, name: string, handler: () => void): void {
-    if (existsSync(filePath)) {
-      // File exists, watch it directly
-      this.watchExistingFile(filePath, name, handler);
-    } else {
-      // File doesn't exist, watch parent directory for creation
-      this.watchForFileCreation(filePath, name, handler);
+  private watchGlobalConfigs(): void {
+    // Ensure config directory exists
+    if (!existsSync(CONFIG_DIR)) {
+      mkdirSync(CONFIG_DIR, { recursive: true });
     }
-  }
 
-  /**
-   * Watch an existing file for changes
-   */
-  private watchExistingFile(filePath: string, name: string, handler: () => void): void {
     try {
-      const watcher = watch(filePath, (eventType) => {
-        if (eventType === 'change') {
-          this.debounce(name, handler);
+      // Watch the config directory for changes to config.json and preferences.json
+      const watcher = watch(CONFIG_DIR, (eventType, filename) => {
+        if (!filename) return;
+
+        if (filename === 'config.json') {
+          this.debounce('config.json', () => this.handleConfigChange());
+        } else if (filename === 'preferences.json') {
+          this.debounce('preferences.json', () => this.handlePreferencesChange());
         }
       });
 
       this.watchers.push(watcher);
-      debug('[ConfigWatcher] Watching:', name);
+      debug('[ConfigWatcher] Watching global configs:', CONFIG_DIR);
     } catch (error) {
-      debug('[ConfigWatcher] Error watching file:', name, error);
+      debug('[ConfigWatcher] Error watching global configs:', error);
     }
   }
 
   /**
-   * Watch parent directory for file creation, then switch to watching the file
+   * Watch workspace directory recursively
    */
-  private watchForFileCreation(filePath: string, name: string, handler: () => void): void {
-    const parentDir = dirname(filePath);
-    const fileName = basename(filePath);
-
-    // Ensure parent directory exists
-    if (!existsSync(parentDir)) {
-      debug('[ConfigWatcher] Parent directory does not exist, creating:', parentDir);
-      mkdirSync(parentDir, { recursive: true });
-    }
-
+  private watchWorkspaceDir(): void {
     try {
-      const watcher = watch(parentDir, (eventType, changedFile) => {
-        // Check if our target file was created
-        if (changedFile === fileName && existsSync(filePath)) {
-          debug('[ConfigWatcher] File created, switching to file watch:', name);
+      const watcher = watch(this.workspaceDir, { recursive: true }, (eventType, filename) => {
+        if (!filename) return;
 
-          // Close the directory watcher
-          watcher.close();
-
-          // Remove from watchers array
-          const index = this.watchers.indexOf(watcher);
-          if (index !== -1) {
-            this.watchers.splice(index, 1);
-          }
-
-          // Start watching the file directly
-          this.watchExistingFile(filePath, name, handler);
-
-          // Trigger handler for newly created file
-          this.debounce(name, handler);
-        }
+        // Normalize path separators
+        const normalizedPath = filename.replace(/\\/g, '/');
+        this.handleWorkspaceFileChange(normalizedPath, eventType);
       });
 
       this.watchers.push(watcher);
-      debug('[ConfigWatcher] Watching for creation of:', name);
+      debug('[ConfigWatcher] Watching workspace recursively:', this.workspaceDir);
     } catch (error) {
-      debug('[ConfigWatcher] Error watching for file creation:', name, error);
+      debug('[ConfigWatcher] Error watching workspace directory:', error);
+    }
+  }
+
+  /**
+   * Handle a file change within the workspace directory
+   */
+  private handleWorkspaceFileChange(relativePath: string, eventType: string): void {
+    const parts = relativePath.split('/');
+
+    // Workspace-level safe-mode.json
+    if (relativePath === 'safe-mode.json') {
+      this.debounce('workspace-safe-mode', () => this.handleWorkspaceSafeModeChange());
+      return;
+    }
+
+    // Sources changes: sources/{slug}/...
+    if (parts[0] === 'sources' && parts.length >= 2) {
+      const slug = parts[1];
+      const file = parts[2];
+
+      // Directory-level changes (new/removed source folders)
+      if (parts.length === 2) {
+        this.debounce('sources-dir', () => this.handleSourcesDirChange());
+        return;
+      }
+
+      // File-level changes
+      if (file === 'config.json') {
+        this.debounce(`source-config:${slug}`, () => this.handleSourceConfigChange(slug));
+      } else if (file === 'guide.md') {
+        this.debounce(`source-guide:${slug}`, () => this.handleSourceGuideChange(slug));
+      } else if (file === 'safe-mode.json') {
+        this.debounce(`source-safemode:${slug}`, () => this.handleSourceSafeModeChange(slug));
+      }
+      return;
+    }
+
+    // Agents changes: agents/{slug}/...
+    if (parts[0] === 'agents' && parts.length >= 2) {
+      const slug = parts[1];
+      const file = parts[2];
+
+      // Directory-level changes (new/removed agent folders)
+      if (parts.length === 2) {
+        this.debounce('agents-dir', () => this.handleAgentsDirChange());
+        return;
+      }
+
+      // File-level changes
+      if (file === 'config.json') {
+        this.debounce(`agent-config:${slug}`, () => this.handleAgentConfigChange(slug));
+      } else if (file === 'instructions.md') {
+        this.debounce(`agent-instructions:${slug}`, () => this.handleAgentInstructionsChange(slug));
+      }
+      return;
     }
   }
 
@@ -320,35 +340,15 @@ export class ConfigWatcher {
   }
 
   // ============================================================
-  // Sources Watching
+  // Sources Handlers
   // ============================================================
 
   /**
-   * Watch sources directory for folder changes
-   */
-  private watchSourcesDir(): void {
-    // Ensure directory exists
-    if (!existsSync(this.sourcesDir)) {
-      mkdirSync(this.sourcesDir, { recursive: true });
-    }
-
-    try {
-      const watcher = watch(this.sourcesDir, () => {
-        this.debounce('sources-dir', () => this.handleSourcesDirChange());
-      });
-
-      this.watchers.push(watcher);
-      debug('[ConfigWatcher] Watching sources directory:', this.sourcesDir);
-    } catch (error) {
-      debug('[ConfigWatcher] Error watching sources directory:', error);
-    }
-  }
-
-  /**
-   * Scan sources and set up individual file watchers
+   * Scan sources directory to populate known sources
    */
   private scanSources(): void {
     if (!existsSync(this.sourcesDir)) {
+      mkdirSync(this.sourcesDir, { recursive: true });
       return;
     }
 
@@ -359,80 +359,17 @@ export class ConfigWatcher {
         const entryPath = join(this.sourcesDir, entry);
         if (statSync(entryPath).isDirectory()) {
           this.knownSources.add(entry);
-          this.watchSourceFolder(entry);
         }
       }
+
+      debug('[ConfigWatcher] Known sources:', Array.from(this.knownSources));
     } catch (error) {
       debug('[ConfigWatcher] Error scanning sources:', error);
     }
   }
 
   /**
-   * Watch a specific source folder (config.json and guide.md)
-   */
-  private watchSourceFolder(slug: string): void {
-    if (this.sourceWatchers.has(slug)) {
-      return;
-    }
-
-    const watchers: FSWatcher[] = [];
-    const sourceDir = join(this.sourcesDir, slug);
-
-    // Watch config.json
-    // Handle both 'change' (normal edit) and 'rename' (atomic save) events
-    // Atomic saves write to a temp file then rename, emitting 'rename' instead of 'change'
-    const configPath = join(sourceDir, 'config.json');
-    if (existsSync(configPath)) {
-      try {
-        const watcher = watch(configPath, (eventType) => {
-          if (eventType === 'change' || (eventType === 'rename' && existsSync(configPath))) {
-            this.debounce(`source-config:${slug}`, () => this.handleSourceConfigChange(slug));
-          }
-        });
-        watchers.push(watcher);
-      } catch (error) {
-        debug('[ConfigWatcher] Error watching source config:', slug, error);
-      }
-    }
-
-    // Watch guide.md
-    // Handle both 'change' (normal edit) and 'rename' (atomic save) events
-    const guidePath = join(sourceDir, 'guide.md');
-    if (existsSync(guidePath)) {
-      try {
-        const watcher = watch(guidePath, (eventType) => {
-          if (eventType === 'change' || (eventType === 'rename' && existsSync(guidePath))) {
-            this.debounce(`source-guide:${slug}`, () => this.handleSourceGuideChange(slug));
-          }
-        });
-        watchers.push(watcher);
-      } catch (error) {
-        debug('[ConfigWatcher] Error watching source guide:', slug, error);
-      }
-    }
-
-    if (watchers.length > 0) {
-      this.sourceWatchers.set(slug, watchers);
-      debug('[ConfigWatcher] Watching source:', slug);
-    }
-  }
-
-  /**
-   * Stop watching a specific source
-   */
-  private unwatchSource(slug: string): void {
-    const watchers = this.sourceWatchers.get(slug);
-    if (watchers) {
-      for (const watcher of watchers) {
-        watcher.close();
-      }
-      this.sourceWatchers.delete(slug);
-      debug('[ConfigWatcher] Stopped watching source:', slug);
-    }
-  }
-
-  /**
-   * Handle sources directory change
+   * Handle sources directory change (add/remove folders)
    */
   private handleSourcesDirChange(): void {
     debug('[ConfigWatcher] Sources directory changed');
@@ -443,7 +380,6 @@ export class ConfigWatcher {
       this.knownSources.clear();
 
       for (const slug of removed) {
-        this.unwatchSource(slug);
         this.callbacks.onSourceChange?.(slug, null);
       }
 
@@ -467,7 +403,6 @@ export class ConfigWatcher {
         if (!this.knownSources.has(folder)) {
           debug('[ConfigWatcher] New source folder:', folder);
           this.knownSources.add(folder);
-          this.watchSourceFolder(folder);
 
           const source = loadSource(this.workspaceSlug, folder);
           if (source) {
@@ -481,7 +416,6 @@ export class ConfigWatcher {
         if (!currentFolders.has(folder)) {
           debug('[ConfigWatcher] Removed source folder:', folder);
           this.knownSources.delete(folder);
-          this.unwatchSource(folder);
           this.callbacks.onSourceChange?.(folder, null);
         }
       }
@@ -530,36 +464,29 @@ export class ConfigWatcher {
     }
   }
 
-  // ============================================================
-  // Agents Watching
-  // ============================================================
-
   /**
-   * Watch agents directory for folder changes
+   * Handle source safe-mode.json change
    */
-  private watchAgentsDir(): void {
-    // Ensure directory exists
-    if (!existsSync(this.agentsDir)) {
-      mkdirSync(this.agentsDir, { recursive: true });
-    }
+  private handleSourceSafeModeChange(slug: string): void {
+    debug('[ConfigWatcher] Source safe-mode.json changed:', slug);
 
-    try {
-      const watcher = watch(this.agentsDir, () => {
-        this.debounce('agents-dir', () => this.handleAgentsDirChange());
-      });
+    // Invalidate cache
+    safeModeConfigCache.invalidateSource(this.workspaceSlug, slug);
 
-      this.watchers.push(watcher);
-      debug('[ConfigWatcher] Watching agents directory:', this.agentsDir);
-    } catch (error) {
-      debug('[ConfigWatcher] Error watching agents directory:', error);
-    }
+    // Notify callback
+    this.callbacks.onSourceSafeModeChange?.(slug);
   }
 
+  // ============================================================
+  // Agents Handlers
+  // ============================================================
+
   /**
-   * Scan agents and set up individual file watchers
+   * Scan agents directory to populate known agents
    */
   private scanAgents(): void {
     if (!existsSync(this.agentsDir)) {
+      mkdirSync(this.agentsDir, { recursive: true });
       return;
     }
 
@@ -570,82 +497,17 @@ export class ConfigWatcher {
         const entryPath = join(this.agentsDir, entry);
         if (statSync(entryPath).isDirectory()) {
           this.knownAgents.add(entry);
-          this.watchAgentFolder(entry);
         }
       }
+
+      debug('[ConfigWatcher] Known agents:', Array.from(this.knownAgents));
     } catch (error) {
       debug('[ConfigWatcher] Error scanning agents:', error);
     }
   }
 
   /**
-   * Watch a specific agent folder (config.json and instructions.md)
-   */
-  private watchAgentFolder(slug: string): void {
-    if (this.agentWatchers.has(slug)) {
-      return;
-    }
-
-    const watchers: FSWatcher[] = [];
-    const agentDir = join(this.agentsDir, slug);
-
-    // Watch config.json
-    // Handle both 'change' (normal edit) and 'rename' (atomic save) events
-    // Atomic saves write to a temp file then rename, emitting 'rename' instead of 'change'
-    const configPath = join(agentDir, 'config.json');
-    if (existsSync(configPath)) {
-      try {
-        const watcher = watch(configPath, (eventType) => {
-          if (eventType === 'change' || (eventType === 'rename' && existsSync(configPath))) {
-            this.debounce(`agent-config:${slug}`, () => this.handleAgentConfigChange(slug));
-          }
-        });
-        watchers.push(watcher);
-      } catch (error) {
-        debug('[ConfigWatcher] Error watching agent config:', slug, error);
-      }
-    }
-
-    // Watch instructions.md
-    // Handle both 'change' (normal edit) and 'rename' (atomic save) events
-    const instructionsPath = join(agentDir, 'instructions.md');
-    if (existsSync(instructionsPath)) {
-      try {
-        const watcher = watch(instructionsPath, (eventType) => {
-          if (eventType === 'change' || (eventType === 'rename' && existsSync(instructionsPath))) {
-            this.debounce(`agent-instructions:${slug}`, () =>
-              this.handleAgentInstructionsChange(slug)
-            );
-          }
-        });
-        watchers.push(watcher);
-      } catch (error) {
-        debug('[ConfigWatcher] Error watching agent instructions:', slug, error);
-      }
-    }
-
-    if (watchers.length > 0) {
-      this.agentWatchers.set(slug, watchers);
-      debug('[ConfigWatcher] Watching agent:', slug);
-    }
-  }
-
-  /**
-   * Stop watching a specific agent
-   */
-  private unwatchAgent(slug: string): void {
-    const watchers = this.agentWatchers.get(slug);
-    if (watchers) {
-      for (const watcher of watchers) {
-        watcher.close();
-      }
-      this.agentWatchers.delete(slug);
-      debug('[ConfigWatcher] Stopped watching agent:', slug);
-    }
-  }
-
-  /**
-   * Handle agents directory change
+   * Handle agents directory change (add/remove folders)
    */
   private handleAgentsDirChange(): void {
     debug('[ConfigWatcher] Agents directory changed');
@@ -656,7 +518,6 @@ export class ConfigWatcher {
       this.knownAgents.clear();
 
       for (const slug of removed) {
-        this.unwatchAgent(slug);
         this.callbacks.onAgentChange?.(slug, null);
       }
 
@@ -680,7 +541,6 @@ export class ConfigWatcher {
         if (!this.knownAgents.has(folder)) {
           debug('[ConfigWatcher] New agent folder:', folder);
           this.knownAgents.add(folder);
-          this.watchAgentFolder(folder);
 
           const agent = loadAgent(this.workspaceSlug, folder);
           if (agent) {
@@ -694,7 +554,6 @@ export class ConfigWatcher {
         if (!currentFolders.has(folder)) {
           debug('[ConfigWatcher] Removed agent folder:', folder);
           this.knownAgents.delete(folder);
-          this.unwatchAgent(folder);
           this.callbacks.onAgentChange?.(folder, null);
         }
       }
@@ -744,8 +603,21 @@ export class ConfigWatcher {
   }
 
   // ============================================================
-  // Config & Preferences Handlers
+  // Safe Mode & Config Handlers
   // ============================================================
+
+  /**
+   * Handle workspace safe-mode.json change
+   */
+  private handleWorkspaceSafeModeChange(): void {
+    debug('[ConfigWatcher] Workspace safe-mode.json changed:', this.workspaceSlug);
+
+    // Invalidate cache
+    safeModeConfigCache.invalidateWorkspace(this.workspaceSlug);
+
+    // Notify callback
+    this.callbacks.onWorkspaceSafeModeChange?.(this.workspaceSlug);
+  }
 
   /**
    * Handle config.json change

@@ -13,6 +13,10 @@
  * - sm: 16x16 (dropdowns, inline, sidebar)
  * - md: 20x20 (auth steps)
  * - lg: 24x24 (info panels)
+ *
+ * Status indicator:
+ * - Set showStatus={true} to show a colored dot indicating connection status
+ * - Green: Connected, Yellow: Needs auth, Red: Failed, Gray: Untested
  */
 
 import * as React from 'react'
@@ -39,6 +43,12 @@ interface DirectSourceAvatarProps {
   serviceUrl?: string
   /** Size variant */
   size?: SourceAvatarSize
+  /** Show connection status indicator */
+  showStatus?: boolean
+  /** Connection status (for direct props mode) */
+  status?: SourceConnectionStatus
+  /** Error message for failed status */
+  statusError?: string
   /** Additional className overrides */
   className?: string
   /** Not used in direct mode */
@@ -51,6 +61,8 @@ interface LoadedSourceAvatarProps {
   source: LoadedSource
   /** Size variant */
   size?: SourceAvatarSize
+  /** Show connection status indicator (auto-derived from source) */
+  showStatus?: boolean
   /** Additional className overrides */
   className?: string
   /** Not used in source mode */
@@ -58,6 +70,8 @@ interface LoadedSourceAvatarProps {
   name?: never
   logoUrl?: never
   serviceUrl?: never
+  status?: never
+  statusError?: never
 }
 
 type SourceAvatarProps = DirectSourceAvatarProps | LoadedSourceAvatarProps
@@ -94,13 +108,23 @@ function deriveServiceFavicon(source: LoadedSource): string | null {
   return url ? getLogoUrl(url) : null
 }
 
-export function SourceAvatar(props: SourceAvatarProps) {
-  const { size = 'md', className } = props
+// Status indicator size based on avatar size
+const STATUS_SIZE_CONFIG: Record<SourceAvatarSize, 'xs' | 'sm' | 'md'> = {
+  xs: 'xs',
+  sm: 'xs',
+  md: 'sm',
+  lg: 'sm',
+}
 
-  // Extract type, name, and logo URL based on props variant
+export function SourceAvatar(props: SourceAvatarProps) {
+  const { size = 'md', className, showStatus } = props
+
+  // Extract type, name, logo URL, and status based on props variant
   let type: SourceType
   let name: string
   let resolvedLogoUrl: string | null
+  let connectionStatus: SourceConnectionStatus | undefined
+  let connectionError: string | undefined
 
   if ('source' in props && props.source) {
     // LoadedSource mode
@@ -110,28 +134,45 @@ export function SourceAvatar(props: SourceAvatarProps) {
     // Priority: explicit iconUrl → derive from service URL → null
     resolvedLogoUrl = resolveSourceIconUrl(source.config.iconUrl, source.folderPath)
       ?? deriveServiceFavicon(source)
+    // Derive status from source
+    connectionStatus = deriveConnectionStatus(source)
+    connectionError = source.config.connectionError
   } else {
     // Direct props mode
     const directProps = props as DirectSourceAvatarProps
     type = directProps.type
     name = directProps.name
     resolvedLogoUrl = directProps.logoUrl ?? (directProps.serviceUrl ? getLogoUrl(directProps.serviceUrl) : null)
+    connectionStatus = directProps.status
+    connectionError = directProps.statusError
   }
 
   const containerSize = SIZE_CONFIG[size]
   const FallbackIcon = FALLBACK_ICONS[type] ?? Plug
+  const statusSize = STATUS_SIZE_CONFIG[size]
 
   return (
-    <CrossfadeAvatar
-      src={resolvedLogoUrl}
-      alt={name}
-      className={cn(
-        containerSize,
-        'rounded-[4px] ring-1 ring-border/30 shrink-0',
-        className
+    <span className="relative inline-flex shrink-0">
+      <CrossfadeAvatar
+        src={resolvedLogoUrl}
+        alt={name}
+        className={cn(
+          containerSize,
+          'rounded-[4px] ring-1 ring-border/30 shrink-0',
+          className
+        )}
+        fallbackClassName="bg-muted rounded-[4px]"
+        fallback={<FallbackIcon className="w-full h-full text-muted-foreground" />}
+      />
+      {showStatus && connectionStatus && (
+        <span className="absolute -bottom-0.5 -right-0.5">
+          <SourceStatusIndicator
+            status={connectionStatus}
+            errorMessage={connectionError}
+            size={statusSize}
+          />
+        </span>
       )}
-      fallbackClassName="bg-muted rounded-[4px]"
-      fallback={<FallbackIcon className="w-full h-full text-muted-foreground" />}
-    />
+    </span>
   )
 }

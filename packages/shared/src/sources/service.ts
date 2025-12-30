@@ -90,8 +90,10 @@ export class SourceService {
         if (source.config.type === 'mcp') {
           const config = await this.buildMcpServerConfig(source);
           if (config) {
+            debug(`[SourceService] Built MCP server for ${source.config.slug}`);
             mcpServers[source.config.slug] = config;
           } else if (source.config.mcp?.authType !== 'none') {
+            debug(`[SourceService] MCP server ${source.config.slug} needs auth (authType: ${source.config.mcp?.authType}, isAuthenticated: ${source.config.isAuthenticated})`);
             errors.push({
               sourceSlug: source.config.slug,
               error: 'Authentication required',
@@ -249,17 +251,57 @@ export class SourceService {
 
   /**
    * Get token for a source
+   * For MCP sources, tries both OAuth and bearer credentials as fallback
+   * (credentials may have been stored via credential_prompt with different mode than authType)
    */
   async getSourceToken(source: LoadedSource): Promise<string | null> {
-    const credentialId = this.getCredentialId(source);
     const manager = getCredentialManager();
+
+    // For MCP sources, try both OAuth and bearer credentials
+    // This handles cases where authType doesn't match the stored credential type
+    if (source.config.type === 'mcp' && source.config.mcp?.authType !== 'none') {
+      const baseId = {
+        workspaceSlug: source.workspaceSlug,
+        sourceSlug: source.config.slug,
+        ...(source.agentSlug && { agentSlug: source.agentSlug }),
+      };
+
+      // Try OAuth first
+      const oauthType = source.agentSlug ? 'agent_source_oauth' : 'source_oauth';
+      const oauthCreds = await manager.get({ type: oauthType, ...baseId } as CredentialId);
+      if (oauthCreds?.value) {
+        debug(`[SourceService] Found ${oauthType} token for ${source.config.slug}`);
+        return this.checkTokenExpiry(source.config.slug, oauthCreds);
+      }
+
+      // Fall back to bearer
+      const bearerType = source.agentSlug ? 'agent_source_bearer' : 'source_bearer';
+      const bearerCreds = await manager.get({ type: bearerType, ...baseId } as CredentialId);
+      if (bearerCreds?.value) {
+        debug(`[SourceService] Found ${bearerType} token for ${source.config.slug}`);
+        return bearerCreds.value; // Bearer tokens don't expire
+      }
+
+      debug(`[SourceService] No OAuth or bearer token found for MCP source ${source.config.slug}`);
+      return null;
+    }
+
+    // For non-MCP sources, use the credential ID based on authType
+    const credentialId = this.getCredentialId(source);
     const creds = await manager.get(credentialId);
 
     if (!creds?.value) return null;
 
+    return this.checkTokenExpiry(source.config.slug, creds);
+  }
+
+  /**
+   * Check if token needs refresh and return value if still valid
+   */
+  private checkTokenExpiry(sourceSlug: string, creds: { value: string; expiresAt?: number }): string | null {
     // Check if refresh needed (within 5 min of expiry)
     if (creds.expiresAt && creds.expiresAt < Date.now() + 5 * 60 * 1000) {
-      debug(`[SourceService] Token for ${source.config.slug} needs refresh`);
+      debug(`[SourceService] Token for ${sourceSlug} needs refresh`);
       // Token refresh is handled by the OAuth flow, not here
       // The UI should detect expired tokens and trigger re-auth
       if (creds.expiresAt < Date.now()) {
@@ -295,11 +337,12 @@ export class SourceService {
       } else if (source.config.type === 'api') {
         if (api?.authType === 'oauth') {
           type = 'agent_source_oauth';
-        } else if (api?.authType === 'bearer' || api?.authType === 'header') {
+        } else if (api?.authType === 'bearer') {
           type = 'agent_source_bearer';
         } else if (api?.authType === 'basic') {
           type = 'agent_source_basic';
         } else {
+          // header, query, or other → stored as apikey
           type = 'agent_source_apikey';
         }
       } else {
@@ -318,13 +361,17 @@ export class SourceService {
     if (source.config.type === 'mcp') {
       type = mcp?.authType === 'bearer' ? 'source_bearer' : 'source_oauth';
     } else if (source.config.type === 'api') {
-      if (api?.authType === 'oauth') {
+      // Gmail always uses OAuth flow regardless of authType in config
+      if (source.config.provider === 'gmail') {
         type = 'source_oauth';
-      } else if (api?.authType === 'bearer' || api?.authType === 'header') {
+      } else if (api?.authType === 'oauth') {
+        type = 'source_oauth';
+      } else if (api?.authType === 'bearer') {
         type = 'source_bearer';
       } else if (api?.authType === 'basic') {
         type = 'source_basic';
       } else {
+        // header, query, or other → stored as apikey
         type = 'source_apikey';
       }
     } else {

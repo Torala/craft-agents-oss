@@ -253,7 +253,8 @@ export default function App() {
   // "is this session currently streaming?" and route accordingly.
   useEffect(() => {
     // Handoff events signal end of streaming - need to sync back to React state
-    const handoffEventTypes = new Set(['complete', 'error', 'interrupted', 'typed_error'])
+    // Also includes todo_state_changed so status updates immediately reflect in sidebar
+    const handoffEventTypes = new Set(['complete', 'error', 'interrupted', 'typed_error', 'todo_state_changed'])
 
     // Helper to handle side effects (same logic for both paths)
     const handleEffects = (effects: Effect[], sessionId: string, eventType: string) => {

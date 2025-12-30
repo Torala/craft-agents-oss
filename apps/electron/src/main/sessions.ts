@@ -43,6 +43,22 @@ import { AgentStateManager } from '@craft-agent/shared/agents'
 import { type Session, type Message, type SessionEvent, type FileAttachment, type StoredAttachment, type SendMessageOptions, IPC_CHANNELS, generateMessageId } from '../shared/types'
 import { generateSessionTitle, formatPathsToRelative, formatToolInputPaths } from '@craft-agent/shared/utils'
 import { DEFAULT_MODEL } from '@craft-agent/shared/config'
+import type { SessionStatus } from '@craft-agent/core/types'
+
+/**
+ * Map SessionStatus (from session_status tool) to TodoState (for storage/UI)
+ * SessionStatus uses underscores, TodoState uses hyphens
+ */
+function sessionStatusToTodoState(status: SessionStatus): TodoState {
+  switch (status) {
+    case 'todo': return 'todo'
+    case 'in_progress': return 'in-progress'
+    case 'needs_review': return 'needs-review'
+    case 'done': return 'done'
+    case 'cancelled': return 'cancelled'
+    default: return 'todo'
+  }
+}
 
 /**
  * Feature flags for agent behavior
@@ -970,6 +986,22 @@ Use oauth_trigger for OAuth sources, credential_prompt for API key/bearer token 
         this.broadcastAgentsChanged()
       }
 
+      // Wire up onStatusChange to update session todo state from session_status tool
+      managed.agent.onStatusChange = async (status: SessionStatus) => {
+        console.log(`[SessionManager] Status changed for session ${managed.id}: ${status}`)
+        const todoState = sessionStatusToTodoState(status)
+        managed.todoState = todoState
+        // Persist to disk
+        const workspaceSlug = getWorkspaceSlug(managed.workspace)
+        setStoredSessionTodoState(workspaceSlug, managed.id, todoState)
+        // Notify renderer
+        this.sendEvent({
+          type: 'todo_state_changed',
+          sessionId: managed.id,
+          todoState,
+        }, managed.workspace.id)
+      }
+
       // NOTE: Agent definition is now applied in sendMessage() via AgentStateManager.activate()
       // This ensures proper state machine flow: extraction → auth checks → activation
 
@@ -1237,6 +1269,19 @@ Use oauth_trigger for OAuth sources, credential_prompt for API key/bearer token 
     managed.isProcessing = true
     managed.streamingText = ''
     managed.abortController = new AbortController()
+
+    // Auto-transition to in_progress when user sends a message
+    // This overrides done/needs_review states since we're actively working
+    if (managed.todoState !== 'in-progress') {
+      managed.todoState = 'in-progress'
+      const workspaceSlug = getWorkspaceSlug(managed.workspace)
+      setStoredSessionTodoState(workspaceSlug, sessionId, 'in-progress')
+      this.sendEvent({
+        type: 'todo_state_changed',
+        sessionId,
+        todoState: 'in-progress',
+      }, managed.workspace.id)
+    }
 
     // Capture the abort controller reference to detect if a new request supersedes this one
     // This prevents the finally block from clobbering state when a follow-up message arrives

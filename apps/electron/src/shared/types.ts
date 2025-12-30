@@ -47,12 +47,12 @@ export type {
 
 // Import and re-export auth types for onboarding
 import type { AuthState, SetupNeeds } from '@craft-agent/shared/auth';
-import type { AuthType } from '@craft-agent/shared/config';
-export type { AuthState, SetupNeeds, AuthType };
+import type { AuthType, SafeModeBehavior } from '@craft-agent/shared/config';
+export type { AuthState, SetupNeeds, AuthType, SafeModeBehavior };
 
 // Import source types for session source selection
-import type { LoadedSource, FolderSourceConfig } from '@craft-agent/shared/sources';
-export type { LoadedSource, FolderSourceConfig };
+import type { LoadedSource, FolderSourceConfig, SourceConnectionStatus } from '@craft-agent/shared/sources';
+export type { LoadedSource, FolderSourceConfig, SourceConnectionStatus };
 export { generateMessageId } from '@craft-agent/core/types';
 
 /**
@@ -361,6 +361,8 @@ export type SessionEvent =
   | { type: 'ask_question_request'; sessionId: string; request: AskQuestionRequest }
   // Source events
   | { type: 'sources_changed'; sessionId: string; enabledSourceSlugs: string[] }
+  // Todo state events (from session_status tool)
+  | { type: 'todo_state_changed'; sessionId: string; todoState: TodoState }
 
 // Options for sendMessage
 export interface SendMessageOptions {
@@ -498,6 +500,10 @@ export const IPC_CHANNELS = {
 
   // Folder dialog (for selecting working directory)
   OPEN_FOLDER_DIALOG: 'dialog:openFolder',
+
+  // Settings - Safe Mode Behavior
+  SETTINGS_GET_SAFE_MODE_BEHAVIOR: 'settings:getSafeModeBehavior',
+  SETTINGS_SET_SAFE_MODE_BEHAVIOR: 'settings:setSafeModeBehavior',
 
   // User Preferences
   PREFERENCES_READ: 'preferences:read',
@@ -755,6 +761,10 @@ export interface ElectronAPI {
 
   // Folder dialog
   openFolderDialog(): Promise<string | null>
+
+  // Settings - Safe Mode Behavior
+  getSafeModeBehavior(): Promise<SafeModeBehavior>
+  setSafeModeBehavior(behavior: SafeModeBehavior): Promise<void>
 
   // User Preferences
   readPreferences(): Promise<{ content: string; exists: boolean }>

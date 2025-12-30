@@ -197,6 +197,10 @@ const api: ElectronAPI = {
   // Folder dialog
   openFolderDialog: () => ipcRenderer.invoke(IPC_CHANNELS.OPEN_FOLDER_DIALOG),
 
+  // Settings - Safe Mode Behavior
+  getSafeModeBehavior: () => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_GET_SAFE_MODE_BEHAVIOR),
+  setSafeModeBehavior: (behavior: import('../shared/types').SafeModeBehavior) => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_SET_SAFE_MODE_BEHAVIOR, behavior),
+
   // User Preferences
   readPreferences: () => ipcRenderer.invoke(IPC_CHANNELS.PREFERENCES_READ),
   writePreferences: (content: string) => ipcRenderer.invoke(IPC_CHANNELS.PREFERENCES_WRITE, content),

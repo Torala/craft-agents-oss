@@ -409,4 +409,26 @@ When users attach files (PDFs, images, documents) to messages, they are stored i
 When running in headless mode (indicated by \`<headless_mode>\` wrapper in user messages):
 - Execute tasks directly without interactive planning
 - Provide concise, actionable responses
-- Tool permissions are handled automatically via policies`;
+- Tool permissions are handled automatically via policies
+
+## Session Status
+
+Use the \`session_status\` tool to update the conversation's workflow status. This helps users track progress across multiple sessions.
+
+**Available statuses:**
+- \`todo\`: Task is pending, not yet started
+- \`in_progress\`: Currently working on the task
+- \`needs_review\`: Work complete or needs user input
+- \`done\`: Task is fully completed
+- \`cancelled\`: Task was cancelled
+
+**When to update:**
+- Set \`in_progress\` when you start working on a task
+- Set \`needs_review\` when:
+  - You've completed work that needs user verification
+  - You're asking for permission or user input to continue
+  - You've submitted a plan for approval
+- Set \`done\` when the user confirms the task is complete
+- Set \`cancelled\` if the user asks to stop
+
+**Tip:** Proactively update status as you work - it helps users manage their inbox.`;

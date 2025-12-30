@@ -39,6 +39,7 @@ import {
   blockWithReason,
   getActiveModes,
 } from './mode-manager.ts';
+import type { SafeModeContext } from './safe-mode-config.ts';
 import { getSessionPlansPath } from '../sessions/storage.ts';
 import {
   ConfigWatcher,
@@ -47,6 +48,7 @@ import {
 } from '../config/watcher.ts';
 import type { ValidationIssue } from '../config/validators.ts';
 import type { LoadedSource } from '../sources/types.ts';
+import type { SessionStatus } from '@craft-agent/core/types';
 import type { LoadedAgent } from '../agents/folder-types.ts';
 
 // Re-export mode functions for TUI/Electron usage
@@ -615,6 +617,9 @@ export class CraftAgent {
   // Callback when agents are created/synced/deleted via session tools - triggers reload
   public onAgentsChanged: (() => Promise<void>) | null = null;
 
+  // Callback when session status changes via session_status tool
+  public onStatusChange: ((status: SessionStatus) => Promise<void>) | null = null;
+
   constructor(config: CraftAgentConfig) {
     this.config = config;
     this.isHeadless = config.isHeadless ?? false;
@@ -675,6 +680,12 @@ export class CraftAgent {
         this.onDebug?.('[CraftAgent] onAgentsChanged received - notifying listener');
         if (this.onAgentsChanged) {
           await this.onAgentsChanged();
+        }
+      },
+      onStatusChange: async (status: SessionStatus) => {
+        this.onDebug?.(`[CraftAgent] onStatusChange received: ${status}`);
+        if (this.onStatusChange) {
+          await this.onStatusChange(status);
         }
       },
     });
@@ -924,6 +935,8 @@ export class CraftAgent {
           command,
           description: `Execute bash command: ${command}`,
         });
+        // Automatically set status to needs_review when asking for permission
+        await this.onStatusChange?.('needs_review');
       } else {
         // No permission handler - deny by default for safety
         this.pendingPermissions.delete(requestId);
@@ -1066,6 +1079,7 @@ export class CraftAgent {
               // ============================================================
               // SAFE MODE: Block write operations when in read-only mode
               // All logic is centralized in mode-manager.ts
+              // Uses per-workspace and per-source custom configs when available
               // ============================================================
               if (isSafeMode) {
                 const plansFolderPath = sessionId ? getSessionPlansPath(this.workspaceRootPath, sessionId) : undefined;
@@ -1073,12 +1087,79 @@ export class CraftAgent {
                   input.tool_name,
                   input.tool_input,
                   'safe',
-                  { plansFolderPath }
+                  { plansFolderPath, safeModeContext }
                 );
 
                 if (!result.allowed) {
-                  this.onDebug?.(`BLOCKED in safe mode: ${input.tool_name}`);
-                  return blockWithReason(result.reason);
+                  const safeModeBehavior = getSafeModeBehavior();
+
+                  // If behavior is 'block', silently block without asking
+                  if (safeModeBehavior === 'block') {
+                    this.onDebug?.(`Safe mode: blocking ${input.tool_name} (behavior=block)`);
+                    return blockWithReason(result.reason);
+                  }
+
+                  // behavior is 'ask_permission' - ask user for permission
+                  this.onDebug?.(`Safe mode: asking permission for ${input.tool_name}`);
+
+                  const requestId = `safe-${input.tool_use_id}`;
+
+                  // Build description based on tool type
+                  let description = result.reason;
+                  if (input.tool_name === 'Bash') {
+                    const toolInput = input.tool_input as Record<string, unknown>;
+                    const command = toolInput?.command as string || '';
+                    description = `Execute bash command: ${command}`;
+                  } else if (input.tool_name === 'Write' || input.tool_name === 'Edit' || input.tool_name === 'MultiEdit') {
+                    const toolInput = input.tool_input as Record<string, unknown>;
+                    const filePath = toolInput?.file_path as string || '';
+                    description = `${input.tool_name}: ${filePath}`;
+                  } else if (input.tool_name.startsWith('mcp__')) {
+                    description = `MCP tool: ${input.tool_name}`;
+                  } else if (input.tool_name.startsWith('api_')) {
+                    const toolInput = input.tool_input as Record<string, unknown>;
+                    const method = (toolInput?.method as string) || 'POST';
+                    const path = (toolInput?.path as string) || '';
+                    description = `API ${method}: ${path}`;
+                  }
+
+                  const permissionPromise = new Promise<boolean>((resolve) => {
+                    this.pendingPermissions.set(requestId, {
+                      resolve,
+                      toolName: input.tool_name,
+                      command: description,
+                      baseCommand: input.tool_name,
+                    });
+                  });
+
+                  // Notify UI of permission request
+                  if (this.onPermissionRequest) {
+                    this.onPermissionRequest({
+                      requestId,
+                      toolName: input.tool_name,
+                      command: description,
+                      description: result.reason,
+                      type: 'safe_mode',
+                    });
+                    // Automatically set status to needs_review when asking for permission
+                    await this.onStatusChange?.('needs_review');
+                  } else {
+                    // No permission handler - deny by default for safety
+                    this.pendingPermissions.delete(requestId);
+                    return blockWithReason(result.reason);
+                  }
+
+                  // Wait for user decision
+                  const allowed = await permissionPromise;
+                  this.pendingPermissions.delete(requestId);
+
+                  if (!allowed) {
+                    this.onDebug?.(`User denied safe mode permission for: ${input.tool_name}`);
+                    return blockWithReason(`User denied permission for ${input.tool_name} in Safe Mode.`);
+                  }
+
+                  this.onDebug?.(`User allowed safe mode permission for: ${input.tool_name}`);
+                  // Fall through to allow the tool
                 }
 
                 this.onDebug?.(`Allowed in safe mode: ${input.tool_name}`);
@@ -1203,6 +1284,8 @@ export class CraftAgent {
                     command: commandStr,
                     description: `Execute: ${commandStr}`,
                   });
+                  // Automatically set status to needs_review when asking for permission
+                  await this.onStatusChange?.('needs_review');
                 } else {
                   this.pendingPermissions.delete(requestId);
                   return {
@@ -1396,6 +1479,11 @@ export class CraftAgent {
                 // No handler - return empty answers
                 this.pendingQuestions.delete(requestId);
                 return { behavior: 'allow' as const, updatedInput: { ...input, answers: {} } };
+              }
+
+              // Automatically set status to needs_review when asking user a question
+              if (this.onStatusChange) {
+                await this.onStatusChange('needs_review');
               }
 
               // Wait for user to answer

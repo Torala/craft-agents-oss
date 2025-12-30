@@ -57,6 +57,9 @@ export interface CumulativeUsage {
   lastUpdated: number;
 }
 
+/** Safe Mode behavior: block operations silently or ask for permission */
+export type SafeModeBehavior = 'block' | 'ask_permission';
+
 // Config stored in JSON file (credentials stored in encrypted file, not here)
 export interface StoredConfig {
   authType?: AuthType;
@@ -72,6 +75,8 @@ export interface StoredConfig {
   defaultModes?: Mode[];  // Modes enabled by default for new sessions (e.g., ['safe'])
   defaultSkipPermissions?: boolean;  // Whether new sessions auto-approve permissions (default: false)
   defaultWorkingDirectory?: string;  // Default working directory for new sessions
+  // Safe Mode behavior
+  safeModeBehavior?: SafeModeBehavior;  // How Safe Mode handles blocked operations: 'block' or 'ask_permission'
 }
 
 const CONFIG_DIR = join(homedir(), '.craft-agent');
@@ -277,6 +282,18 @@ export function setDefaultWorkingDirectory(path: string): void {
   const config = loadStoredConfig();
   if (!config) return;
   config.defaultWorkingDirectory = path;
+  saveConfig(config);
+}
+
+export function getSafeModeBehavior(): SafeModeBehavior {
+  const config = loadStoredConfig();
+  return config?.safeModeBehavior ?? 'ask_permission'; // Default to ask permission (current behavior)
+}
+
+export function setSafeModeBehavior(behavior: SafeModeBehavior): void {
+  const config = loadStoredConfig();
+  if (!config) return;
+  config.safeModeBehavior = behavior;
   saveConfig(config);
 }
 

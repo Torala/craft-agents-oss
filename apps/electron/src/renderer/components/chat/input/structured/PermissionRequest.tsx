@@ -1,4 +1,4 @@
-import { Shield, Check, X, RefreshCw } from 'lucide-react'
+import { Shield, ShieldAlert, Check, X, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import type { PermissionRequest as PermissionRequestType } from '../../../../../shared/types'
@@ -15,13 +15,15 @@ interface PermissionRequestProps {
  * PermissionRequest - Self-contained structured input for permission approval
  *
  * Shows:
- * - Shield icon + "Permission Required" header
+ * - Shield icon + "Permission Required" header (or "Safe Mode Override" for safe mode)
  * - Tool name badge
  * - Description of what the tool wants to do
  * - Command preview (scrollable)
- * - Action buttons: Allow, Always Allow, Deny
+ * - Action buttons: Allow, Always Allow (hidden for safe mode), Deny
  */
 export function PermissionRequest({ request, onResponse, unstyled = false }: PermissionRequestProps) {
+  const isSafeMode = request.type === 'safe_mode'
+
   const handleAllow = () => {
     onResponse({ type: 'permission', allowed: true, alwaysAllow: false })
   }
@@ -36,19 +38,32 @@ export function PermissionRequest({ request, onResponse, unstyled = false }: Per
 
   return (
     <div className={cn(
-      'bg-[#fffcf5] dark:bg-[#1a1608] overflow-hidden h-full flex flex-col',
-      unstyled ? 'border-0' : 'border border-amber-500/30 rounded-[8px] shadow-middle'
+      'overflow-hidden h-full flex flex-col',
+      isSafeMode
+        ? 'bg-[#fff8f5] dark:bg-[#1a0d08]'
+        : 'bg-[#fffcf5] dark:bg-[#1a1608]',
+      unstyled
+        ? 'border-0'
+        : isSafeMode
+          ? 'border border-orange-500/30 rounded-[8px] shadow-middle'
+          : 'border border-amber-500/30 rounded-[8px] shadow-middle'
     )}>
       {/* Content - grows to fill available space */}
       <div className="p-4 space-y-3 flex-1 min-h-0 flex flex-col">
         {/* Header with shield icon */}
         <div className="flex items-start gap-3">
           <div className="shrink-0 mt-0.5">
-            <Shield className="h-5 w-5 text-amber-500" />
+            {isSafeMode ? (
+              <ShieldAlert className="h-5 w-5 text-orange-500" />
+            ) : (
+              <Shield className="h-5 w-5 text-amber-500" />
+            )}
           </div>
           <div className="flex-1 min-w-0 space-y-1">
             <div className="flex items-center gap-2">
-              <span className="text-sm font-medium text-foreground">Permission Required</span>
+              <span className="text-sm font-medium text-foreground">
+                {isSafeMode ? 'Safe Mode Override' : 'Permission Required'}
+              </span>
               <span className="text-xs text-muted-foreground">({request.toolName})</span>
             </div>
             <p className="text-xs text-muted-foreground">{request.description}</p>
@@ -74,15 +89,17 @@ export function PermissionRequest({ request, onResponse, unstyled = false }: Per
           <Check className="h-3.5 w-3.5" />
           Allow
         </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          className="h-7 gap-1.5 border border-foreground/10 hover:bg-foreground/5 active:bg-foreground/10"
-          onClick={handleAlwaysAllow}
-        >
-          <RefreshCw className="h-3.5 w-3.5" />
-          Always Allow
-        </Button>
+        {!isSafeMode && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 gap-1.5 border border-foreground/10 hover:bg-foreground/5 active:bg-foreground/10"
+            onClick={handleAlwaysAllow}
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            Always Allow
+          </Button>
+        )}
         <Button
           size="sm"
           variant="ghost"
@@ -98,7 +115,10 @@ export function PermissionRequest({ request, onResponse, unstyled = false }: Per
 
         {/* Tip text */}
         <span className="text-[10px] text-muted-foreground">
-          "Always Allow" remembers this command for the session
+          {isSafeMode
+            ? 'Allow this operation while in Safe Mode'
+            : '"Always Allow" remembers this command for the session'
+          }
         </span>
       </div>
     </div>

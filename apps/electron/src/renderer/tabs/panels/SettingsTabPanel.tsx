@@ -18,7 +18,7 @@ import { Switch } from '@/components/ui/switch'
 import { Monitor, Sun, Moon, Eye, EyeOff, Check, ExternalLink, CheckCircle2 } from 'lucide-react'
 import { Spinner } from '@/components/ui/loading-indicator'
 import type { Tab } from '../types'
-import type { AuthType } from '../../../shared/types'
+import type { AuthType, SafeModeBehavior } from '../../../shared/types'
 
 interface SettingsTabPanelProps {
   tab: Tab
@@ -535,20 +535,25 @@ export default function SettingsTabPanel({
   const [defaultSkipPermissions, setDefaultSkipPermissions] = useState(false)
   const [defaultWorkingDirectory, setDefaultWorkingDirectory] = useState('')
 
+  // Safe mode behavior state
+  const [safeModeBehavior, setSafeModeBehaviorState] = useState<SafeModeBehavior>('ask_permission')
+
   // Load new session defaults on mount
   useEffect(() => {
     const loadDefaults = async () => {
       if (!window.electronAPI) return
       try {
-        const [modes, skipPerms, workingDir] = await Promise.all([
+        const [modes, skipPerms, workingDir, safeBehavior] = await Promise.all([
           window.electronAPI.getDefaultModes(),
           window.electronAPI.getDefaultSkipPermissions(),
           window.electronAPI.getDefaultWorkingDirectory(),
+          window.electronAPI.getSafeModeBehavior(),
         ])
         // Check if 'safe' mode is in the default modes array
         setDefaultSafeMode(modes.includes('safe'))
         setDefaultSkipPermissions(skipPerms)
         setDefaultWorkingDirectory(workingDir)
+        setSafeModeBehaviorState(safeBehavior)
       } catch (error) {
         console.error('Failed to load session defaults:', error)
       }
@@ -594,6 +599,18 @@ export default function SettingsTabPanel({
       }
     } catch (error) {
       console.error('Failed to change working directory:', error)
+    }
+  }, [])
+
+  const handleSafeModeBehaviorChange = useCallback(async (behavior: SafeModeBehavior) => {
+    if (!window.electronAPI) return
+    setSafeModeBehaviorState(behavior)
+    try {
+      await window.electronAPI.setSafeModeBehavior(behavior)
+    } catch (error) {
+      console.error('Failed to save safe mode behavior:', error)
+      // Revert on error
+      setSafeModeBehaviorState(behavior === 'block' ? 'ask_permission' : 'block')
     }
   }, [])
 
@@ -831,6 +848,25 @@ export default function SettingsTabPanel({
                 description="— auto-approve tool use"
                 checked={defaultSkipPermissions}
                 onCheckedChange={handleDefaultSkipPermissionsChange}
+              />
+            </div>
+          </div>
+
+          {/* Safe Mode Behavior */}
+          <div>
+            <SectionHeader>Safe Mode Behavior</SectionHeader>
+            <div>
+              <RadioOption
+                selected={safeModeBehavior === 'ask_permission'}
+                onClick={() => handleSafeModeBehaviorChange('ask_permission')}
+                label="Ask Permission"
+                description="— prompt before blocking"
+              />
+              <RadioOption
+                selected={safeModeBehavior === 'block'}
+                onClick={() => handleSafeModeBehaviorChange('block')}
+                label="Block Always"
+                description="— silently block restricted actions"
               />
             </div>
           </div>

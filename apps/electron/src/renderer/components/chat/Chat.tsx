@@ -373,7 +373,7 @@ function AgentTree({
                     key={source.config.slug}
                     className="group/source flex items-center gap-2 px-2 py-1 rounded-md hover:bg-foreground/5"
                   >
-                    <SourceAvatar source={source} size="xs" />
+                    <SourceAvatar source={source} size="xs" showStatus />
                     <span className="text-[12px] text-foreground/80 truncate flex-1">
                       {source.config.name}
                     </span>
@@ -1822,7 +1822,7 @@ export function Chat({
                               key={source.config.slug}
                               className="group/source flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-foreground/5 cursor-pointer"
                             >
-                              <SourceAvatar source={source} size="sm" />
+                              <SourceAvatar source={source} size="sm" showStatus />
                               <span className="text-[13px] text-foreground truncate flex-1">
                                 {source.config.name}
                               </span>

@@ -834,6 +834,21 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
   })
 
   // ============================================================
+  // Settings - Safe Mode Behavior
+  // ============================================================
+
+  // Get safe mode behavior setting
+  ipcMain.handle(IPC_CHANNELS.SETTINGS_GET_SAFE_MODE_BEHAVIOR, async (): Promise<SafeModeBehavior> => {
+    return getSafeModeBehavior()
+  })
+
+  // Set safe mode behavior setting
+  ipcMain.handle(IPC_CHANNELS.SETTINGS_SET_SAFE_MODE_BEHAVIOR, async (_event, behavior: SafeModeBehavior) => {
+    setSafeModeBehavior(behavior)
+    console.log(`[IPC] Safe mode behavior updated to: ${behavior}`)
+  })
+
+  // ============================================================
   // User Preferences
   // ============================================================
 
