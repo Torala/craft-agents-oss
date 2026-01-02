@@ -456,7 +456,7 @@ export const turnCardComponents: ComponentEntry[] = [
   {
     id: 'turn-card',
     name: 'TurnCard',
-    category: 'Chat',
+    category: 'Turn Cards',
     description: 'Email-like batched display for one assistant turn with activities and response',
     component: TurnCard,
     wrapper: PaddedWrapper,
@@ -872,7 +872,7 @@ export const turnCardComponents: ComponentEntry[] = [
   {
     id: 'turn-card-streaming-sim',
     name: 'TurnCard (Streaming Sim)',
-    category: 'Chat',
+    category: 'Turn Cards',
     description: 'Live simulation of document-style streaming preview with batched fade-in updates',
     component: StreamingSimulationTurnCard,
     wrapper: PaddedWrapper,

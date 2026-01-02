@@ -46,7 +46,7 @@ export default function ChatTabPanel({ tab }: ChatTabPanelProps) {
     setPermissionMode,
   } = useSessionOptionsFor(chatTab.sessionId)
 
-  const { closeTab, openAgentSetupTab } = useTabs()
+  const { closeTab } = useTabs()
 
   // Use per-session atom for isolated updates
   // Only re-renders when THIS session changes, not when other sessions stream
@@ -117,17 +117,6 @@ export default function ChatTabPanel({ tab }: ChatTabPanelProps) {
     }
   }, [session?.agentId, agentState])
 
-  // Handler to open agent setup wizard (for review/auth states)
-  const handleOpenSetupWizard = React.useCallback(() => {
-    if (session?.agentId) {
-      openAgentSetupTab(
-        session.agentId,
-        chatTab.workspaceId,
-        session?.agentName || 'Agent'
-      )
-    }
-  }, [session?.agentId, session?.agentName, chatTab.workspaceId, openAgentSetupTab])
-
   // Auto-mark agent as active when ready (no extra click needed)
   const { isReady, markActive } = agentState
   React.useEffect(() => {
@@ -152,8 +141,10 @@ export default function ChatTabPanel({ tab }: ChatTabPanelProps) {
         case 'error':
           return () => agentState.reload()
         default:
-          // For mcp_auth, api_auth - open setup wizard
-          return handleOpenSetupWizard
+          // Agent setup wizard was removed - no action available for auth states
+          return () => {
+            // No-op: banner will still show what's needed but clicking won't navigate
+          }
       }
     }
 
@@ -163,7 +154,7 @@ export default function ChatTabPanel({ tab }: ChatTabPanelProps) {
       reason: agentState.bannerReason ?? undefined,
       onAction: getAction(),
     }
-  }, [session?.agentId, session?.agentName, agentState.bannerState, agentState.bannerReason, agentState.agentName, agentState.reload, handleActivateAgent, handleOpenSetupWizard])
+  }, [session?.agentId, session?.agentName, agentState.bannerState, agentState.bannerReason, agentState.agentName, agentState.reload])
 
   // Handle missing session (deleted while tab was open)
   if (!session) {

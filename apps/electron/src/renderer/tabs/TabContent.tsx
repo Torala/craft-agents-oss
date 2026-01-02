@@ -74,7 +74,6 @@ const ChatTabPanel = lazy(() => import('./panels/ChatTabPanel'))
 const SettingsTabPanel = lazy(() => import('./panels/SettingsTabPanel'))
 const ShortcutsTabPanel = lazy(() => import('./panels/ShortcutsTabPanel'))
 const AgentInfoTabPanel = lazy(() => import('./panels/AgentInfoTabPanel'))
-const AgentSetupTabPanel = lazy(() => import('./panels/AgentSetupTabPanel'))
 const FileTabPanel = lazy(() => import('./panels/FileTabPanel'))
 const BrowserTabPanel = lazy(() => import('./panels/BrowserTabPanel'))
 const PreferencesTabPanel = lazy(() => import('./panels/PreferencesTabPanel'))
@@ -88,7 +87,6 @@ const TAB_PANELS: Record<TabType, React.LazyExoticComponent<React.ComponentType<
   settings: SettingsTabPanel,
   shortcuts: ShortcutsTabPanel,
   'agent-info': AgentInfoTabPanel,
-  'agent-setup': AgentSetupTabPanel,
   file: FileTabPanel,
   browser: BrowserTabPanel,
   preferences: PreferencesTabPanel,

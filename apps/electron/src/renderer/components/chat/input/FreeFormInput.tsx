@@ -220,9 +220,10 @@ export function FreeFormInput({
         toast.error('No details provided')
         return
       }
-      // Switch to ask mode if in safe mode (allow execution)
+      // Switch to allow-all (Auto) mode if in Explore mode (allow execution without prompts)
+      // Only switch if currently in safe mode - if user is in 'ask' mode, respect their choice
       if (permissionMode === 'safe') {
-        onPermissionModeChange?.('ask')
+        onPermissionModeChange?.('allow-all')
       }
       // Submit the message
       onSubmit(text, undefined)
@@ -569,7 +570,7 @@ export function FreeFormInput({
           'overflow-hidden transition-all',
           // Container styling - only when not wrapped by InputContainer
           !unstyled && 'rounded-[8px] shadow-middle',
-          !unstyled && (isFocused ? 'bg-white dark:bg-white' : 'bg-background'),
+          !unstyled && 'bg-background',
           isDraggingOver && 'ring-2 ring-primary ring-offset-2 ring-offset-background bg-primary/5'
         )}
         onDragEnter={handleDragEnter}
@@ -956,6 +957,17 @@ function addRecentDir(path: string): void {
 }
 
 /**
+ * Format path for display, replacing home directory with ~
+ */
+function formatPathForDisplay(path: string): string {
+  const homeDir = window.electronAPI?.getHomeDir?.() || '/Users'
+  if (path.startsWith(homeDir)) {
+    return '~' + path.slice(homeDir.length)
+  }
+  return path
+}
+
+/**
  * WorkingDirectorySelector - Dropdown for selecting working directory
  */
 function WorkingDirectorySelector({
@@ -966,6 +978,7 @@ function WorkingDirectorySelector({
   onWorkingDirectoryChange: (path: string) => void
 }) {
   const [recentDirs, setRecentDirs] = React.useState<string[]>([])
+  const [dropdownOpen, setDropdownOpen] = React.useState(false)
 
   // Load recent directories on mount
   React.useEffect(() => {
@@ -992,8 +1005,8 @@ function WorkingDirectorySelector({
   const filteredRecent = recentDirs.filter(p => p !== workingDirectory)
 
   return (
-    <DropdownMenu>
-      <Tooltip>
+    <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
+      <Tooltip open={dropdownOpen ? false : undefined}>
         <TooltipTrigger asChild>
           <DropdownMenuTrigger asChild>
             <button
@@ -1007,10 +1020,10 @@ function WorkingDirectorySelector({
         </TooltipTrigger>
         <TooltipContent side="top" className="flex flex-col gap-0.5">
           <span className="font-medium">Working directory</span>
-          <span className="text-xs opacity-70 font-mono">{workingDirectory}</span>
+          <span className="text-xs opacity-70">{formatPathForDisplay(workingDirectory)}</span>
         </TooltipContent>
       </Tooltip>
-      <StyledDropdownMenuContent side="top" align="start" sideOffset={8}>
+      <StyledDropdownMenuContent side="top" align="start" sideOffset={8} className="w-auto min-w-[200px] max-w-[400px]">
         {/* Recent Directories */}
         {filteredRecent.length > 0 && (
           <>
@@ -1018,9 +1031,9 @@ function WorkingDirectorySelector({
               <StyledDropdownMenuItem
                 key={path}
                 onClick={() => handleSelectRecent(path)}
-                className="font-mono text-xs"
+                className="text-sm"
               >
-                <span className="truncate max-w-[200px]">{path}</span>
+                <span className="whitespace-nowrap">{formatPathForDisplay(path)}</span>
               </StyledDropdownMenuItem>
             ))}
             <div className="h-px bg-border my-1" />

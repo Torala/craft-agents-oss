@@ -70,7 +70,8 @@ import { useFocusContext } from "@/context/FocusContext"
 import { getSessionTitle } from "@/utils/session"
 import { closeTabWithCleanup } from "@/utils/closeTabWithCleanup"
 import type { Session, Workspace, SubAgentMetadata, FileAttachment, PermissionRequest, TodoState, LoadedSource } from "../../../shared/types"
-import { type TodoStateId, DEFAULT_TODO_STATES, getStateColor } from "@/config/todo-states"
+import { type TodoStateId, getStateColor, statusConfigsToTodoStates } from "@/config/todo-states"
+import { useStatuses } from "@/hooks/useStatuses"
 import * as storage from "@/lib/local-storage"
 import { toast } from "sonner"
 import {
@@ -785,6 +786,29 @@ export function Chat({
 
   const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId)
 
+  // Load dynamic statuses from workspace config
+  const { statuses: statusConfigs, isLoading: isLoadingStatuses } = useStatuses(activeWorkspace?.id || null)
+  const [todoStates, setTodoStates] = React.useState<Array<{
+    id: string
+    label: string
+    color: string
+    icon: React.ReactNode
+    category?: 'open' | 'closed'
+    isFixed?: boolean
+    isDefault?: boolean
+    shortcut?: string
+  }>>([])
+
+  // Convert StatusConfig to TodoState with resolved icons
+  React.useEffect(() => {
+    if (!activeWorkspace?.id || statusConfigs.length === 0) {
+      setTodoStates([])
+      return
+    }
+
+    statusConfigsToTodoStates(statusConfigs, activeWorkspace.id).then(setTodoStates)
+  }, [statusConfigs, activeWorkspace?.id])
+
   // Tab system
   const {
     tabs,
@@ -792,7 +816,6 @@ export function Chat({
     openSettingsTab,
     openShortcutsTab,
     openAgentInfoTab,
-    openAgentSetupTab,
     openSourceInfoTab,
     updateChatTabLabel,
     validateTabs,
@@ -1296,16 +1319,11 @@ export function Chat({
     setSidebarMode({ type: 'chats', filter: { kind: 'agent', agentId } })
   }, [activeWorkspaceId])
 
-  // Handle banner action (open setup tab)
+  // Handle banner action - no-op since agent setup flow was removed
   const handleBannerAction = useCallback(() => {
-    if (!selectedAgentId || !activeWorkspaceId) return
-
-    const agent = agents.find(a => a.id === selectedAgentId)
-    if (!agent) return
-
-    // Open setup tab for both setup and auth states
-    openAgentSetupTab(agent.id, activeWorkspaceId, agent.displayName || agent.name)
-  }, [selectedAgentId, activeWorkspaceId, agents, openAgentSetupTab])
+    // Agent setup wizard has been removed
+    // Banner will still show auth status, but no action available
+  }, [])
 
   const handleInboxClick = useCallback(() => {
     setSidebarMode({ type: 'chats', filter: { kind: 'inbox' } })
@@ -1688,12 +1706,12 @@ export function Chat({
                agents.find(a => a.id === chatFilter.agentId)?.name ||
                'All Chats'
       case 'state':
-        const state = DEFAULT_TODO_STATES.find(s => s.id === chatFilter.stateId)
+        const state = todoStates.find(s => s.id === chatFilter.stateId)
         return state?.label || 'All Chats'
       default:
         return 'All Chats'
     }
-  }, [sidebarMode, chatFilter, agents])
+  }, [sidebarMode, chatFilter, agents, todoStates])
 
   return (
     <ChatProvider value={chatContextValue}>
@@ -1851,7 +1869,7 @@ export function Chat({
                           title: "In Progress",
                           label: String(todoStateCounts['in-progress']),
                           icon: <CircleProgress className="h-3.5 w-3.5" />,
-                          iconColor: getStateColor('in-progress'),
+                          iconColor: getStateColor('in-progress', todoStates),
                           variant: chatFilter?.kind === 'state' && chatFilter.stateId === 'in-progress' ? "default" : "ghost",
                           onClick: () => handleTodoStateClick('in-progress'),
                         },
@@ -1860,7 +1878,7 @@ export function Chat({
                           title: "Needs Review",
                           label: String(todoStateCounts['needs-review']),
                           icon: <CircleEye className="h-3.5 w-3.5" />,
-                          iconColor: getStateColor('needs-review'),
+                          iconColor: getStateColor('needs-review', todoStates),
                           variant: chatFilter?.kind === 'state' && chatFilter.stateId === 'needs-review' ? "default" : "ghost",
                           onClick: () => handleTodoStateClick('needs-review'),
                         },
@@ -2110,7 +2128,7 @@ export function Chat({
                         })
                       }}
                     >
-                      <CircleProgress className={cn("h-3.5 w-3.5", getStateColor('in-progress'))} />
+                      <CircleProgress className={cn("h-3.5 w-3.5", getStateColor('in-progress', todoStates))} />
                       <span className="flex-1">In Progress</span>
                       <span className="w-3.5 ml-4">{listFilter.has('in-progress') && <Check className="h-3.5 w-3.5 text-primary" />}</span>
                     </StyledDropdownMenuItem>
@@ -2125,7 +2143,7 @@ export function Chat({
                         })
                       }}
                     >
-                      <CircleEye className={cn("h-3.5 w-3.5", getStateColor('needs-review'))} />
+                      <CircleEye className={cn("h-3.5 w-3.5", getStateColor('needs-review', todoStates))} />
                       <span className="flex-1">Needs Review</span>
                       <span className="w-3.5 ml-4">{listFilter.has('needs-review') && <Check className="h-3.5 w-3.5 text-primary" />}</span>
                     </StyledDropdownMenuItem>
@@ -2257,6 +2275,7 @@ export function Chat({
                     setSearchActive(false)
                     setSearchQuery('')
                   }}
+                  todoStates={todoStates}
                 />
               </>
             )}

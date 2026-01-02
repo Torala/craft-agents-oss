@@ -10,14 +10,8 @@ import { Separator } from "@/components/ui/separator"
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { TodoStateMenu } from "@/components/ui/todo-filter-menu"
-import { DEFAULT_TODO_STATES, getStateColor, type TodoStateId } from "@/config/todo-states"
-import {
-  CircleDashed,
-  CircleProgress,
-  CircleEye,
-  CircleCheckFilled,
-  CircleXFilled,
-} from "@/components/icons/TodoStateIcons"
+import { getStateColor, getStateIcon, getStateLabel, getStateShortcut, type TodoStateId } from "@/config/todo-states"
+import type { TodoState } from "@/config/todo-states"
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -40,8 +34,8 @@ import { useSession } from "@/hooks/useSession"
 import { useFocusZone, useRovingTabIndex } from "@/hooks/keyboard"
 import { useFocusContext } from "@/context/FocusContext"
 import { getSessionTitle } from "@/utils/session"
-import type { Session, PermissionMode } from "../../../shared/types"
-import { PERMISSION_MODE_CONFIG } from "../../../shared/types"
+import type { Session } from "../../../shared/types"
+import { PERMISSION_MODE_CONFIG, type PermissionMode } from "@craft-agent/shared/agent/modes"
 
 /**
  * Format a date for the date header
@@ -149,36 +143,6 @@ function countUnreadMessages(session: Session): number {
 }
 
 /**
- * Get the icon component for a todo state
- */
-function getTodoStateIcon(state: TodoStateId, className: string) {
-  switch (state) {
-    case 'done':
-      return <CircleCheckFilled className={className} />
-    case 'cancelled':
-      return <CircleXFilled className={className} />
-    case 'needs-review':
-      return <CircleEye className={className} />
-    case 'in-progress':
-      return <CircleProgress className={className} />
-    case 'todo':
-    default:
-      return <CircleDashed className={className} />
-  }
-}
-
-/**
- * Get the color class for a todo state
- * Uses centralized colors from todo-filter-menu, with fallback for 'todo' hover state
- */
-function getTodoStateColor(state: TodoStateId): string {
-  if (state === 'todo') {
-    return 'text-muted-foreground/50 hover:text-muted-foreground'
-  }
-  return getStateColor(state) ?? 'text-muted-foreground'
-}
-
-/**
  * Highlight matching text in a string
  * Returns React nodes with matched portions wrapped in a highlight span
  */
@@ -232,6 +196,8 @@ interface SessionItemProps {
   permissionMode?: PermissionMode
   /** Current search query for highlighting matches */
   searchQuery?: string
+  /** Dynamic todo states from workspace config */
+  todoStates: TodoState[]
 }
 
 /**
@@ -256,6 +222,7 @@ function SessionItem({
   onOpenInNewTab,
   permissionMode,
   searchQuery,
+  todoStates,
 }: SessionItemProps) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [todoMenuOpen, setTodoMenuOpen] = useState(false)
@@ -290,21 +257,21 @@ function SessionItem({
         {/* Todo State Icon - positioned absolutely, outside the button */}
         <Popover modal={true} open={todoMenuOpen} onOpenChange={setTodoMenuOpen}>
           <PopoverTrigger asChild>
-            <div
-              className="absolute left-4 top-3 z-10 flex items-center justify-center w-5 h-5"
-            >
+            <div className="absolute left-4 top-3.5 z-10">
               <div
                 className={cn(
-                  "w-5 h-5 flex items-center justify-center rounded-full transition-colors cursor-pointer",
-                  "hover:bg-foreground/10",
-                  getTodoStateColor(currentTodoState)
+                  "w-4 h-4 flex items-center justify-center rounded-full transition-colors cursor-pointer",
+                  "hover:bg-foreground/5",
+                  getStateColor(currentTodoState, todoStates) || 'text-muted-foreground'
                 )}
                 role="button"
                 aria-haspopup="menu"
                 aria-expanded={todoMenuOpen}
                 aria-label="Change todo state"
               >
-                {getTodoStateIcon(currentTodoState, "w-4 h-4")}
+                <div className="w-4 h-4 flex items-center justify-center [&>svg]:w-full [&>svg]:h-full [&>img]:w-full [&>img]:h-full [&>span]:text-base">
+                  {getStateIcon(currentTodoState, todoStates)}
+                </div>
               </div>
             </div>
           </PopoverTrigger>
@@ -317,6 +284,7 @@ function SessionItem({
             <TodoStateMenu
               activeState={currentTodoState}
               onSelect={handleTodoStateSelect}
+              states={todoStates}
             />
           </PopoverContent>
         </Popover>
@@ -336,7 +304,7 @@ function SessionItem({
           }}
         >
           {/* Spacer for todo icon */}
-          <div className="w-5 h-5 shrink-0" />
+          <div className="w-4 h-5 shrink-0" />
           {/* Content column */}
           <div className="flex flex-col gap-1.5 min-w-0 flex-1">
             {/* Title - up to 2 lines */}
@@ -357,12 +325,13 @@ function SessionItem({
                 <Flag className="h-[10px] w-[10px] text-amber-500 fill-amber-500 shrink-0" />
               )}
               {permissionMode && (
-                <span className={cn(
-                  "shrink-0 px-1.5 py-0.5 text-[10px] font-medium rounded",
-                  permissionMode === 'safe' && "bg-emerald-500/10 text-emerald-600",
-                  permissionMode === 'ask' && "bg-amber-500/10 text-amber-600",
-                  permissionMode === 'allow-all' && "bg-red-500/10 text-red-600"
-                )}>
+                <span
+                  className="shrink-0 px-1.5 py-0.5 text-[10px] font-medium rounded"
+                  style={{
+                    backgroundColor: `${PERMISSION_MODE_CONFIG[permissionMode].colors.primary}1A`, // 10% opacity
+                    color: PERMISSION_MODE_CONFIG[permissionMode].colors.muted,
+                  }}
+                >
                   {PERMISSION_MODE_CONFIG[permissionMode].shortName}
                 </span>
               )}
@@ -402,19 +371,21 @@ function SessionItem({
               <StyledDropdownMenuSeparator />
               <DropdownMenuSub>
                 <StyledDropdownMenuSubTrigger>
-                  <span className={getTodoStateColor(currentTodoState)}>
-                    {getTodoStateIcon(currentTodoState, "h-3.5 w-3.5")}
+                  <span className={cn("shrink-0 flex items-center -mt-px", getStateColor(currentTodoState, todoStates) || 'text-muted-foreground')}>
+                    {getStateIcon(currentTodoState, todoStates)}
                   </span>
                   Status
                 </StyledDropdownMenuSubTrigger>
                 <StyledDropdownMenuSubContent>
-                  {DEFAULT_TODO_STATES.map((state) => (
+                  {todoStates.map((state) => (
                     <StyledDropdownMenuItem
                       key={state.id}
                       onClick={() => onTodoStateChange(item.id, state.id)}
                       className={currentTodoState === state.id ? "bg-foreground/5" : ""}
                     >
-                      <span className={state.color}>{state.icon}</span>
+                      <span className={cn("shrink-0 flex items-center -mt-px", state.color)}>
+                        {state.icon}
+                      </span>
                       {state.label}
                     </StyledDropdownMenuItem>
                   ))}
@@ -495,6 +466,8 @@ interface SessionListProps {
   onSearchChange?: (query: string) => void
   /** Called when search is closed */
   onSearchClose?: () => void
+  /** Dynamic todo states from workspace config */
+  todoStates?: TodoState[]
 }
 
 // Re-export TodoStateId for use by parent components
@@ -526,6 +499,7 @@ export function SessionList({
   searchQuery = '',
   onSearchChange,
   onSearchClose,
+  todoStates = [],
 }: SessionListProps) {
   const [session, setSession] = useSession()
   const [renameDialogOpen, setRenameDialogOpen] = useState(false)
@@ -688,14 +662,13 @@ export function SessionList({
 
     const key = e.key.toLowerCase()
 
-    // Todo state shortcuts
-    const stateShortcuts: Record<string, TodoStateId> = {
-      't': 'todo',
-      'p': 'in-progress',
-      'v': 'needs-review',
-      'd': 'done',
-      'x': 'cancelled',
-    }
+    // Todo state shortcuts - dynamically built from todoStates
+    const stateShortcuts: Record<string, TodoStateId> = {}
+    todoStates.forEach(state => {
+      if (state.shortcut) {
+        stateShortcuts[state.shortcut.toLowerCase()] = state.id
+      }
+    })
 
     if (key in stateShortcuts) {
       e.preventDefault()
@@ -716,7 +689,7 @@ export function SessionList({
         handleRenameClick(item.id, getSessionTitle(item))
         break
     }
-  }, [onTodoStateChange, focusZone])
+  }, [onTodoStateChange, focusZone, todoStates])
 
   const handleRenameClick = (sessionId: string, currentName: string) => {
     setRenameSessionId(sessionId)
@@ -835,6 +808,7 @@ export function SessionList({
                     }}
                     permissionMode={sessionOptions?.get(item.id)?.permissionMode}
                     searchQuery={searchQuery}
+                    todoStates={todoStates}
                   />
                 )
               })}

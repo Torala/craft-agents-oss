@@ -95,6 +95,12 @@ export interface ConfigWatcherCallbacks {
   /** Called when a source's permissions.json changes */
   onSourcePermissionsChange?: (sourceSlug: string) => void;
 
+  // Status callbacks
+  /** Called when statuses config.json changes */
+  onStatusConfigChange?: (workspaceId: string) => void;
+  /** Called when a status icon file changes */
+  onStatusIconChange?: (workspaceId: string, iconFilename: string) => void;
+
   // Error callbacks
   /** Called when a validation error occurs */
   onValidationError?: (file: string, result: ValidationResult) => void;
@@ -319,6 +325,28 @@ export class ConfigWatcher {
         this.debounce(`agent-instructions:${slug}`, () => this.handleAgentInstructionsChange(slug));
       }
       return;
+    }
+
+    // Statuses changes: statuses/...
+    if (parts[0] === 'statuses' && parts.length >= 2) {
+      const file = parts[1];
+
+      // config.json change
+      if (file === 'config.json') {
+        this.debounce('statuses-config', () => this.handleStatusConfigChange());
+        return;
+      }
+
+      // Icon file changes: statuses/icons/*.svg, *.png, etc.
+      if (file === 'icons' && parts.length >= 3) {
+        const iconFilename = parts[2];
+        if (iconFilename) {
+          this.debounce(`statuses-icon:${iconFilename}`, () => {
+            this.handleStatusIconChange(iconFilename);
+          });
+        }
+        return;
+      }
     }
   }
 
@@ -657,6 +685,26 @@ export class ConfigWatcher {
     if (prefs) {
       this.callbacks.onPreferencesChange?.(prefs);
     }
+  }
+
+  // ============================================================
+  // Statuses Handlers
+  // ============================================================
+
+  /**
+   * Handle statuses config.json change
+   */
+  private handleStatusConfigChange(): void {
+    debug('[ConfigWatcher] Statuses config.json changed:', this.workspaceId);
+    this.callbacks.onStatusConfigChange?.(this.workspaceId);
+  }
+
+  /**
+   * Handle status icon file change
+   */
+  private handleStatusIconChange(iconFilename: string): void {
+    debug('[ConfigWatcher] Status icon changed:', this.workspaceId, iconFilename);
+    this.callbacks.onStatusIconChange?.(this.workspaceId, iconFilename);
   }
 }
 

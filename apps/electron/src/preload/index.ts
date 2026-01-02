@@ -9,6 +9,8 @@ const api: ElectronAPI = {
   renameSession: (sessionId: string, name: string) => ipcRenderer.invoke(IPC_CHANNELS.RENAME_SESSION, sessionId, name),
   sendMessage: (sessionId: string, message: string, attachments?: FileAttachment[], storedAttachments?: import('../shared/types').StoredAttachment[], options?: import('../shared/types').SendMessageOptions) => ipcRenderer.invoke(IPC_CHANNELS.SEND_MESSAGE, sessionId, message, attachments, storedAttachments, options),
   cancelProcessing: (sessionId: string) => ipcRenderer.invoke(IPC_CHANNELS.CANCEL_PROCESSING, sessionId),
+  killShell: (sessionId: string, shellId: string) => ipcRenderer.invoke(IPC_CHANNELS.KILL_SHELL, sessionId, shellId),
+  getTaskOutput: (taskId: string) => ipcRenderer.invoke(IPC_CHANNELS.GET_TASK_OUTPUT, taskId),
   flagSession: (sessionId: string) => ipcRenderer.invoke(IPC_CHANNELS.FLAG_SESSION, sessionId),
   unflagSession: (sessionId: string) => ipcRenderer.invoke(IPC_CHANNELS.UNFLAG_SESSION, sessionId),
   setTodoState: (sessionId: string, state: import('../shared/types').TodoState) => ipcRenderer.invoke(IPC_CHANNELS.SET_TODO_STATE, sessionId, state),
@@ -111,6 +113,7 @@ const api: ElectronAPI = {
     chrome: process.versions.chrome,
     electron: process.versions.electron
   }),
+  getHomeDir: () => ipcRenderer.invoke(IPC_CHANNELS.GET_HOME_DIR),
 
   // Shell operations
   openUrl: (url: string) => ipcRenderer.invoke(IPC_CHANNELS.OPEN_URL, url),
@@ -185,11 +188,21 @@ const api: ElectronAPI = {
   getModel: () => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_GET_MODEL),
   setModel: (model: string) => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_SET_MODEL, model),
 
-  // Settings - New Session Defaults
+  // Settings - New Session Defaults (legacy global settings, kept for backwards compatibility)
   getDefaultPermissionMode: () => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_GET_DEFAULT_PERMISSION_MODE),
   setDefaultPermissionMode: (mode: import('../shared/types').PermissionMode) => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_SET_DEFAULT_PERMISSION_MODE, mode),
   getDefaultWorkingDirectory: () => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_GET_DEFAULT_WORKING_DIR),
   setDefaultWorkingDirectory: (path: string) => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_SET_DEFAULT_WORKING_DIR, path),
+
+  // Workspace Settings (per-workspace configuration)
+  getWorkspaceSettings: (workspaceId: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_SETTINGS_GET, workspaceId),
+  updateWorkspaceSetting: <K extends string>(workspaceId: string, key: K, value: unknown) =>
+    ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_SETTINGS_UPDATE, workspaceId, key, value),
+  enablePortableCredentials: (workspaceId: string, password: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_SETTINGS_ENABLE_PORTABLE, workspaceId, password),
+  disablePortableCredentials: (workspaceId: string, password: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_SETTINGS_DISABLE_PORTABLE, workspaceId, password),
 
   // Folder dialog
   openFolderDialog: () => ipcRenderer.invoke(IPC_CHANNELS.OPEN_FOLDER_DIALOG),
@@ -257,6 +270,12 @@ const api: ElectronAPI = {
   getMcpTools: (workspaceId: string, sourceSlug: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.SOURCES_GET_MCP_TOOLS, workspaceId, sourceSlug),
 
+  // Status management
+  listStatuses: (workspaceId: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.STATUSES_LIST, workspaceId),
+  readIconFile: (workspaceId: string, filename: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.STATUSES_READ_ICON_FILE, workspaceId, filename),
+
   // Session sources
   setSessionSources: (sessionId: string, sourceSlugs: string[]) =>
     ipcRenderer.invoke(IPC_CHANNELS.SESSION_SET_SOURCES, sessionId, sourceSlugs),
@@ -271,6 +290,17 @@ const api: ElectronAPI = {
     ipcRenderer.on(IPC_CHANNELS.SOURCES_CHANGED, handler)
     return () => {
       ipcRenderer.removeListener(IPC_CHANNELS.SOURCES_CHANGED, handler)
+    }
+  },
+
+  // Statuses change listener (live updates when statuses config or icon files change)
+  onStatusesChanged: (callback: (workspaceId: string) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, workspaceId: string) => {
+      callback(workspaceId)
+    }
+    ipcRenderer.on(IPC_CHANNELS.STATUSES_CHANGED, handler)
+    return () => {
+      ipcRenderer.removeListener(IPC_CHANNELS.STATUSES_CHANGED, handler)
     }
   },
 

@@ -12,6 +12,7 @@ import { mkdirSync } from 'fs';
 import { agentExists, saveAgentInstructions, loadAgentConfig, saveAgentConfig, getAgentPath } from './folder-storage.ts';
 import type { FolderAgentConfig } from './folder-types.ts';
 import { debug } from '../utils/debug.ts';
+import { PERMISSION_MODE_CONFIG } from '../agent/mode-types.ts';
 
 /**
  * Built-in agent definition
@@ -26,8 +27,12 @@ interface BuiltinAgentSpec {
 
 /**
  * Source Setup Agent Instructions
+ * Uses PERMISSION_MODE_CONFIG for mode name references.
  */
-const SOURCE_SETUP_INSTRUCTIONS = `# Source Setup Agent
+function getSourceSetupInstructions(): string {
+  const exploreName = PERMISSION_MODE_CONFIG['safe'].displayName;
+
+  return `# Source Setup Agent
 
 You are a specialized agent for helping users configure data sources (MCP servers, REST APIs, and local filesystems).
 
@@ -61,7 +66,7 @@ Help users connect external services to their Craft Agent workspace. Guide them 
    - For API: Base URL, auth type, header name (if applicable)
    - For Local: Path, and discover the appropriate website URL for the icon
 4. **Generate Tagline**: Create a brief description of the source (see Tagline Generation below)
-5. **Safe Mode Rules** (optional): Ask if the user wants custom Safe Mode rules for this source
+5. **${exploreName} Mode Rules** (optional): Ask if the user wants custom ${exploreName} mode rules for this source
 6. **Present Plan**: Use SubmitPlan to show the configuration for approval
 7. **Execute**: On approval, use source_create to add the source (and create permissions.json if requested)
 
@@ -82,7 +87,7 @@ When users want to delete a source:
 - \`source_update\`: Modify an existing source
 - \`source_delete\`: Remove a source
 - \`source_test\`: Test if a source is reachable
-- \`source_safe_mode_update\`: Create Safe Mode rules for a source (allows specific operations in Safe Mode)
+- \`source_safe_mode_update\`: Create ${exploreName} mode rules for a source (allows specific operations in ${exploreName} mode)
 - \`oauth_trigger\`: Start OAuth authentication flow for an MCP source
 - \`gmail_oauth_trigger\`: Start Google OAuth flow specifically for Gmail sources
 
@@ -217,15 +222,15 @@ Every source should have a \`tagline\` - a brief description shown in the system
 - The API documentation or MCP tools available
 - For local sources: examine the directory contents
 
-## Safe Mode Configuration
+## ${exploreName} Mode Configuration
 
-Safe Mode is a read-only exploration mode that blocks write operations. You can create custom Safe Mode rules for sources to allow specific operations that would otherwise be blocked.
+${exploreName} mode is a read-only exploration mode that blocks write operations. You can create custom ${exploreName} mode rules for sources to allow specific operations that would otherwise be blocked.
 
-### IMPORTANT: Always Ask About Safe Mode
+### IMPORTANT: Always Ask About ${exploreName} Mode
 
-**After creating any source**, ask the user if they want to configure Safe Mode rules:
+**After creating any source**, ask the user if they want to configure ${exploreName} mode rules:
 
-"Would you like me to configure Safe Mode rules for this source? This allows specific operations (like search) to work even when Safe Mode is active."
+"Would you like me to configure ${exploreName} mode rules for this source? This allows specific operations (like search) to work even when ${exploreName} mode is active."
 
 **Proactively suggest rules** when you know they're needed:
 - APIs that use POST for search/query operations (like LinkedIn, Elasticsearch, GraphQL)
@@ -270,7 +275,7 @@ source_safe_mode_update({
 })
 \`\`\`
 
-### When to Suggest Safe Mode Rules
+### When to Suggest ${exploreName} Mode Rules
 
 | Source Type | Suggest Rules? | Typical Rule |
 |-------------|----------------|--------------|
@@ -282,7 +287,7 @@ source_safe_mode_update({
 **Always offer** when:
 1. The API documentation shows POST is used for search/query endpoints
 2. You notice the source uses POST for read-like operations
-3. The user asks about Safe Mode limitations
+3. The user asks about ${exploreName} mode limitations
 
 ## Important Notes
 
@@ -294,6 +299,7 @@ source_safe_mode_update({
 - **Icons**: Always try to detect and set \`iconUrl\` so sources display proper icons.
 - **Taglines**: Always generate a \`tagline\` to describe what the source provides.
 `;
+}
 
 /**
  * Agent Setup Agent Instructions
@@ -398,21 +404,24 @@ Always use SubmitPlan before creating agents so users can review the configurati
 
 /**
  * Registry of built-in agents
+ * Note: Source setup uses a function to get instructions so it can use PERMISSION_MODE_CONFIG variables.
  */
-const BUILTIN_AGENTS: Record<string, BuiltinAgentSpec> = {
-  '.source-setup': {
-    name: 'Source Setup',
-    slug: '.source-setup',
-    instructions: SOURCE_SETUP_INSTRUCTIONS,
-    version: 6,
-  },
-  '.agent-setup': {
-    name: 'Agent Setup',
-    slug: '.agent-setup',
-    instructions: AGENT_SETUP_INSTRUCTIONS,
-    version: 3,
-  },
-};
+function getBuiltinAgents(): Record<string, BuiltinAgentSpec> {
+  return {
+    '.source-setup': {
+      name: 'Source Setup',
+      slug: '.source-setup',
+      instructions: getSourceSetupInstructions(),
+      version: 6,
+    },
+    '.agent-setup': {
+      name: 'Agent Setup',
+      slug: '.agent-setup',
+      instructions: AGENT_SETUP_INSTRUCTIONS,
+      version: 3,
+    },
+  };
+}
 
 /**
  * Extended config type to track built-in agent versions
@@ -426,7 +435,7 @@ interface BuiltinAgentConfig extends FolderAgentConfig {
  * Ensure a specific built-in agent exists in the workspace
  */
 export function ensureBuiltinAgent(workspaceId: string, slug: string): FolderAgentConfig | null {
-  const spec = BUILTIN_AGENTS[slug];
+  const spec = getBuiltinAgents()[slug];
   if (!spec) {
     debug(`[ensureBuiltinAgent] Unknown built-in agent: ${slug}`);
     return null;
@@ -482,7 +491,7 @@ export function ensureBuiltinAgent(workspaceId: string, slug: string): FolderAge
  * Ensure all built-in agents exist in a workspace
  */
 export function ensureBuiltinAgents(workspaceId: string): void {
-  for (const slug of Object.keys(BUILTIN_AGENTS)) {
+  for (const slug of Object.keys(getBuiltinAgents())) {
     ensureBuiltinAgent(workspaceId, slug);
   }
 }
@@ -491,12 +500,12 @@ export function ensureBuiltinAgents(workspaceId: string): void {
  * Check if a slug is a built-in agent
  */
 export function isBuiltinAgent(slug: string): boolean {
-  return slug in BUILTIN_AGENTS;
+  return slug in getBuiltinAgents();
 }
 
 /**
  * Get list of all built-in agent slugs
  */
 export function getBuiltinAgentSlugs(): string[] {
-  return Object.keys(BUILTIN_AGENTS);
+  return Object.keys(getBuiltinAgents());
 }

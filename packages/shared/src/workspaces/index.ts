@@ -10,6 +10,7 @@ export type {
   CreateWorkspaceInput,
   LoadedWorkspace,
   WorkspaceSummary,
+  CredentialStrategy,
 } from './types.ts';
 
 // Storage functions

@@ -93,8 +93,11 @@ export interface FolderSourceConfig {
   api?: ApiSourceConfig;
   local?: LocalSourceConfig;
 
-  // Icon URL: relative path (./icon.png), direct image URL, or domain for favicon lookup
+  // Icon: relative path to cached icon (e.g., "./icon.png")
   iconUrl?: string;
+
+  // Original URL the icon was downloaded from (for re-fetching if needed)
+  iconSourceUrl?: string;
 
   // Short description for agent context (e.g., "Issue tracking, bugs, tasks, sprints")
   // If not set, extracted from guide.md first paragraph

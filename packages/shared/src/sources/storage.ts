@@ -20,6 +20,7 @@ import type {
 } from './types.ts';
 import { validateSourceConfig } from '../config/validators.ts';
 import { debug } from '../utils/debug.ts';
+import { expandPath, toPortablePath } from '../utils/paths.ts';
 import { getWorkspaceSourcesPath, getWorkspaceAgentsPath } from '../workspaces/storage.ts';
 
 // ============================================================
@@ -69,7 +70,14 @@ export function loadSourceConfig(
   if (!existsSync(configPath)) return null;
 
   try {
-    return JSON.parse(readFileSync(configPath, 'utf-8'));
+    const config = JSON.parse(readFileSync(configPath, 'utf-8')) as FolderSourceConfig;
+
+    // Expand path variables in local source paths for portability
+    if (config.type === 'local' && config.local?.path) {
+      config.local.path = expandPath(config.local.path);
+    }
+
+    return config;
   } catch {
     return null;
   }
@@ -87,7 +95,14 @@ export function loadAgentSourceConfig(
   if (!existsSync(configPath)) return null;
 
   try {
-    return JSON.parse(readFileSync(configPath, 'utf-8'));
+    const config = JSON.parse(readFileSync(configPath, 'utf-8')) as FolderSourceConfig;
+
+    // Expand path variables in local source paths for portability
+    if (config.type === 'local' && config.local?.path) {
+      config.local.path = expandPath(config.local.path);
+    }
+
+    return config;
   } catch {
     return null;
   }
@@ -114,8 +129,16 @@ export function saveSourceConfig(
     mkdirSync(dir, { recursive: true });
   }
 
-  config.updatedAt = Date.now();
-  writeFileSync(join(dir, 'config.json'), JSON.stringify(config, null, 2));
+  // Convert local source paths to portable form
+  const storageConfig: FolderSourceConfig = { ...config, updatedAt: Date.now() };
+  if (storageConfig.type === 'local' && storageConfig.local?.path) {
+    storageConfig.local = {
+      ...storageConfig.local,
+      path: toPortablePath(storageConfig.local.path),
+    };
+  }
+
+  writeFileSync(join(dir, 'config.json'), JSON.stringify(storageConfig, null, 2));
 }
 
 /**
@@ -139,8 +162,16 @@ export function saveAgentSourceConfig(
     mkdirSync(dir, { recursive: true });
   }
 
-  config.updatedAt = Date.now();
-  writeFileSync(join(dir, 'config.json'), JSON.stringify(config, null, 2));
+  // Convert local source paths to portable form
+  const storageConfig: FolderSourceConfig = { ...config, updatedAt: Date.now() };
+  if (storageConfig.type === 'local' && storageConfig.local?.path) {
+    storageConfig.local = {
+      ...storageConfig.local,
+      path: toPortablePath(storageConfig.local.path),
+    };
+  }
+
+  writeFileSync(join(dir, 'config.json'), JSON.stringify(storageConfig, null, 2));
 }
 
 // ============================================================
@@ -577,21 +608,39 @@ export async function createSource(
       break;
   }
 
-  // Add icon URL - user override or auto-fetch high-res favicon
+  // Save config first to create the directory
+  saveSourceConfig(workspaceRootPath, config);
+
+  // Cache icon locally
+  const sourcePath = getSourcePath(workspaceRootPath, slug);
   if (input.iconUrl) {
-    config.iconUrl = input.iconUrl;  // User provided
+    // User-provided URL: download and cache it
+    const { cacheIcon } = await import('../utils/logo.js');
+    const cached = await cacheIcon(input.iconUrl, sourcePath);
+    if (cached) {
+      config.iconUrl = cached;
+      config.iconSourceUrl = input.iconUrl;
+      saveSourceConfig(workspaceRootPath, config);
+    } else {
+      config.iconUrl = input.iconUrl; // Fallback to URL if download fails
+    }
   } else {
-    // Auto-fetch high-res favicon from service URL
+    // Auto-fetch from service URL
     const serviceUrl = input.type === 'api' ? input.api?.baseUrl :
                        input.type === 'mcp' ? input.mcp?.url : null;
     if (serviceUrl) {
-      const { getHighQualityLogoUrl } = await import('../utils/logo.js');
+      const { getHighQualityLogoUrl, cacheIcon } = await import('../utils/logo.js');
       const logoUrl = await getHighQualityLogoUrl(serviceUrl);
-      config.iconUrl = logoUrl ?? undefined;  // Convert null to undefined
+      if (logoUrl) {
+        const cached = await cacheIcon(logoUrl, sourcePath);
+        if (cached) {
+          config.iconUrl = cached;
+          config.iconSourceUrl = logoUrl;
+          saveSourceConfig(workspaceRootPath, config);
+        }
+      }
     }
   }
-
-  saveSourceConfig(workspaceRootPath, config);
 
   // Create default guide.md
   const guideContent = `# ${input.name}
@@ -715,21 +764,39 @@ export async function createAgentSource(
       break;
   }
 
-  // Add icon URL - user override or auto-fetch high-res favicon
+  // Save config first to create the directory
+  saveAgentSourceConfig(workspaceRootPath, agentSlug, config);
+
+  // Cache icon locally
+  const sourcePath = getAgentSourcePath(workspaceRootPath, agentSlug, slug);
   if (input.iconUrl) {
-    config.iconUrl = input.iconUrl;  // User provided
+    // User-provided URL: download and cache it
+    const { cacheIcon } = await import('../utils/logo.js');
+    const cached = await cacheIcon(input.iconUrl, sourcePath);
+    if (cached) {
+      config.iconUrl = cached;
+      config.iconSourceUrl = input.iconUrl;
+      saveAgentSourceConfig(workspaceRootPath, agentSlug, config);
+    } else {
+      config.iconUrl = input.iconUrl; // Fallback to URL if download fails
+    }
   } else {
-    // Auto-fetch high-res favicon from service URL
+    // Auto-fetch from service URL
     const serviceUrl = input.type === 'api' ? input.api?.baseUrl :
                        input.type === 'mcp' ? input.mcp?.url : null;
     if (serviceUrl) {
-      const { getHighQualityLogoUrl } = await import('../utils/logo.js');
+      const { getHighQualityLogoUrl, cacheIcon } = await import('../utils/logo.js');
       const logoUrl = await getHighQualityLogoUrl(serviceUrl);
-      config.iconUrl = logoUrl ?? undefined;  // Convert null to undefined
+      if (logoUrl) {
+        const cached = await cacheIcon(logoUrl, sourcePath);
+        if (cached) {
+          config.iconUrl = cached;
+          config.iconSourceUrl = logoUrl;
+          saveAgentSourceConfig(workspaceRootPath, agentSlug, config);
+        }
+      }
     }
   }
-
-  saveAgentSourceConfig(workspaceRootPath, agentSlug, config);
 
   // Create default guide.md
   const guideContent = `# ${input.name}
@@ -840,3 +907,87 @@ export function saveSourceConfigWithContext(
 // ============================================================
 
 export { parseGuideMarkdown };
+
+// ============================================================
+// Icon Migration
+// ============================================================
+
+/**
+ * Migrate a source's remote iconUrl to a locally cached icon.
+ * Returns true if migration was performed, false if skipped.
+ */
+export async function migrateSourceIcon(
+  workspaceRootPath: string,
+  sourceSlug: string,
+  agentSlug?: string
+): Promise<boolean> {
+  const config = agentSlug
+    ? loadAgentSourceConfig(workspaceRootPath, agentSlug, sourceSlug)
+    : loadSourceConfig(workspaceRootPath, sourceSlug);
+
+  if (!config?.iconUrl) return false;
+
+  // Skip if already a relative path (already cached)
+  if (config.iconUrl.startsWith('./')) return false;
+
+  const sourcePath = agentSlug
+    ? getAgentSourcePath(workspaceRootPath, agentSlug, sourceSlug)
+    : getSourcePath(workspaceRootPath, sourceSlug);
+
+  const { cacheIcon } = await import('../utils/logo.js');
+  const cached = await cacheIcon(config.iconUrl, sourcePath);
+
+  if (cached) {
+    config.iconSourceUrl = config.iconUrl;
+    config.iconUrl = cached;
+    if (agentSlug) {
+      saveAgentSourceConfig(workspaceRootPath, agentSlug, config);
+    } else {
+      saveSourceConfig(workspaceRootPath, config);
+    }
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Migrate all sources in a workspace to use locally cached icons.
+ * Returns count of migrated sources.
+ */
+export async function migrateWorkspaceIcons(workspaceRootPath: string): Promise<number> {
+  let migrated = 0;
+
+  // Migrate workspace-scoped sources
+  const sourcesDir = getWorkspaceSourcesPath(workspaceRootPath);
+  if (existsSync(sourcesDir)) {
+    for (const entry of readdirSync(sourcesDir, { withFileTypes: true })) {
+      if (entry.isDirectory()) {
+        if (await migrateSourceIcon(workspaceRootPath, entry.name)) {
+          migrated++;
+        }
+      }
+    }
+  }
+
+  // Migrate agent-scoped sources
+  const agentsDir = getWorkspaceAgentsPath(workspaceRootPath);
+  if (existsSync(agentsDir)) {
+    for (const agentEntry of readdirSync(agentsDir, { withFileTypes: true })) {
+      if (agentEntry.isDirectory()) {
+        const agentSourcesDir = join(agentsDir, agentEntry.name, 'sources');
+        if (existsSync(agentSourcesDir)) {
+          for (const sourceEntry of readdirSync(agentSourcesDir, { withFileTypes: true })) {
+            if (sourceEntry.isDirectory()) {
+              if (await migrateSourceIcon(workspaceRootPath, sourceEntry.name, agentEntry.name)) {
+                migrated++;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return migrated;
+}

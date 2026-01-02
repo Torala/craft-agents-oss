@@ -10,7 +10,6 @@ export type TabType =
   | 'settings'
   | 'shortcuts'
   | 'agent-info'
-  | 'agent-setup'
   | 'file'
   | 'browser'
   | 'preferences'
@@ -44,6 +43,8 @@ export interface ChatTab extends TabBase {
 
 /**
  * Settings tab - singleton for app configuration
+ * Contains both global settings (Appearance, Billing) and
+ * workspace settings (Model, Permission Mode, Working Directory, Credential Strategy)
  */
 export interface SettingsTab extends TabBase {
   type: 'settings'
@@ -63,17 +64,6 @@ export interface AgentInfoTab extends TabBase {
   type: 'agent-info'
   agentId: string
   workspaceId: string
-}
-
-/**
- * Agent setup tab - multi-step auth flow
- */
-export interface AgentSetupTab extends TabBase {
-  type: 'agent-setup'
-  agentId: string
-  workspaceId: string
-  /** Agent display name (for UI before definition is loaded) */
-  agentName: string
 }
 
 /**
@@ -118,7 +108,6 @@ export type Tab =
   | SettingsTab
   | ShortcutsTab
   | AgentInfoTab
-  | AgentSetupTab
   | FileTab
   | BrowserTab
   | PreferencesTab
@@ -174,11 +163,6 @@ export const TAB_DEFINITIONS: Record<TabType, TabDefinition> = {
   },
   'agent-info': {
     type: 'agent-info',
-    singleton: false,
-    defaultClosable: true,
-  },
-  'agent-setup': {
-    type: 'agent-setup',
     singleton: false,
     defaultClosable: true,
   },

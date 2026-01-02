@@ -221,6 +221,41 @@ export interface CredentialRequestEvent {
   request: CredentialRequest
 }
 
+/**
+ * Task backgrounded event - background agent started
+ */
+export interface TaskBackgroundedEvent {
+  type: 'task_backgrounded'
+  sessionId: string
+  toolUseId: string
+  taskId: string
+  intent?: string
+  turnId?: string
+}
+
+/**
+ * Shell backgrounded event - background bash shell started
+ */
+export interface ShellBackgroundedEvent {
+  type: 'shell_backgrounded'
+  sessionId: string
+  toolUseId: string
+  shellId: string
+  intent?: string
+  turnId?: string
+}
+
+/**
+ * Task progress event - live progress updates for background tasks
+ */
+export interface TaskProgressEvent {
+  type: 'task_progress'
+  sessionId: string
+  toolUseId: string
+  elapsedSeconds: number
+  turnId?: string
+}
+
 
 /**
  * Union of all agent events
@@ -245,6 +280,9 @@ export type AgentEvent =
   | WorkingDirectoryChangedEvent
   | PermissionModeChangedEvent
   | AskQuestionRequestEvent
+  | TaskBackgroundedEvent
+  | ShellBackgroundedEvent
+  | TaskProgressEvent
 
 /**
  * Side effects that need to be handled outside the pure processor

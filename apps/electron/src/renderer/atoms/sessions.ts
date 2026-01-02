@@ -293,3 +293,31 @@ export const expandedActivityGroupsAtomFamily = atomFamily(
   (_sessionId: string) => atom<Set<string>>(new Set<string>()),
   (a, b) => a === b
 )
+
+/**
+ * Background task for ActiveTasksBar display
+ */
+export interface BackgroundTask {
+  /** Task or shell ID */
+  id: string
+  /** Task type */
+  type: 'agent' | 'shell'
+  /** Tool use ID for correlation with messages */
+  toolUseId: string
+  /** When the task started */
+  startTime: number
+  /** Elapsed seconds (from progress events) */
+  elapsedSeconds: number
+  /** Task intent/description */
+  intent?: string
+}
+
+/**
+ * Atom family for tracking active background tasks per session
+ * Updated on task_backgrounded, shell_backgrounded, task_progress events
+ * Cleared when tasks complete or are killed
+ */
+export const backgroundTasksAtomFamily = atomFamily(
+  (_sessionId: string) => atom<BackgroundTask[]>([]),
+  (a, b) => a === b
+)

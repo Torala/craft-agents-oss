@@ -31,6 +31,7 @@ import {
   validateAll,
   formatValidationResult,
 } from '../config/validators.ts';
+import { PERMISSION_MODE_CONFIG } from './mode-types.ts';
 import {
   validateMcpConnection,
   getValidationErrorMessage,
@@ -196,6 +197,8 @@ export function clearPlanFileState(sessionId: string): void {
  * a plan for user review, regardless of Safe Mode status.
  */
 export function createSubmitPlanTool(sessionId: string) {
+  const exploreName = PERMISSION_MODE_CONFIG['safe'].displayName;
+
   return tool(
     'SubmitPlan',
     `Submit a plan for user review.
@@ -206,9 +209,9 @@ The plan will be displayed to the user in a special formatted view.
 This tool can be used anytime - it's not restricted to any particular mode.
 Use it whenever you want to present a structured plan to the user.
 
-**Safe Mode Workflow:** When you are in Safe Mode and have completed your research/exploration,
+**${exploreName} Mode Workflow:** When you are in ${exploreName} mode and have completed your research/exploration,
 use this tool to present your implementation plan. The plan UI includes an "Accept Plan" button
-that exits Safe Mode and allows you to begin implementation immediately.
+that exits ${exploreName} mode and allows you to begin implementation immediately.
 
 **Format your plan as markdown:**
 \`\`\`markdown
@@ -2135,11 +2138,13 @@ export function createSourceDeleteTool(sessionId: string, workspaceId: string) {
  * Creates a permissions.json file in the source folder with Zod validation.
  */
 export function createSourcePermissionsUpdateTool(sessionId: string, workspaceId: string, activeAgentSlug?: string) {
+  const exploreName = PERMISSION_MODE_CONFIG['safe'].displayName;
+
   return tool(
     'source_permissions_update',
     `Create or update permissions rules for a source.
 
-Safe Mode is a read-only exploration mode. Custom rules let you allow specific operations that would otherwise be blocked.
+${exploreName} mode is a read-only exploration mode. Custom rules let you allow specific operations that would otherwise be blocked.
 
 **Rule Types:**
 - \`allowedMcpPatterns\`: Regex patterns for MCP tool names to allow (e.g., \`^mcp__linear__list\`)
@@ -2147,7 +2152,7 @@ Safe Mode is a read-only exploration mode. Custom rules let you allow specific o
 - \`allowedBashPatterns\`: Regex patterns for bash commands to allow
 - \`blockedTools\`: Additional tools to block (rarely needed)
 
-Rules are additive - they extend the defaults to make Safe Mode more permissive for this source.`,
+Rules are additive - they extend the defaults to make ${exploreName} mode more permissive for this source.`,
     {
       sourceSlug: z.string().describe('The slug of the source to configure'),
       allowedMcpPatterns: z.array(z.object({
@@ -2261,7 +2266,7 @@ Rules are additive - they extend the defaults to make Safe Mode more permissive 
         return {
           content: [{
             type: 'text' as const,
-            text: `**Permissions rules created for '${sourceName}'**\n\nConfigured: ${summary.join(', ') || 'empty config'}\n\nFile: \`${safeModePath}\`\n\nThese rules will be applied when Safe Mode is active.`,
+            text: `**Permissions rules created for '${sourceName}'**\n\nConfigured: ${summary.join(', ') || 'empty config'}\n\nFile: \`${safeModePath}\`\n\nThese rules will be applied when ${exploreName} mode is active.`,
           }],
           isError: false,
         };

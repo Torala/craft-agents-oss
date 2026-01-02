@@ -1,20 +1,15 @@
 import * as React from 'react'
-import {
-  CircleDashed,
-  CircleProgress,
-  CircleEye,
-  CircleCheckFilled,
-  CircleXFilled,
-} from '@/components/icons/TodoStateIcons'
+import type { StatusConfig, StatusIcon } from '@craft-agent/shared/statuses'
 
 // ============================================================================
 // Types
 // ============================================================================
 
-export type TodoStateId = 'todo' | 'in-progress' | 'needs-review' | 'done' | 'cancelled'
+// Dynamic status ID (any string now)
+export type TodoStateId = string
 
 export interface TodoStateConfig {
-  id: TodoStateId
+  id: string
   label: string
   color: string
   shortcut?: string
@@ -22,6 +17,9 @@ export interface TodoStateConfig {
 
 export interface TodoState extends TodoStateConfig {
   icon: React.ReactNode
+  category?: 'open' | 'closed'
+  isFixed?: boolean
+  isDefault?: boolean
 }
 
 // ============================================================================
@@ -31,80 +29,167 @@ export interface TodoState extends TodoStateConfig {
 const ICON_SIZE = 'h-3.5 w-3.5'
 
 // ============================================================================
-// Default State Configurations
-// Structure supports future user customization (colors, labels, shortcuts)
+// Icon Cache (to avoid re-reading files on every render)
 // ============================================================================
 
-export const DEFAULT_TODO_STATES: TodoState[] = [
-  {
-    id: 'todo',
-    label: 'Todo',
-    icon: <CircleDashed className={ICON_SIZE} />,
-    color: 'text-muted-foreground',
-    shortcut: 't',
-  },
-  {
-    id: 'in-progress',
-    label: 'In Progress',
-    icon: <CircleProgress className={ICON_SIZE} />,
-    color: 'text-blue-500',
-    shortcut: 'p',
-  },
-  {
-    id: 'needs-review',
-    label: 'Needs Review',
-    icon: <CircleEye className={ICON_SIZE} />,
-    color: 'text-amber-500',
-    shortcut: 'v',
-  },
-  {
-    id: 'done',
-    label: 'Done',
-    icon: <CircleCheckFilled className={ICON_SIZE} />,
-    color: 'text-[#9570BE]',
-    shortcut: 'd',
-  },
-  {
-    id: 'cancelled',
-    label: 'Cancelled',
-    icon: <CircleXFilled className={ICON_SIZE} />,
-    color: 'text-muted-foreground/60',
-    shortcut: 'x',
-  },
-]
+const iconCache = new Map<string, string>()
+
+/**
+ * Sanitize SVG content (basic XSS prevention)
+ * Removes script tags and event handlers
+ */
+function sanitizeSvg(svg: string): string {
+  return svg
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+    .replace(/on\w+="[^"]*"/gi, '')
+    .replace(/on\w+='[^']*'/gi, '')
+    .replace(/javascript:/gi, '')
+    .replace(/\s+width="[^"]*"/gi, '')      // Remove width attribute
+    .replace(/\s+height="[^"]*"/gi, '')     // Remove height attribute
+}
+
+/**
+ * Resolve status icon to React.ReactNode
+ * Handles both emoji and file-based icons
+ */
+export async function resolveStatusIcon(
+  icon: StatusIcon,
+  workspaceId: string,
+  className: string = ICON_SIZE
+): Promise<React.ReactNode> {
+  switch (icon.type) {
+    case 'emoji':
+      return <span className={className}>{icon.value}</span>
+
+    case 'file': {
+      // Check cache first
+      const cacheKey = `${workspaceId}:${icon.value}`
+      let fileContent = iconCache.get(cacheKey)
+
+      if (!fileContent) {
+        try {
+          fileContent = await window.electronAPI.readIconFile(workspaceId, icon.value)
+          iconCache.set(cacheKey, fileContent)
+        } catch (error) {
+          console.error(`[resolveStatusIcon] Failed to load icon ${icon.value}:`, error)
+          // Fallback to empty span
+          return <span className={className}>●</span>
+        }
+      }
+
+      // Detect file type by extension
+      if (icon.value.endsWith('.svg')) {
+        const sanitized = sanitizeSvg(fileContent)
+        return (
+          <div
+            className={className}
+            dangerouslySetInnerHTML={{ __html: sanitized }}
+            style={{ display: 'inline-block' }}
+          />
+        )
+      } else {
+        // PNG, JPG, etc. (base64 encoded)
+        const ext = icon.value.split('.').pop()?.toLowerCase() || 'png'
+        return (
+          <img
+            src={`data:image/${ext};base64,${fileContent}`}
+            className={className}
+            alt=""
+            style={{ display: 'inline-block' }}
+          />
+        )
+      }
+    }
+
+    default:
+      // Fallback
+      return <span className={className}>●</span>
+  }
+}
+
+/**
+ * Synchronous version that returns a placeholder while loading
+ * Use this in components that can't handle async rendering
+ */
+export function resolveStatusIconSync(
+  icon: StatusIcon,
+  workspaceId: string,
+  className: string = ICON_SIZE
+): React.ReactNode {
+  const [resolvedIcon, setResolvedIcon] = React.useState<React.ReactNode>(
+    <span className={className}>●</span>
+  )
+
+  React.useEffect(() => {
+    resolveStatusIcon(icon, workspaceId, className).then(setResolvedIcon)
+  }, [icon, workspaceId, className])
+
+  return resolvedIcon
+}
+
+/**
+ * Convert StatusConfig to TodoState with resolved icon
+ * This is async because icon loading may require IPC
+ */
+export async function statusConfigToTodoState(
+  config: StatusConfig,
+  workspaceId: string
+): Promise<TodoState> {
+  const icon = await resolveStatusIcon(config.icon, workspaceId)
+
+  return {
+    id: config.id,
+    label: config.label,
+    color: config.color,
+    shortcut: config.shortcut,
+    icon,
+    category: config.category,
+    isFixed: config.isFixed,
+    isDefault: config.isDefault,
+  }
+}
+
+/**
+ * Convert array of StatusConfig to TodoState[]
+ */
+export async function statusConfigsToTodoStates(
+  configs: StatusConfig[],
+  workspaceId: string
+): Promise<TodoState[]> {
+  return Promise.all(configs.map(c => statusConfigToTodoState(c, workspaceId)))
+}
 
 // ============================================================================
-// Helper Functions
+// Helper Functions (updated to work with dynamic states)
 // ============================================================================
 
 /**
  * Get the icon for a todo state
  */
 export function getStateIcon(
-  stateId: TodoStateId,
-  states: TodoState[] = DEFAULT_TODO_STATES
+  stateId: string,
+  states: TodoState[]
 ): React.ReactNode {
   const state = states.find(s => s.id === stateId)
-  return state?.icon ?? <CircleDashed className={ICON_SIZE} />
+  return state?.icon ?? <span className={ICON_SIZE}>●</span>
 }
 
 /**
  * Get the color class for a todo state
  */
 export function getStateColor(
-  stateId: TodoStateId,
-  states: TodoState[] = DEFAULT_TODO_STATES
+  stateId: string,
+  states: TodoState[]
 ): string | undefined {
-  const state = states.find(s => s.id === stateId)
-  return state?.color
+  return states.find(s => s.id === stateId)?.color
 }
 
 /**
  * Get the label for a todo state
  */
 export function getStateLabel(
-  stateId: TodoStateId,
-  states: TodoState[] = DEFAULT_TODO_STATES
+  stateId: string,
+  states: TodoState[]
 ): string {
   const state = states.find(s => s.id === stateId)
   return state?.label ?? stateId
@@ -114,19 +199,25 @@ export function getStateLabel(
  * Get the shortcut for a todo state
  */
 export function getStateShortcut(
-  stateId: TodoStateId,
-  states: TodoState[] = DEFAULT_TODO_STATES
+  stateId: string,
+  states: TodoState[]
 ): string | undefined {
-  const state = states.find(s => s.id === stateId)
-  return state?.shortcut
+  return states.find(s => s.id === stateId)?.shortcut
 }
 
 /**
  * Get a complete state object by ID
  */
 export function getState(
-  stateId: TodoStateId,
-  states: TodoState[] = DEFAULT_TODO_STATES
+  stateId: string,
+  states: TodoState[]
 ): TodoState | undefined {
   return states.find(s => s.id === stateId)
+}
+
+/**
+ * Clear icon cache (useful when statuses are updated)
+ */
+export function clearIconCache(): void {
+  iconCache.clear()
 }

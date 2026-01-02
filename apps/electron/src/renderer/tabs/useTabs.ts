@@ -28,7 +28,6 @@ import type {
   SettingsTab,
   ShortcutsTab,
   AgentInfoTab,
-  AgentSetupTab,
   FileTab,
   BrowserTab,
   PreferencesTab,
@@ -153,25 +152,6 @@ export function useTabs() {
         agentId,
         workspaceId,
         label: `${agentName}`,
-        closable: true,
-      }
-      openTab(tab)
-    },
-    [openTab]
-  )
-
-  /**
-   * Open an agent setup tab
-   */
-  const openAgentSetupTab = useCallback(
-    (agentId: string, workspaceId: string, agentName: string) => {
-      const tab: AgentSetupTab = {
-        id: `agent-setup:${agentId}`,
-        type: 'agent-setup',
-        agentId,
-        workspaceId,
-        agentName,
-        label: `Setup ${agentName}`,
         closable: true,
       }
       openTab(tab)
@@ -359,7 +339,6 @@ export function useTabs() {
     openSettingsTab,
     openShortcutsTab,
     openAgentInfoTab,
-    openAgentSetupTab,
     openFileTab,
     openBrowserTab,
     openPreferencesTab,

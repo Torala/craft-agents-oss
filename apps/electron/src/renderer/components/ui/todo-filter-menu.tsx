@@ -4,13 +4,12 @@ import { cn } from '@/lib/utils'
 import {
   type TodoStateId,
   type TodoState,
-  DEFAULT_TODO_STATES,
   getStateIcon,
   getStateColor,
 } from '@/config/todo-states'
 
-// Re-export types and config for backwards compatibility
-export { type TodoStateId, type TodoState, DEFAULT_TODO_STATES, getStateIcon, getStateColor }
+// Re-export types for backwards compatibility
+export { type TodoStateId, type TodoState, getStateIcon, getStateColor }
 
 // ============================================================================
 // Shared Styles (matching slash-command-menu)
@@ -28,9 +27,9 @@ const MENU_ITEM_SELECTED = 'bg-accent text-accent-foreground'
 function StateItemContent({ state }: { state: TodoState }) {
   return (
     <>
-      <div className={cn("shrink-0", state.color || "text-muted-foreground")}>
+      <span className={cn("shrink-0 flex items-center mt-px", state.color || "text-muted-foreground")}>
         {state.icon}
-      </div>
+      </span>
       <div className="flex-1 min-w-0">{state.label}</div>
       {state.shortcut && (
         <kbd className="ml-auto text-[11px] text-muted-foreground/60 uppercase">
@@ -53,7 +52,7 @@ export interface TodoStateMenuProps {
 }
 
 export function TodoStateMenu({
-  states = DEFAULT_TODO_STATES,
+  states = [],
   activeState,
   onSelect,
   className,

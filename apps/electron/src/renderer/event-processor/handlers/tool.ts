@@ -5,7 +5,7 @@
  * Pure functions that return new state - no side effects.
  */
 
-import type { SessionState, ToolStartEvent, ToolResultEvent, ParentUpdateEvent } from '../types'
+import type { SessionState, ToolStartEvent, ToolResultEvent, ParentUpdateEvent, TaskBackgroundedEvent, ShellBackgroundedEvent, TaskProgressEvent } from '../types'
 import type { Message } from '../../../shared/types'
 import {
   findToolMessage,
@@ -128,6 +128,91 @@ export function handleParentUpdate(
     // Update the tool message with correct parent
     const updatedSession = updateMessageAt(session, toolIndex, {
       parentToolUseId: event.parentToolUseId,
+    })
+    return { session: updatedSession, streaming }
+  }
+
+  // Tool not found - shouldn't happen, but return state unchanged
+  return state
+}
+
+/**
+ * Handle task_backgrounded - mark tool as backgrounded with task ID
+ *
+ * When a Task is executed with run_in_background: true, the SDK returns
+ * immediately with an agentId. This event updates the tool message status
+ * to 'backgrounded' and stores the taskId for later polling via TaskOutput.
+ */
+export function handleTaskBackgrounded(
+  state: SessionState,
+  event: TaskBackgroundedEvent
+): SessionState {
+  const { session, streaming } = state
+
+  const toolIndex = findToolMessage(session.messages, event.toolUseId)
+
+  if (toolIndex !== -1) {
+    // Update tool status to backgrounded and add task ID
+    const updatedSession = updateMessageAt(session, toolIndex, {
+      toolStatus: 'backgrounded',
+      taskId: event.taskId,
+      isBackground: true,
+    })
+    return { session: updatedSession, streaming }
+  }
+
+  // Tool not found - shouldn't happen, but return state unchanged
+  return state
+}
+
+/**
+ * Handle shell_backgrounded - mark shell as backgrounded with shell ID
+ *
+ * When a Bash command is executed with run_in_background: true, the SDK
+ * returns immediately with a shell_id. This event updates the tool message
+ * status to 'backgrounded' and stores the shellId for later reference.
+ */
+export function handleShellBackgrounded(
+  state: SessionState,
+  event: ShellBackgroundedEvent
+): SessionState {
+  const { session, streaming } = state
+
+  const toolIndex = findToolMessage(session.messages, event.toolUseId)
+
+  if (toolIndex !== -1) {
+    // Update tool status to backgrounded and add shell ID
+    const updatedSession = updateMessageAt(session, toolIndex, {
+      toolStatus: 'backgrounded',
+      shellId: event.shellId,
+      isBackground: true,
+    })
+    return { session: updatedSession, streaming }
+  }
+
+  // Tool not found - shouldn't happen, but return state unchanged
+  return state
+}
+
+/**
+ * Handle task_progress - update elapsed time for background task
+ *
+ * The SDK emits tool_progress events with elapsed_time_seconds for
+ * background tasks. This event updates the elapsedSeconds field on
+ * the tool message to display live progress in the UI.
+ */
+export function handleTaskProgress(
+  state: SessionState,
+  event: TaskProgressEvent
+): SessionState {
+  const { session, streaming } = state
+
+  const toolIndex = findToolMessage(session.messages, event.toolUseId)
+
+  if (toolIndex !== -1) {
+    // Update elapsed time for live progress display
+    const updatedSession = updateMessageAt(session, toolIndex, {
+      elapsedSeconds: event.elapsedSeconds,
     })
     return { session: updatedSession, streaming }
   }

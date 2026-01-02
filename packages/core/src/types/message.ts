@@ -19,7 +19,7 @@ export type MessageRole =
 /**
  * Tool execution status
  */
-export type ToolStatus = 'pending' | 'executing' | 'completed' | 'error';
+export type ToolStatus = 'pending' | 'executing' | 'completed' | 'error' | 'backgrounded';
 
 /**
  * Attachment type categories
@@ -72,6 +72,11 @@ export interface Message {
   toolDisplayName?: string;
   // Parent tool ID for nested tool calls (e.g., child tools inside Task subagent)
   parentToolUseId?: string;
+  // Background task fields
+  taskId?: string;          // For Task with run_in_background
+  shellId?: string;         // For Bash with run_in_background
+  elapsedSeconds?: number;  // Live progress updates
+  isBackground?: boolean;   // Flag for UI differentiation
   // Stored attachments for user messages (persistent, no base64)
   attachments?: StoredAttachment[];
   isError?: boolean;
@@ -119,6 +124,11 @@ export interface StoredMessage {
   toolDisplayName?: string;
   // Parent tool ID for nested tool calls (persisted for session restore)
   parentToolUseId?: string;
+  // Background task fields (persisted)
+  taskId?: string;
+  shellId?: string;
+  elapsedSeconds?: number;
+  isBackground?: boolean;
   isError?: boolean;
   /** Stored attachments for user messages (persisted to disk) */
   attachments?: StoredAttachment[];
@@ -257,7 +267,10 @@ export type AgentEvent =
   | { type: 'error'; message: string }
   | { type: 'typed_error'; error: TypedError }
   | { type: 'complete'; usage?: AgentEventUsage }
-  | { type: 'working_directory_changed'; workingDirectory: string };
+  | { type: 'working_directory_changed'; workingDirectory: string }
+  | { type: 'task_backgrounded'; toolUseId: string; taskId: string; intent?: string; turnId?: string }
+  | { type: 'shell_backgrounded'; toolUseId: string; shellId: string; intent?: string; turnId?: string }
+  | { type: 'task_progress'; toolUseId: string; elapsedSeconds: number; turnId?: string };
 
 /**
  * Generate a unique message ID

@@ -12,51 +12,19 @@
 
 import { debug } from '../utils/debug.ts';
 import type { PermissionsContext, MergedPermissionsConfig } from './permissions-config.ts';
+import {
+  type PermissionMode,
+  PERMISSION_MODE_ORDER,
+  PERMISSION_MODE_CONFIG,
+  hexToRgb,
+} from './mode-types.ts';
 
-// ============================================================
-// Permission Mode Types
-// ============================================================
-
-/**
- * Available permission modes
- * - 'safe': Read-only, blocks writes, never prompts (green)
- * - 'ask': Prompts for dangerous operations (amber)
- * - 'allow-all': Everything allowed, no prompts (red)
- */
-export type PermissionMode = 'safe' | 'ask' | 'allow-all';
-
-/**
- * Order of modes for cycling with SHIFT+TAB
- */
-export const PERMISSION_MODE_ORDER: PermissionMode[] = ['safe', 'ask', 'allow-all'];
-
-/**
- * Display configuration for each mode
- */
-export const PERMISSION_MODE_CONFIG: Record<PermissionMode, {
-  displayName: string;
-  shortName: string;
-  color: 'green' | 'amber' | 'red';
-  description: string;
-}> = {
-  'safe': {
-    displayName: 'Safe Mode',
-    shortName: 'Safe',
-    color: 'green',
-    description: 'Read-only exploration. Blocks writes, never prompts.',
-  },
-  'ask': {
-    displayName: 'Ask Permission',
-    shortName: 'Ask',
-    color: 'amber',
-    description: 'Prompts for dangerous operations.',
-  },
-  'allow-all': {
-    displayName: 'Allow All',
-    shortName: 'Allow All',
-    color: 'red',
-    description: 'Everything allowed, no prompts.',
-  },
+// Re-export types and config from mode-types (single source of truth)
+export {
+  type PermissionMode,
+  PERMISSION_MODE_ORDER,
+  PERMISSION_MODE_CONFIG,
+  hexToRgb,
 };
 
 /**
@@ -716,10 +684,10 @@ export function formatSessionState(
 
 /**
  * Generate the permission modes documentation section for the system prompt.
+ * Uses PERMISSION_MODE_CONFIG for display names to stay in sync with UI.
  */
 export function getPermissionModesDocumentation(): string {
-  const safeConfig = SAFE_MODE_CONFIG;
-  const blockedTools = Array.from(safeConfig.blockedTools).join(', ');
+  const blockedTools = Array.from(SAFE_MODE_CONFIG.blockedTools).join(', ');
 
   return `## Permission Modes
 
@@ -727,9 +695,9 @@ Craft Agent has three permission modes that control tool execution. The user can
 
 | Mode | Color | Description |
 |------|-------|-------------|
-| **Safe** | Green | Read-only exploration. Blocks writes, never prompts. |
-| **Ask** | Amber | Prompts for dangerous operations. Default for interactive use. |
-| **Allow All** | Red | Everything allowed, no prompts. Use with caution. |
+| **${PERMISSION_MODE_CONFIG['safe'].displayName}** | Green | ${PERMISSION_MODE_CONFIG['safe'].description} |
+| **${PERMISSION_MODE_CONFIG['ask'].displayName}** | Amber | ${PERMISSION_MODE_CONFIG['ask'].description} |
+| **${PERMISSION_MODE_CONFIG['allow-all'].displayName}** | Purple | ${PERMISSION_MODE_CONFIG['allow-all'].description} |
 
 You will know the current mode from the \`<session_state>\` block in your context:
 \`\`\`
@@ -740,7 +708,7 @@ plansFolderPath: /path/to/plans
 </session_state>
 \`\`\`
 
-### Safe Mode (permissionMode: safe)
+### ${PERMISSION_MODE_CONFIG['safe'].displayName} (permissionMode: safe)
 
 Read-only exploration mode. You can read, search, and explore but cannot make changes.
 
@@ -756,17 +724,70 @@ Read-only exploration mode. You can read, search, and explore but cannot make ch
 | Craft modifications | ❌ | blocks_add, blocks_update blocked |
 | API mutations | ❌ | POST, PUT, DELETE blocked |
 
-When ready to implement, use \`SubmitPlan\` to present your plan. The "Accept Plan" button switches to Ask mode and authorizes implementation.
+**When ready to implement:** Don't ask the user to switch modes. Instead, write a plan and use \`SubmitPlan\` - the "Accept Plan" button switches to ${PERMISSION_MODE_CONFIG['allow-all'].displayName} mode automatically.
 
-### Ask Mode (permissionMode: ask)
+### ${PERMISSION_MODE_CONFIG['ask'].displayName} (permissionMode: ask)
 
-Default interactive mode. Most operations are allowed, but dangerous bash commands prompt for user approval.
+Default interactive mode. Most operations are allowed, but Bash commands prompt for user approval.
 
-- File operations (Write, Edit) are allowed
-- Bash commands prompt for permission (with "Always allow this session" option)
-- Dangerous commands (rm, sudo, git push) always require explicit approval
+| Operation | Allowed? | Notes |
+|-----------|----------|-------|
+| All file operations | ✅ | Write, Edit, Read, etc. |
+| All Craft operations | ✅ | blocks_add, blocks_update, etc. |
+| All API operations | ✅ | GET, POST, PUT, DELETE |
+| Bash commands | ⚠️ | Prompts for approval (can click "Always allow") |
+| Dangerous Bash | ⚠️ | rm, sudo, git push - always prompts, no auto-allow |
 
-### Allow All Mode (permissionMode: allow-all)
+Bash commands prompt for permission. Non-dangerous commands show an "Always allow this session" option; dangerous commands (rm, sudo, git push) always require explicit approval with no auto-allow option.
 
-Everything is allowed without prompts. Use with caution.`;
+### ${PERMISSION_MODE_CONFIG['allow-all'].displayName} (permissionMode: allow-all)
+
+Full autonomous mode. Everything is allowed without prompts - use when you trust the agent to execute the plan.
+
+| Operation | Allowed? | Notes |
+|-----------|----------|-------|
+| All operations | ✅ | No restrictions, no prompts |
+
+This mode is ideal after reviewing and accepting a plan, as it allows uninterrupted execution.
+
+## Planning (Universal)
+
+You can create structured plans at any time using the \`SubmitPlan\` tool - this is not restricted to any mode.
+
+### When to Use Plans
+
+Create a plan when:
+- The task has multiple complex steps
+- You want to get user approval before making changes
+- The user asks for a plan first
+
+### Creating a Plan
+
+1. Write your plan to a markdown file using the \`Write\` tool
+2. Call \`SubmitPlan\` with the file path
+3. Wait for user feedback before proceeding
+
+### Plan Format
+
+\`\`\`markdown
+# Plan Title
+
+## Summary
+Brief description of what this plan accomplishes.
+
+## Steps
+1. **Step description** - Details and approach
+2. **Another step** - More details
+3. ...
+\`\`\`
+
+### ${PERMISSION_MODE_CONFIG['safe'].displayName} → Implementation Workflow
+
+When in ${PERMISSION_MODE_CONFIG['safe'].displayName} mode and ready to implement:
+1. Write your plan to a markdown file in the plans folder
+2. Call \`SubmitPlan\` with the file path
+3. The user can click "Accept Plan" to exit ${PERMISSION_MODE_CONFIG['safe'].displayName} mode and begin implementation
+4. Once accepted, proceed with the implementation steps
+
+This is the recommended way to transition from exploration to implementation.`;
 }

@@ -10,8 +10,18 @@ import type { StoredAttachment } from '@craft-agent/core/types';
 
 /**
  * Todo state for sessions (user-controlled, never automatic)
+ *
+ * Dynamic status ID referencing workspace status config.
+ * Validated at runtime via validateSessionStatus().
+ * Falls back to 'todo' if status doesn't exist.
  */
-export type TodoState = 'todo' | 'in-progress' | 'needs-review' | 'done' | 'cancelled';
+export type TodoState = string;
+
+/**
+ * Built-in status IDs (for TypeScript consumers)
+ * These are the default statuses but users can add/remove custom ones
+ */
+export type BuiltInStatusId = 'todo' | 'in-progress' | 'needs-review' | 'done' | 'cancelled';
 
 /**
  * Session token usage tracking
@@ -36,7 +46,7 @@ export interface StoredMessage {
   timestamp?: number;
   toolName?: string;
   toolInput?: Record<string, unknown>;
-  toolStatus?: 'pending' | 'executing' | 'completed' | 'error';
+  toolStatus?: 'pending' | 'executing' | 'completed' | 'error' | 'backgrounded';
   toolDuration?: number;
   /** Tool intent description (from MCP _intent field) */
   toolIntent?: string;
@@ -61,6 +71,11 @@ export interface StoredMessage {
   errorCanRetry?: boolean;
   /** Whether this user message was sent with ultrathink (extended thinking) enabled */
   ultrathink?: boolean;
+  /** Background task fields */
+  taskId?: string;
+  shellId?: string;
+  elapsedSeconds?: number;
+  isBackground?: boolean;
 }
 
 /**

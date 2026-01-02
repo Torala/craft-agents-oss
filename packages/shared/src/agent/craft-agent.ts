@@ -1048,9 +1048,10 @@ export class CraftAgent {
         includePartialMessages: true,
         // Enable the full Claude Code toolset (includes AskUserQuestion)
         tools: { type: 'preset', preset: 'claude_code' },
-        // Note: permissionMode: 'plan' is "not currently supported" in SDK
-        // We enforce plan mode restrictions via PreToolUse hook instead
-        permissionMode: 'default',
+        // Bypass SDK's built-in permission system - we handle all permissions via PreToolUse hook
+        // This allows Safe Mode to properly allow read-only bash commands without SDK interference
+        permissionMode: 'bypassPermissions',
+        allowDangerouslySkipPermissions: true,
         // Use PreToolUse hook to intercept tool calls (plan mode blocking happens here)
         hooks: {
           PreToolUse: [{
@@ -1171,9 +1172,151 @@ export class CraftAgent {
                 }
               }
 
+              // ============================================================
+              // ASK MODE: Prompt for permission on dangerous operations
+              // In 'safe' mode, these are blocked by shouldAllowToolInMode above
+              // In 'allow-all' mode, permission checks are skipped entirely
+              // ============================================================
+
+              // Helper to request permission and wait for response
+              const requestPermission = async (
+                toolUseId: string,
+                toolName: string,
+                command: string,
+                baseCommand: string,
+                description: string
+              ): Promise<{ allowed: boolean }> => {
+                const requestId = `perm-${toolUseId}`;
+                debug(`[PreToolUse] Requesting permission for ${toolName}: ${command}`);
+
+                const permissionPromise = new Promise<boolean>((resolve) => {
+                  this.pendingPermissions.set(requestId, {
+                    resolve,
+                    toolName,
+                    command,
+                    baseCommand,
+                  });
+                });
+
+                if (this.onPermissionRequest) {
+                  this.onPermissionRequest({
+                    requestId,
+                    toolName,
+                    command,
+                    description,
+                  });
+                } else {
+                  this.pendingPermissions.delete(requestId);
+                  return { allowed: false };
+                }
+
+                const allowed = await permissionPromise;
+                return { allowed };
+              };
+
+              // For file write operations in 'ask' mode, prompt for permission
+              const fileWriteTools = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
+              if (fileWriteTools.has(input.tool_name) && permissionMode === 'ask') {
+                const toolInput = input.tool_input as Record<string, unknown>;
+                const filePath = (toolInput.file_path as string) || (toolInput.notebook_path as string) || 'unknown';
+
+                // Check if this tool type is already allowed for this session
+                if (this.alwaysAllowedCommands.has(input.tool_name)) {
+                  this.onDebug?.(`Auto-allowing "${input.tool_name}" (previously approved)`);
+                  return { continue: true };
+                }
+
+                const result = await requestPermission(
+                  input.tool_use_id,
+                  input.tool_name,
+                  filePath,
+                  input.tool_name,
+                  `${input.tool_name}: ${filePath}`
+                );
+
+                if (!result.allowed) {
+                  return {
+                    continue: false,
+                    decision: 'block' as const,
+                    reason: 'User denied permission',
+                  };
+                }
+              }
+
+              // For MCP mutation tools in 'ask' mode, prompt for permission
+              if (input.tool_name.startsWith('mcp__') && permissionMode === 'ask') {
+                // Check if this is a mutation tool by testing against safe mode's read-only patterns
+                const plansFolderPath = sessionId ? getSessionPlansPath(this.workspaceRootPath, sessionId) : undefined;
+                const safeModeResult = shouldAllowToolInMode(
+                  input.tool_name,
+                  input.tool_input,
+                  'safe',
+                  { plansFolderPath }
+                );
+
+                // If it would be blocked in safe mode, it's a mutation and needs permission
+                if (!safeModeResult.allowed) {
+                  const serverAndTool = input.tool_name.replace('mcp__', '').replace(/__/g, '/');
+
+                  // Check if this tool is already allowed for this session
+                  if (this.alwaysAllowedCommands.has(input.tool_name)) {
+                    this.onDebug?.(`Auto-allowing "${input.tool_name}" (previously approved)`);
+                    return { continue: true };
+                  }
+
+                  const result = await requestPermission(
+                    input.tool_use_id,
+                    'MCP Tool',
+                    serverAndTool,
+                    input.tool_name,
+                    `MCP: ${serverAndTool}`
+                  );
+
+                  if (!result.allowed) {
+                    return {
+                      continue: false,
+                      decision: 'block' as const,
+                      reason: 'User denied permission',
+                    };
+                  }
+                }
+              }
+
+              // For API mutation calls in 'ask' mode, prompt for permission
+              if (input.tool_name.startsWith('api_') && permissionMode === 'ask') {
+                const toolInput = input.tool_input as Record<string, unknown>;
+                const method = ((toolInput?.method as string) || 'GET').toUpperCase();
+                const path = toolInput?.path as string | undefined;
+
+                // Only prompt for mutation methods (not GET)
+                if (method !== 'GET') {
+                  const apiDescription = `${method} ${path || ''}`;
+
+                  // Check if this API pattern is already allowed
+                  if (this.alwaysAllowedCommands.has(apiDescription)) {
+                    this.onDebug?.(`Auto-allowing API "${apiDescription}" (previously approved)`);
+                    return { continue: true };
+                  }
+
+                  const result = await requestPermission(
+                    input.tool_use_id,
+                    'API Call',
+                    apiDescription,
+                    apiDescription,
+                    `API: ${apiDescription}`
+                  );
+
+                  if (!result.allowed) {
+                    return {
+                      continue: false,
+                      decision: 'block' as const,
+                      reason: 'User denied permission',
+                    };
+                  }
+                }
+              }
+
               // For Bash in 'ask' mode, check if we need permission
-              // In 'safe' mode, bash permission is handled by shouldAllowToolInMode above
-              // In 'allow-all' mode, skip permission checks entirely
               if (input.tool_name === 'Bash' && permissionMode === 'ask') {
                 // Extract command and base command
                 const command = typeof input.tool_input === 'object' && input.tool_input !== null
@@ -1520,7 +1663,9 @@ export class CraftAgent {
       //   (uses parentToolStack as fallback, but prefers event.parentToolUseId from here)
       //
       // ═══════════════════════════════════════════════════════════════════════════
-      const PARENT_TOOL_NAMES = ['Task', 'TaskOutput'];
+      // Only Task is a parent tool (spawns subagent children)
+      // TaskOutput just retrieves results from background tasks - it doesn't spawn children
+      const PARENT_TOOL_NAMES = ['Task'];
       const activeParentTools = new Set<string>();                    // Currently running parent tool IDs
       const parentToChildren = new Map<string, string[]>();           // parentId → [childIds...] (FIFO order)
       const childToParent = new Map<string, string>();                // childId → parentId (for hierarchy)
@@ -2363,6 +2508,58 @@ export class CraftAgent {
               parentToolUseId: message.parent_tool_use_id || undefined,
             });
 
+            // Detect background task start - Task tool with agent_id in result
+            if (toolUse?.name === 'Task' && !isError && resultStr) {
+              const agentIdMatch = resultStr.match(/agentId:\s*([a-zA-Z0-9_-]+)/);
+              if (agentIdMatch && agentIdMatch[1]) {
+                const taskId = agentIdMatch[1];
+                // Extract intent from tool input if available
+                const intentValue = toolUse.input._intent;
+                const event: AgentEvent = intentValue && typeof intentValue === 'string'
+                  ? {
+                      type: 'task_backgrounded',
+                      toolUseId,
+                      taskId,
+                      intent: intentValue,
+                      turnId: turnId || undefined,
+                    }
+                  : {
+                      type: 'task_backgrounded',
+                      toolUseId,
+                      taskId,
+                      turnId: turnId || undefined,
+                    };
+                events.push(event);
+              }
+            }
+
+            // Detect background shell start - Bash tool with shell_id in result
+            if (toolUse?.name === 'Bash' && !isError && resultStr) {
+              const shellIdMatch = resultStr.match(/shell_id:\s*([a-zA-Z0-9_-]+)/);
+              if (shellIdMatch && shellIdMatch[1]) {
+                const shellId = shellIdMatch[1];
+                // Extract intent from tool input if available
+                const intentValue = (typeof toolUse.input._intent === 'string' && toolUse.input._intent)
+                  || (typeof toolUse.input.description === 'string' && toolUse.input.description)
+                  || undefined;
+                const event: AgentEvent = intentValue
+                  ? {
+                      type: 'shell_backgrounded',
+                      toolUseId,
+                      shellId,
+                      intent: intentValue,
+                      turnId: turnId || undefined,
+                    }
+                  : {
+                      type: 'shell_backgrounded',
+                      toolUseId,
+                      shellId,
+                      turnId: turnId || undefined,
+                    };
+                events.push(event);
+              }
+            }
+
             pendingToolUses.delete(toolUseId);
             matchedToolIds.delete(toolUseId);
           }
@@ -2377,10 +2574,21 @@ export class CraftAgent {
           tool_use_id: string;
           tool_name: string;
           parent_tool_use_id: string | null;
+          elapsed_time_seconds?: number;
         };
 
         // Debug: log tool_progress structure
-        console.log(`[CraftAgent] tool_progress: tool=${progress.tool_name} (${progress.tool_use_id}), parent=${progress.parent_tool_use_id}`);
+        console.log(`[CraftAgent] tool_progress: tool=${progress.tool_name} (${progress.tool_use_id}), parent=${progress.parent_tool_use_id}, elapsed=${progress.elapsed_time_seconds}`);
+
+        // Forward elapsed time to UI for live progress updates
+        if (progress.elapsed_time_seconds !== undefined) {
+          events.push({
+            type: 'task_progress',
+            toolUseId: progress.tool_use_id,
+            elapsedSeconds: progress.elapsed_time_seconds,
+            turnId: turnId || undefined,
+          });
+        }
 
         // Check if this is a child tool we haven't seen yet
         if (!emittedToolStarts.has(progress.tool_use_id)) {

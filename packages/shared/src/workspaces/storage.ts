@@ -18,6 +18,7 @@ import {
 import { join } from 'path';
 import { homedir } from 'os';
 import { randomUUID } from 'crypto';
+import { expandPath, toPortablePath } from '../utils/paths.ts';
 import type {
   WorkspaceConfig,
   CreateWorkspaceInput,
@@ -94,7 +95,14 @@ export function loadWorkspaceConfig(rootPath: string): WorkspaceConfig | null {
   if (!existsSync(configPath)) return null;
 
   try {
-    return JSON.parse(readFileSync(configPath, 'utf-8'));
+    const config = JSON.parse(readFileSync(configPath, 'utf-8')) as WorkspaceConfig;
+
+    // Expand path variables in defaults for portability
+    if (config.defaults?.workingDirectory) {
+      config.defaults.workingDirectory = expandPath(config.defaults.workingDirectory);
+    }
+
+    return config;
   } catch {
     return null;
   }
@@ -109,8 +117,20 @@ export function saveWorkspaceConfig(rootPath: string, config: WorkspaceConfig): 
     mkdirSync(rootPath, { recursive: true });
   }
 
-  config.updatedAt = Date.now();
-  writeFileSync(join(rootPath, 'config.json'), JSON.stringify(config, null, 2));
+  // Convert paths to portable form for cross-machine compatibility
+  const storageConfig: WorkspaceConfig = {
+    ...config,
+    updatedAt: Date.now(),
+  };
+
+  if (storageConfig.defaults?.workingDirectory) {
+    storageConfig.defaults = {
+      ...storageConfig.defaults,
+      workingDirectory: toPortablePath(storageConfig.defaults.workingDirectory),
+    };
+  }
+
+  writeFileSync(join(rootPath, 'config.json'), JSON.stringify(storageConfig, null, 2));
 }
 
 // ============================================================

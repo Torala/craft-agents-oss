@@ -901,6 +901,49 @@ export function useAgent(config: CraftAgentConfig): UseAgentResult {
             // If ref is set, error was already set in text_complete handler
             break;
 
+          case 'task_backgrounded':
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === `tool-${event.toolUseId}`
+                  ? {
+                      ...m,
+                      toolStatus: 'backgrounded',
+                      taskId: event.taskId,
+                      isBackground: true,
+                    }
+                  : m
+              )
+            );
+            break;
+
+          case 'shell_backgrounded':
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === `tool-${event.toolUseId}`
+                  ? {
+                      ...m,
+                      toolStatus: 'backgrounded',
+                      shellId: event.shellId,
+                      isBackground: true,
+                    }
+                  : m
+              )
+            );
+            break;
+
+          case 'task_progress':
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === `tool-${event.toolUseId}`
+                  ? {
+                      ...m,
+                      elapsedSeconds: event.elapsedSeconds,
+                    }
+                  : m
+              )
+            );
+            break;
+
           case 'complete':
             if (event.usage) {
               setTokenUsage((prev) => ({

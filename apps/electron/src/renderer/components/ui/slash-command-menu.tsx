@@ -1,8 +1,8 @@
 import * as React from 'react'
 import { Command as CommandPrimitive } from 'cmdk'
-import { Brain, ListTodo, Info, ShieldOff, Check } from 'lucide-react'
+import { Brain, Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { PERMISSION_MODE_CONFIG } from '@craft-agent/shared/agent/modes'
+import { PERMISSION_MODE_CONFIG, PERMISSION_MODE_ORDER, type PermissionMode } from '@craft-agent/shared/agent/modes'
 
 // ============================================================================
 // Types
@@ -16,44 +16,63 @@ export interface SlashCommand {
   description: string
   icon: React.ReactNode
   shortcut?: string
-  activeStyle?: string
+  /** Hex color for active state (derived from config) */
+  color?: string
+}
+
+// ============================================================================
+// Permission Mode Icon Component
+// ============================================================================
+
+interface PermissionModeIconProps {
+  mode: PermissionMode
+  className?: string
+}
+
+function PermissionModeIcon({ mode, className }: PermissionModeIconProps) {
+  const config = PERMISSION_MODE_CONFIG[mode]
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+    >
+      <path d={config.svgPath} />
+    </svg>
+  )
 }
 
 // ============================================================================
 // Default Commands
 // ============================================================================
 
-// Icon size constant (used in DEFAULT_SLASH_COMMANDS below)
+// Icon size constant
 const MENU_ICON_SIZE = 'h-3.5 w-3.5'
 
+// Generate permission mode commands from centralized config
+const permissionModeCommands: SlashCommand[] = PERMISSION_MODE_ORDER.map(mode => {
+  const config = PERMISSION_MODE_CONFIG[mode]
+  return {
+    id: mode as SlashCommandId,
+    label: config.displayName,
+    description: config.description,
+    icon: <PermissionModeIcon mode={mode} className={MENU_ICON_SIZE} />,
+    color: config.colors.primary,
+  }
+})
+
 export const DEFAULT_SLASH_COMMANDS: SlashCommand[] = [
-  {
-    id: 'safe',
-    label: PERMISSION_MODE_CONFIG.safe.displayName,
-    description: PERMISSION_MODE_CONFIG.safe.description,
-    icon: <ListTodo className={MENU_ICON_SIZE} />,
-    activeStyle: 'bg-green-500/10 text-green-500 border-green-500/30',
-  },
-  {
-    id: 'ask',
-    label: PERMISSION_MODE_CONFIG.ask.displayName,
-    description: PERMISSION_MODE_CONFIG.ask.description,
-    icon: <Info className={MENU_ICON_SIZE} />,
-    activeStyle: 'bg-amber-500/10 text-amber-500 border-amber-500/30',
-  },
-  {
-    id: 'allow-all',
-    label: PERMISSION_MODE_CONFIG['allow-all'].displayName,
-    description: PERMISSION_MODE_CONFIG['allow-all'].description,
-    icon: <ShieldOff className={MENU_ICON_SIZE} />,
-    activeStyle: 'bg-red-500/10 text-red-500 border-red-500/30',
-  },
+  ...permissionModeCommands,
   {
     id: 'ultrathink',
     label: 'Ultrathink',
     description: 'Extended reasoning for complex problems',
     icon: <Brain className={MENU_ICON_SIZE} />,
-    activeStyle: 'bg-gradient-to-r from-violet-500/20 via-fuchsia-500/20 to-pink-500/20 text-fuchsia-500 border-fuchsia-500/30',
+    color: '#d946ef', // fuchsia-500
   },
 ]
 
@@ -65,7 +84,6 @@ const MENU_CONTAINER_STYLE = 'min-w-[200px] overflow-hidden rounded-[8px] bg-bac
 const MENU_LIST_STYLE = 'max-h-[240px] overflow-y-auto p-1'
 const MENU_ITEM_STYLE = 'flex cursor-pointer select-none items-center gap-3 rounded-[6px] px-3 py-2 text-[13px]'
 const MENU_ITEM_SELECTED = 'bg-accent text-accent-foreground'
-const MENU_ITEM_ACTIVE = 'bg-accent/40'
 
 // ============================================================================
 // Shared: Filter commands utility
@@ -124,6 +142,9 @@ export function SlashCommandMenu({
   const inputRef = React.useRef<HTMLInputElement>(null)
   const filteredCommands = filterCommands(commands, filter)
 
+  // Default to the first active command, or first command if none active
+  const defaultValue = activeCommands[0] ?? filteredCommands[0]?.id
+
   React.useEffect(() => {
     if (showFilter && inputRef.current) {
       inputRef.current.focus()
@@ -136,6 +157,7 @@ export function SlashCommandMenu({
     <CommandPrimitive
       className={cn(MENU_CONTAINER_STYLE, className)}
       shouldFilter={false}
+      defaultValue={defaultValue}
     >
       {showFilter && (
         <div className="border-b border-border/50 px-3 py-2">
@@ -163,8 +185,9 @@ export function SlashCommandMenu({
                 onSelect={() => onSelect(cmd.id)}
                 className={cn(
                   MENU_ITEM_STYLE,
-                  'outline-none data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground',
-                  isActive && MENU_ITEM_ACTIVE
+                  'outline-none',
+                  // Hover state uses accent colors
+                  'data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground'
                 )}
               >
                 <CommandItemContent command={cmd} isActive={isActive} />
@@ -286,8 +309,8 @@ export function InlineSlashCommand({
               onMouseEnter={() => setSelectedIndex(index)}
               className={cn(
                 MENU_ITEM_STYLE,
-                isSelected && MENU_ITEM_SELECTED,
-                isActive && !isSelected && MENU_ITEM_ACTIVE
+                // Hover/selection state
+                isSelected && MENU_ITEM_SELECTED
               )}
             >
               <CommandItemContent command={cmd} isActive={isActive} />

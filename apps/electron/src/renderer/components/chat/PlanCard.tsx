@@ -68,7 +68,7 @@ export function PlanCard({
   const MAX_HEIGHT = 540
 
   return (
-    <div className="bg-white shadow-minimal rounded-[8px] overflow-hidden">
+    <div className="bg-background shadow-minimal rounded-[8px] overflow-hidden">
       {/* Header with plan indicator */}
       <div
         className={cn(

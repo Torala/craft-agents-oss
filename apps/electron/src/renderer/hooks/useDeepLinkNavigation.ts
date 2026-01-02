@@ -39,7 +39,6 @@ export function useDeepLinkNavigation({
     openShortcutsTab,
     openPreferencesTab,
     openAgentInfoTab,
-    openAgentSetupTab,
     openFileTab,
     openBrowserTab,
   } = useTabs()
@@ -83,13 +82,6 @@ export function useDeepLinkNavigation({
           if (nav.tabParams?.id) {
             // Agent name will be updated by the tab panel
             openAgentInfoTab(nav.tabParams.id, workspaceId, 'Agent')
-          }
-          break
-
-        case 'agent-setup':
-          if (nav.tabParams?.id) {
-            // Agent name will be updated by the tab panel
-            openAgentSetupTab(nav.tabParams.id, workspaceId, 'Agent')
           }
           break
 
@@ -138,7 +130,6 @@ export function useDeepLinkNavigation({
     openShortcutsTab,
     openPreferencesTab,
     openAgentInfoTab,
-    openAgentSetupTab,
     openFileTab,
     openBrowserTab,
     onCreateSession,

@@ -45,7 +45,6 @@ export default function AgentInfoTabPanel({ tab }: AgentInfoTabPanelProps) {
 
   // Get agent state to determine if agent is activated
   const agentState = useAgentState(workspaceId, agentId)
-  const { openAgentSetupTab } = useTabs()
 
   // Banner state from centralized hook (single source of truth)
   const bannerState = useMemo((): { state: BannerState; reason?: string } => ({
@@ -53,10 +52,11 @@ export default function AgentInfoTabPanel({ tab }: AgentInfoTabPanelProps) {
     reason: agentState.bannerReason ?? undefined
   }), [agentState.bannerState, agentState.bannerReason])
 
-  // Handle banner action - open setup tab
+  // Handle banner action - no-op since agent setup flow was removed
   const handleBannerAction = useCallback(() => {
-    openAgentSetupTab(agentId, workspaceId, agentInfoTab.label)
-  }, [agentId, workspaceId, agentInfoTab.label, openAgentSetupTab])
+    // Agent setup wizard has been removed
+    // Banner will still show auth status, but no action available
+  }, [])
 
   // Always try to fetch definition and auth status (may return cached/partial data)
   useEffect(() => {

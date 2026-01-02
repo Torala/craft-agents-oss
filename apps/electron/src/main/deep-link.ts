@@ -9,7 +9,7 @@
  *
  * Examples:
  *   craftagents://workspace/ws123/tab/chat/session456
- *   craftagents://workspace/ws123/tab/agent-setup/my-agent
+ *   craftagents://workspace/ws123/tab/agent-info/my-agent
  *   craftagents://workspace/ws123/tab/settings
  *   craftagents://workspace/ws123/tab/file?path=/path/to/file.txt
  *   craftagents://workspace/ws123/action/new-chat?agentId=my-agent

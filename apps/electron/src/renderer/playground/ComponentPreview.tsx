@@ -1,6 +1,7 @@
 import * as React from 'react'
 import { cn } from '@/lib/utils'
 import type { ComponentEntry } from './registry'
+import { TooltipProvider } from '@/components/ui/tooltip'
 
 type BackgroundStyle = 'default' | 'light' | 'dark' | 'checkered'
 
@@ -114,8 +115,9 @@ export function ComponentPreview({ component, props }: ComponentPreviewProps) {
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-        <div>
+      <div className="border-b border-border">
+        {/* Title and description row */}
+        <div className="px-4 pt-3 pb-2">
           <h2 className="text-lg font-semibold text-foreground font-sans">
             {component.name}
           </h2>
@@ -124,40 +126,43 @@ export function ComponentPreview({ component, props }: ComponentPreviewProps) {
           </p>
         </div>
 
-        <div className="flex items-center gap-4">
-          {/* Size display */}
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground font-mono">
-              {Math.round(size.width)} × {Math.round(size.height)}
-            </span>
-            <button
-              onClick={() => {
-                setSize({ width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT })
-                localStorage.removeItem(STORAGE_KEY)
-              }}
-              className="px-2 py-1 rounded text-xs text-muted-foreground hover:text-foreground hover:bg-foreground/5 transition-colors"
-            >
-              Reset
-            </button>
-          </div>
-
-          {/* Background style selector */}
-          <div className="flex items-center gap-1">
-            <span className="text-xs text-muted-foreground mr-2">Background:</span>
-            {(['default', 'light', 'dark', 'checkered'] as BackgroundStyle[]).map(style => (
+        {/* Controls row */}
+        <div className="flex items-center justify-between px-4 pb-3">
+          <div className="flex items-center gap-4">
+            {/* Size display */}
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground font-mono">
+                {Math.round(size.width)} × {Math.round(size.height)}
+              </span>
               <button
-                key={style}
-                onClick={() => setBgStyle(style)}
-                className={cn(
-                  'px-2 py-1 rounded text-xs transition-colors',
-                  bgStyle === style
-                    ? 'bg-foreground/10 text-foreground'
-                    : 'text-muted-foreground hover:text-foreground'
-                )}
+                onClick={() => {
+                  setSize({ width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT })
+                  localStorage.removeItem(STORAGE_KEY)
+                }}
+                className="px-2 py-1 rounded text-xs text-muted-foreground hover:text-foreground hover:bg-foreground/5 transition-colors"
               >
-                {style.charAt(0).toUpperCase() + style.slice(1)}
+                Reset
               </button>
-            ))}
+            </div>
+
+            {/* Background style selector */}
+            <div className="flex items-center gap-1">
+              <span className="text-xs text-muted-foreground mr-2">Background:</span>
+              {(['default', 'light', 'dark', 'checkered'] as BackgroundStyle[]).map(style => (
+                <button
+                  key={style}
+                  onClick={() => setBgStyle(style)}
+                  className={cn(
+                    'px-2 py-1 rounded text-xs transition-colors',
+                    bgStyle === style
+                      ? 'bg-foreground/10 text-foreground'
+                      : 'text-muted-foreground hover:text-foreground'
+                  )}
+                >
+                  {style.charAt(0).toUpperCase() + style.slice(1)}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </div>
@@ -179,9 +184,11 @@ export function ComponentPreview({ component, props }: ComponentPreviewProps) {
               bgClasses[bgStyle]
             )}
           >
-            <Wrapper>
-              <Component {...mergedProps} />
-            </Wrapper>
+            <TooltipProvider>
+              <Wrapper>
+                <Component {...mergedProps} />
+              </Wrapper>
+            </TooltipProvider>
           </div>
 
           {/* Right resize handle */}

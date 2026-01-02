@@ -4,28 +4,23 @@ import { AttachmentPreview } from '@/components/chat/AttachmentPreview'
 import { PermissionBanner } from '@/components/chat/PermissionBanner'
 import { SetupAuthBanner } from '@/components/chat/SetupAuthBanner'
 import { TurnCard, type ActivityItem } from '@/components/chat/TurnCard'
+import type { BackgroundTask } from '@/components/chat/ActiveTasksBar'
+import { ActiveOptionBadges } from '@/components/chat/ActiveOptionBadges'
+import { InputContainer } from '@/components/chat/input'
+import type { StructuredResponse } from '@/components/chat/input/structured/types'
 import { Button } from '@/components/ui/button'
 import { motion } from 'motion/react'
 import { ArrowUp, Paperclip, ChevronDown, Sparkles } from 'lucide-react'
 import type { FileAttachment, PermissionRequest } from '../../../shared/types'
-
-// Sample file attachments for testing
-const sampleImageAttachment: FileAttachment = {
-  type: 'image',
-  path: '/Users/test/screenshot.png',
-  name: 'screenshot.png',
-  mimeType: 'image/png',
-  size: 245000,
-  base64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
-}
-
-const samplePdfAttachment: FileAttachment = {
-  type: 'pdf',
-  path: '/Users/test/report.pdf',
-  name: 'quarterly-report-2024.pdf',
-  mimeType: 'application/pdf',
-  size: 1024000,
-}
+import { cn } from '@/lib/utils'
+import {
+  ensureMockElectronAPI,
+  mockInputCallbacks,
+  mockAttachmentCallbacks,
+  mockSources,
+  sampleImageAttachment,
+  samplePdfAttachment,
+} from '../mock-utils'
 
 const sampleCodeAttachment: FileAttachment = {
   type: 'text',
@@ -75,6 +70,62 @@ docker push registry.example.com/myapp:latest
 kubectl apply -f k8s/deployment.yaml
 kubectl rollout status deployment/myapp`,
 }
+
+// Sample background tasks
+const sampleBackgroundTasks: BackgroundTask[] = [
+  {
+    id: 'task-abc123',
+    type: 'agent',
+    toolUseId: 'tool-1',
+    startTime: Date.now() - 45000, // 45 seconds ago
+    elapsedSeconds: 45,
+    intent: 'Explore codebase structure',
+  },
+  {
+    id: 'shell-xyz456',
+    type: 'shell',
+    toolUseId: 'tool-2',
+    startTime: Date.now() - 154000, // 2m 34s ago
+    elapsedSeconds: 154,
+  },
+]
+
+const singleBackgroundTask: BackgroundTask[] = [
+  {
+    id: 'task-123456',
+    type: 'agent',
+    toolUseId: 'tool-single',
+    startTime: Date.now() - 23000,
+    elapsedSeconds: 23,
+    intent: 'Search for TypeScript files',
+  },
+]
+
+const longRunningTasks: BackgroundTask[] = [
+  {
+    id: 'task-long-1',
+    type: 'agent',
+    toolUseId: 'tool-long-1',
+    startTime: Date.now() - 3723000, // 1h 2m 3s
+    elapsedSeconds: 3723,
+    intent: 'Refactor authentication system',
+  },
+  {
+    id: 'shell-long-2',
+    type: 'shell',
+    toolUseId: 'tool-long-2',
+    startTime: Date.now() - 245000, // 4m 5s
+    elapsedSeconds: 245,
+  },
+  {
+    id: 'task-long-3',
+    type: 'agent',
+    toolUseId: 'tool-long-3',
+    startTime: Date.now() - 12000, // 12s
+    elapsedSeconds: 12,
+    intent: 'Run tests',
+  },
+]
 
 // ============================================================================
 // Sample Nested Tool Activities (Task subagent with child tools)
@@ -391,6 +442,83 @@ const deepNestedActivities: ActivityItem[] = [
 ]
 
 /**
+ * Contextual wrapper for ActiveTasksBar showing it with messages and input
+ */
+interface ActiveTasksBarContextProps {
+  tasks?: BackgroundTask[]
+}
+
+function ActiveTasksBarContext({ tasks = sampleBackgroundTasks }: ActiveTasksBarContextProps) {
+  const [permissionMode, setPermissionMode] = React.useState<'safe' | 'ask' | 'allow-all'>('ask')
+  const [ultrathinkEnabled, setUltrathinkEnabled] = React.useState(false)
+
+  // Inject mock electronAPI for file attachments
+  React.useEffect(() => {
+    ensureMockElectronAPI()
+  }, [])
+
+  return (
+    <div className="w-full max-w-[960px] h-full flex flex-col">
+      {/* Sample messages for context - matches ChatDisplay padding */}
+      <div className="flex-1 overflow-auto px-5 py-8 space-y-2.5">
+        {/* User message */}
+        <div className="pt-3 flex justify-end">
+          <div className="max-w-[80%] rounded-2xl bg-primary text-primary-foreground px-4 py-2">
+            <p className="text-sm">Can you explore the codebase structure and analyze the API endpoints?</p>
+          </div>
+        </div>
+
+        {/* Assistant message */}
+        <div className="flex justify-start">
+          <div className="max-w-[80%] rounded-2xl bg-muted px-4 py-2">
+            <p className="text-sm">I'll explore the codebase and analyze the API endpoints. Let me start by running a background task to search for API route definitions...</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Input area - matches ChatDisplay padding */}
+      <div className="mx-auto w-full px-4 pb-4 mt-1" style={{ maxWidth: 'var(--content-max-width, 960px)' }}>
+        {/* Active option badges and tasks */}
+        <ActiveOptionBadges
+          ultrathinkEnabled={ultrathinkEnabled}
+          onUltrathinkChange={setUltrathinkEnabled}
+          permissionMode={permissionMode}
+          onPermissionModeChange={setPermissionMode}
+          tasks={tasks}
+          sessionId="playground-session"
+          onKillTask={(taskId) => console.log('[Playground] Kill task:', taskId)}
+          variant="dropdown"
+        />
+
+        {/* Real InputContainer */}
+        <InputContainer
+          placeholder="Message Craft Agent..."
+          disabled={false}
+          isProcessing={false}
+          currentModel="claude-sonnet-4-5-20250929"
+          permissionMode={permissionMode}
+          onPermissionModeChange={setPermissionMode}
+          ultrathinkEnabled={ultrathinkEnabled}
+          onUltrathinkChange={setUltrathinkEnabled}
+          sources={mockSources}
+          enabledSourceSlugs={['github-api', 'local-files']}
+          workingDirectory="/Users/demo/projects/craft-agent"
+          sessionId="playground-session"
+          onSubmit={mockInputCallbacks.onSubmit}
+          onModelChange={mockInputCallbacks.onModelChange}
+          onInputChange={mockInputCallbacks.onInputChange}
+          onHeightChange={mockInputCallbacks.onHeightChange}
+          onFocusChange={mockInputCallbacks.onFocusChange}
+          onSourcesChange={mockInputCallbacks.onSourcesChange}
+          onWorkingDirectoryChange={mockInputCallbacks.onWorkingDirectoryChange}
+          onStop={mockInputCallbacks.onStop}
+        />
+      </div>
+    </div>
+  )
+}
+
+/**
  * Interactive test component for Permission UI ↔ Input View animation transitions
  * Allows toggling between states to inspect the animate in/out behavior
  */
@@ -402,7 +530,8 @@ interface PermissionInputToggleProps {
 
 function PermissionInputToggle({ autoToggle = false, autoToggleInterval = 3000, useLongCommand = false }: PermissionInputToggleProps) {
   const [showPermission, setShowPermission] = React.useState(false)
-  const [input, setInput] = React.useState('')
+  const [permissionMode, setPermissionMode] = React.useState<'safe' | 'ask' | 'allow-all'>('ask')
+  const [ultrathinkEnabled, setUltrathinkEnabled] = React.useState(false)
 
   const permissionRequest = useLongCommand ? veryLongPermissionRequest : samplePermissionRequest
 
@@ -415,10 +544,21 @@ function PermissionInputToggle({ autoToggle = false, autoToggleInterval = 3000, 
     return () => clearInterval(interval)
   }, [autoToggle, autoToggleInterval])
 
-  const handlePermissionResponse = (allowed: boolean, alwaysAllow: boolean) => {
-    console.log('[Playground] Permission response:', { allowed, alwaysAllow })
+  // Inject mock electronAPI for file attachments
+  React.useEffect(() => {
+    ensureMockElectronAPI()
+  }, [])
+
+  const handlePermissionResponse = (response: StructuredResponse) => {
+    console.log('[Playground] Structured response:', response)
     setShowPermission(false)
   }
+
+  // Build structuredInput state for real InputContainer
+  const structuredInput = showPermission ? {
+    type: 'permission' as const,
+    data: permissionRequest,
+  } : undefined
 
   return (
     <div className="w-full max-w-[960px] h-full flex flex-col px-4 pb-4">
@@ -450,88 +590,40 @@ function PermissionInputToggle({ autoToggle = false, autoToggleInterval = 3000, 
         </span>
       </div>
 
-      {/* Animated container - mimics ChatDisplay input area */}
-      <div className="relative">
-        {/* Permission banner - overlays input, anchored to bottom */}
-        <motion.div
-          initial={false}
-          animate={{
-            opacity: showPermission ? 1 : 0,
-          }}
-          transition={{
-            duration: 0.2,
-            ease: [0.4, 0, 0.2, 1],
-          }}
-          className="absolute inset-x-0 bottom-0 z-10"
-          style={{ pointerEvents: showPermission ? 'auto' : 'none' }}
-        >
-          <PermissionBanner
-            request={permissionRequest}
-            onRespond={handlePermissionResponse}
-          />
-        </motion.div>
+      {/* Active option badges */}
+      <ActiveOptionBadges
+        ultrathinkEnabled={ultrathinkEnabled}
+        onUltrathinkChange={setUltrathinkEnabled}
+        permissionMode={permissionMode}
+        onPermissionModeChange={setPermissionMode}
+        variant="dropdown"
+      />
 
-        {/* Input form - always rendered, fades when permission shows */}
-        <motion.form
-          initial={false}
-          animate={{ opacity: showPermission ? 0 : 1 }}
-          transition={{
-            duration: 0.2,
-            ease: [0.4, 0, 0.2, 1],
-          }}
-          onSubmit={(e: React.FormEvent) => {
-            e.preventDefault()
-            console.log('[Playground] Submit:', input)
-          }}
-          style={{ pointerEvents: showPermission ? 'none' : 'auto' }}
-        >
-          <div className="rounded-[8px] bg-background overflow-hidden shadow-middle border border-border/50">
-            {/* Textarea - mimics actual input */}
-            <textarea
-              className="w-full min-h-[100px] pl-5 pr-4 pt-4 pb-3 bg-transparent outline-none text-sm placeholder:text-muted-foreground resize-none focus-visible:ring-0"
-              placeholder="Message Craft Agent..."
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              rows={3}
-              disabled={showPermission}
-            />
-
-            {/* Bottom Row: Attach, Model selector, Send */}
-            <div className="flex items-center gap-1 px-2 py-2 border-t border-border/50">
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7 shrink-0"
-                disabled={showPermission}
-              >
-                <Paperclip className="h-4 w-4" />
-              </Button>
-
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 gap-1 text-xs shrink-0 hover:bg-foreground/5"
-                disabled={showPermission}
-              >
-                Sonnet
-                <ChevronDown className="h-3 w-3 opacity-50" />
-              </Button>
-
-              <div className="flex-1" />
-
-              <Button
-                type="submit"
-                size="icon"
-                className="h-7 w-7 rounded-full shrink-0"
-                disabled={!input.trim() || showPermission}
-              >
-                <ArrowUp className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-        </motion.form>
-      </div>
+      {/* Real InputContainer - handles animation automatically */}
+      <InputContainer
+        placeholder="Message Craft Agent..."
+        disabled={false}
+        isProcessing={false}
+        currentModel="claude-sonnet-4-5-20250929"
+        permissionMode={permissionMode}
+        onPermissionModeChange={setPermissionMode}
+        ultrathinkEnabled={ultrathinkEnabled}
+        onUltrathinkChange={setUltrathinkEnabled}
+        sources={mockSources}
+        enabledSourceSlugs={['github-api', 'local-files']}
+        workingDirectory="/Users/demo/projects/craft-agent"
+        sessionId="playground-session"
+        structuredInput={structuredInput}
+        onStructuredResponse={handlePermissionResponse}
+        onSubmit={mockInputCallbacks.onSubmit}
+        onModelChange={mockInputCallbacks.onModelChange}
+        onInputChange={mockInputCallbacks.onInputChange}
+        onHeightChange={mockInputCallbacks.onHeightChange}
+        onFocusChange={mockInputCallbacks.onFocusChange}
+        onSourcesChange={mockInputCallbacks.onSourcesChange}
+        onWorkingDirectoryChange={mockInputCallbacks.onWorkingDirectoryChange}
+        onStop={mockInputCallbacks.onStop}
+      />
     </div>
   )
 }
@@ -567,7 +659,7 @@ export const chatComponents: ComponentEntry[] = [
     ],
     mockData: () => ({
       attachments: [sampleImageAttachment, samplePdfAttachment],
-      onRemove: (index: number) => console.log('[Playground] Remove attachment:', index),
+      onRemove: mockAttachmentCallbacks.onRemove,
     }),
   },
   {
@@ -632,6 +724,65 @@ export const chatComponents: ComponentEntry[] = [
     }),
   },
   {
+    id: 'active-option-badges',
+    name: 'ActiveOptionBadges',
+    category: 'Chat',
+    description: 'Shows active options (ultrathink, permission mode) and background tasks as badge pills above chat input',
+    component: ActiveOptionBadges,
+    props: [
+      {
+        name: 'ultrathinkEnabled',
+        description: 'Show ultrathink badge',
+        control: { type: 'boolean' },
+        defaultValue: false,
+      },
+      {
+        name: 'permissionMode',
+        description: 'Current permission mode',
+        control: {
+          type: 'select',
+          options: [
+            { label: 'Safe Mode', value: 'safe' },
+            { label: 'Ask Permission', value: 'ask' },
+            { label: 'Allow All', value: 'allow-all' },
+          ],
+        },
+        defaultValue: 'ask',
+      },
+      {
+        name: 'variant',
+        description: 'Interaction variant',
+        control: {
+          type: 'select',
+          options: [
+            { label: 'Dropdown', value: 'dropdown' },
+            { label: 'Cycle', value: 'cycle' },
+          ],
+        },
+        defaultValue: 'dropdown',
+      },
+    ],
+    variants: [
+      { name: 'Ultrathink Only', props: { ultrathinkEnabled: true, permissionMode: 'ask', tasks: [], sessionId: 'session-1' } },
+      { name: 'Permission Mode (Ask)', props: { ultrathinkEnabled: false, permissionMode: 'ask', tasks: [], sessionId: 'session-1' } },
+      { name: 'Permission Mode (Safe)', props: { ultrathinkEnabled: false, permissionMode: 'safe', tasks: [], sessionId: 'session-1' } },
+      { name: 'Permission Mode (Allow All)', props: { ultrathinkEnabled: false, permissionMode: 'allow-all', tasks: [], sessionId: 'session-1' } },
+      { name: 'Single Task', props: { ultrathinkEnabled: false, permissionMode: 'ask', tasks: singleBackgroundTask, sessionId: 'session-1' } },
+      { name: 'Multiple Tasks', props: { ultrathinkEnabled: false, permissionMode: 'ask', tasks: sampleBackgroundTasks, sessionId: 'session-1' } },
+      { name: 'Long Running Tasks', props: { ultrathinkEnabled: false, permissionMode: 'ask', tasks: longRunningTasks, sessionId: 'session-1' } },
+      { name: 'All Active (Everything)', props: { ultrathinkEnabled: true, permissionMode: 'ask', tasks: sampleBackgroundTasks, sessionId: 'session-1' } },
+      { name: 'Tasks in Safe Mode', props: { ultrathinkEnabled: false, permissionMode: 'safe', tasks: sampleBackgroundTasks, sessionId: 'session-1' } },
+      { name: 'Cycle Variant', props: { ultrathinkEnabled: false, permissionMode: 'ask', tasks: sampleBackgroundTasks, variant: 'cycle', sessionId: 'session-1' } },
+    ],
+    mockData: () => ({
+      tasks: sampleBackgroundTasks,
+      sessionId: 'session-playground',
+      onUltrathinkChange: (enabled: boolean) => console.log('[Playground] Ultrathink changed:', enabled),
+      onPermissionModeChange: (mode: string) => console.log('[Playground] Permission mode changed:', mode),
+      onKillTask: (taskId: string) => console.log('[Playground] Kill task:', taskId),
+    }),
+  },
+  {
     id: 'permission-input-toggle',
     name: 'Permission ↔ Input Toggle',
     category: 'Chat',
@@ -667,7 +818,7 @@ export const chatComponents: ComponentEntry[] = [
   {
     id: 'turn-card-flat',
     name: 'TurnCard (Flat Tools)',
-    category: 'Chat',
+    category: 'Turn Cards',
     description: 'TurnCard with flat tool hierarchy - no nesting, all tools at root level',
     component: TurnCard,
     props: [],
@@ -684,7 +835,7 @@ export const chatComponents: ComponentEntry[] = [
   {
     id: 'turn-card-nested-complete',
     name: 'TurnCard (Nested - Complete)',
-    category: 'Chat',
+    category: 'Turn Cards',
     description: 'TurnCard showing Task subagent with completed child tools - vertical line tree view',
     component: TurnCard,
     props: [],
@@ -701,7 +852,7 @@ export const chatComponents: ComponentEntry[] = [
   {
     id: 'turn-card-nested-progress',
     name: 'TurnCard (Nested - In Progress)',
-    category: 'Chat',
+    category: 'Turn Cards',
     description: 'TurnCard showing Task subagent with child tools still running',
     component: TurnCard,
     props: [],
@@ -717,7 +868,7 @@ export const chatComponents: ComponentEntry[] = [
   {
     id: 'turn-card-multi-task',
     name: 'TurnCard (Multiple Tasks)',
-    category: 'Chat',
+    category: 'Turn Cards',
     description: 'TurnCard showing multiple sequential Task subagents, each with their own child tools',
     component: TurnCard,
     props: [],
@@ -734,7 +885,7 @@ export const chatComponents: ComponentEntry[] = [
   {
     id: 'turn-card-deep-nested',
     name: 'TurnCard (Deep Nesting)',
-    category: 'Chat',
+    category: 'Turn Cards',
     description: 'TurnCard showing 2+ levels of nesting - Task containing another Task with tools',
     component: TurnCard,
     props: [],
@@ -747,5 +898,135 @@ export const chatComponents: ComponentEntry[] = [
       isStreaming: false,
       isComplete: true,
     }),
+  },
+  {
+    id: 'active-tasks-bar-context',
+    name: 'Active Tasks & Badges',
+    category: 'Chat',
+    description: 'Integrated display of option badges (ultrathink, permission mode) and background tasks in a horizontally scrollable row. Shows full chat context with messages above and input below.',
+    component: ActiveTasksBarContext,
+    layout: 'full',
+    props: [],
+    variants: [
+      { name: 'With Multiple Tasks', props: { tasks: sampleBackgroundTasks } },
+      { name: 'With Single Task', props: { tasks: singleBackgroundTask } },
+      { name: 'With Long Running Tasks', props: { tasks: longRunningTasks } },
+      { name: 'Empty (Hidden)', props: { tasks: [] } },
+    ],
+    mockData: () => ({
+      tasks: sampleBackgroundTasks,
+    }),
+  },
+  {
+    id: 'input-container',
+    name: 'InputContainer',
+    category: 'Chat Inputs',
+    description: 'Full-featured chat input with attachments, model selector, slash commands, permission mode, sources, and working directory',
+    component: InputContainer,
+    layout: 'full',
+    props: [
+      {
+        name: 'disabled',
+        description: 'Disable all inputs',
+        control: { type: 'boolean' },
+        defaultValue: false,
+      },
+      {
+        name: 'isProcessing',
+        description: 'Show processing state (disables send, shows stop)',
+        control: { type: 'boolean' },
+        defaultValue: false,
+      },
+      {
+        name: 'placeholder',
+        description: 'Textarea placeholder text',
+        control: { type: 'string', placeholder: 'Message...' },
+        defaultValue: 'Message Craft Agent...',
+      },
+      {
+        name: 'currentModel',
+        description: 'Current selected model',
+        control: {
+          type: 'select',
+          options: [
+            { label: 'Sonnet 4.5', value: 'claude-sonnet-4-5-20250929' },
+            { label: 'Opus 4.5', value: 'claude-opus-4-5-20251101' },
+            { label: 'Haiku 3.5', value: 'claude-3-5-haiku-20241022' },
+          ],
+        },
+        defaultValue: 'claude-sonnet-4-5-20250929',
+      },
+      {
+        name: 'permissionMode',
+        description: 'Permission mode badge',
+        control: {
+          type: 'select',
+          options: [
+            { label: 'Safe (read-only)', value: 'safe' },
+            { label: 'Ask (prompt)', value: 'ask' },
+            { label: 'Allow All', value: 'allow-all' },
+          ],
+        },
+        defaultValue: 'ask',
+      },
+      {
+        name: 'ultrathinkEnabled',
+        description: 'Show ultrathink toggle',
+        control: { type: 'boolean' },
+        defaultValue: false,
+      },
+      {
+        name: 'workingDirectory',
+        description: 'Current working directory',
+        control: { type: 'string', placeholder: '/path/to/project' },
+        defaultValue: '/Users/demo/projects/craft-agent',
+      },
+    ],
+    mockData: () => {
+      // Ensure electronAPI is available
+      ensureMockElectronAPI()
+
+      return {
+        sources: mockSources,
+        enabledSourceSlugs: ['github-api', 'local-files'],
+        sessionId: 'playground-session',
+        ...mockInputCallbacks,
+      }
+    },
+    variants: [
+      {
+        name: 'Default',
+        description: 'Normal state',
+        props: {},
+      },
+      {
+        name: 'Processing',
+        description: 'While agent is processing',
+        props: {
+          isProcessing: true,
+        },
+      },
+      {
+        name: 'Safe Mode',
+        description: 'Read-only permission mode',
+        props: {
+          permissionMode: 'safe',
+        },
+      },
+      {
+        name: 'Ultrathink',
+        description: 'With ultrathink enabled',
+        props: {
+          ultrathinkEnabled: true,
+        },
+      },
+      {
+        name: 'Disabled',
+        description: 'Fully disabled',
+        props: {
+          disabled: true,
+        },
+      },
+    ],
   },
 ]

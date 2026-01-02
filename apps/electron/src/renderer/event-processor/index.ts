@@ -22,6 +22,9 @@ export type {
   PermissionRequestEvent,
   SourcesChangedEvent,
   PlanSubmittedEvent,
+  TaskBackgroundedEvent,
+  ShellBackgroundedEvent,
+  TaskProgressEvent,
 } from './types'
 export {
   generateMessageId,

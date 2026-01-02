@@ -189,6 +189,9 @@ const MessageItem: React.FC<MessageItemProps> = memo(({ message, compact = true 
           isError={message.isError}
           duration={message.toolDuration}
           startTime={message.timestamp}
+          taskId={message.taskId}
+          shellId={message.shellId}
+          elapsedSeconds={message.elapsedSeconds}
           compact={compact}
         />
       );

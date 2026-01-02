@@ -1,6 +1,5 @@
 import * as React from 'react'
 import type { ComponentEntry } from './types'
-import { cn } from '@/lib/utils'
 import { SquareSlash } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -77,14 +76,17 @@ function SlashCommandDemo() {
           <span className="text-xs text-muted-foreground">Active:</span>
           {activeCommands.map(id => {
             const cmd = DEFAULT_SLASH_COMMANDS.find(c => c.id === id)
+            const color = cmd?.color || '#888'
             return cmd ? (
               <button
                 key={id}
                 onClick={() => setActiveCommands(prev => prev.filter(c => c !== id))}
-                className={cn(
-                  'h-6 px-2 text-[11px] font-medium rounded flex items-center gap-1.5 transition-all border',
-                  cmd.activeStyle
-                )}
+                className="h-6 px-2 text-[11px] font-medium rounded flex items-center gap-1.5 transition-all border"
+                style={{
+                  backgroundColor: `${color}1A`, // 10% opacity
+                  color: color,
+                  borderColor: `${color}4D`, // 30% opacity
+                }}
               >
                 {cmd.icon}
                 <span>{cmd.label}</span>

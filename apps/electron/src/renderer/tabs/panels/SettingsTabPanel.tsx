@@ -1,9 +1,17 @@
 /**
  * SettingsTabPanel
  *
- * Settings page for app configuration.
- * Theme uses horizontal buttons, other settings use vertical radio lists.
- * Billing section includes inline credential entry for API Key and Claude OAuth.
+ * Settings page combining global and workspace settings.
+ *
+ * Global Settings:
+ * - Appearance (Theme, Font)
+ * - Billing (Craft Credits, API Key, Claude Max)
+ *
+ * Workspace Settings (for active workspace):
+ * - Model
+ * - Default Permission Mode
+ * - Default Working Directory
+ * - Credential Storage Strategy
  */
 
 import * as React from 'react'
@@ -15,10 +23,22 @@ import { useTheme, type FontFamily } from '@/context/ThemeContext'
 import { useChatContext } from '@/context/ChatContext'
 import { cn } from '@/lib/utils'
 import { Switch } from '@/components/ui/switch'
-import { Monitor, Sun, Moon, Eye, EyeOff, Check, ExternalLink, CheckCircle2 } from 'lucide-react'
+import {
+  Monitor,
+  Sun,
+  Moon,
+  Eye,
+  EyeOff,
+  Check,
+  ExternalLink,
+  CheckCircle2,
+  AlertTriangle,
+  Lock,
+  Unlock,
+} from 'lucide-react'
 import { Spinner } from '@/components/ui/loading-indicator'
 import type { Tab } from '../types'
-import type { AuthType } from '../../../shared/types'
+import type { AuthType, PermissionMode } from '../../../shared/types'
 
 interface SettingsTabPanelProps {
   tab: Tab
@@ -37,6 +57,18 @@ function SectionHeader({ children }: { children: React.ReactNode }) {
     <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
       {children}
     </h3>
+  )
+}
+
+// ============================================
+// Group Header - for separating app vs workspace settings
+// ============================================
+
+function GroupHeader({ children }: { children: React.ReactNode }) {
+  return (
+    <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-4 pb-1.5 border-b border-border/50">
+      {children}
+    </h2>
   )
 }
 
@@ -98,16 +130,18 @@ interface RadioOptionProps {
   onClick: () => void
   label: string
   description?: string
+  disabled?: boolean
 }
 
-function RadioOption({ selected, onClick, label, description }: RadioOptionProps) {
+function RadioOption({ selected, onClick, label, description, disabled }: RadioOptionProps) {
   return (
     <button
       type="button"
       onClick={onClick}
+      disabled={disabled}
       className={cn(
         'w-full flex items-center justify-between py-1.5 text-left transition-colors rounded',
-        'hover:bg-foreground/[0.02]'
+        disabled ? 'opacity-50 cursor-not-allowed' : 'hover:bg-foreground/[0.02]'
       )}
     >
       <div className="flex-1 min-w-0">
@@ -496,6 +530,156 @@ function ClaudeOAuth({
 }
 
 // ============================================
+// Credential Strategy Types
+// ============================================
+
+type CredentialStrategy = 'local' | 'portable'
+
+// ============================================
+// Password Dialog for Portable Credentials
+// ============================================
+
+interface PasswordDialogProps {
+  mode: 'set' | 'unlock'
+  onSubmit: (password: string) => void
+  onCancel: () => void
+  isLoading: boolean
+  error?: string
+}
+
+function PasswordDialog({ mode, onSubmit, onCancel, isLoading, error }: PasswordDialogProps) {
+  const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
+
+  const isSettingPassword = mode === 'set'
+  const passwordsMatch = !isSettingPassword || password === confirmPassword
+  const isShortPassword = password.length > 0 && password.length < 12
+
+  const handleSubmit = () => {
+    if (!password || (isSettingPassword && !passwordsMatch)) return
+    onSubmit(password)
+  }
+
+  return (
+    <div className="py-2 px-3 -mx-3 rounded-lg bg-foreground/[0.02] border border-border/50 space-y-3">
+      <div className="flex items-center gap-2">
+        {isSettingPassword ? <Lock className="size-4" /> : <Unlock className="size-4" />}
+        <span className="text-sm font-medium">
+          {isSettingPassword ? 'Set Master Password' : 'Unlock Credentials'}
+        </span>
+      </div>
+
+      <p className="text-xs text-muted-foreground">
+        {isSettingPassword
+          ? "Create a password to encrypt your API keys. You'll need this when using this workspace on another device."
+          : 'This workspace uses portable credentials. Enter your password to unlock.'}
+      </p>
+
+      {/* Password input */}
+      <div className="space-y-2">
+        <div className="relative">
+          <Input
+            type={showPassword ? 'text' : 'password'}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Password"
+            className="pr-10 text-sm bg-background"
+            disabled={isLoading}
+            onKeyDown={(e) => e.key === 'Enter' && !isSettingPassword && handleSubmit()}
+          />
+          <button
+            type="button"
+            onClick={() => setShowPassword(!showPassword)}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            tabIndex={-1}
+          >
+            {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+          </button>
+        </div>
+
+        {isSettingPassword && (
+          <Input
+            type={showPassword ? 'text' : 'password'}
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            placeholder="Confirm password"
+            className="text-sm bg-background"
+            disabled={isLoading}
+            onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
+          />
+        )}
+      </div>
+
+      {/* Short password warning (non-blocking) */}
+      {isShortPassword && (
+        <div className="flex items-start gap-2 text-xs text-amber-600 dark:text-amber-400">
+          <AlertTriangle className="size-3.5 mt-0.5 shrink-0" />
+          <span>Short passwords are easier to guess. Consider 12+ characters.</span>
+        </div>
+      )}
+
+      {/* Password mismatch error */}
+      {isSettingPassword && confirmPassword && !passwordsMatch && (
+        <p className="text-xs text-destructive">Passwords don't match</p>
+      )}
+
+      {/* API error */}
+      {error && <p className="text-xs text-destructive">{error}</p>}
+
+      {/* Cannot recover warning */}
+      {isSettingPassword && (
+        <p className="text-xs text-muted-foreground">
+          ⚠️ This password cannot be recovered if forgotten.
+        </p>
+      )}
+
+      {/* Actions */}
+      <div className="flex items-center gap-2">
+        <Button
+          size="sm"
+          onClick={handleSubmit}
+          disabled={!password || (isSettingPassword && !passwordsMatch) || isLoading}
+          className="text-xs"
+        >
+          {isLoading ? (
+            <>
+              <Spinner className="mr-1.5" />
+              {isSettingPassword ? 'Enabling...' : 'Unlocking...'}
+            </>
+          ) : (
+            <>
+              <Check className="size-3 mr-1.5" />
+              {isSettingPassword ? 'Enable' : 'Unlock'}
+            </>
+          )}
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={onCancel}
+          disabled={isLoading}
+          className="text-xs bg-foreground/5 hover:bg-foreground/10"
+        >
+          Cancel
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+// ============================================
+// Type for workspace settings (matches IPC interface)
+// ============================================
+
+interface WorkspaceSettings {
+  model?: string
+  permissionMode?: PermissionMode
+  workingDirectory?: string
+  credentialStrategy?: CredentialStrategy
+}
+
+// ============================================
 // Main Component
 // ============================================
 
@@ -508,14 +692,15 @@ export default function SettingsTabPanel({
 }: SettingsTabPanelProps) {
   const { mode, setMode, font, setFont } = useTheme()
 
-  // Get model and onModelChange from context (primary) or props (playground fallback)
+  // Get model, onModelChange, and active workspace from context
   const chatContext = useChatContext()
   const model = propModel ?? chatContext.currentModel ?? 'claude-sonnet-4-5-20250929'
   const onModelChange = propOnModelChange ?? chatContext.onModelChange
+  const activeWorkspaceId = chatContext.activeWorkspaceId
 
   // Billing state
-  const [authType, setAuthType] = useState<AuthType>(propAuthType ?? 'craft_credits') // Actually saved auth type
-  const [expandedMethod, setExpandedMethod] = useState<AuthType | null>(null) // Which input box is expanded (not yet saved)
+  const [authType, setAuthType] = useState<AuthType>(propAuthType ?? 'craft_credits')
+  const [expandedMethod, setExpandedMethod] = useState<AuthType | null>(null)
   const [hasCredential, setHasCredential] = useState(false)
   const [isLoadingBilling, setIsLoadingBilling] = useState(true)
 
@@ -530,55 +715,17 @@ export default function SettingsTabPanel({
   const [claudeOAuthStatus, setClaudeOAuthStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle')
   const [claudeOAuthError, setClaudeOAuthError] = useState<string | undefined>()
 
-  // New session defaults state
-  const [defaultPermissionMode, setDefaultPermissionModeState] = useState<import('../../../shared/types').PermissionMode>('ask')
-  const [defaultWorkingDirectory, setDefaultWorkingDirectory] = useState('')
+  // Workspace settings state
+  const [wsModel, setWsModel] = useState('claude-sonnet-4-5-20250929')
+  const [permissionMode, setPermissionMode] = useState<PermissionMode>('ask')
+  const [workingDirectory, setWorkingDirectory] = useState('')
+  const [credentialStrategy, setCredentialStrategy] = useState<CredentialStrategy>('local')
+  const [isLoadingWorkspace, setIsLoadingWorkspace] = useState(true)
 
-  // Load new session defaults on mount
-  useEffect(() => {
-    const loadDefaults = async () => {
-      if (!window.electronAPI) return
-      try {
-        const [permissionMode, workingDir] = await Promise.all([
-          window.electronAPI.getDefaultPermissionMode(),
-          window.electronAPI.getDefaultWorkingDirectory(),
-        ])
-        setDefaultPermissionModeState(permissionMode)
-        setDefaultWorkingDirectory(workingDir)
-      } catch (error) {
-        console.error('Failed to load session defaults:', error)
-      }
-    }
-    loadDefaults()
-  }, [])
-
-  // Handlers for new session defaults
-  const handleDefaultPermissionModeChange = useCallback(async (mode: import('../../../shared/types').PermissionMode) => {
-    const previousMode = defaultPermissionMode
-    setDefaultPermissionModeState(mode)  // Update UI immediately
-
-    if (!window.electronAPI) return
-
-    try {
-      await window.electronAPI.setDefaultPermissionMode(mode)
-    } catch (error) {
-      console.error('Failed to save default permission mode:', error)
-      setDefaultPermissionModeState(previousMode) // Revert on error
-    }
-  }, [defaultPermissionMode])
-
-  const handleChangeWorkingDirectory = useCallback(async () => {
-    if (!window.electronAPI) return
-    try {
-      const selectedPath = await window.electronAPI.openFolderDialog()
-      if (selectedPath) {
-        setDefaultWorkingDirectory(selectedPath)
-        await window.electronAPI.setDefaultWorkingDirectory(selectedPath)
-      }
-    } catch (error) {
-      console.error('Failed to change working directory:', error)
-    }
-  }, [])
+  // Password dialog state
+  const [showPasswordDialog, setShowPasswordDialog] = useState<'set' | 'unlock' | null>(null)
+  const [passwordError, setPasswordError] = useState<string | undefined>()
+  const [isSubmittingPassword, setIsSubmittingPassword] = useState(false)
 
   // Load current billing method on mount
   useEffect(() => {
@@ -596,6 +743,33 @@ export default function SettingsTabPanel({
     }
     loadBilling()
   }, [])
+
+  // Load workspace settings when active workspace changes
+  useEffect(() => {
+    const loadWorkspaceSettings = async () => {
+      if (!window.electronAPI || !activeWorkspaceId) {
+        setIsLoadingWorkspace(false)
+        return
+      }
+
+      setIsLoadingWorkspace(true)
+      try {
+        const settings = await window.electronAPI.getWorkspaceSettings(activeWorkspaceId)
+        if (settings) {
+          setWsModel(settings.model || 'claude-sonnet-4-5-20250929')
+          setPermissionMode(settings.permissionMode || 'ask')
+          setWorkingDirectory(settings.workingDirectory || '')
+          setCredentialStrategy(settings.credentialStrategy || 'local')
+        }
+      } catch (error) {
+        console.error('Failed to load workspace settings:', error)
+      } finally {
+        setIsLoadingWorkspace(false)
+      }
+    }
+
+    loadWorkspaceSettings()
+  }, [activeWorkspaceId])
 
   // Check Claude OAuth availability when expanding oauth_token option
   useEffect(() => {
@@ -626,13 +800,11 @@ export default function SettingsTabPanel({
 
   // Handle clicking on a billing method option
   const handleMethodClick = useCallback(async (method: AuthType) => {
-    // If clicking the already-selected method, do nothing
     if (method === authType && hasCredential) {
       setExpandedMethod(null)
       return
     }
 
-    // For craft_credits, save immediately (no credential needed)
     if (method === 'craft_credits' && window.electronAPI) {
       try {
         await window.electronAPI.updateBillingMethod(method)
@@ -644,16 +816,14 @@ export default function SettingsTabPanel({
         console.error('Failed to update billing method:', error)
       }
     } else {
-      // For api_key or oauth_token, just expand the input (don't switch yet)
       setExpandedMethod(method)
-      // Clear any previous errors
       setApiKeyError(undefined)
       setClaudeOAuthStatus('idle')
       setClaudeOAuthError(undefined)
     }
   }, [authType, hasCredential, onAuthTypeChange])
 
-  // Cancel - just close the expanded box
+  // Cancel billing method expansion
   const handleCancel = useCallback(() => {
     setExpandedMethod(null)
     setApiKeyValue('')
@@ -662,16 +832,14 @@ export default function SettingsTabPanel({
     setClaudeOAuthError(undefined)
   }, [])
 
-  // Save API key - validates, saves, and switches billing method
+  // Save API key
   const handleSaveApiKey = useCallback(async () => {
     if (!window.electronAPI || !apiKeyValue.trim()) return
 
     setIsSavingApiKey(true)
     setApiKeyError(undefined)
     try {
-      // TODO: Add real API key validation here
       await window.electronAPI.updateBillingMethod('api_key', apiKeyValue.trim())
-      // Success - switch to api_key
       setAuthType('api_key')
       setHasCredential(true)
       setApiKeyValue('')
@@ -693,7 +861,6 @@ export default function SettingsTabPanel({
     setClaudeOAuthError(undefined)
     try {
       await window.electronAPI.updateBillingMethod('oauth_token', existingClaudeToken)
-      // Success - switch to oauth_token
       setAuthType('oauth_token')
       setHasCredential(true)
       setClaudeOAuthStatus('success')
@@ -715,7 +882,6 @@ export default function SettingsTabPanel({
       const result = await window.electronAPI.runClaudeSetupToken()
       if (result.success && result.token) {
         await window.electronAPI.updateBillingMethod('oauth_token', result.token)
-        // Success - switch to oauth_token
         setAuthType('oauth_token')
         setHasCredential(true)
         setClaudeOAuthStatus('success')
@@ -731,10 +897,105 @@ export default function SettingsTabPanel({
     }
   }, [onAuthTypeChange])
 
+  // Save workspace setting
+  const updateWorkspaceSetting = useCallback(
+    async <K extends keyof WorkspaceSettings>(key: K, value: WorkspaceSettings[K]) => {
+      if (!window.electronAPI || !activeWorkspaceId) return
+
+      try {
+        await window.electronAPI.updateWorkspaceSetting(activeWorkspaceId, key, value)
+      } catch (error) {
+        console.error(`Failed to save ${key}:`, error)
+      }
+    },
+    [activeWorkspaceId]
+  )
+
+  // Workspace settings handlers
+  const handleModelChange = useCallback(
+    async (newModel: string) => {
+      setWsModel(newModel)
+      await updateWorkspaceSetting('model', newModel)
+      // Also update the global model context so it takes effect immediately
+      onModelChange?.(newModel)
+    },
+    [updateWorkspaceSetting, onModelChange]
+  )
+
+  const handlePermissionModeChange = useCallback(
+    async (newMode: PermissionMode) => {
+      setPermissionMode(newMode)
+      await updateWorkspaceSetting('permissionMode', newMode)
+    },
+    [updateWorkspaceSetting]
+  )
+
+  const handleChangeWorkingDirectory = useCallback(async () => {
+    if (!window.electronAPI) return
+
+    try {
+      const selectedPath = await window.electronAPI.openFolderDialog()
+      if (selectedPath) {
+        setWorkingDirectory(selectedPath)
+        await updateWorkspaceSetting('workingDirectory', selectedPath)
+      }
+    } catch (error) {
+      console.error('Failed to change working directory:', error)
+    }
+  }, [updateWorkspaceSetting])
+
+  const handleCredentialStrategyChange = useCallback(
+    async (newStrategy: CredentialStrategy) => {
+      if (newStrategy === credentialStrategy) return
+
+      if (newStrategy === 'portable') {
+        setShowPasswordDialog('set')
+        setPasswordError(undefined)
+      } else {
+        setShowPasswordDialog('unlock')
+        setPasswordError(undefined)
+      }
+    },
+    [credentialStrategy]
+  )
+
+  const handlePasswordSubmit = useCallback(
+    async (password: string) => {
+      if (!window.electronAPI || !activeWorkspaceId) return
+
+      setIsSubmittingPassword(true)
+      setPasswordError(undefined)
+
+      try {
+        if (showPasswordDialog === 'set') {
+          await window.electronAPI.enablePortableCredentials(activeWorkspaceId, password)
+          setCredentialStrategy('portable')
+        } else {
+          await window.electronAPI.disablePortableCredentials(activeWorkspaceId, password)
+          setCredentialStrategy('local')
+        }
+        setShowPasswordDialog(null)
+      } catch (error) {
+        setPasswordError(error instanceof Error ? error.message : 'Failed to update credentials')
+      } finally {
+        setIsSubmittingPassword(false)
+      }
+    },
+    [activeWorkspaceId, showPasswordDialog]
+  )
+
+  const handlePasswordCancel = useCallback(() => {
+    setShowPasswordDialog(null)
+    setPasswordError(undefined)
+  }, [])
+
   return (
     <ScrollArea className="h-full">
       <div className="px-5 py-4">
         <div className="space-y-6">
+          {/* ========== APP SETTINGS ========== */}
+          <GroupHeader>App</GroupHeader>
+
           {/* Appearance - horizontal theme buttons */}
           <div>
             <SectionHeader>Appearance</SectionHeader>
@@ -774,89 +1035,15 @@ export default function SettingsTabPanel({
             </SettingRow>
           </div>
 
-          {/* Model - vertical radio list */}
-          <div>
-            <SectionHeader>Model</SectionHeader>
-            <div>
-              <RadioOption
-                selected={model === 'claude-opus-4-5-20251101'}
-                onClick={() => onModelChange?.('claude-opus-4-5-20251101')}
-                label="Opus 4.5"
-                description="· most capable"
-              />
-              <RadioOption
-                selected={model === 'claude-sonnet-4-5-20250929'}
-                onClick={() => onModelChange?.('claude-sonnet-4-5-20250929')}
-                label="Sonnet 4.5"
-                description="· balanced"
-              />
-              <RadioOption
-                selected={model === 'claude-haiku-4-5-20251001'}
-                onClick={() => onModelChange?.('claude-haiku-4-5-20251001')}
-                label="Haiku 4.5"
-                description="· fast"
-              />
-            </div>
-          </div>
-
-          {/* New Sessions - default settings for new chats */}
-          <div>
-            <SectionHeader>Default Permission Mode</SectionHeader>
-            <div>
-              <RadioOption
-                selected={defaultPermissionMode === 'safe'}
-                onClick={() => handleDefaultPermissionModeChange('safe')}
-                label="Safe Mode"
-                description="· read-only, blocks all write operations"
-              />
-              <RadioOption
-                selected={defaultPermissionMode === 'ask'}
-                onClick={() => handleDefaultPermissionModeChange('ask')}
-                label="Ask"
-                description="· prompt before tool execution (default)"
-              />
-              <RadioOption
-                selected={defaultPermissionMode === 'allow-all'}
-                onClick={() => handleDefaultPermissionModeChange('allow-all')}
-                label="Allow All"
-                description="· auto-approve all tool use"
-              />
-            </div>
-          </div>
-
-          {/* Default Working Directory - matches ToggleRow pattern */}
-          <div>
-            <SectionHeader>Default Working Directory</SectionHeader>
-            <div className="flex items-center justify-between py-1.5">
-              <div className="flex-1 min-w-0">
-                <span className="text-sm truncate">
-                  {defaultWorkingDirectory ? defaultWorkingDirectory.split('/').pop() : 'Home'}
-                </span>
-                <span className="text-sm text-muted-foreground ml-1.5 truncate">
-                  · {defaultWorkingDirectory || '~'}
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={handleChangeWorkingDirectory}
-                className="text-xs text-muted-foreground ml-4 shrink-0 hover:text-foreground transition-colors"
-              >
-                Change...
-              </button>
-            </div>
-          </div>
-
           {/* Billing - vertical radio list with inline credential entry */}
           <div>
             <SectionHeader>Billing</SectionHeader>
             <div>
-              {/* Craft Credits - always visible, with Check Credits link when selected */}
               <CraftCreditsOption
                 selected={authType === 'craft_credits'}
                 onClick={() => handleMethodClick('craft_credits')}
               />
 
-              {/* API Key - show radio OR input box (not both) */}
               {expandedMethod === 'api_key' ? (
                 <ApiKeyInput
                   value={apiKeyValue}
@@ -876,7 +1063,6 @@ export default function SettingsTabPanel({
                 />
               )}
 
-              {/* Claude Max - show radio OR OAuth box (not both) */}
               {expandedMethod === 'oauth_token' ? (
                 <ClaudeOAuth
                   existingToken={existingClaudeToken}
@@ -899,6 +1085,116 @@ export default function SettingsTabPanel({
               )}
             </div>
           </div>
+
+          {/* ========== WORKSPACE SETTINGS ========== */}
+
+          {activeWorkspaceId && !isLoadingWorkspace && (
+            <>
+              <GroupHeader>Workspace</GroupHeader>
+
+              {/* Model */}
+              <div>
+                <SectionHeader>Model</SectionHeader>
+                <div>
+                  <RadioOption
+                    selected={wsModel === 'claude-opus-4-5-20251101'}
+                    onClick={() => handleModelChange('claude-opus-4-5-20251101')}
+                    label="Opus 4.5"
+                    description="· most capable"
+                  />
+                  <RadioOption
+                    selected={wsModel === 'claude-sonnet-4-5-20250929'}
+                    onClick={() => handleModelChange('claude-sonnet-4-5-20250929')}
+                    label="Sonnet 4.5"
+                    description="· balanced"
+                  />
+                  <RadioOption
+                    selected={wsModel === 'claude-haiku-4-5-20251001'}
+                    onClick={() => handleModelChange('claude-haiku-4-5-20251001')}
+                    label="Haiku 4.5"
+                    description="· fast"
+                  />
+                </div>
+              </div>
+
+              {/* Default Permission Mode */}
+              <div>
+                <SectionHeader>Default Permission Mode</SectionHeader>
+                <div>
+                  <RadioOption
+                    selected={permissionMode === 'safe'}
+                    onClick={() => handlePermissionModeChange('safe')}
+                    label="Safe Mode"
+                    description="· read-only, blocks all write operations"
+                  />
+                  <RadioOption
+                    selected={permissionMode === 'ask'}
+                    onClick={() => handlePermissionModeChange('ask')}
+                    label="Ask"
+                    description="· prompt before tool execution (default)"
+                  />
+                  <RadioOption
+                    selected={permissionMode === 'allow-all'}
+                    onClick={() => handlePermissionModeChange('allow-all')}
+                    label="Allow All"
+                    description="· auto-approve all tool use"
+                  />
+                </div>
+              </div>
+
+              {/* Default Working Directory */}
+              <div>
+                <SectionHeader>Default Working Directory</SectionHeader>
+                <div className="flex items-center justify-between py-1.5">
+                  <div className="flex-1 min-w-0">
+                    <span className="text-sm truncate">
+                      {workingDirectory ? workingDirectory.split('/').pop() : 'Home'}
+                    </span>
+                    <span className="text-sm text-muted-foreground ml-1.5 truncate">
+                      · {workingDirectory || '~'}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleChangeWorkingDirectory}
+                    className="text-xs text-muted-foreground ml-4 shrink-0 hover:text-foreground transition-colors"
+                  >
+                    Change...
+                  </button>
+                </div>
+              </div>
+
+              {/* Credential Storage */}
+              <div>
+                <SectionHeader>Credential Storage</SectionHeader>
+
+                {showPasswordDialog ? (
+                  <PasswordDialog
+                    mode={showPasswordDialog}
+                    onSubmit={handlePasswordSubmit}
+                    onCancel={handlePasswordCancel}
+                    isLoading={isSubmittingPassword}
+                    error={passwordError}
+                  />
+                ) : (
+                  <div>
+                    <RadioOption
+                      selected={credentialStrategy === 'local'}
+                      onClick={() => handleCredentialStrategyChange('local')}
+                      label="Local"
+                      description="· secure on this device"
+                    />
+                    <RadioOption
+                      selected={credentialStrategy === 'portable'}
+                      onClick={() => handleCredentialStrategyChange('portable')}
+                      label="Portable"
+                      description="· sync with workspace files"
+                    />
+                  </div>
+                )}
+              </div>
+            </>
+          )}
         </div>
       </div>
     </ScrollArea>

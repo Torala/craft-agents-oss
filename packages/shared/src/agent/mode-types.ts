@@ -15,7 +15,7 @@
  * Available permission modes
  * - 'safe': Read-only, blocks writes, never prompts (green)
  * - 'ask': Prompts for dangerous operations (amber)
- * - 'allow-all': Everything allowed, no prompts (red)
+ * - 'allow-all': Everything allowed, no prompts (violet)
  */
 export type PermissionMode = 'safe' | 'ask' | 'allow-all';
 
@@ -30,30 +30,57 @@ export const PERMISSION_MODE_ORDER: PermissionMode[] = ['safe', 'ask', 'allow-al
 export const PERMISSION_MODE_CONFIG: Record<PermissionMode, {
   displayName: string;
   shortName: string;
-  color: 'green' | 'amber' | 'red';
   description: string;
-  /** Icon name from lucide-react */
-  iconName: 'ListTodo' | 'Info' | 'ShieldOff';
+  /** SVG path data for the icon (viewBox 0 0 24 24, stroke-based) */
+  svgPath: string;
+  /** Hex colors for different contexts */
+  colors: {
+    /** Primary color - used for icons, borders, accents */
+    primary: string;
+    /** Muted/darker variant - used for text on dark backgrounds */
+    muted: string;
+  };
 }> = {
   'safe': {
-    displayName: 'Safe Mode',
-    shortName: 'Safe',
-    color: 'green',
+    displayName: 'Explore',
+    shortName: 'Explore',
     description: 'Read-only exploration. Blocks writes, never prompts.',
-    iconName: 'ListTodo',
+    // Compass icon from Lucide
+    svgPath: 'M16.24 7.76l-1.804 5.411a2 2 0 0 1-1.265 1.265L7.76 16.24l1.804-5.411a2 2 0 0 1 1.265-1.265z M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z',
+    colors: {
+      primary: '#10b981', // emerald-500
+      muted: '#059669',   // emerald-600 (darker for text)
+    },
   },
   'ask': {
-    displayName: 'Ask Permission',
+    displayName: 'Ask to Edit',
     shortName: 'Ask',
-    color: 'amber',
-    description: 'Prompts for dangerous operations.',
-    iconName: 'Info',
+    description: 'Prompts before making edits.',
+    // Info icon from Lucide
+    svgPath: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM12 8v4m0 4h.01',
+    colors: {
+      primary: '#f59e0b', // amber-500
+      muted: '#d97706',   // amber-600 (darker for text)
+    },
   },
   'allow-all': {
-    displayName: 'Allow All',
-    shortName: 'Allow All',
-    color: 'red',
-    description: 'Everything allowed, no prompts.',
-    iconName: 'ShieldOff',
+    displayName: 'Auto',
+    shortName: 'Auto',
+    description: 'Automatic execution, no prompts.',
+    // Repeat icon from Lucide (loop)
+    svgPath: 'm17 1 4 4-4 4M3 11V9a4 4 0 0 1 4-4h14M7 23l-4-4 4-4M21 13v2a4 4 0 0 1-4 4H3',
+    colors: {
+      primary: '#9570BE', // brand purple
+      muted: '#7c5aa8',   // darker purple for text
+    },
   },
 };
+
+/**
+ * Convert hex color to RGB string for CSS variables
+ */
+export function hexToRgb(hex: string): string {
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  if (!result || !result[1] || !result[2] || !result[3]) return '0, 0, 0';
+  return `${parseInt(result[1], 16)}, ${parseInt(result[2], 16)}, ${parseInt(result[3], 16)}`;
+}

@@ -82,8 +82,6 @@ export function TabContainer({ className }: TabContainerProps) {
         return (tab as BrowserTab).url
       case 'agent-info':
         return 'Agent'
-      case 'agent-setup':
-        return 'Agent Setup'
       case 'shortcuts':
         return 'Reference'
       case 'settings':

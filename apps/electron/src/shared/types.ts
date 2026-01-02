@@ -300,13 +300,22 @@ import type { Message } from '@craft-agent/core/types';
  */
 /**
  * Todo state for sessions (user-controlled, never automatic)
+ *
+ * Dynamic status ID referencing workspace status config.
+ * Validated at runtime via validateSessionStatus().
+ * Falls back to 'todo' if status doesn't exist.
+ *
+ * Built-in status IDs (for reference):
  * - 'todo': Not started
  * - 'in-progress': Currently working on
  * - 'needs-review': Awaiting review
  * - 'done': Completed successfully
  * - 'cancelled': Cancelled/abandoned
  */
-export type TodoState = 'todo' | 'in-progress' | 'needs-review' | 'done' | 'cancelled'
+export type TodoState = string
+
+// Helper type for TypeScript consumers
+export type BuiltInStatusId = 'todo' | 'in-progress' | 'needs-review' | 'done' | 'cancelled'
 
 export interface Session {
   id: string
@@ -397,6 +406,8 @@ export const IPC_CHANNELS = {
   RENAME_SESSION: 'sessions:rename',
   SEND_MESSAGE: 'sessions:sendMessage',
   CANCEL_PROCESSING: 'sessions:cancel',
+  KILL_SHELL: 'sessions:killShell',
+  GET_TASK_OUTPUT: 'tasks:getOutput',
   FLAG_SESSION: 'sessions:flag',
   UNFLAG_SESSION: 'sessions:unflag',
   SET_TODO_STATE: 'sessions:setTodoState',
@@ -465,6 +476,7 @@ export const IPC_CHANNELS = {
 
   // System
   GET_VERSIONS: 'system:versions',
+  GET_HOME_DIR: 'system:homeDir',
 
   // Shell operations (open external URLs/files)
   OPEN_URL: 'shell:openUrl',
@@ -546,6 +558,11 @@ export const IPC_CHANNELS = {
   // MCP tools listing
   SOURCES_GET_MCP_TOOLS: 'sources:getMcpTools',
 
+  // Status management (workspace-scoped)
+  STATUSES_LIST: 'statuses:list',
+  STATUSES_READ_ICON_FILE: 'statuses:readIconFile',
+  STATUSES_CHANGED: 'statuses:changed',  // Broadcast event
+
   // Markdown preview window
   MARKDOWN_PREVIEW_OPEN: 'markdownPreview:open',
   MARKDOWN_PREVIEW_GET_DATA: 'markdownPreview:getData',
@@ -563,6 +580,12 @@ export const IPC_CHANNELS = {
   // Terminal preview window (Bash tools)
   TERMINAL_PREVIEW_OPEN: 'terminalPreview:open',
   TERMINAL_PREVIEW_GET_DATA: 'terminalPreview:getData',
+
+  // Workspace settings (per-workspace configuration)
+  WORKSPACE_SETTINGS_GET: 'workspaceSettings:get',
+  WORKSPACE_SETTINGS_UPDATE: 'workspaceSettings:update',
+  WORKSPACE_SETTINGS_ENABLE_PORTABLE: 'workspaceSettings:enablePortable',
+  WORKSPACE_SETTINGS_DISABLE_PORTABLE: 'workspaceSettings:disablePortable',
 } as const
 
 /**
@@ -652,6 +675,8 @@ export interface ElectronAPI {
   renameSession(sessionId: string, name: string): Promise<void>
   sendMessage(sessionId: string, message: string, attachments?: FileAttachment[], storedAttachments?: StoredAttachmentType[], options?: SendMessageOptions): Promise<void>
   cancelProcessing(sessionId: string): Promise<void>
+  killShell(sessionId: string, shellId: string): Promise<{ success: boolean; error?: string }>
+  getTaskOutput(taskId: string): Promise<string | null>
   flagSession(sessionId: string): Promise<void>
   unflagSession(sessionId: string): Promise<void>
   setTodoState(sessionId: string, state: TodoState): Promise<void>
@@ -720,6 +745,7 @@ export interface ElectronAPI {
 
   // System
   getVersions(): { node: string; chrome: string; electron: string }
+  getHomeDir(): Promise<string>
 
   // Shell operations
   openUrl(url: string): Promise<void>
@@ -821,6 +847,12 @@ export interface ElectronAPI {
 
   // Sources change listener (live updates when sources are added/removed)
   onSourcesChanged(callback: (sources: LoadedSource[]) => void): () => void
+
+  // Statuses (workspace-scoped)
+  listStatuses(workspaceId: string): Promise<import('@craft-agent/shared/statuses').StatusConfig[]>
+  readIconFile(workspaceId: string, filename: string): Promise<string>
+  // Statuses change listener (live updates when statuses config or icon files change)
+  onStatusesChanged(callback: (workspaceId: string) => void): () => void
 
   // Agents change listener (live updates when agents are created/synced/deleted)
   onAgentsChanged(callback: () => void): () => void

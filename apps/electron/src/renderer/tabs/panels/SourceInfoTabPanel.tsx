@@ -279,7 +279,7 @@ export default function SourceInfoTabPanel({ tab }: SourceInfoTabPanelProps) {
               </button>
             </div>
 
-            <div className="bg-white shadow-minimal rounded-[8px] overflow-hidden py-2">
+            <div className="bg-background shadow-minimal rounded-[8px] overflow-hidden py-2">
               {/* Table */}
               <table className="w-full text-sm" style={{ tableLayout: 'fixed' }}>
                 <colgroup>
@@ -346,7 +346,7 @@ export default function SourceInfoTabPanel({ tab }: SourceInfoTabPanelProps) {
                 </button>
               </div>
 
-              <div className="bg-white shadow-minimal rounded-[8px] overflow-hidden py-2">
+              <div className="bg-background shadow-minimal rounded-[8px] overflow-hidden py-2">
                 <table className="w-full text-sm">
                   <thead className="border-b border-border/30">
                     <tr>
@@ -436,7 +436,7 @@ export default function SourceInfoTabPanel({ tab }: SourceInfoTabPanelProps) {
                 </button>
               </div>
 
-              <div className="bg-white shadow-minimal rounded-[8px] overflow-hidden">
+              <div className="bg-background shadow-minimal rounded-[8px] overflow-hidden">
                 {mcpToolsLoading ? (
                   <div className="flex items-center justify-center py-8">
                     <Spinner className="text-muted-foreground" />
@@ -526,7 +526,7 @@ export default function SourceInfoTabPanel({ tab }: SourceInfoTabPanelProps) {
                 </button>
               </div>
 
-              <div className="bg-white shadow-minimal rounded-[8px] overflow-hidden py-2">
+              <div className="bg-background shadow-minimal rounded-[8px] overflow-hidden py-2">
                 <table className="w-full text-sm">
                   <thead className="border-b border-border/30">
                     <tr>
@@ -592,7 +592,7 @@ export default function SourceInfoTabPanel({ tab }: SourceInfoTabPanelProps) {
                 </button>
               </div>
 
-              <div className="bg-white shadow-minimal rounded-[8px] overflow-hidden">
+              <div className="bg-background shadow-minimal rounded-[8px] overflow-hidden">
                 {/* Content */}
                 <div
                   className={cn(

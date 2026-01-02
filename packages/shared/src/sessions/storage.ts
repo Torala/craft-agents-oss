@@ -22,6 +22,7 @@ import {
 import { join } from 'path';
 import { randomUUID } from 'crypto';
 import { getWorkspaceSessionsPath } from '../workspaces/storage.ts';
+import { toPortablePath, expandPath } from '../utils/paths.ts';
 import type {
   SessionConfig,
   StoredSession,
@@ -224,8 +225,15 @@ export function saveSession(session: StoredSession): void {
   // Ensure session directory exists (creates plans/attachments subdirs too)
   ensureSessionDir(session.workspaceRootPath, session.id);
   const filePath = getSessionFilePath(session.workspaceRootPath, session.id);
-  session.lastUsedAt = Date.now();
-  writeFileSync(filePath, JSON.stringify(session, null, 2), 'utf-8');
+
+  // Store with portable path for cross-machine compatibility
+  const storageSession: StoredSession = {
+    ...session,
+    workspaceRootPath: toPortablePath(session.workspaceRootPath),
+    lastUsedAt: Date.now(),
+  };
+
+  writeFileSync(filePath, JSON.stringify(storageSession, null, 2), 'utf-8');
 }
 
 /**
@@ -238,7 +246,11 @@ export function loadSession(workspaceRootPath: string, sessionId: string): Store
   try {
     if (existsSync(filePath)) {
       const content = readFileSync(filePath, 'utf-8');
-      return JSON.parse(content) as StoredSession;
+      const session = JSON.parse(content) as StoredSession;
+      // Expand portable path (e.g., ~/.craft-agent/...) to absolute path
+      // This ensures all code using the loaded session gets an absolute path
+      session.workspaceRootPath = expandPath(session.workspaceRootPath);
+      return session;
     }
   } catch {
     // Session not found
@@ -284,6 +296,8 @@ export function listSessions(workspaceRootPath: string): SessionMetadata[] {
 
 /**
  * Extract metadata from a stored session
+ * @param session - Raw session loaded from JSON (may have portable workspaceRootPath)
+ * @param workspaceRootPath - Actual expanded workspace root path (used for filesystem ops)
  */
 function extractSessionMetadata(session: StoredSession, workspaceRootPath: string): SessionMetadata | null {
   try {
@@ -305,12 +319,28 @@ function extractSessionMetadata(session: StoredSession, workspaceRootPath: strin
       }
     }
 
-    // Count plan files for this session
+    // Count plan files for this session (use actual path for filesystem ops)
     const planCount = listPlanFiles(workspaceRootPath, session.id).length;
+
+    // Validate todoState against workspace status config (use actual path)
+    const { validateSessionStatus } = require('../statuses/validation.ts');
+    const validatedTodoState = validateSessionStatus(workspaceRootPath, session.todoState);
+
+    // If validation changed the status, auto-save corrected value
+    if (validatedTodoState !== session.todoState) {
+      console.warn(
+        `[extractSessionMetadata] Session ${session.id} had invalid status '${session.todoState}', ` +
+        `reset to '${validatedTodoState}'`
+      );
+      session.todoState = validatedTodoState;
+      // Use actual path for saving (saveSession will convert back to portable)
+      saveSession({ ...session, workspaceRootPath });
+    }
 
     return {
       id: session.id,
-      workspaceRootPath: session.workspaceRootPath,
+      // Return expanded path so callers get usable paths
+      workspaceRootPath,
       name: session.name,
       createdAt: session.createdAt,
       lastUsedAt: session.lastUsedAt,
@@ -320,7 +350,7 @@ function extractSessionMetadata(session: StoredSession, workspaceRootPath: strin
       agentSlug: session.agentSlug,
       agentName: session.agentName,
       isFlagged: session.isFlagged,
-      todoState: session.todoState,
+      todoState: validatedTodoState,
       agents: agents.size > 0 ? Array.from(agents) : undefined,
       planCount: planCount > 0 ? planCount : undefined,
     };
@@ -470,21 +500,29 @@ export function listFlaggedSessions(workspaceRootPath: string): SessionMetadata[
 }
 
 /**
- * List completed sessions (done or cancelled)
+ * List completed sessions (category: closed)
+ * Includes done, cancelled, and any custom "closed" statuses
  */
 export function listCompletedSessions(workspaceRootPath: string): SessionMetadata[] {
-  return listSessions(workspaceRootPath).filter(
-    s => s.todoState === 'done' || s.todoState === 'cancelled'
-  );
+  const { getStatusCategory } = require('../statuses/storage.ts');
+
+  return listSessions(workspaceRootPath).filter(s => {
+    const category = getStatusCategory(workspaceRootPath, s.todoState || 'todo');
+    return category === 'closed';
+  });
 }
 
 /**
- * List inbox sessions (not done or cancelled)
+ * List inbox sessions (category: open)
+ * Includes todo, in-progress, needs-review, and any custom "open" statuses
  */
 export function listInboxSessions(workspaceRootPath: string): SessionMetadata[] {
-  return listSessions(workspaceRootPath).filter(
-    s => s.todoState !== 'done' && s.todoState !== 'cancelled'
-  );
+  const { getStatusCategory } = require('../statuses/storage.ts');
+
+  return listSessions(workspaceRootPath).filter(s => {
+    const category = getStatusCategory(workspaceRootPath, s.todoState || 'todo');
+    return category === 'open';
+  });
 }
 
 /**

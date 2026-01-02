@@ -34,6 +34,7 @@ export {
   subscribeModeChanges,
   PERMISSION_MODE_ORDER,
   PERMISSION_MODE_CONFIG,
+  hexToRgb,
   type PermissionMode,
   getModeState,
   initializeModeState,

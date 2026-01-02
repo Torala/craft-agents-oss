@@ -9,7 +9,6 @@ import {
   ExternalLink,
   Info,
   ListTodo,
-  ShieldOff,
   X,
 } from "lucide-react"
 import { motion, AnimatePresence } from "motion/react"
@@ -26,8 +25,10 @@ import type { PermissionMode } from "@craft-agent/shared/agent/modes"
 import { SetupAuthBanner, type BannerState } from "./SetupAuthBanner"
 import { TurnCard } from "./TurnCard"
 import { PlanCard } from "./PlanCard"
+import { ActiveOptionBadges } from "./ActiveOptionBadges"
 import { groupMessagesByTurn, formatTurnAsMarkdown, formatActivityAsMarkdown, type Turn, type AssistantTurn, type UserTurn, type SystemTurn, type PlanTurn } from "./turn-utils"
 import { InputContainer, type StructuredInputState, type StructuredResponse, type PermissionResponse } from "./input"
+import { useBackgroundTasks } from "@/hooks/useBackgroundTasks"
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover"
 import { SlashCommandMenu, DEFAULT_SLASH_COMMANDS, type SlashCommandId } from "@/components/ui/slash-command-menu"
 import { CONTENT_MAX_WIDTH_CLASS } from "@/config/layout"
@@ -283,29 +284,17 @@ export function ChatDisplay({
   const internalTextareaRef = React.useRef<HTMLTextAreaElement>(null)
   const textareaRef = externalTextareaRef || internalTextareaRef
 
-  // State for permission mode dropdown
-  const [permissionModeOpen, setPermissionModeOpen] = React.useState(false)
-
-  // Filter slash commands to only permission modes
-  const permissionModeCommands = React.useMemo(() =>
-    DEFAULT_SLASH_COMMANDS.filter(cmd => ['safe', 'ask', 'allow-all'].includes(cmd.id)),
-    []
-  )
-
-  // Handle permission mode selection from dropdown
-  const handlePermissionModeSelect = React.useCallback((commandId: SlashCommandId) => {
-    if (commandId === 'safe') onPermissionModeChange?.('safe')
-    else if (commandId === 'ask') onPermissionModeChange?.('ask')
-    else if (commandId === 'allow-all') onPermissionModeChange?.('allow-all')
-    setPermissionModeOpen(false)
-  }, [onPermissionModeChange])
-
   // Register as focus zone - when zone gains focus, focus the textarea
   const { zoneRef, isFocused } = useFocusZone({
     zoneId: 'chat',
     focusFirst: () => {
       textareaRef.current?.focus()
     },
+  })
+
+  // Background tasks management
+  const { tasks: backgroundTasks, killTask } = useBackgroundTasks({
+    sessionId: session?.id ?? ''
   })
 
   // Focus textarea when zone gains focus
@@ -773,61 +762,17 @@ export function ChatDisplay({
               />
             ) : (
               <>
-                {/* Active option badges - positioned above input */}
-                {(ultrathinkEnabled || permissionMode) && (
-                  <div className="flex justify-start gap-2 mb-2">
-                    {ultrathinkEnabled && (
-                      <button
-                        type="button"
-                        onClick={() => onUltrathinkChange?.(false)}
-                        className="h-[30px] pl-2.5 pr-2 text-xs font-medium rounded-[8px] flex items-center gap-1.5 transition-all bg-gradient-to-r from-blue-600/10 via-purple-600/10 to-pink-600/10 hover:from-blue-600/15 hover:via-purple-600/15 hover:to-pink-600/15 shadow-tinted"
-                        style={{ '--shadow-color': '147, 51, 234' } as React.CSSProperties}
-                      >
-                        <span className="bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 bg-clip-text text-transparent">Ultrathink</span>
-                        <X className="h-3 w-3 text-purple-500 opacity-60 hover:opacity-100 translate-y-px" />
-                      </button>
-                    )}
-                    {/* Permission Mode Badge with Dropdown */}
-                    <Popover open={permissionModeOpen} onOpenChange={setPermissionModeOpen}>
-                      <PopoverTrigger asChild>
-                        <button
-                          type="button"
-                          className={cn(
-                            "h-[30px] pl-2.5 pr-2 text-xs font-medium rounded-[8px] flex items-center gap-1.5 transition-all shadow-tinted",
-                            permissionMode === 'safe' && "bg-emerald-500/5 text-emerald-700 hover:bg-emerald-500/10",
-                            permissionMode === 'ask' && "bg-amber-500/5 text-amber-700 hover:bg-amber-500/10",
-                            permissionMode === 'allow-all' && "bg-red-500/5 text-red-700 hover:bg-red-500/10"
-                          )}
-                          style={{
-                            '--shadow-color': permissionMode === 'safe' ? '6, 95, 70' : permissionMode === 'ask' ? '217, 119, 6' : '220, 38, 38'
-                          } as React.CSSProperties}
-                        >
-                          {permissionMode === 'safe' && <ListTodo className="h-3.5 w-3.5" />}
-                          {permissionMode === 'ask' && <Info className="h-3.5 w-3.5" />}
-                          {permissionMode === 'allow-all' && <ShieldOff className="h-3.5 w-3.5" />}
-                          <span>
-                            {permissionMode === 'safe' && 'Safe Mode'}
-                            {permissionMode === 'ask' && 'Ask Permission'}
-                            {permissionMode === 'allow-all' && 'Allow All'}
-                          </span>
-                          <ChevronDown className="h-3.5 w-3.5 opacity-60" />
-                        </button>
-                      </PopoverTrigger>
-                      <PopoverContent
-                        className="w-auto p-0 bg-background/80 backdrop-blur-xl backdrop-saturate-150 border-border/50"
-                        align="start"
-                        sideOffset={4}
-                        style={{ borderRadius: '8px', boxShadow: '0 8px 24px rgba(0, 0, 0, 0.25)' }}
-                      >
-                        <SlashCommandMenu
-                          commands={permissionModeCommands}
-                          activeCommands={[permissionMode as SlashCommandId]}
-                          onSelect={handlePermissionModeSelect}
-                        />
-                      </PopoverContent>
-                    </Popover>
-                  </div>
-                )}
+                {/* Active option badges and tasks - positioned above input */}
+                <ActiveOptionBadges
+                  ultrathinkEnabled={ultrathinkEnabled}
+                  onUltrathinkChange={onUltrathinkChange}
+                  permissionMode={permissionMode}
+                  onPermissionModeChange={onPermissionModeChange}
+                  tasks={backgroundTasks}
+                  sessionId={session.id}
+                  onKillTask={(taskId) => killTask(taskId, backgroundTasks.find(t => t.id === taskId)?.type ?? 'shell')}
+                  variant="dropdown"
+                />
                 <InputContainer
                   placeholder={`Message ${session.agentName || session.workspaceName || 'Chat'}...`}
                 disabled={isInputDisabled}
@@ -959,7 +904,7 @@ function MessageBubble({
                 >
                   {isImage ? (
                     /* IMAGE: Square thumbnail only */
-                    <div className="h-14 w-14 rounded-[8px] overflow-hidden bg-white shadow-minimal">
+                    <div className="h-14 w-14 rounded-[8px] overflow-hidden bg-background shadow-minimal">
                       {hasThumbnail ? (
                         <img
                           src={`data:image/png;base64,${att.thumbnailBase64}`}
@@ -975,7 +920,7 @@ function MessageBubble({
                   ) : (
                     /* DOCUMENT: Bubble with thumbnail/icon + 2-line text */
                     <div className="flex items-center gap-2.5 rounded-[8px] bg-foreground/5 pl-1.5 pr-3 py-1.5">
-                      <div className="h-11 w-8 rounded-[6px] overflow-hidden bg-white shadow-minimal flex items-center justify-center shrink-0">
+                      <div className="h-11 w-8 rounded-[6px] overflow-hidden bg-background shadow-minimal flex items-center justify-center shrink-0">
                         {hasThumbnail ? (
                           <img
                             src={`data:image/png;base64,${att.thumbnailBase64}`}
@@ -1020,7 +965,7 @@ function MessageBubble({
   if (message.role === 'assistant') {
     return (
       <div className="flex justify-start group">
-        <div className="relative max-w-[90%] bg-white shadow-minimal rounded-[8px] pl-6 pr-4 py-3 break-words min-w-0 select-text">
+        <div className="relative max-w-[90%] bg-background shadow-minimal rounded-[8px] pl-6 pr-4 py-3 break-words min-w-0 select-text">
           {/* Pop-out button - visible on hover */}
           {onPopOut && !message.isStreaming && (
             <button

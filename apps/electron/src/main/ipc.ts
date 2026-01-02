@@ -197,6 +197,22 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
     return sessionManager.cancelProcessing(sessionId)
   })
 
+  // Kill background shell
+  ipcMain.handle(IPC_CHANNELS.KILL_SHELL, async (_event, sessionId: string, shellId: string) => {
+    return sessionManager.killShell(sessionId, shellId)
+  })
+
+  // Get background task output
+  ipcMain.handle(IPC_CHANNELS.GET_TASK_OUTPUT, async (_event, taskId: string) => {
+    try {
+      const output = await sessionManager.getTaskOutput(taskId)
+      return output
+    } catch (err) {
+      console.error('[IPC] Failed to get task output:', err)
+      throw err
+    }
+  })
+
   // Flag a session
   ipcMain.handle(IPC_CHANNELS.FLAG_SESSION, async (_event, sessionId: string) => {
     return sessionManager.flagSession(sessionId)
@@ -458,6 +474,11 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
   // Get system theme preference (dark = true, light = false)
   ipcMain.handle(IPC_CHANNELS.GET_SYSTEM_THEME, () => {
     return nativeTheme.shouldUseDarkColors
+  })
+
+  // Get user's home directory
+  ipcMain.handle(IPC_CHANNELS.GET_HOME_DIR, () => {
+    return homedir()
   })
 
   // Agent management
@@ -815,6 +836,108 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
       title: 'Select Working Directory',
     })
     return result.canceled ? null : result.filePaths[0]
+  })
+
+  // ============================================================
+  // Workspace Settings (per-workspace configuration)
+  // ============================================================
+
+  // Get workspace settings (model, permission mode, working directory, credential strategy)
+  ipcMain.handle(IPC_CHANNELS.WORKSPACE_SETTINGS_GET, async (_event, workspaceId: string) => {
+    const workspace = getWorkspaceByNameOrId(workspaceId)
+    if (!workspace) {
+      console.error(`[IPC] Workspace not found: ${workspaceId}`)
+      return null
+    }
+
+    // Load workspace config
+    const { loadWorkspaceConfig } = await import('@craft-agent/shared/workspaces')
+    const config = loadWorkspaceConfig(workspace.rootPath)
+
+    return {
+      model: config?.defaults?.model,
+      permissionMode: config?.defaults?.permissionMode,
+      workingDirectory: config?.defaults?.workingDirectory,
+      credentialStrategy: config?.defaults?.credentialStrategy || 'local',
+    }
+  })
+
+  // Update a workspace setting
+  ipcMain.handle(IPC_CHANNELS.WORKSPACE_SETTINGS_UPDATE, async (_event, workspaceId: string, key: string, value: unknown) => {
+    const workspace = getWorkspaceByNameOrId(workspaceId)
+    if (!workspace) {
+      throw new Error(`Workspace not found: ${workspaceId}`)
+    }
+
+    const { loadWorkspaceConfig, saveWorkspaceConfig } = await import('@craft-agent/shared/workspaces')
+    const config = loadWorkspaceConfig(workspace.rootPath)
+    if (!config) {
+      throw new Error(`Failed to load workspace config: ${workspaceId}`)
+    }
+
+    // Update the setting in defaults
+    config.defaults = config.defaults || {}
+    ;(config.defaults as Record<string, unknown>)[key] = value
+
+    // Save the config
+    saveWorkspaceConfig(workspace.rootPath, config)
+    console.log(`[IPC] Workspace setting updated: ${key} = ${JSON.stringify(value)}`)
+  })
+
+  // Enable portable credentials for a workspace
+  ipcMain.handle(IPC_CHANNELS.WORKSPACE_SETTINGS_ENABLE_PORTABLE, async (_event, workspaceId: string, password: string) => {
+    const workspace = getWorkspaceByNameOrId(workspaceId)
+    if (!workspace) {
+      throw new Error(`Workspace not found: ${workspaceId}`)
+    }
+
+    const { loadWorkspaceConfig, saveWorkspaceConfig } = await import('@craft-agent/shared/workspaces')
+    const { getCredentialManager } = await import('@craft-agent/shared/credentials')
+
+    const config = loadWorkspaceConfig(workspace.rootPath)
+    if (!config) {
+      throw new Error(`Failed to load workspace config: ${workspaceId}`)
+    }
+
+    // Migrate existing credentials to portable storage
+    const manager = getCredentialManager()
+    const migrated = await manager.migrateToPortable(config.id, workspace.rootPath, password)
+    console.log(`[IPC] Migrated ${migrated} credentials to portable storage`)
+
+    // Update the credential strategy
+    config.defaults = config.defaults || {}
+    config.defaults.credentialStrategy = 'portable'
+    saveWorkspaceConfig(workspace.rootPath, config)
+
+    console.log(`[IPC] Enabled portable credentials for workspace: ${workspaceId}`)
+  })
+
+  // Disable portable credentials for a workspace (migrate back to local)
+  ipcMain.handle(IPC_CHANNELS.WORKSPACE_SETTINGS_DISABLE_PORTABLE, async (_event, workspaceId: string, password: string) => {
+    const workspace = getWorkspaceByNameOrId(workspaceId)
+    if (!workspace) {
+      throw new Error(`Workspace not found: ${workspaceId}`)
+    }
+
+    const { loadWorkspaceConfig, saveWorkspaceConfig } = await import('@craft-agent/shared/workspaces')
+    const { getCredentialManager } = await import('@craft-agent/shared/credentials')
+
+    const config = loadWorkspaceConfig(workspace.rootPath)
+    if (!config) {
+      throw new Error(`Failed to load workspace config: ${workspaceId}`)
+    }
+
+    // Migrate credentials from portable back to local storage
+    const manager = getCredentialManager()
+    const migrated = await manager.migrateFromPortable(workspace.rootPath, password)
+    console.log(`[IPC] Migrated ${migrated} credentials from portable to local storage`)
+
+    // Update the credential strategy
+    config.defaults = config.defaults || {}
+    config.defaults.credentialStrategy = 'local'
+    saveWorkspaceConfig(workspace.rootPath, config)
+
+    console.log(`[IPC] Disabled portable credentials for workspace: ${workspaceId}`)
   })
 
   // ============================================================
@@ -1213,6 +1336,45 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
   // Get sources for a session
   ipcMain.handle(IPC_CHANNELS.SESSION_GET_SOURCES, async (_event, sessionId: string) => {
     return sessionManager.getSessionSources(sessionId)
+  })
+
+  // ============================================================
+  // Status Management (Workspace-scoped)
+  // ============================================================
+
+  // List all statuses for a workspace
+  ipcMain.handle(IPC_CHANNELS.STATUSES_LIST, async (_event, workspaceId: string) => {
+    const workspace = getWorkspaceByNameOrId(workspaceId)
+    if (!workspace) throw new Error('Workspace not found')
+
+    const { listStatuses } = await import('@craft-agent/shared/statuses')
+    return listStatuses(workspace.rootPath)
+  })
+
+  // Read icon file from statuses/icons/ directory
+  ipcMain.handle(IPC_CHANNELS.STATUSES_READ_ICON_FILE, async (_event, workspaceId: string, filename: string) => {
+    const workspace = getWorkspaceByNameOrId(workspaceId)
+    if (!workspace) throw new Error('Workspace not found')
+
+    const { readFileSync, existsSync } = await import('fs')
+    const { join } = await import('path')
+
+    const iconPath = join(workspace.rootPath, 'statuses', 'icons', filename)
+
+    if (!existsSync(iconPath)) {
+      throw new Error(`Icon file not found: ${filename}`)
+    }
+
+    // Read file as buffer (works for both SVG text and binary images)
+    const buffer = readFileSync(iconPath)
+
+    // If SVG, return as UTF-8 string
+    if (filename.endsWith('.svg')) {
+      return buffer.toString('utf-8')
+    }
+
+    // Otherwise, return as base64 for images (PNG, JPG, etc.)
+    return buffer.toString('base64')
   })
 
   // Register onboarding handlers

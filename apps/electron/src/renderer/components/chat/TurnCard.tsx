@@ -51,7 +51,7 @@ const SIZE_CONFIG = {
 // Types
 // ============================================================================
 
-export type ActivityStatus = 'pending' | 'running' | 'completed' | 'error'
+export type ActivityStatus = 'pending' | 'running' | 'completed' | 'error' | 'backgrounded'
 export type ActivityType = 'tool' | 'thinking' | 'intermediate' | 'status'
 
 // ============================================================================
@@ -86,6 +86,11 @@ export interface ActivityItem {
   depth?: number     // Nesting level (0 = root, 1 = child, etc.)
   // Status activities (e.g., compacting)
   statusType?: string  // e.g., 'compacting'
+  // Background task fields
+  taskId?: string         // For background Task tools
+  shellId?: string        // For background Bash shells
+  elapsedSeconds?: number // Live progress updates
+  isBackground?: boolean  // Flag for UI differentiation
 }
 
 export interface ResponseContent {
@@ -390,6 +395,12 @@ function ActivityStatusIcon({ status }: { status: ActivityStatus }) {
           <Spinner className={SIZE_CONFIG.spinnerSize} />
         </div>
       )
+    case 'backgrounded':
+      return (
+        <div className={cn(SIZE_CONFIG.iconSize, "flex items-center justify-center shrink-0")}>
+          <Spinner className={cn(SIZE_CONFIG.spinnerSize, "text-cyan-500")} />
+        </div>
+      )
     case 'completed':
       return <CheckCircle2 className={cn(SIZE_CONFIG.iconSize, "shrink-0 text-green-500")} />
     case 'error':
@@ -517,6 +528,16 @@ function ActivityRow({ activity, onOpenDetails, isLastChild }: ActivityRowProps)
   const intentOrDescription = activity.intent || (activity.toolInput?.description as string | undefined)
   const inputSummary = formatToolInput(activity.toolInput)
   const isComplete = activity.status === 'completed' || activity.status === 'error'
+  const isBackgrounded = activity.status === 'backgrounded'
+
+  // For backgrounded tasks, show task/shell ID and elapsed time
+  const backgroundInfo = isBackgrounded
+    ? activity.taskId
+      ? `Task ID: ${activity.taskId}${activity.elapsedSeconds ? `, ${formatDuration(activity.elapsedSeconds * 1000)} elapsed` : ''}`
+      : activity.shellId
+        ? `Shell ID: ${activity.shellId}${activity.elapsedSeconds ? `, ${formatDuration(activity.elapsedSeconds * 1000)} elapsed` : ''}`
+        : null
+    : null
 
   return (
     <div className="flex items-stretch">
@@ -531,15 +552,22 @@ function ActivityRow({ activity, onOpenDetails, isLastChild }: ActivityRowProps)
         <ActivityStatusIcon status={activity.status} />
         {/* Tool name (always shown, darker) - underlined when clickable */}
         <span className={cn("shrink-0", onOpenDetails && isComplete && "group-hover/row:underline")}>{toolName}</span>
-        {/* Intent/description if available (darker, after interpunct) */}
-        {intentOrDescription && (
+        {/* Background task info (task/shell ID + elapsed time) */}
+        {backgroundInfo && (
+          <>
+            <span className="opacity-60 shrink-0">·</span>
+            <span className="truncate min-w-0 max-w-[300px] text-cyan-500">{backgroundInfo}</span>
+          </>
+        )}
+        {/* Intent/description if available (darker, after interpunct) - skip for backgrounded tasks */}
+        {!isBackgrounded && intentOrDescription && (
           <>
             <span className="opacity-60 shrink-0">·</span>
             <span className="truncate min-w-0 max-w-[300px]">{intentOrDescription}</span>
           </>
         )}
-        {/* Additional params (lighter) */}
-        {inputSummary && (
+        {/* Additional params (lighter) - skip for backgrounded tasks */}
+        {!isBackgrounded && inputSummary && (
           <span className="opacity-50 truncate min-w-0">{inputSummary}</span>
         )}
         {activity.status === 'error' && activity.error && (
@@ -649,7 +677,7 @@ function ActivityGroupRow({ group, sessionId, onOpenActivityDetails, animationIn
         <ActivityStatusIcon status={group.parent.status} />
 
         {/* Subagent type badge */}
-        <span className="shrink-0 px-1.5 py-0.5 rounded-[4px] bg-white dark:bg-zinc-800 shadow-minimal text-[10px] font-medium">
+        <span className="shrink-0 px-1.5 py-0.5 rounded-[4px] bg-background shadow-minimal text-[10px] font-medium">
           {subagentType || 'Task'}
         </span>
 
@@ -845,7 +873,7 @@ function StreamingResponsePreview({
   // Completed response - show with max height and footer
   if (isCompleted) {
     return (
-      <div className="bg-white shadow-minimal rounded-[8px] overflow-hidden relative">
+      <div className="bg-background shadow-minimal rounded-[8px] overflow-hidden relative">
         {/* Copy button - top right corner */}
         <button
           onClick={handleCopy}
@@ -907,7 +935,7 @@ function StreamingResponsePreview({
 
   // Streaming response - show throttled content with spinner
   return (
-    <div className="bg-white shadow-minimal rounded-[8px] overflow-hidden">
+    <div className="bg-background shadow-minimal rounded-[8px] overflow-hidden">
       {/* Content area - uses displayedText (throttled) for performance */}
       <div
         className="pl-[22px] pr-4 py-3 text-sm overflow-y-auto"
@@ -1133,7 +1161,7 @@ export function TurnCard({
             </motion.div>
 
             {/* Step count badge */}
-            <span className="shrink-0 px-1.5 py-0.5 rounded-[4px] bg-white dark:bg-zinc-800 shadow-minimal text-[10px] font-medium tabular-nums">
+            <span className="shrink-0 px-1.5 py-0.5 rounded-[4px] bg-background shadow-minimal text-[10px] font-medium tabular-nums">
               {activities.length}
             </span>
 

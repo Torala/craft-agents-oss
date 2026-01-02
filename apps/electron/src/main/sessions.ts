@@ -96,7 +96,8 @@ interface ManagedSession {
     cacheCreationTokens?: number
   }
   // Todo state (user-controlled) - determines inbox vs done
-  todoState?: 'todo' | 'in-progress' | 'needs-review' | 'done' | 'cancelled'
+  // Dynamic status ID referencing workspace status config
+  todoState?: string
   // Read/unread tracking - ID of last message user has read
   lastReadMessageId?: string
   // Per-session source selection (slugs of enabled sources)
@@ -237,6 +238,14 @@ export class SessionManager {
         const sources = loadWorkspaceSources(workspaceRootPath)
         this.broadcastSourcesChanged(sources)
       },
+      onStatusConfigChange: (workspaceId: string) => {
+        console.log(`[SessionManager] Status config changed in ${workspaceId}`)
+        this.broadcastStatusesChanged(workspaceId)
+      },
+      onStatusIconChange: (workspaceId: string, iconFilename: string) => {
+        console.log(`[SessionManager] Status icon changed: ${iconFilename} in ${workspaceId}`)
+        this.broadcastStatusesChanged(workspaceId)
+      },
     }
 
     const watcher = new ConfigWatcher(workspaceRootPath, callbacks)
@@ -260,6 +269,15 @@ export class SessionManager {
     if (!this.windowManager) return
 
     this.windowManager.broadcastToAll(IPC_CHANNELS.AGENTS_CHANGED)
+  }
+
+  /**
+   * Broadcast statuses changed event to all windows
+   */
+  private broadcastStatusesChanged(workspaceId: string): void {
+    if (!this.windowManager) return
+    console.log(`[SessionManager] Broadcasting statuses changed for ${workspaceId}`)
+    this.windowManager.broadcastToAll(IPC_CHANNELS.STATUSES_CHANGED, workspaceId)
   }
 
   /**
@@ -1455,6 +1473,48 @@ Use oauth_trigger for OAuth sources, credential_prompt for API key/bearer token 
     this.persistSession(managed)
   }
 
+  async killShell(sessionId: string, shellId: string): Promise<{ success: boolean; error?: string }> {
+    const managed = this.sessions.get(sessionId)
+    if (!managed) {
+      return { success: false, error: 'Session not found' }
+    }
+
+    console.log(`[SessionManager] Killing shell ${shellId} for session: ${sessionId}`)
+
+    // Send a message to the agent asking it to kill the shell
+    // The model will use the KillShell tool to terminate the background shell
+    try {
+      await this.sendMessage(
+        sessionId,
+        `Please kill the background shell with ID: ${shellId}`,
+        []
+      )
+      return { success: true }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      console.error(`[SessionManager] Failed to kill shell: ${errorMsg}`)
+      return { success: false, error: errorMsg }
+    }
+  }
+
+  /**
+   * Get output from a background task or shell
+   * @param taskId - The task or shell ID
+   * @returns Task output string or null if not found
+   */
+  async getTaskOutput(taskId: string): Promise<string | null> {
+    console.log(`[SessionManager] Getting output for task: ${taskId}`)
+
+    // TODO: Implement proper task output retrieval
+    // This would require:
+    // 1. Tracking shell output as it comes in via tool_result events
+    // 2. Storing completed task outputs in memory or on disk
+    // 3. Using SDK's TaskOutput tool for agent tasks
+    //
+    // For now, return a placeholder message
+    return 'Output retrieval for background tasks is not yet implemented.\n\nTo view task output, check the main chat panel where tool results are displayed.'
+  }
+
   /**
    * Respond to a pending permission request
    * Returns true if the response was delivered, false if agent/session is gone
@@ -1849,6 +1909,16 @@ Use oauth_trigger for OAuth sources, credential_prompt for API key/bearer token 
             details: event.error.details,
             originalError: event.error.originalError,
           }
+        }, workspaceId)
+        break
+
+      case 'task_backgrounded':
+      case 'shell_backgrounded':
+      case 'task_progress':
+        // Forward background task events directly to renderer
+        this.sendEvent({
+          ...event,
+          sessionId,
         }, workspaceId)
         break
 

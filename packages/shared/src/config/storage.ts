@@ -10,6 +10,7 @@ import {
   createWorkspaceAtPath,
   isValidWorkspace,
 } from '../workspaces/storage.ts';
+import { expandPath, toPortablePath } from '../utils/paths.ts';
 import type { StoredAttachment } from '@craft-agent/core/types';
 import type { Plan } from '../agents/plan-types.ts';
 import type { PermissionMode } from '../agent/mode-manager.ts';
@@ -95,6 +96,14 @@ export function loadStoredConfig(): StoredConfig | null {
       return null;
     }
 
+    // Expand path variables (~ and ${HOME}) for portability
+    for (const workspace of config.workspaces) {
+      workspace.rootPath = expandPath(workspace.rootPath);
+    }
+    if (config.defaultWorkingDirectory) {
+      config.defaultWorkingDirectory = expandPath(config.defaultWorkingDirectory);
+    }
+
     // Validate active workspace exists
     const activeWorkspace = config.workspaces.find(w => w.id === config.activeWorkspaceId);
     if (!activeWorkspace) {
@@ -159,7 +168,20 @@ export async function getClaudeOAuthToken(): Promise<string | null> {
 
 export function saveConfig(config: StoredConfig): void {
   ensureConfigDir();
-  writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), 'utf-8');
+
+  // Convert paths to portable form (~ prefix) for cross-machine compatibility
+  const storageConfig: StoredConfig = {
+    ...config,
+    workspaces: config.workspaces.map(ws => ({
+      ...ws,
+      rootPath: toPortablePath(ws.rootPath),
+    })),
+    defaultWorkingDirectory: config.defaultWorkingDirectory
+      ? toPortablePath(config.defaultWorkingDirectory)
+      : undefined,
+  };
+
+  writeFileSync(CONFIG_FILE, JSON.stringify(storageConfig, null, 2), 'utf-8');
 }
 
 export async function updateApiKey(newApiKey: string): Promise<boolean> {

@@ -242,7 +242,7 @@ export const validateTabsAtom = atom(
         return validSessionIds.has((tab as ChatTab).sessionId)
       }
 
-      // Keep other tabs (file, browser, agent-info, agent-setup)
+      // Keep other tabs (file, browser, agent-info)
       // They'll handle missing resources gracefully
       return true
     })

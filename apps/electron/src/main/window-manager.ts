@@ -55,6 +55,7 @@ export class WindowManager {
         preload: join(__dirname, 'preload.cjs'),
         contextIsolation: true,
         nodeIntegration: false,
+        sandbox: false, // Allow preload to access Node.js APIs like 'os'
         webviewTag: true // Enable webview for browser panel
       }
     })
