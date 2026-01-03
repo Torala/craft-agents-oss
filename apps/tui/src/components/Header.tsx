@@ -51,15 +51,8 @@ export const Header: React.FC<HeaderProps> = memo(({
   const resolvedMode: PermissionMode = permissionMode ?? (safeMode ? 'safe' : 'ask');
   const modeConfig = PERMISSION_MODE_CONFIG[resolvedMode];
 
-  // Map color names to background colors for terminal display
-  const modeBackgroundColor = useMemo(() => {
-    switch (modeConfig.color) {
-      case 'green': return '#006400';  // Dark green
-      case 'amber': return '#B8860B';  // Dark goldenrod (amber)
-      case 'red': return '#8B0000';    // Dark red
-      default: return '#006400';
-    }
-  }, [modeConfig.color]);
+  // Use the mode's muted color for terminal background display
+  const modeBackgroundColor = useMemo(() => modeConfig.colors.muted, [modeConfig.colors.muted]);
   // Map model IDs to friendly names
   const modelDisplay = useMemo(() => getModelDisplayName(model), [model]);
 

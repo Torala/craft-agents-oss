@@ -14,7 +14,14 @@ import {
   Copy,
   Check,
   FileDiff,
+  MoreHorizontal,
 } from 'lucide-react'
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  StyledDropdownMenuContent,
+  StyledDropdownMenuItem,
+} from '@/components/ui/styled-dropdown'
 import { cn } from '@/lib/utils'
 import { Markdown } from '@/components/markdown'
 import { Spinner } from '@/components/ui/loading-indicator'
@@ -127,8 +134,8 @@ export interface TurnCardProps {
   onOpenDetails?: () => void
   /** Callback to open individual activity details in Monaco */
   onOpenActivityDetails?: (activity: ActivityItem) => void
-  /** Callback to open all edits/writes in session diff view */
-  onOpenSessionDiff?: () => void
+  /** Callback to open all edits/writes in multi-file diff view */
+  onOpenMultiFileDiff?: () => void
   /** Whether this turn has any Edit or Write activities */
   hasEditOrWriteActivities?: boolean
   /** TodoWrite tool state - shown at bottom of turn */
@@ -403,11 +410,11 @@ function ActivityStatusIcon({ status }: { status: ActivityStatus }) {
     case 'backgrounded':
       return (
         <div className={cn(SIZE_CONFIG.iconSize, "flex items-center justify-center shrink-0")}>
-          <Spinner className={cn(SIZE_CONFIG.spinnerSize, "text-cyan-500")} />
+          <Spinner className={cn(SIZE_CONFIG.spinnerSize, "text-accent")} />
         </div>
       )
     case 'completed':
-      return <CheckCircle2 className={cn(SIZE_CONFIG.iconSize, "shrink-0 text-green-500")} />
+      return <CheckCircle2 className={cn(SIZE_CONFIG.iconSize, "shrink-0 text-success")} />
     case 'error':
       return <XCircle className={cn(SIZE_CONFIG.iconSize, "shrink-0 text-destructive")} />
   }
@@ -511,7 +518,7 @@ function ActivityRow({ activity, onOpenDetails, isLastChild }: ActivityRowProps)
             {isRunning ? (
               <Spinner className={SIZE_CONFIG.spinnerSizeSmall} />
             ) : (
-              <CheckCircle2 className={cn(SIZE_CONFIG.iconSize, "text-emerald-500")} />
+              <CheckCircle2 className={cn(SIZE_CONFIG.iconSize, "text-success")} />
             )}
           </div>
           <span className="truncate">{activity.content}</span>
@@ -561,7 +568,7 @@ function ActivityRow({ activity, onOpenDetails, isLastChild }: ActivityRowProps)
         {backgroundInfo && (
           <>
             <span className="opacity-60 shrink-0">·</span>
-            <span className="truncate min-w-0 max-w-[300px] text-cyan-500">{backgroundInfo}</span>
+            <span className="truncate min-w-0 max-w-[300px] text-accent">{backgroundInfo}</span>
           </>
         )}
         {/* Intent/description if available (darker, after interpunct) - skip for backgrounded tasks */}
@@ -885,7 +892,7 @@ function StreamingResponsePreview({
           className={cn(
             "absolute top-2 right-2 p-1.5 rounded-md transition-colors z-10",
             copied
-              ? "text-green-600 bg-green-50"
+              ? "text-success bg-success/10"
               : "text-muted-foreground/50 hover:text-foreground hover:bg-foreground/5",
             "focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           )}
@@ -914,7 +921,7 @@ function StreamingResponsePreview({
         {/* Footer with actions */}
         <div className={cn("px-4 py-2 border-t border-border/30 flex items-center justify-between bg-muted/20", SIZE_CONFIG.fontSize)}>
           <div className="flex items-center gap-2 text-muted-foreground">
-            <CheckCircle2 className={cn(SIZE_CONFIG.iconSize, "text-green-500")} />
+            <CheckCircle2 className={cn(SIZE_CONFIG.iconSize, "text-success")} />
             <span>Completed</span>
           </div>
 
@@ -982,7 +989,7 @@ function TodoStatusIcon({ status }: { status: TodoStatus }) {
         </div>
       )
     case 'completed':
-      return <CircleCheckFilled className={cn(SIZE_CONFIG.iconSize, "shrink-0 text-[#9570BE]")} />
+      return <CircleCheckFilled className={cn(SIZE_CONFIG.iconSize, "shrink-0 text-accent")} />
     case 'interrupted':
       return <Ban className={cn(SIZE_CONFIG.iconSize, "shrink-0 text-muted-foreground/50")} />
   }
@@ -1067,7 +1074,7 @@ export function TurnCard({
   onPopOut,
   onOpenDetails,
   onOpenActivityDetails,
-  onOpenSessionDiff,
+  onOpenMultiFileDiff,
   hasEditOrWriteActivities,
   todos,
 }: TurnCardProps) {
@@ -1188,53 +1195,36 @@ export function TurnCard({
               </AnimatePresence>
             </span>
 
-            {/* Session diff button - shows all edits/writes in this turn */}
-            {onOpenSessionDiff && hasEditOrWriteActivities && (
-              <div
-                role="button"
-                tabIndex={0}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onOpenSessionDiff()
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.stopPropagation()
-                    onOpenSessionDiff()
-                  }
-                }}
-                className={cn(
-                  "p-1 -m-1 rounded-[4px] opacity-0 group-hover:opacity-100 transition-opacity",
-                  "hover:bg-muted/80 focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                )}
-                title="View all file changes"
-              >
-                <FileDiff className={SIZE_CONFIG.iconSize} />
-              </div>
-            )}
-
-            {/* Open details button - always visible to show raw data */}
+            {/* Turn actions dropdown menu */}
             {onOpenDetails && (
-              <div
-                role="button"
-                tabIndex={0}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onOpenDetails()
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.stopPropagation()
-                    onOpenDetails()
-                  }
-                }}
-                className={cn(
-                  "p-1 -m-1 rounded-[4px] opacity-0 group-hover:opacity-100 transition-opacity",
-                  "hover:bg-muted/80 focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                )}
-              >
-                <ArrowUpRight className={SIZE_CONFIG.iconSize} />
-              </div>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={(e) => e.stopPropagation()}
+                    className={cn(
+                      "p-1 -m-1 rounded-[4px] opacity-0 group-hover:opacity-100 transition-opacity",
+                      "hover:bg-muted/80 focus:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+                      "data-[state=open]:opacity-100 data-[state=open]:bg-muted/80"
+                    )}
+                  >
+                    <MoreHorizontal className={SIZE_CONFIG.iconSize} />
+                  </div>
+                </DropdownMenuTrigger>
+                <StyledDropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                  {onOpenMultiFileDiff && hasEditOrWriteActivities && (
+                    <StyledDropdownMenuItem onClick={onOpenMultiFileDiff}>
+                      <FileDiff />
+                      View file changes
+                    </StyledDropdownMenuItem>
+                  )}
+                  <StyledDropdownMenuItem onClick={onOpenDetails}>
+                    <ArrowUpRight />
+                    View turn details
+                  </StyledDropdownMenuItem>
+                </StyledDropdownMenuContent>
+              </DropdownMenu>
             )}
           </button>
 

@@ -41,7 +41,7 @@ export interface StatusConfig {
   /** Display name */
   label: string;
 
-  /** Tailwind color class (e.g., 'text-blue-500') or hex */
+  /** Hex color code (e.g., '#3B82F6') */
   color: string;
 
   /** Icon configuration */
@@ -61,12 +61,6 @@ export interface StatusConfig {
 
   /** Display order in UI (lower = first) */
   order: number;
-
-  /** Creation timestamp */
-  createdAt: number;
-
-  /** Last update timestamp */
-  updatedAt: number;
 }
 
 /**
@@ -81,9 +75,6 @@ export interface WorkspaceStatusConfig {
 
   /** Default status ID for new sessions (typically 'todo') */
   defaultStatusId: string;
-
-  /** Last update timestamp */
-  updatedAt: number;
 }
 
 /**

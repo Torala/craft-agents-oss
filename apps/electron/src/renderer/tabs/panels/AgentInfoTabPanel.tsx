@@ -152,7 +152,7 @@ export default function AgentInfoTabPanel({ tab }: AgentInfoTabPanelProps) {
                 <ul className="text-sm text-muted-foreground space-y-1">
                   {definition.info.map((msg, i) => (
                     <li key={i} className="flex items-start gap-2">
-                      <span className="text-blue-500 shrink-0">i</span>
+                      <span className="text-accent shrink-0">i</span>
                       <span>{msg}</span>
                     </li>
                   ))}
@@ -164,13 +164,13 @@ export default function AgentInfoTabPanel({ tab }: AgentInfoTabPanelProps) {
             {definition.warnings && definition.warnings.length > 0 && (
               <div>
                 <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-                  <AlertTriangle className="h-4 w-4 text-amber-500" />
+                  <AlertTriangle className="h-4 w-4 text-info" />
                   Warnings
                 </h4>
                 <ul className="text-sm text-muted-foreground space-y-1">
                   {definition.warnings.map((msg, i) => (
                     <li key={i} className="flex items-start gap-2">
-                      <span className="text-amber-500 shrink-0">!</span>
+                      <span className="text-info shrink-0">!</span>
                       <span>{msg}</span>
                     </li>
                   ))}
@@ -249,7 +249,7 @@ export default function AgentInfoTabPanel({ tab }: AgentInfoTabPanelProps) {
                               authServer?.hasAuth ? (
                                 <Badge
                                   variant="outline"
-                                  className="text-xs border-green-500/30 text-green-600 dark:text-green-400"
+                                  className="text-xs border-success/30 text-success"
                                 >
                                   <CheckCircle2 className="h-3 w-3 mr-1" />
                                   Authenticated
@@ -257,7 +257,7 @@ export default function AgentInfoTabPanel({ tab }: AgentInfoTabPanelProps) {
                               ) : (
                                 <Badge
                                   variant="outline"
-                                  className="text-xs border-amber-500/30 text-amber-600 dark:text-amber-400"
+                                  className="text-xs border-info/30 text-info"
                                 >
                                   <AlertCircle className="h-3 w-3 mr-1" />
                                   Not authenticated
@@ -310,7 +310,7 @@ export default function AgentInfoTabPanel({ tab }: AgentInfoTabPanelProps) {
                               {api.hasAuth ? (
                                 <Badge
                                   variant="outline"
-                                  className="text-xs border-green-500/30 text-green-600 dark:text-green-400"
+                                  className="text-xs border-success/30 text-success"
                                 >
                                   <CheckCircle2 className="h-3 w-3 mr-1" />
                                   Configured
@@ -318,7 +318,7 @@ export default function AgentInfoTabPanel({ tab }: AgentInfoTabPanelProps) {
                               ) : (
                                 <Badge
                                   variant="outline"
-                                  className="text-xs border-amber-500/30 text-amber-600 dark:text-amber-400"
+                                  className="text-xs border-info/30 text-info"
                                 >
                                   <AlertCircle className="h-3 w-3 mr-1" />
                                   Not configured

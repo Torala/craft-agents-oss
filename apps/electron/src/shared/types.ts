@@ -390,6 +390,10 @@ export type SessionEvent =
   | { type: 'ask_question_request'; sessionId: string; request: AskQuestionRequest }
   // Source events
   | { type: 'sources_changed'; sessionId: string; enabledSourceSlugs: string[] }
+  // Background task/shell events
+  | { type: 'task_backgrounded'; sessionId: string; toolUseId: string; taskId: string; intent?: string; turnId?: string }
+  | { type: 'shell_backgrounded'; sessionId: string; toolUseId: string; shellId: string; intent?: string; turnId?: string }
+  | { type: 'task_progress'; sessionId: string; toolUseId: string; elapsedSeconds: number; turnId?: string }
 
 // Options for sendMessage
 export interface SendMessageOptions {
@@ -416,6 +420,7 @@ export const IPC_CHANNELS = {
   RESPOND_TO_PERMISSION: 'sessions:respondToPermission',
   RESPOND_TO_CREDENTIAL: 'sessions:respondToCredential',
   UPDATE_WORKING_DIRECTORY: 'sessions:updateWorkingDirectory',
+  SHOW_SESSION_IN_FINDER: 'sessions:showInFinder',
 
   // Permission mode management ('safe', 'ask', 'allow-all')
   SET_PERMISSION_MODE: 'sessions:setPermissionMode',
@@ -428,6 +433,7 @@ export const IPC_CHANNELS = {
   GET_WINDOW_WORKSPACE: 'window:getWorkspace',
   GET_WINDOW_MODE: 'window:getMode',
   OPEN_WORKSPACE: 'window:openWorkspace',
+  SWITCH_WORKSPACE: 'window:switchWorkspace',
   CLOSE_WINDOW: 'window:close',
 
   // Agent management
@@ -560,8 +566,16 @@ export const IPC_CHANNELS = {
 
   // Status management (workspace-scoped)
   STATUSES_LIST: 'statuses:list',
-  STATUSES_READ_ICON_FILE: 'statuses:readIconFile',
   STATUSES_CHANGED: 'statuses:changed',  // Broadcast event
+
+  // Theme management (cascading: app → workspace → agent)
+  THEME_APP_CHANGED: 'theme:appChanged',        // Broadcast event
+  THEME_WORKSPACE_CHANGED: 'theme:workspaceChanged',  // Broadcast event
+  THEME_AGENT_CHANGED: 'theme:agentChanged',    // Broadcast event
+
+  // Generic workspace image loading/saving (for icons, etc.)
+  WORKSPACE_READ_IMAGE: 'workspace:readImage',
+  WORKSPACE_WRITE_IMAGE: 'workspace:writeImage',
 
   // Markdown preview window
   MARKDOWN_PREVIEW_OPEN: 'markdownPreview:open',
@@ -581,16 +595,21 @@ export const IPC_CHANNELS = {
   TERMINAL_PREVIEW_OPEN: 'terminalPreview:open',
   TERMINAL_PREVIEW_GET_DATA: 'terminalPreview:getData',
 
-  // Session diff window (all edits/writes in a turn)
-  SESSION_DIFF_OPEN: 'sessionDiff:open',
-  SESSION_DIFF_GET_DATA: 'sessionDiff:getData',
-  SESSION_DIFF_READ_FILE: 'sessionDiff:readFile',
+  // Multi-file diff window (all edits/writes in a turn)
+  MULTI_FILE_DIFF_OPEN: 'multiFileDiff:open',
+  MULTI_FILE_DIFF_GET_DATA: 'multiFileDiff:getData',
+  MULTI_FILE_DIFF_READ_FILE: 'multiFileDiff:readFile',
 
   // Workspace settings (per-workspace configuration)
   WORKSPACE_SETTINGS_GET: 'workspaceSettings:get',
   WORKSPACE_SETTINGS_UPDATE: 'workspaceSettings:update',
   WORKSPACE_SETTINGS_ENABLE_PORTABLE: 'workspaceSettings:enablePortable',
   WORKSPACE_SETTINGS_DISABLE_PORTABLE: 'workspaceSettings:disablePortable',
+
+  // Theme (cascading: app → workspace → agent)
+  THEME_GET_APP: 'theme:getApp',
+  THEME_GET_WORKSPACE: 'theme:getWorkspace',
+  THEME_GET_AGENT: 'theme:getAgent',
 } as const
 
 /**
@@ -655,15 +674,19 @@ export interface FileChange {
 }
 
 /**
- * Data for session diff window - shows all edits/writes in a turn
+ * Data for multi-file diff window - shows all edits/writes in a turn
  */
-export interface SessionDiffData {
+export interface MultiFileDiffData {
   /** Session ID for context */
   sessionId: string
   /** Turn ID for context */
   turnId: string
   /** All file changes in this turn */
   changes: FileChange[]
+  /** If true (default), group changes by file. If false, show each change separately */
+  consolidated?: boolean
+  /** ID of the change to auto-focus (only used when consolidated=false) */
+  focusedChangeId?: string
 }
 
 /**
@@ -720,6 +743,7 @@ export interface ElectronAPI {
   respondToPermission(sessionId: string, requestId: string, allowed: boolean, alwaysAllow: boolean): Promise<boolean>
   respondToCredential(sessionId: string, requestId: string, response: CredentialResponse): Promise<boolean>
   updateSessionWorkingDirectory(sessionId: string, path: string): Promise<void>
+  showSessionInFinder(sessionId: string): Promise<void>
 
   // Permission mode management ('safe', 'ask', 'allow-all')
   setPermissionMode(sessionId: string, mode: PermissionMode): Promise<void>
@@ -732,6 +756,7 @@ export interface ElectronAPI {
   getWindowWorkspace(): Promise<string | null>
   getWindowMode(): Promise<string | null>
   openWorkspace(workspaceId: string): Promise<void>
+  switchWorkspace(workspaceId: string): Promise<void>
   closeWindow(): Promise<void>
 
   // Agent management
@@ -834,6 +859,12 @@ export interface ElectronAPI {
   getDefaultWorkingDirectory(): Promise<string>
   setDefaultWorkingDirectory(path: string): Promise<void>
 
+  // Workspace Settings (per-workspace configuration)
+  getWorkspaceSettings(workspaceId: string): Promise<WorkspaceSettings | null>
+  updateWorkspaceSetting<K extends keyof WorkspaceSettings>(workspaceId: string, key: K, value: WorkspaceSettings[K]): Promise<void>
+  enablePortableCredentials(workspaceId: string, password: string): Promise<void>
+  disablePortableCredentials(workspaceId: string, password: string): Promise<void>
+
   // Folder dialog
   openFolderDialog(): Promise<string | null>
 
@@ -859,9 +890,9 @@ export interface ElectronAPI {
   openTerminalPreview(sessionId: string, previewId: string, data: TerminalPreviewData): Promise<void>
   getTerminalPreviewData(sessionId: string, previewId: string): Promise<TerminalPreviewData | null>
 
-  // Session diff window (all edits/writes in a turn)
-  openSessionDiff(sessionId: string, turnId: string, data: SessionDiffData): Promise<void>
-  getSessionDiffData(sessionId: string, turnId: string): Promise<SessionDiffData | null>
+  // Multi-file diff window (all edits/writes in a turn)
+  openMultiFileDiff(sessionId: string, turnId: string, data: MultiFileDiffData): Promise<void>
+  getMultiFileDiffData(sessionId: string, turnId: string): Promise<MultiFileDiffData | null>
   readFileForDiff(filePath: string): Promise<string | null>
 
   // Session Drafts (persisted input text)
@@ -890,12 +921,25 @@ export interface ElectronAPI {
 
   // Statuses (workspace-scoped)
   listStatuses(workspaceId: string): Promise<import('@craft-agent/shared/statuses').StatusConfig[]>
-  readIconFile(workspaceId: string, filename: string): Promise<string>
   // Statuses change listener (live updates when statuses config or icon files change)
   onStatusesChanged(callback: (workspaceId: string) => void): () => void
 
+  // Generic workspace image loading/saving (returns data URL for images, raw string for SVG)
+  readWorkspaceImage(workspaceId: string, relativePath: string): Promise<string>
+  writeWorkspaceImage(workspaceId: string, relativePath: string, base64: string, mimeType: string): Promise<void>
+
   // Agents change listener (live updates when agents are created/synced/deleted)
   onAgentsChanged(callback: () => void): () => void
+
+  // Theme (cascading: app → workspace → agent)
+  getAppTheme(): Promise<import('@config/theme').ThemeOverrides | null>
+  getWorkspaceTheme(workspaceId: string): Promise<import('@config/theme').ThemeOverrides | null>
+  getAgentTheme(workspaceId: string, agentSlug: string): Promise<import('@config/theme').ThemeOverrides | null>
+
+  // Theme change listeners (live updates when theme.json files change)
+  onAppThemeChange(callback: (theme: import('@config/theme').ThemeOverrides | null) => void): () => void
+  onWorkspaceThemeChange(callback: (theme: import('@config/theme').ThemeOverrides | null) => void): () => void
+  onAgentThemeChange(callback: (agentSlug: string, theme: import('@config/theme').ThemeOverrides | null) => void): () => void
 }
 
 /**
@@ -913,6 +957,22 @@ export interface ClaudeOAuthResult {
 export interface BillingMethodInfo {
   authType: AuthType
   hasCredential: boolean
+}
+
+/**
+ * Credential storage strategy for workspaces
+ */
+export type CredentialStrategy = 'local' | 'portable'
+
+/**
+ * Per-workspace settings
+ */
+export interface WorkspaceSettings {
+  name?: string
+  model?: string
+  permissionMode?: PermissionMode
+  workingDirectory?: string
+  credentialStrategy?: CredentialStrategy
 }
 
 /**

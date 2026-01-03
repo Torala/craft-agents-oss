@@ -72,13 +72,13 @@ export function PlanCard({
       {/* Header with plan indicator */}
       <div
         className={cn(
-          "px-4 py-2 border-b border-border/30 flex items-center gap-2 bg-emerald-500/5 cursor-pointer",
+          "px-4 py-2 border-b border-border/30 flex items-center gap-2 bg-success/5 cursor-pointer",
           SIZE_CONFIG.fontSize
         )}
         onClick={() => setIsExpanded(!isExpanded)}
       >
-        <ListTodo className={cn(SIZE_CONFIG.iconSize, "text-emerald-700")} />
-        <span className="font-medium text-emerald-700">Plan</span>
+        <ListTodo className={cn(SIZE_CONFIG.iconSize, "text-success")} />
+        <span className="font-medium text-success">Plan</span>
         <div className="flex-1" />
         {isExpanded ? (
           <ChevronDown className={cn(SIZE_CONFIG.iconSize, "text-muted-foreground")} />
@@ -134,8 +134,8 @@ export function PlanCard({
                 <button
                   type="button"
                   onClick={handleAcceptPlan}
-                  className="h-[28px] pl-2.5 pr-2.5 text-xs font-medium rounded-[6px] flex items-center gap-1.5 transition-all bg-emerald-500/5 text-emerald-700 hover:bg-emerald-500/10 shadow-tinted"
-                  style={{ '--shadow-color': '6, 95, 70' } as React.CSSProperties}
+                  className="h-[28px] pl-2.5 pr-2.5 text-xs font-medium rounded-[6px] flex items-center gap-1.5 transition-all bg-success/5 text-success hover:bg-success/10 shadow-tinted"
+                  style={{ '--shadow-color': '34, 136, 82' } as React.CSSProperties}
                 >
                   <Check className="h-3.5 w-3.5" />
                   <span>Accept Plan</span>

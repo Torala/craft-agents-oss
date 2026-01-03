@@ -118,7 +118,7 @@ export function AgentInfoDialog({
                   <ul className="text-sm text-muted-foreground space-y-1">
                     {definition.info.map((msg, i) => (
                       <li key={i} className="flex items-start gap-2">
-                        <span className="text-blue-500 shrink-0">i</span>
+                        <span className="text-accent shrink-0">i</span>
                         <span>{msg}</span>
                       </li>
                     ))}
@@ -168,12 +168,12 @@ export function AgentInfoDialog({
                               Requires Auth
                             </Badge>
                             {server.hasAuth ? (
-                              <Badge variant="outline" className="text-xs border-green-500/30 text-green-600 dark:text-green-400">
+                              <Badge variant="outline" className="text-xs border-success/30 text-success">
                                 <CheckCircle2 className="h-3 w-3 mr-1" />
                                 Authenticated
                               </Badge>
                             ) : (
-                              <Badge variant="outline" className="text-xs border-amber-500/30 text-amber-600 dark:text-amber-400">
+                              <Badge variant="outline" className="text-xs border-info/30 text-info">
                                 <AlertCircle className="h-3 w-3 mr-1" />
                                 Not authenticated
                               </Badge>
@@ -221,12 +221,12 @@ export function AgentInfoDialog({
                                   Auth: {api.auth.type}
                                 </Badge>
                                 {api.hasAuth ? (
-                                  <Badge variant="outline" className="text-xs border-green-500/30 text-green-600 dark:text-green-400">
+                                  <Badge variant="outline" className="text-xs border-success/30 text-success">
                                     <CheckCircle2 className="h-3 w-3 mr-1" />
                                     Configured
                                   </Badge>
                                 ) : (
-                                  <Badge variant="outline" className="text-xs border-amber-500/30 text-amber-600 dark:text-amber-400">
+                                  <Badge variant="outline" className="text-xs border-info/30 text-info">
                                     <AlertCircle className="h-3 w-3 mr-1" />
                                     Not configured
                                   </Badge>

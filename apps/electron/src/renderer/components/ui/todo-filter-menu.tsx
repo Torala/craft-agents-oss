@@ -8,6 +8,11 @@ import {
   getStateColor,
 } from '@/config/todo-states'
 
+/** Check if a string is a hex color code (e.g., #3B82F6) */
+function isHexColor(str: string | undefined): boolean {
+  return !!str && /^#[0-9A-Fa-f]{6}$/.test(str)
+}
+
 // Re-export types for backwards compatibility
 export { type TodoStateId, type TodoState, getStateIcon, getStateColor }
 
@@ -15,7 +20,7 @@ export { type TodoStateId, type TodoState, getStateIcon, getStateColor }
 // Shared Styles (matching slash-command-menu)
 // ============================================================================
 
-const MENU_CONTAINER_STYLE = 'min-w-[140px] overflow-hidden rounded-[8px] bg-background text-popover-foreground shadow-modal-small'
+const MENU_CONTAINER_STYLE = 'min-w-[140px] overflow-hidden rounded-[8px] bg-background text-foreground shadow-modal-small'
 const MENU_LIST_STYLE = 'max-h-[240px] overflow-y-auto p-1 [&_[cmdk-list-sizer]]:space-y-px'
 const MENU_ITEM_STYLE = 'flex cursor-pointer select-none items-center gap-3 rounded-[6px] px-3 py-1.5 text-[13px]'
 const MENU_ITEM_SELECTED = 'bg-accent text-accent-foreground'
@@ -27,7 +32,10 @@ const MENU_ITEM_SELECTED = 'bg-accent text-accent-foreground'
 function StateItemContent({ state }: { state: TodoState }) {
   return (
     <>
-      <span className={cn("shrink-0 flex items-center mt-px", state.color || "text-muted-foreground")}>
+      <span
+        className={cn("shrink-0 flex items-center mt-px", !isHexColor(state.color) && (state.color || "text-muted-foreground"))}
+        style={isHexColor(state.color) ? { color: state.color } : undefined}
+      >
         {state.icon}
       </span>
       <div className="flex-1 min-w-0">{state.label}</div>

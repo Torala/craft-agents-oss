@@ -127,6 +127,9 @@ function PermissionModeDropdown({ permissionMode, onPermissionModeChange }: Perm
 
   // Get config for current mode (use optimistic state for instant UI update)
   const config = PERMISSION_MODE_CONFIG[optimisticMode]
+  // For allow-all mode, use CSS variable (accent) so theming works
+  // For other modes, use the hardcoded colors from config
+  const useAccentVar = optimisticMode === 'allow-all'
   const color = config.colors.muted // Use muted color for text (darker variant)
 
   return (
@@ -134,8 +137,14 @@ function PermissionModeDropdown({ permissionMode, onPermissionModeChange }: Perm
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="h-[30px] pl-2.5 pr-2 text-xs font-medium rounded-[8px] flex items-center gap-1.5 shadow-tinted"
-          style={{
+          className={cn(
+            "h-[30px] pl-2.5 pr-2 text-xs font-medium rounded-[8px] flex items-center gap-1.5 shadow-tinted",
+            useAccentVar && "bg-accent/5 text-accent"
+          )}
+          style={useAccentVar ? {
+            // Use accent color for shadow - defined in index.css alongside --accent
+            '--shadow-color': 'var(--accent-rgb)',
+          } as React.CSSProperties : {
             backgroundColor: `${color}0D`, // 5% opacity
             color: color,
             '--shadow-color': hexToRgb(color),

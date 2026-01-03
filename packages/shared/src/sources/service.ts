@@ -252,7 +252,7 @@ export class SourceService {
   /**
    * Get token for a source
    * For MCP sources, tries both OAuth and bearer credentials as fallback
-   * (credentials may have been stored via credential_prompt with different mode than authType)
+   * (credentials may have been stored via source_credential_prompt with different mode than authType)
    */
   async getSourceToken(source: LoadedSource): Promise<string | null> {
     const manager = getCredentialManager();

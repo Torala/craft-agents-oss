@@ -78,14 +78,15 @@ export interface ChatContextType {
   onModelChange: (model: string) => void
 
   // Workspace
-  onSelectWorkspace: (id: string) => void
+  onSelectWorkspace: (id: string, openInNewWindow?: boolean) => void
+  onRefreshWorkspaces?: () => void
 
   // App actions
   onOpenSettings: () => void
   onOpenKeyboardShortcuts: () => void
   onOpenStoredUserPreferences: () => void
   onRefreshAgents: () => void
-  onLogout: () => void
+  onReset: () => void
 
   // Unified session options callback (replaces onUltrathinkChange, onSkipPermissionsChange, onModeChange)
   onSessionOptionsChange: (sessionId: string, updates: SessionOptionUpdates) => void

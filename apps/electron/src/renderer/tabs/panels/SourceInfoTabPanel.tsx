@@ -300,7 +300,7 @@ export default function SourceInfoTabPanel({ tab }: SourceInfoTabPanelProps) {
                       <td className="pr-4 py-1.5">
                         <button
                           onClick={handleOpenUrl}
-                          className="font-mono truncate hover:underline text-primary focus:outline-none focus-visible:underline text-left block w-full"
+                          className="font-mono truncate hover:underline text-foreground focus:outline-none focus-visible:underline text-left block w-full"
                         >
                           {sourceUrl}
                         </button>
@@ -380,7 +380,7 @@ export default function SourceInfoTabPanel({ tab }: SourceInfoTabPanelProps) {
                       return (
                         <tr key={`bash-${i}`} className="border-b border-border/30 last:border-0">
                           <td className="pl-[22px] pr-4 py-2 align-top">
-                            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-green-600 dark:text-green-400">
+                            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-success">
                               Allowed
                             </span>
                           </td>
@@ -400,7 +400,7 @@ export default function SourceInfoTabPanel({ tab }: SourceInfoTabPanelProps) {
                       return (
                         <tr key={`api-${i}`} className="border-b border-border/30 last:border-0">
                           <td className="pl-[22px] pr-4 py-2 align-top">
-                            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-green-600 dark:text-green-400">
+                            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-success">
                               Allowed
                             </span>
                           </td>
@@ -454,8 +454,8 @@ export default function SourceInfoTabPanel({ tab }: SourceInfoTabPanelProps) {
                     {/* Allowed tools */}
                     {groupedTools.allowed.length > 0 && (
                       <div>
-                        <div className="px-[22px] py-2 bg-green-50 dark:bg-green-950/30 border-b border-border/30">
-                          <span className="text-xs font-semibold text-green-600 dark:text-green-400 uppercase tracking-wide">
+                        <div className="px-[22px] py-2 bg-success/5 border-b border-border/30">
+                          <span className="text-xs font-semibold text-success uppercase tracking-wide">
                             Allowed ({groupedTools.allowed.length})
                           </span>
                         </div>
@@ -475,8 +475,8 @@ export default function SourceInfoTabPanel({ tab }: SourceInfoTabPanelProps) {
                     {/* Tools requiring permission */}
                     {groupedTools.requiresPermission.length > 0 && (
                       <div className={groupedTools.allowed.length > 0 ? 'border-t border-border/30' : ''}>
-                        <div className="px-[22px] py-2 bg-amber-50 dark:bg-amber-950/30 border-b border-border/30">
-                          <span className="text-xs font-semibold text-amber-600 dark:text-amber-400 uppercase tracking-wide">
+                        <div className="px-[22px] py-2 bg-info/5 border-b border-border/30">
+                          <span className="text-xs font-semibold text-info uppercase tracking-wide">
                             Requires Permission ({groupedTools.requiresPermission.length})
                           </span>
                         </div>
@@ -558,7 +558,7 @@ export default function SourceInfoTabPanel({ tab }: SourceInfoTabPanelProps) {
                       return (
                         <tr key={`mcp-${i}`} className="border-b border-border/30 last:border-0">
                           <td className="pl-[22px] pr-4 py-2 align-top">
-                            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-green-600 dark:text-green-400">
+                            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-success">
                               Allowed
                             </span>
                           </td>

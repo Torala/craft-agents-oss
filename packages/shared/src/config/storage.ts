@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync, statSync } from 'fs';
 import { homedir } from 'os';
 import { join } from 'path';
 import { getCredentialManager } from '../credentials/index.ts';
@@ -10,6 +10,7 @@ import {
   createWorkspaceAtPath,
   isValidWorkspace,
 } from '../workspaces/storage.ts';
+import { findIconInDir } from '../sources/storage.ts';
 import { expandPath, toPortablePath } from '../utils/paths.ts';
 import type { StoredAttachment } from '@craft-agent/core/types';
 import type { Plan } from '../agents/plan-types.ts';
@@ -36,7 +37,7 @@ export type McpAuthType = 'workspace_oauth' | 'workspace_bearer' | 'public';
 
 export interface Workspace {
   id: string;
-  name: string;
+  name: string;            // Read from workspace folder config (not stored in global config)
   rootPath: string;        // Absolute path to workspace folder (e.g., ~/Projects/my-app/craft-agent)
   createdAt: number;
   lastAccessedAt?: number; // For sorting recent workspaces
@@ -366,9 +367,43 @@ export function generateWorkspaceId(): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
 }
 
+/**
+ * Find workspace icon file at workspace_root/icon.*
+ * Returns absolute path to icon file if found, null otherwise
+ */
+export function findWorkspaceIcon(rootPath: string): string | null {
+  return findIconInDir(rootPath);
+}
+
 export function getWorkspaces(): Workspace[] {
   const config = loadStoredConfig();
-  return config?.workspaces || [];
+  const workspaces = config?.workspaces || [];
+
+  // Resolve workspace names from folder config and local icons
+  return workspaces.map(w => {
+    // Read name from workspace folder config (single source of truth)
+    const wsConfig = loadWorkspaceConfig(w.rootPath);
+    const name = wsConfig?.name || w.rootPath.split('/').pop() || 'Untitled';
+
+    // If workspace has a stored iconUrl that's a remote URL, use it
+    // Otherwise check for local icon file
+    let iconUrl = w.iconUrl;
+    if (!iconUrl || (!iconUrl.startsWith('http://') && !iconUrl.startsWith('https://'))) {
+      const localIcon = findWorkspaceIcon(w.rootPath);
+      if (localIcon) {
+        // Convert absolute path to file:// URL for Electron renderer
+        // Append mtime as cache-buster so UI refreshes when icon changes
+        try {
+          const mtime = statSync(localIcon).mtimeMs;
+          iconUrl = `file://${localIcon}?t=${mtime}`;
+        } catch {
+          iconUrl = `file://${localIcon}`;
+        }
+      }
+    }
+
+    return { ...w, name, iconUrl };
+  });
 }
 
 export function getActiveWorkspace(): Workspace | null {
@@ -538,17 +573,8 @@ export async function removeWorkspace(workspaceId: string): Promise<boolean> {
   return true;
 }
 
-export function renameWorkspace(workspaceId: string, newName: string): boolean {
-  const config = loadStoredConfig();
-  if (!config) return false;
-
-  const workspace = config.workspaces.find(w => w.id === workspaceId);
-  if (!workspace) return false;
-
-  workspace.name = newName.trim();
-  saveConfig(config);
-  return true;
-}
+// Note: renameWorkspace() was removed - workspace names are now stored only in folder config
+// Use updateWorkspaceSetting('name', ...) to rename workspaces via the folder config
 
 // ============================================
 // Workspace Conversation Persistence
@@ -784,4 +810,87 @@ export function deleteSessionDraft(sessionId: string): void {
 export function getAllSessionDrafts(): Record<string, string> {
   const data = loadDraftsData();
   return data.drafts;
+}
+
+// ============================================
+// Theme Storage (Cascading: app → workspace → agent)
+// ============================================
+
+import type { ThemeOverrides } from './theme.ts';
+
+const APP_THEME_FILE = join(CONFIG_DIR, 'theme.json');
+
+/**
+ * Load app-level theme overrides
+ */
+export function loadAppTheme(): ThemeOverrides | null {
+  try {
+    if (!existsSync(APP_THEME_FILE)) {
+      return null;
+    }
+    const content = readFileSync(APP_THEME_FILE, 'utf-8');
+    return JSON.parse(content) as ThemeOverrides;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Save app-level theme overrides
+ */
+export function saveAppTheme(theme: ThemeOverrides): void {
+  ensureConfigDir();
+  writeFileSync(APP_THEME_FILE, JSON.stringify(theme, null, 2), 'utf-8');
+}
+
+/**
+ * Load workspace-level theme overrides
+ */
+export function loadWorkspaceTheme(workspaceRootPath: string): ThemeOverrides | null {
+  try {
+    const themePath = join(workspaceRootPath, 'theme.json');
+    if (!existsSync(themePath)) {
+      return null;
+    }
+    const content = readFileSync(themePath, 'utf-8');
+    return JSON.parse(content) as ThemeOverrides;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Save workspace-level theme overrides
+ */
+export function saveWorkspaceTheme(workspaceRootPath: string, theme: ThemeOverrides): void {
+  const themePath = join(workspaceRootPath, 'theme.json');
+  writeFileSync(themePath, JSON.stringify(theme, null, 2), 'utf-8');
+}
+
+/**
+ * Load agent-level theme overrides
+ */
+export function loadAgentTheme(workspaceRootPath: string, agentSlug: string): ThemeOverrides | null {
+  try {
+    const themePath = join(workspaceRootPath, 'agents', agentSlug, 'theme.json');
+    if (!existsSync(themePath)) {
+      return null;
+    }
+    const content = readFileSync(themePath, 'utf-8');
+    return JSON.parse(content) as ThemeOverrides;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Save agent-level theme overrides
+ */
+export function saveAgentTheme(workspaceRootPath: string, agentSlug: string, theme: ThemeOverrides): void {
+  const agentDir = join(workspaceRootPath, 'agents', agentSlug);
+  if (!existsSync(agentDir)) {
+    mkdirSync(agentDir, { recursive: true });
+  }
+  const themePath = join(agentDir, 'theme.json');
+  writeFileSync(themePath, JSON.stringify(theme, null, 2), 'utf-8');
 }

@@ -15,11 +15,16 @@ export interface Message {
   toolName?: string;
   toolInput?: Record<string, unknown>;
   toolIntent?: string;  // Explicit intent from **Doing:** marker or Bash description
-  toolStatus?: 'pending' | 'executing' | 'completed' | 'error';
+  toolStatus?: 'pending' | 'executing' | 'completed' | 'error' | 'backgrounded';
   toolDuration?: number;
   isError?: boolean;
   isStreaming?: boolean;
   timestamp?: number;
+  // Background task/shell properties
+  taskId?: string;
+  shellId?: string;
+  elapsedSeconds?: number;
+  isBackground?: boolean;
 }
 
 export interface MessagesProps {

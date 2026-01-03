@@ -29,11 +29,11 @@ interface StepIconProps {
 const iconVariantStyles: Record<StepIconVariant, { container: string; icon: string }> = {
   primary: {
     container: '',
-    icon: 'text-primary',
+    icon: 'text-foreground',
   },
   success: {
     container: '',
-    icon: 'text-green-500',
+    icon: 'text-success',
   },
   error: {
     container: '',
@@ -41,7 +41,7 @@ const iconVariantStyles: Record<StepIconVariant, { container: string; icon: stri
   },
   loading: {
     container: '',
-    icon: 'text-primary',
+    icon: 'text-foreground',
   },
   none: {
     container: '',

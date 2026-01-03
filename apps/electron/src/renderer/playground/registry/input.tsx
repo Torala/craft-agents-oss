@@ -188,7 +188,7 @@ function InputTransitions() {
               className={cn(
                 'max-w-[80%] p-3 rounded-lg text-sm',
                 msg.role === 'user'
-                  ? 'ml-auto bg-primary text-primary-foreground'
+                  ? 'ml-auto bg-foreground text-background'
                   : 'bg-muted text-foreground'
               )}
             >
@@ -230,7 +230,7 @@ const TOAST_TYPES: { id: ToastType; label: string; color: string }[] = [
   { id: 'warning', label: 'Warning', color: 'bg-amber-500' },
   { id: 'info', label: 'Info', color: 'bg-blue-500' },
   { id: 'loading', label: 'Loading', color: 'bg-purple-500' },
-  { id: 'action', label: 'With Action', color: 'bg-primary' },
+  { id: 'action', label: 'With Action', color: 'bg-foreground' },
 ]
 
 function SonnerPlayground() {
@@ -284,7 +284,7 @@ function SonnerPlayground() {
               className={cn(
                 'flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all',
                 'bg-muted/50 hover:bg-muted text-foreground',
-                lastType === t.id && 'ring-2 ring-primary ring-offset-2 ring-offset-background'
+                lastType === t.id && 'ring-2 ring-foreground ring-offset-2 ring-offset-background'
               )}
             >
               <div className={cn('w-3 h-3 rounded-full', t.color)} />

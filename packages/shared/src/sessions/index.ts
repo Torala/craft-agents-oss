@@ -55,4 +55,6 @@ export {
   listPlanFiles,
   deletePlanFile,
   getMostRecentPlanFile,
+  // Async persistence queue
+  sessionPersistenceQueue,
 } from './storage.ts';

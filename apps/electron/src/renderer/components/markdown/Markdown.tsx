@@ -111,7 +111,7 @@ function createComponents(
         <a
           href={href}
           onClick={handleClick}
-          className="text-primary hover:underline cursor-pointer"
+          className="text-foreground hover:underline cursor-pointer"
         >
           {children}
         </a>
@@ -157,7 +157,7 @@ function createComponents(
         // Block code - use CodeBlock with full mode
         if (match || isBlock) {
           const code = String(children).replace(/\n$/, '')
-          return <CodeBlock code={code} language={match?.[1]} mode="full" />
+          return <CodeBlock code={code} language={match?.[1]} mode="full" className="my-1" />
         }
 
         // Inline code
@@ -217,7 +217,7 @@ function createComponents(
 
       if (match || isBlock) {
         const code = String(children).replace(/\n$/, '')
-        return <CodeBlock code={code} language={match?.[1]} mode="full" />
+        return <CodeBlock code={code} language={match?.[1]} mode="full" className="my-1" />
       }
 
       return <InlineCode>{children}</InlineCode>
@@ -267,7 +267,7 @@ function createComponents(
     ),
     // Styled blockquotes
     blockquote: ({ children }) => (
-      <blockquote className="border-l-4 border-primary/30 bg-muted/30 pl-4 pr-3 py-2 my-3 rounded-r-md">
+      <blockquote className="border-l-4 border-foreground/30 bg-muted/30 pl-4 pr-3 py-2 my-3 rounded-r-md">
         {children}
       </blockquote>
     ),

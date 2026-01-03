@@ -9,7 +9,7 @@ import { PreviewWindowManager } from './preview-window'
 import { DiffPreviewWindowManager } from './diff-preview-window'
 import { CodePreviewWindowManager } from './code-preview-window'
 import { TerminalPreviewWindowManager } from './terminal-preview-window'
-import { SessionDiffWindowManager } from './session-diff-window'
+import { MultiFileDiffWindowManager } from './multi-file-diff-window'
 import { loadWindowState, saveWindowState } from './window-state'
 import { getWorkspaces } from '@craft-agent/shared/config'
 import { handleDeepLink } from './deep-link'
@@ -23,7 +23,7 @@ let previewWindowManager: PreviewWindowManager | null = null
 let diffPreviewWindowManager: DiffPreviewWindowManager | null = null
 let codePreviewWindowManager: CodePreviewWindowManager | null = null
 let terminalPreviewWindowManager: TerminalPreviewWindowManager | null = null
-let sessionDiffWindowManager: SessionDiffWindowManager | null = null
+let multiFileDiffWindowManager: MultiFileDiffWindowManager | null = null
 
 // Store pending deep link if app not ready yet (cold start)
 let pendingDeepLink: string | null = null
@@ -147,15 +147,15 @@ app.whenReady().then(async () => {
     // Initialize terminal preview window manager
     terminalPreviewWindowManager = new TerminalPreviewWindowManager()
 
-    // Initialize session diff window manager
-    sessionDiffWindowManager = new SessionDiffWindowManager()
+    // Initialize multi-file diff window manager
+    multiFileDiffWindowManager = new MultiFileDiffWindowManager()
 
     // Initialize session manager
     sessionManager = new SessionManager()
     sessionManager.setWindowManager(windowManager)
 
     // Register IPC handlers (must happen before window creation)
-    registerIpcHandlers(sessionManager, windowManager, previewWindowManager, diffPreviewWindowManager, codePreviewWindowManager, terminalPreviewWindowManager, sessionDiffWindowManager)
+    registerIpcHandlers(sessionManager, windowManager, previewWindowManager, diffPreviewWindowManager, codePreviewWindowManager, terminalPreviewWindowManager, multiFileDiffWindowManager)
 
     // Create initial windows (restores from saved state or opens first workspace)
     await createInitialWindows()
@@ -202,8 +202,15 @@ app.on('window-all-closed', () => {
   }
 })
 
+// Track if we're in the process of quitting (to avoid re-entry)
+let isQuitting = false
+
 // Save window state and clean up resources before quitting
-app.on('before-quit', () => {
+app.on('before-quit', async (event) => {
+  // Avoid re-entry when we call app.exit()
+  if (isQuitting) return
+  isQuitting = true
+
   if (windowManager) {
     const openWorkspaceIds = windowManager.getOpenWorkspaceIds()
     // Get the focused window's workspace as last focused
@@ -220,9 +227,20 @@ app.on('before-quit', () => {
     console.log('[Main] Saved window state:', openWorkspaceIds.length, 'workspaces')
   }
 
-  // Clean up SessionManager resources (file watchers, timers, etc.)
+  // Flush all pending session writes before quitting
   if (sessionManager) {
+    // Prevent quit until sessions are flushed
+    event.preventDefault()
+    try {
+      await sessionManager.flushAllSessions()
+      console.log('[Main] Flushed all pending session writes')
+    } catch (error) {
+      console.error('[Main] Failed to flush sessions:', error)
+    }
+    // Clean up SessionManager resources (file watchers, timers, etc.)
     sessionManager.cleanup()
+    // Now actually quit
+    app.exit(0)
   }
 })
 

@@ -22,6 +22,8 @@ const api: ElectronAPI = {
     ipcRenderer.invoke(IPC_CHANNELS.RESPOND_TO_CREDENTIAL, sessionId, requestId, response),
   updateSessionWorkingDirectory: (sessionId: string, path: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.UPDATE_WORKING_DIRECTORY, sessionId, path),
+  showSessionInFinder: (sessionId: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.SHOW_SESSION_IN_FINDER, sessionId),
 
   // Permission mode management ('safe', 'ask', 'allow-all')
   setPermissionMode: (sessionId: string, mode: import('../shared/types').PermissionMode) =>
@@ -36,6 +38,7 @@ const api: ElectronAPI = {
   getWindowWorkspace: () => ipcRenderer.invoke(IPC_CHANNELS.GET_WINDOW_WORKSPACE),
   getWindowMode: () => ipcRenderer.invoke(IPC_CHANNELS.GET_WINDOW_MODE),
   openWorkspace: (workspaceId: string) => ipcRenderer.invoke(IPC_CHANNELS.OPEN_WORKSPACE, workspaceId),
+  switchWorkspace: (workspaceId: string) => ipcRenderer.invoke(IPC_CHANNELS.SWITCH_WORKSPACE, workspaceId),
   closeWindow: () => ipcRenderer.invoke(IPC_CHANNELS.CLOSE_WINDOW),
 
   // Agent management
@@ -244,13 +247,13 @@ const api: ElectronAPI = {
   getTerminalPreviewData: (sessionId: string, previewId: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_PREVIEW_GET_DATA, sessionId, previewId),
 
-  // Session diff window (all edits/writes in a turn)
-  openSessionDiff: (sessionId: string, turnId: string, data: import('../shared/types').SessionDiffData) =>
-    ipcRenderer.invoke(IPC_CHANNELS.SESSION_DIFF_OPEN, sessionId, turnId, data),
-  getSessionDiffData: (sessionId: string, turnId: string) =>
-    ipcRenderer.invoke(IPC_CHANNELS.SESSION_DIFF_GET_DATA, sessionId, turnId),
+  // Multi-file diff window (all edits/writes in a turn)
+  openMultiFileDiff: (sessionId: string, turnId: string, data: import('../shared/types').MultiFileDiffData) =>
+    ipcRenderer.invoke(IPC_CHANNELS.MULTI_FILE_DIFF_OPEN, sessionId, turnId, data),
+  getMultiFileDiffData: (sessionId: string, turnId: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.MULTI_FILE_DIFF_GET_DATA, sessionId, turnId),
   readFileForDiff: (filePath: string) =>
-    ipcRenderer.invoke(IPC_CHANNELS.SESSION_DIFF_READ_FILE, filePath),
+    ipcRenderer.invoke(IPC_CHANNELS.MULTI_FILE_DIFF_READ_FILE, filePath),
 
   // Session Drafts (persisted input text)
   getDraft: (sessionId: string) => ipcRenderer.invoke(IPC_CHANNELS.DRAFTS_GET, sessionId),
@@ -281,8 +284,12 @@ const api: ElectronAPI = {
   // Status management
   listStatuses: (workspaceId: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.STATUSES_LIST, workspaceId),
-  readIconFile: (workspaceId: string, filename: string) =>
-    ipcRenderer.invoke(IPC_CHANNELS.STATUSES_READ_ICON_FILE, workspaceId, filename),
+
+  // Generic workspace image loading/saving
+  readWorkspaceImage: (workspaceId: string, relativePath: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_READ_IMAGE, workspaceId, relativePath),
+  writeWorkspaceImage: (workspaceId: string, relativePath: string, base64: string, mimeType: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_WRITE_IMAGE, workspaceId, relativePath, base64, mimeType),
 
   // Session sources
   setSessionSources: (sessionId: string, sourceSlugs: string[]) =>
@@ -320,6 +327,42 @@ const api: ElectronAPI = {
     ipcRenderer.on(IPC_CHANNELS.AGENTS_CHANGED, handler)
     return () => {
       ipcRenderer.removeListener(IPC_CHANNELS.AGENTS_CHANGED, handler)
+    }
+  },
+
+  // Theme (cascading: app → workspace → agent)
+  getAppTheme: () => ipcRenderer.invoke(IPC_CHANNELS.THEME_GET_APP),
+  getWorkspaceTheme: (workspaceId: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.THEME_GET_WORKSPACE, workspaceId),
+  getAgentTheme: (workspaceId: string, agentSlug: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.THEME_GET_AGENT, workspaceId, agentSlug),
+
+  // Theme change listeners (live updates when theme.json files change)
+  onAppThemeChange: (callback: (theme: import('@craft-agent/shared/config').ThemeOverrides | null) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, theme: import('@craft-agent/shared/config').ThemeOverrides | null) => {
+      callback(theme)
+    }
+    ipcRenderer.on(IPC_CHANNELS.THEME_APP_CHANGED, handler)
+    return () => {
+      ipcRenderer.removeListener(IPC_CHANNELS.THEME_APP_CHANGED, handler)
+    }
+  },
+  onWorkspaceThemeChange: (callback: (theme: import('@craft-agent/shared/config').ThemeOverrides | null) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, theme: import('@craft-agent/shared/config').ThemeOverrides | null) => {
+      callback(theme)
+    }
+    ipcRenderer.on(IPC_CHANNELS.THEME_WORKSPACE_CHANGED, handler)
+    return () => {
+      ipcRenderer.removeListener(IPC_CHANNELS.THEME_WORKSPACE_CHANGED, handler)
+    }
+  },
+  onAgentThemeChange: (callback: (agentSlug: string, theme: import('@craft-agent/shared/config').ThemeOverrides | null) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, agentSlug: string, theme: import('@craft-agent/shared/config').ThemeOverrides | null) => {
+      callback(agentSlug, theme)
+    }
+    ipcRenderer.on(IPC_CHANNELS.THEME_AGENT_CHANGED, handler)
+    return () => {
+      ipcRenderer.removeListener(IPC_CHANNELS.THEME_AGENT_CHANGED, handler)
     }
   },
 }

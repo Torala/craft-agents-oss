@@ -101,7 +101,7 @@ export function SetupAuthBanner({
 
   // banner variant (default) - single line for session list (48px, full width, snapped to top)
   return (
-    <div className="h-12 shrink-0 pl-4 pr-2 flex items-center justify-between gap-3 border-b border-border/50 bg-card select-none">
+    <div className="h-12 shrink-0 pl-4 pr-2 flex items-center justify-between gap-3 border-b border-foreground/10 bg-background select-none">
       <h3 className="text-sm font-medium text-foreground font-sans flex items-center gap-2 min-w-0">
         <span className="truncate">{getTitle()}</span>
       </h3>

@@ -219,7 +219,7 @@ export default function PreferencesTabPanel({ tab }: PreferencesTabPanelProps) {
             {isSaving ? (
               <Spinner className="h-3.5 w-3.5 mr-1" />
             ) : saveSuccess ? (
-              <Check className="h-3.5 w-3.5 mr-1 text-green-500" />
+              <Check className="h-3.5 w-3.5 mr-1 text-success" />
             ) : (
               <Save className="h-3.5 w-3.5 mr-1" />
             )}

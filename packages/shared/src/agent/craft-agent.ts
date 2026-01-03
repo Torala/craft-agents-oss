@@ -12,7 +12,7 @@ import { shouldUseExtendedCacheTtl, loadStoredConfig, getDefaultPermissionMode, 
 import { loadPlanFromPath, type SessionConfig as Session } from '../sessions/storage.ts';
 import { DEFAULT_MODEL } from '../config/models.ts';
 import { getCredentialManager } from '../credentials/index.ts';
-import { updatePreferences, loadPreferences, type UserPreferences } from '../config/preferences.ts';
+import { updatePreferences, loadPreferences, formatPreferencesForPrompt, type UserPreferences } from '../config/preferences.ts';
 import type { FileAttachment } from '../utils/files.ts';
 import { debug } from '../utils/debug.ts';
 import { estimateTokens, summarizeLargeResult, TOKEN_LIMIT } from '../utils/summarize.ts';
@@ -557,6 +557,11 @@ export class CraftAgent {
   private ultrathinkMode: boolean = false;
   // Config file watcher for hot-reloading source changes
   private configWatcher: ConfigWatcher | null = null;
+  // Pinned system prompt components (captured on first chat, used for consistency after compaction)
+  private pinnedPreferencesPrompt: string | null = null;
+  private pinnedAgentDefinition: SubAgentDefinition | null = null;
+  // Captured stderr from SDK subprocess (for error diagnostics when process exits with code 1)
+  private lastStderrOutput: string[] = [];
 
   /**
    * Get the session ID for mode operations.
@@ -961,6 +966,34 @@ export class CraftAgent {
       this.toolIntents.clear();
       this.toolDisplayNames.clear();
 
+      // Pin system prompt components on first chat() call for consistency after compaction
+      // The SDK's resume mechanism expects system prompt consistency within a session
+      const currentPreferencesPrompt = formatPreferencesForPrompt();
+      const currentAgentSlug = this.activeAgentDefinition?.slug ?? null;
+
+      if (this.pinnedPreferencesPrompt === null) {
+        // First chat in this session - pin current values
+        this.pinnedPreferencesPrompt = currentPreferencesPrompt;
+        this.pinnedAgentDefinition = this.activeAgentDefinition;
+        debug('[chat] Pinned system prompt components for session consistency');
+      } else {
+        // Detect drift: warn user if context has changed since session started
+        const preferencesDrifted = currentPreferencesPrompt !== this.pinnedPreferencesPrompt;
+        const agentDrifted = currentAgentSlug !== (this.pinnedAgentDefinition?.slug ?? null);
+
+        if (preferencesDrifted || agentDrifted) {
+          const driftReasons: string[] = [];
+          if (preferencesDrifted) driftReasons.push('preferences');
+          if (agentDrifted) driftReasons.push('agent');
+
+          yield {
+            type: 'info',
+            message: `Note: Your ${driftReasons.join(' and ')} changed since this session started. Start a new session to apply changes.`,
+          };
+          debug(`[chat] Detected drift in: ${driftReasons.join(', ')}`);
+        }
+      }
+
       // Check if we have binary attachments that need the AsyncIterable interface
       const hasBinaryAttachments = attachments?.some(a => a.type === 'image' || a.type === 'pdf');
 
@@ -1027,21 +1060,38 @@ export class CraftAgent {
       // NOTE: Parent-child tracking for subagents is documented below (search for
       // "PARENT-CHILD TOOL TRACKING"). The SDK's parent_tool_use_id is authoritative.
 
+      // Clear stderr buffer at start of each query
+      this.lastStderrOutput = [];
+
       const options: Options = {
         ...getDefaultOptions(),
         model,
+        // Capture stderr from SDK subprocess for error diagnostics
+        // This helps identify why sessions fail with "process exited with code 1"
+        stderr: (data: string) => {
+          // Log to both debug file AND console for visibility
+          debug('[SDK stderr]', data);
+          console.error('[SDK stderr]', data);
+          // Keep last 20 lines to avoid unbounded memory growth
+          this.lastStderrOutput.push(data);
+          if (this.lastStderrOutput.length > 20) {
+            this.lastStderrOutput.shift();
+          }
+        },
         // Enable extended prompt cache TTL (1 hour instead of 5 minutes) when configured
         // The actual TTL injection happens in src/cache-ttl-interceptor.ts
         ...(useExtendedCache ? { betas: ['extended-cache-ttl-2025-04-11'] as any } : {}),
         // Extended thinking: set tokens based on model when ultrathink mode is active, otherwise 0
         maxThinkingTokens: this.ultrathinkMode ? getUltrathinkTokens(model) : 0,
         // Option A: Append to Claude Code's system prompt (recommended by docs)
+        // Use pinned values for consistency after compaction (SDK expects stable system prompt)
         systemPrompt: {
           type: 'preset',
           preset: 'claude_code',
           append: getSystemPrompt(
-            this.activeAgentDefinition ?? undefined,
-            this.temporaryClarifications ?? undefined
+            this.pinnedAgentDefinition ?? undefined,
+            this.temporaryClarifications ?? undefined,
+            this.pinnedPreferencesPrompt ?? undefined
           ),
         },
         // Option B: Custom system prompt (uncomment to use instead)
@@ -1078,6 +1128,7 @@ export class CraftAgent {
               const permissionsContext: PermissionsContext = {
                 workspaceSlug: this.workspaceRootPath,
                 activeSourceSlugs: Array.from(this.activeSourceServerNames),
+                activeAgentSlug: this.activeAgentDefinition?.slug,
               };
 
               // In 'allow-all' mode, still check for explicitly blocked tools
@@ -1098,6 +1149,24 @@ export class CraftAgent {
 
                 this.onDebug?.(`Allow-all mode: allowing ${input.tool_name}`);
                 // Fall through to source blocking and other checks below
+              }
+
+              // In 'ask' mode, still check for explicitly blocked tools
+              if (permissionMode === 'ask') {
+                const plansFolderPath = sessionId ? getSessionPlansPath(this.workspaceRootPath, sessionId) : undefined;
+                const result = shouldAllowToolInMode(
+                  input.tool_name,
+                  input.tool_input,
+                  'ask',
+                  { plansFolderPath, permissionsContext }
+                );
+
+                if (!result.allowed) {
+                  // Tool is explicitly blocked in permissions.json
+                  this.onDebug?.(`Ask mode: blocking explicitly blocked tool ${input.tool_name}`);
+                  return blockWithReason(result.reason);
+                }
+                // Don't return here - fall through to other checks (like prompting for permission)
               }
 
               // In 'safe' mode, check against read-only allowlist
@@ -1654,6 +1723,15 @@ export class CraftAgent {
       // Track whether we're trying to resume a session (for error handling)
       const wasResuming = !_isRetry && !!this.sessionId;
 
+      // Log resume attempt for debugging session failures
+      if (wasResuming) {
+        console.error(`[CraftAgent] Attempting to resume SDK session: ${this.sessionId}`);
+        debug(`[CraftAgent] Attempting to resume SDK session: ${this.sessionId}`);
+      } else {
+        console.error(`[CraftAgent] Starting fresh SDK session (no resume)`);
+        debug(`[CraftAgent] Starting fresh SDK session (no resume)`);
+      }
+
       // Create the query - use AsyncIterable for messages with binary attachments
       if (hasBinaryAttachments) {
         const sdkMessage = this.buildSDKUserMessage(userMessage, attachments);
@@ -1860,12 +1938,37 @@ export class CraftAgent {
         // The SDK's internal Claude Code process exits with code 1 for various API errors
         const isProcessError = errorMsg.includes('process exited with code');
         if (isProcessError) {
+          // Include captured stderr in diagnostics - this is often where the real error is
+          const stderrContext = this.lastStderrOutput.length > 0
+            ? this.lastStderrOutput.join('\n')
+            : undefined;
+          if (stderrContext) {
+            debug('[SDK process error] Captured stderr:', stderrContext);
+          }
+
+          // Check for expired session error - SDK session no longer exists server-side
+          // This happens when sessions expire (TTL) or are cleaned up by Anthropic
+          const isSessionExpired = stderrContext?.includes('No conversation found with session ID');
+          if (isSessionExpired && wasResuming && !_isRetry) {
+            console.error('[CraftAgent] SDK session expired server-side, clearing and retrying fresh');
+            debug('[CraftAgent] SDK session expired server-side, clearing and retrying fresh');
+            this.sessionId = null;
+            // Clear pinned state so retry captures fresh values
+            this.pinnedPreferencesPrompt = null;
+            this.pinnedAgentDefinition = null;
+            // Use 'info' instead of 'status' to show message without spinner
+            yield { type: 'info', message: 'Session expired, starting fresh...', level: 'info' };
+            // Recursively call with isRetry=true (yield* delegates all events)
+            yield* this.chat(userMessage, attachments, true);
+            return;
+          }
+
           // Run diagnostics to identify specific cause (2s timeout)
           const storedConfig = loadStoredConfig();
           const diagnostics = await runErrorDiagnostics({
             authType: storedConfig?.authType,
             workspaceId: this.config.workspace?.id,
-            rawError: rawErrorMsg,
+            rawError: stderrContext || rawErrorMsg,
           });
 
           // Get recovery actions based on diagnostic code
@@ -1894,11 +1997,14 @@ export class CraftAgent {
               code: diagnostics.code,
               title: diagnostics.title,
               message: diagnostics.message,
-              details: diagnostics.details,
+              // Include stderr in details if we captured any useful output
+              details: stderrContext
+                ? [...(diagnostics.details || []), `SDK stderr: ${stderrContext}`]
+                : diagnostics.details,
               actions,
               canRetry: diagnostics.code !== 'credits_exhausted' && diagnostics.code !== 'invalid_credentials',
               retryDelayMs: 1000,
-              originalError: rawErrorMsg,
+              originalError: stderrContext || rawErrorMsg,
             },
           };
           yield { type: 'complete' };
@@ -1908,6 +2014,9 @@ export class CraftAgent {
         // Session-related retry: only if we were resuming and haven't retried yet
         if (wasResuming && !_isRetry) {
           this.sessionId = null;
+          // Clear pinned state so retry captures fresh values
+          this.pinnedPreferencesPrompt = null;
+          this.pinnedAgentDefinition = null;
 
           // Provide context-aware message (conservative: only match explicit session/resume terms)
           const isSessionError =
@@ -1918,7 +2027,8 @@ export class CraftAgent {
             ? 'Conversation sync failed, starting fresh...'
             : 'Request failed, retrying without history...';
 
-          yield { type: 'status', message: statusMessage };
+          // Use 'info' instead of 'status' to show message without spinner
+          yield { type: 'info', message: statusMessage, level: 'info' };
           // Recursively call with isRetry=true (yield* delegates all events)
           yield* this.chat(userMessage, attachments, true);
           return;
@@ -2799,6 +2909,9 @@ export class CraftAgent {
   clearHistory(): void {
     // Clear session to start fresh conversation
     this.sessionId = null;
+    // Clear pinned state so next chat() will capture fresh values
+    this.pinnedPreferencesPrompt = null;
+    this.pinnedAgentDefinition = null;
   }
 
   interrupt(): void {
@@ -2899,9 +3012,9 @@ export class CraftAgent {
     return `## Source Authentication Assistance
 
 Some of your sources need authentication before they can be used (${sourceNames}). You have access to these tools:
-- \`oauth_trigger\`: Start OAuth authentication for MCP sources (opens browser)
-- \`credential_prompt\`: Prompt user for API keys/tokens via secure input UI
-- \`gmail_oauth_trigger\`: Start Google OAuth for Gmail sources
+- \`source_oauth_trigger\`: Start OAuth authentication for MCP sources (opens browser)
+- \`source_credential_prompt\`: Prompt user for API keys/tokens via secure input UI
+- \`source_gmail_oauth_trigger\`: Start Google OAuth for Gmail sources
 - \`source_test\`: Test if a source connection works
 
 When you see <setup_required> in a message, help the user authenticate those sources before proceeding with their actual request. After successful authentication, the source tools will become available.`;
@@ -3010,6 +3123,10 @@ When you see <setup_required> in a message, help the user authenticate those sou
     this.agentMcpServers = {};
     this.agentApiServers = {};
     this.temporaryClarifications = null;
+
+    // Clear pinned system prompt state
+    this.pinnedPreferencesPrompt = null;
+    this.pinnedAgentDefinition = null;
 
     // Clear callbacks
     this.onPermissionRequest = null;

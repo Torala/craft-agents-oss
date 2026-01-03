@@ -7,9 +7,11 @@
  * Watched paths:
  * - ~/.craft-agent/config.json - Main app configuration
  * - ~/.craft-agent/preferences.json - User preferences
+ * - ~/.craft-agent/theme.json - App-level theme overrides
  * - ~/.craft-agent/workspaces/{slug}/ - Workspace directory (recursive)
+ *   - theme.json - Workspace-level theme overrides
  *   - sources/{slug}/config.json, guide.md, permissions.json
- *   - agents/{slug}/config.json, instructions.md
+ *   - agents/{slug}/config.json, instructions.md, theme.json
  *   - permissions.json
  */
 
@@ -32,6 +34,8 @@ import { loadSource, loadWorkspaceSources, loadSourceGuide } from '../sources/st
 import { loadAgent, loadWorkspaceAgents, loadAgentInstructions } from '../agents/folder-storage.ts';
 import { permissionsConfigCache } from '../agent/permissions-config.ts';
 import { getWorkspacePath, getWorkspaceSourcesPath, getWorkspaceAgentsPath } from '../workspaces/storage.ts';
+import { loadAppTheme, loadWorkspaceTheme, loadAgentTheme } from './storage.ts';
+import type { ThemeOverrides } from './theme.ts';
 
 // ============================================================
 // Constants
@@ -101,6 +105,14 @@ export interface ConfigWatcherCallbacks {
   /** Called when a status icon file changes */
   onStatusIconChange?: (workspaceId: string, iconFilename: string) => void;
 
+  // Theme callbacks
+  /** Called when app-level theme.json changes */
+  onAppThemeChange?: (theme: ThemeOverrides | null) => void;
+  /** Called when workspace-level theme.json changes */
+  onWorkspaceThemeChange?: (theme: ThemeOverrides | null) => void;
+  /** Called when agent-level theme.json changes */
+  onAgentThemeChange?: (agentSlug: string, theme: ThemeOverrides | null) => void;
+
   // Error callbacks
   /** Called when a validation error occurs */
   onValidationError?: (file: string, result: ValidationResult) => void;
@@ -153,10 +165,18 @@ export class ConfigWatcher {
   private sourcesDir: string;
   private agentsDir: string;
 
-  constructor(workspaceId: string, callbacks: ConfigWatcherCallbacks) {
-    this.workspaceId = workspaceId;
+  constructor(workspaceIdOrPath: string, callbacks: ConfigWatcherCallbacks) {
     this.callbacks = callbacks;
-    this.workspaceDir = getWorkspacePath(workspaceId);
+    // Support both workspace ID and workspace root path
+    // Paths contain '/' while IDs don't
+    if (workspaceIdOrPath.includes('/')) {
+      this.workspaceDir = workspaceIdOrPath;
+      // Extract workspace ID from path (last segment)
+      this.workspaceId = workspaceIdOrPath.split('/').pop() || workspaceIdOrPath;
+    } else {
+      this.workspaceId = workspaceIdOrPath;
+      this.workspaceDir = getWorkspacePath(workspaceIdOrPath);
+    }
     this.sourcesDir = getWorkspaceSourcesPath(this.workspaceDir);
     this.agentsDir = getWorkspaceAgentsPath(this.workspaceDir);
   }
@@ -235,7 +255,7 @@ export class ConfigWatcher {
     }
 
     try {
-      // Watch the config directory for changes to config.json and preferences.json
+      // Watch the config directory for changes to config.json, preferences.json, and theme.json
       const watcher = watch(CONFIG_DIR, (eventType, filename) => {
         if (!filename) return;
 
@@ -243,6 +263,8 @@ export class ConfigWatcher {
           this.debounce('config.json', () => this.handleConfigChange());
         } else if (filename === 'preferences.json') {
           this.debounce('preferences.json', () => this.handlePreferencesChange());
+        } else if (filename === 'theme.json') {
+          this.debounce('app-theme', () => this.handleAppThemeChange());
         }
       });
 
@@ -285,6 +307,12 @@ export class ConfigWatcher {
       return;
     }
 
+    // Workspace-level theme.json
+    if (relativePath === 'theme.json') {
+      this.debounce('workspace-theme', () => this.handleWorkspaceThemeChange());
+      return;
+    }
+
     // Sources changes: sources/{slug}/...
     if (parts[0] === 'sources' && parts.length >= 2) {
       const slug = parts[1]!;  // Safe: checked parts.length >= 2
@@ -323,6 +351,8 @@ export class ConfigWatcher {
         this.debounce(`agent-config:${slug}`, () => this.handleAgentConfigChange(slug));
       } else if (file === 'instructions.md') {
         this.debounce(`agent-instructions:${slug}`, () => this.handleAgentInstructionsChange(slug));
+      } else if (file === 'theme.json') {
+        this.debounce(`agent-theme:${slug}`, () => this.handleAgentThemeChange(slug));
       }
       return;
     }
@@ -705,6 +735,37 @@ export class ConfigWatcher {
   private handleStatusIconChange(iconFilename: string): void {
     debug('[ConfigWatcher] Status icon changed:', this.workspaceId, iconFilename);
     this.callbacks.onStatusIconChange?.(this.workspaceId, iconFilename);
+  }
+
+  // ============================================================
+  // Theme Handlers
+  // ============================================================
+
+  /**
+   * Handle app-level theme.json change
+   */
+  private handleAppThemeChange(): void {
+    debug('[ConfigWatcher] App theme.json changed');
+    const theme = loadAppTheme();
+    this.callbacks.onAppThemeChange?.(theme);
+  }
+
+  /**
+   * Handle workspace-level theme.json change
+   */
+  private handleWorkspaceThemeChange(): void {
+    debug('[ConfigWatcher] Workspace theme.json changed:', this.workspaceId);
+    const theme = loadWorkspaceTheme(this.workspaceDir);
+    this.callbacks.onWorkspaceThemeChange?.(theme);
+  }
+
+  /**
+   * Handle agent-level theme.json change
+   */
+  private handleAgentThemeChange(agentSlug: string): void {
+    debug('[ConfigWatcher] Agent theme.json changed:', agentSlug);
+    const theme = loadAgentTheme(this.workspaceDir, agentSlug);
+    this.callbacks.onAgentThemeChange?.(agentSlug, theme);
   }
 }
 

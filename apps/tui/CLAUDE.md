@@ -45,6 +45,8 @@ apps/tui/
 │   │       └── useSettingsHandlers.ts
 │   ├── keyboard/
 │   │   └── mappings.ts    # Keyboard shortcut detection
+│   ├── types/
+│   │   └── marked-terminal.d.ts  # TypeScript declarations
 │   └── utils/
 │       ├── filtering.ts   # Command hints, tab completion
 │       ├── markdown.ts    # Markdown rendering with Shiki
@@ -55,6 +57,24 @@ apps/tui/
 ```
 
 ## Key Patterns
+
+### Permission Modes
+
+Three-level permission system integrated from `@craft-agent/shared`:
+- `'safe'` (Explore) - Read-only, blocks write operations
+- `'ask'` (Ask to Edit) - Prompts for bash commands (default)
+- `'allow-all'` (Auto) - Auto-approves all commands
+
+Header colors use centralized `PERMISSION_MODE_CONFIG` for consistency.
+
+### Background Task Events
+
+The `useAgent` hook handles background task events:
+- `task_backgrounded` - Agent task started in background
+- `shell_backgrounded` - Bash shell backgrounded
+- `task_progress` - Live elapsed time updates
+
+`ToolCall.tsx` shows backgrounded status with `⟳` icon and elapsed time.
 
 ### Import Strategy
 
@@ -97,6 +117,17 @@ const throttledSetStreamingText = useMemo(
   []
 );
 ```
+
+### useAgent Hook Features
+
+The `useAgent` hook provides:
+- `permissionMode` - Current session permission mode
+- `cycleMode` - Cycle through permission modes
+- `setSessionPermissionMode` - Set specific mode
+- Background task event handling
+- Debounced session persistence (500ms)
+- Agent extraction progress UI
+- Todo management from `TodoWrite` tool calls
 
 ## Commands
 

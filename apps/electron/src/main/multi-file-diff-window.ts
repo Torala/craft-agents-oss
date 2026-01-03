@@ -1,37 +1,37 @@
 import { BrowserWindow, shell, nativeTheme } from 'electron'
 import { join } from 'path'
-import { IPC_CHANNELS, type SessionDiffData } from '../shared/types'
+import { IPC_CHANNELS, type MultiFileDiffData } from '../shared/types'
 
 // Vite dev server URL for hot reload
 const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL
 
-interface SessionDiffWindowData {
+interface MultiFileDiffWindowData {
   window: BrowserWindow
   sessionId: string
   turnId: string
-  data: SessionDiffData
+  data: MultiFileDiffData
 }
 
 /**
- * SessionDiffWindowManager - Manages pop-out windows for viewing all edits/writes in a turn
+ * MultiFileDiffWindowManager - Manages pop-out windows for viewing all edits/writes in a turn
  *
  * Each window is keyed by sessionId:turnId to support multiple diff windows.
  * Shows a VS Code-style file tree on the left with Monaco diff editor on the right.
  */
-export class SessionDiffWindowManager {
-  private windows: Map<string, SessionDiffWindowData> = new Map()
+export class MultiFileDiffWindowManager {
+  private windows: Map<string, MultiFileDiffWindowData> = new Map()
 
   /**
-   * Generate key for a session diff window
+   * Generate key for a multi-file diff window
    */
   private getKey(sessionId: string, turnId: string): string {
     return `${sessionId}:${turnId}`
   }
 
   /**
-   * Open or focus an existing session diff window
+   * Open or focus an existing multi-file diff window
    */
-  openSessionDiff(sessionId: string, turnId: string, data: SessionDiffData): BrowserWindow {
+  openMultiFileDiff(sessionId: string, turnId: string, data: MultiFileDiffData): BrowserWindow {
     const key = this.getKey(sessionId, turnId)
 
     // If window exists and is not destroyed, focus it
@@ -46,7 +46,7 @@ export class SessionDiffWindowManager {
       return existing.window
     }
 
-    // Create new session diff window
+    // Create new multi-file diff window
     const backgroundColor = nativeTheme.shouldUseDarkColors ? '#1e1e1e' : '#ffffff'
 
     const window = new BrowserWindow({
@@ -79,14 +79,14 @@ export class SessionDiffWindowManager {
       data,
     })
 
-    // Load the session diff renderer
+    // Load the multi-file diff renderer
     const query = { sessionId, turnId }
 
     if (VITE_DEV_SERVER_URL) {
       const params = new URLSearchParams(query).toString()
-      window.loadURL(`${VITE_DEV_SERVER_URL}/session-diff.html?${params}`)
+      window.loadURL(`${VITE_DEV_SERVER_URL}/multi-file-diff.html?${params}`)
     } else {
-      window.loadFile(join(__dirname, 'renderer/session-diff.html'), { query })
+      window.loadFile(join(__dirname, 'renderer/multi-file-diff.html'), { query })
     }
 
     // Listen for system theme changes
@@ -101,24 +101,24 @@ export class SessionDiffWindowManager {
     window.on('closed', () => {
       nativeTheme.removeListener('updated', themeHandler)
       this.windows.delete(key)
-      console.log(`[SessionDiffWindowManager] Session diff window closed for ${key}`)
+      console.log(`[MultiFileDiffWindowManager] Multi-file diff window closed for ${key}`)
     })
 
-    console.log(`[SessionDiffWindowManager] Created session diff window for ${key} with ${data.changes.length} changes`)
+    console.log(`[MultiFileDiffWindowManager] Created multi-file diff window for ${key} with ${data.changes.length} changes`)
     return window
   }
 
   /**
-   * Get data for a session diff window (called from renderer on mount)
+   * Get data for a multi-file diff window (called from renderer on mount)
    */
-  getData(sessionId: string, turnId: string): SessionDiffData | null {
+  getData(sessionId: string, turnId: string): MultiFileDiffData | null {
     const key = this.getKey(sessionId, turnId)
     const windowData = this.windows.get(key)
     return windowData?.data ?? null
   }
 
   /**
-   * Close all session diff windows for a session
+   * Close all multi-file diff windows for a session
    */
   closeWindowsForSession(sessionId: string): void {
     for (const [key, data] of this.windows) {
@@ -129,9 +129,9 @@ export class SessionDiffWindowManager {
   }
 
   /**
-   * Get all session diff windows
+   * Get all multi-file diff windows
    */
-  getAllWindows(): SessionDiffWindowData[] {
+  getAllWindows(): MultiFileDiffWindowData[] {
     return Array.from(this.windows.values()).filter((d) => !d.window.isDestroyed())
   }
 }

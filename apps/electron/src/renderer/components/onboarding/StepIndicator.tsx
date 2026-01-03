@@ -58,8 +58,8 @@ export function StepIndicator({
             key={step}
             className={cn(
               "size-2 rounded-full transition-all duration-200",
-              isCompleted && "bg-primary",
-              isCurrent && "bg-primary ring-2 ring-primary/30 ring-offset-1 ring-offset-background",
+              isCompleted && "bg-foreground",
+              isCurrent && "bg-foreground ring-2 ring-foreground/30 ring-offset-1 ring-offset-background",
               !isCompleted && !isCurrent && "bg-muted-foreground/30"
             )}
             aria-label={`Step ${index + 1}: ${step}${isCompleted ? ' (completed)' : isCurrent ? ' (current)' : ''}`}

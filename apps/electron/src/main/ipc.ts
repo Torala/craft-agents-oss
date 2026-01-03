@@ -1,7 +1,7 @@
 import { ipcMain, nativeTheme, nativeImage, dialog, shell, BrowserWindow } from 'electron'
 import { readFile, realpath, mkdir, writeFile, unlink, rm } from 'fs/promises'
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
-import { normalize, isAbsolute, join, basename, dirname } from 'path'
+import { normalize, isAbsolute, join, basename, dirname, resolve } from 'path'
 import { homedir, tmpdir } from 'os'
 import { randomUUID } from 'crypto'
 import { SessionManager } from './sessions'
@@ -10,10 +10,10 @@ import { PreviewWindowManager } from './preview-window'
 import { DiffPreviewWindowManager } from './diff-preview-window'
 import { CodePreviewWindowManager } from './code-preview-window'
 import { TerminalPreviewWindowManager } from './terminal-preview-window'
-import { SessionDiffWindowManager } from './session-diff-window'
+import { MultiFileDiffWindowManager } from './multi-file-diff-window'
 import { agentService } from './agent-service'
 import { registerOnboardingHandlers } from './onboarding'
-import { IPC_CHANNELS, type FileAttachment, type StoredAttachment, type AgentActivateOptions, type AuthType, type BillingMethodInfo, type SendMessageOptions, type DiffPreviewData, type CodePreviewData, type TerminalPreviewData, type SessionDiffData } from '../shared/types'
+import { IPC_CHANNELS, type FileAttachment, type StoredAttachment, type AgentActivateOptions, type AuthType, type BillingMethodInfo, type SendMessageOptions, type DiffPreviewData, type CodePreviewData, type TerminalPreviewData, type MultiFileDiffData } from '../shared/types'
 import { readFileAttachment } from '@craft-agent/shared/utils'
 import { getAiCreditTopUpUrl } from '@craft-agent/shared/auth'
 import { getAuthType, setAuthType, getPreferencesPath, getModel, setModel, getSessionDraft, setSessionDraft, deleteSessionDraft, getAllSessionDrafts, getDefaultPermissionMode, setDefaultPermissionMode, getDefaultWorkingDirectory, setDefaultWorkingDirectory, getWorkspaceByNameOrId, addWorkspace, setActiveWorkspace, type Workspace } from '@craft-agent/shared/config'
@@ -105,7 +105,7 @@ async function validateFilePath(filePath: string): Promise<string> {
   return realPath
 }
 
-export function registerIpcHandlers(sessionManager: SessionManager, windowManager: WindowManager, previewWindowManager: PreviewWindowManager, diffPreviewWindowManager: DiffPreviewWindowManager, codePreviewWindowManager: CodePreviewWindowManager, terminalPreviewWindowManager: TerminalPreviewWindowManager, sessionDiffWindowManager: SessionDiffWindowManager): void {
+export function registerIpcHandlers(sessionManager: SessionManager, windowManager: WindowManager, previewWindowManager: PreviewWindowManager, diffPreviewWindowManager: DiffPreviewWindowManager, codePreviewWindowManager: CodePreviewWindowManager, terminalPreviewWindowManager: TerminalPreviewWindowManager, multiFileDiffWindowManager: MultiFileDiffWindowManager): void {
   // Get all sessions
   ipcMain.handle(IPC_CHANNELS.GET_SESSIONS, async () => {
     return sessionManager.getSessions()
@@ -133,7 +133,15 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
 
   // Get workspace ID for the calling window
   ipcMain.handle(IPC_CHANNELS.GET_WINDOW_WORKSPACE, (event) => {
-    return windowManager.getWorkspaceForWindow(event.sender.id)
+    const workspaceId = windowManager.getWorkspaceForWindow(event.sender.id)
+    // Set up ConfigWatcher for live theme/source updates
+    if (workspaceId) {
+      const workspace = getWorkspaceByNameOrId(workspaceId)
+      if (workspace) {
+        sessionManager.setupConfigWatcher(workspace.rootPath)
+      }
+    }
+    return workspaceId
   })
 
   // Open workspace in new window (or focus existing)
@@ -149,6 +157,18 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
   // Close the calling window
   ipcMain.handle(IPC_CHANNELS.CLOSE_WINDOW, (event) => {
     windowManager.closeWindow(event.sender.id)
+  })
+
+  // Switch workspace in current window (in-window switching)
+  ipcMain.handle(IPC_CHANNELS.SWITCH_WORKSPACE, async (event, workspaceId: string) => {
+    // Update the window's workspace mapping
+    windowManager.updateWindowWorkspace(event.sender.id, workspaceId)
+
+    // Set up ConfigWatcher for the new workspace
+    const workspace = getWorkspaceByNameOrId(workspaceId)
+    if (workspace) {
+      sessionManager.setupConfigWatcher(workspace.rootPath)
+    }
   })
 
   // Create a new session (with optional agent assignment)
@@ -264,6 +284,14 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
   // Update working directory for a session
   ipcMain.handle(IPC_CHANNELS.UPDATE_WORKING_DIRECTORY, async (_event, sessionId: string, path: string) => {
     return sessionManager.updateWorkingDirectory(sessionId, path)
+  })
+
+  // Show session folder in Finder
+  ipcMain.handle(IPC_CHANNELS.SHOW_SESSION_IN_FINDER, async (_event, sessionId: string) => {
+    const sessionPath = sessionManager.getSessionPath(sessionId)
+    if (sessionPath) {
+      shell.showItemInFolder(sessionPath)
+    }
   })
 
   // Read a file (with path validation to prevent traversal attacks)
@@ -856,6 +884,7 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
     const config = loadWorkspaceConfig(workspace.rootPath)
 
     return {
+      name: config?.name,
       model: config?.defaults?.model,
       permissionMode: config?.defaults?.permissionMode,
       workingDirectory: config?.defaults?.workingDirectory,
@@ -864,7 +893,7 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
   })
 
   // Update a workspace setting
-  // Valid keys: 'model', 'enabledSourceSlugs', 'permissionMode', 'workingDirectory', 'credentialStrategy'
+  // Valid keys: 'name', 'model', 'enabledSourceSlugs', 'permissionMode', 'workingDirectory', 'credentialStrategy'
   ipcMain.handle(IPC_CHANNELS.WORKSPACE_SETTINGS_UPDATE, async (_event, workspaceId: string, key: string, value: unknown) => {
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) {
@@ -872,7 +901,7 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
     }
 
     // Validate key is a known workspace setting
-    const validKeys = ['model', 'enabledSourceSlugs', 'permissionMode', 'workingDirectory', 'credentialStrategy']
+    const validKeys = ['name', 'model', 'enabledSourceSlugs', 'permissionMode', 'workingDirectory', 'credentialStrategy']
     if (!validKeys.includes(key)) {
       throw new Error(`Invalid workspace setting key: ${key}. Valid keys: ${validKeys.join(', ')}`)
     }
@@ -883,10 +912,14 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
       throw new Error(`Failed to load workspace config: ${workspaceId}`)
     }
 
-    // Update the setting in defaults
-    // Type assertion is safe here because we've validated the key above
-    config.defaults = config.defaults || {}
-    ;(config.defaults as Record<string, unknown>)[key] = value
+    // Handle 'name' specially - it's a top-level config property, not in defaults
+    if (key === 'name') {
+      config.name = String(value).trim()
+    } else {
+      // Update the setting in defaults
+      config.defaults = config.defaults || {}
+      ;(config.defaults as Record<string, unknown>)[key] = value
+    }
 
     // Save the config
     saveWorkspaceConfig(workspace.rootPath, config)
@@ -1061,23 +1094,25 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
   })
 
   // ============================================================
-  // Session Diff Window (all edits/writes in a turn)
+  // Multi-File Diff Window (all edits/writes in a turn)
   // ============================================================
 
-  // Open session diff window
-  ipcMain.handle(IPC_CHANNELS.SESSION_DIFF_OPEN, async (_event, sessionId: string, turnId: string, data: SessionDiffData) => {
-    sessionDiffWindowManager.openSessionDiff(sessionId, turnId, data)
+  // Open multi-file diff window
+  ipcMain.handle(IPC_CHANNELS.MULTI_FILE_DIFF_OPEN, async (_event, sessionId: string, turnId: string, data: MultiFileDiffData) => {
+    multiFileDiffWindowManager.openMultiFileDiff(sessionId, turnId, data)
   })
 
-  // Get data for a session diff window (called from session diff window on mount)
-  ipcMain.handle(IPC_CHANNELS.SESSION_DIFF_GET_DATA, async (_event, sessionId: string, turnId: string) => {
-    return sessionDiffWindowManager.getData(sessionId, turnId)
+  // Get data for a multi-file diff window (called from multi-file diff window on mount)
+  ipcMain.handle(IPC_CHANNELS.MULTI_FILE_DIFF_GET_DATA, async (_event, sessionId: string, turnId: string) => {
+    return multiFileDiffWindowManager.getData(sessionId, turnId)
   })
 
   // Read a file for full-context diff view
-  ipcMain.handle(IPC_CHANNELS.SESSION_DIFF_READ_FILE, async (_event, filePath: string) => {
+  ipcMain.handle(IPC_CHANNELS.MULTI_FILE_DIFF_READ_FILE, async (_event, filePath: string) => {
     try {
-      const validPath = await validateFilePath(filePath)
+      // Resolve relative paths to absolute (Edit tool may use relative paths)
+      const absolutePath = resolve(filePath)
+      const validPath = await validateFilePath(absolutePath)
       const content = await readFile(validPath, 'utf-8')
       return content
     } catch (err) {
@@ -1386,32 +1421,161 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
     return listStatuses(workspace.rootPath)
   })
 
-  // Read icon file from statuses/icons/ directory
-  ipcMain.handle(IPC_CHANNELS.STATUSES_READ_ICON_FILE, async (_event, workspaceId: string, filename: string) => {
+  // Generic workspace image loading (for source icons, status icons, etc.)
+  ipcMain.handle(IPC_CHANNELS.WORKSPACE_READ_IMAGE, async (_event, workspaceId: string, relativePath: string) => {
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) throw new Error('Workspace not found')
 
     const { readFileSync, existsSync } = await import('fs')
-    const { join } = await import('path')
+    const { join, normalize } = await import('path')
 
-    const iconPath = join(workspace.rootPath, 'statuses', 'icons', filename)
+    // Security: validate path
+    // - Must not contain .. (path traversal)
+    // - Must be a valid image extension
+    const ALLOWED_EXTENSIONS = ['.svg', '.png', '.jpg', '.jpeg', '.webp', '.ico', '.gif']
 
-    if (!existsSync(iconPath)) {
-      throw new Error(`Icon file not found: ${filename}`)
+    if (relativePath.includes('..')) {
+      throw new Error('Invalid path: directory traversal not allowed')
     }
 
-    // Read file as buffer (works for both SVG text and binary images)
-    const buffer = readFileSync(iconPath)
+    const ext = relativePath.toLowerCase().slice(relativePath.lastIndexOf('.'))
+    if (!ALLOWED_EXTENSIONS.includes(ext)) {
+      throw new Error(`Invalid file type: ${ext}. Allowed: ${ALLOWED_EXTENSIONS.join(', ')}`)
+    }
 
-    // If SVG, return as UTF-8 string
-    if (filename.endsWith('.svg')) {
+    // Resolve path relative to workspace root
+    const absolutePath = normalize(join(workspace.rootPath, relativePath))
+
+    // Double-check the resolved path is still within workspace
+    if (!absolutePath.startsWith(workspace.rootPath)) {
+      throw new Error('Invalid path: outside workspace directory')
+    }
+
+    if (!existsSync(absolutePath)) {
+      throw new Error(`Image file not found: ${relativePath}`)
+    }
+
+    // Read file as buffer
+    const buffer = readFileSync(absolutePath)
+
+    // If SVG, return as UTF-8 string (caller will use as innerHTML)
+    if (ext === '.svg') {
       return buffer.toString('utf-8')
     }
 
-    // Otherwise, return as base64 for images (PNG, JPG, etc.)
-    return buffer.toString('base64')
+    // For binary images, return as data URL
+    const mimeTypes: Record<string, string> = {
+      '.png': 'image/png',
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.webp': 'image/webp',
+      '.ico': 'image/x-icon',
+      '.gif': 'image/gif',
+    }
+    const mimeType = mimeTypes[ext] || 'image/png'
+    return `data:${mimeType};base64,${buffer.toString('base64')}`
+  })
+
+  // Generic workspace image writing (for workspace icon, etc.)
+  // Resizes images to max 256x256 to keep file sizes small
+  ipcMain.handle(IPC_CHANNELS.WORKSPACE_WRITE_IMAGE, async (_event, workspaceId: string, relativePath: string, base64: string, mimeType: string) => {
+    const workspace = getWorkspaceByNameOrId(workspaceId)
+    if (!workspace) throw new Error('Workspace not found')
+
+    const { writeFileSync, existsSync, unlinkSync, readdirSync } = await import('fs')
+    const { join, normalize, basename } = await import('path')
+
+    // Security: validate path
+    const ALLOWED_EXTENSIONS = ['.svg', '.png', '.jpg', '.jpeg', '.webp', '.gif']
+
+    if (relativePath.includes('..')) {
+      throw new Error('Invalid path: directory traversal not allowed')
+    }
+
+    const ext = relativePath.toLowerCase().slice(relativePath.lastIndexOf('.'))
+    if (!ALLOWED_EXTENSIONS.includes(ext)) {
+      throw new Error(`Invalid file type: ${ext}. Allowed: ${ALLOWED_EXTENSIONS.join(', ')}`)
+    }
+
+    // Resolve path relative to workspace root
+    const absolutePath = normalize(join(workspace.rootPath, relativePath))
+
+    // Double-check the resolved path is still within workspace
+    if (!absolutePath.startsWith(workspace.rootPath)) {
+      throw new Error('Invalid path: outside workspace directory')
+    }
+
+    // If this is an icon file (icon.*), delete any existing icon files with different extensions
+    const fileName = basename(relativePath)
+    if (fileName.startsWith('icon.')) {
+      const files = readdirSync(workspace.rootPath)
+      for (const file of files) {
+        if (file.startsWith('icon.') && file !== fileName) {
+          const oldPath = join(workspace.rootPath, file)
+          try {
+            unlinkSync(oldPath)
+          } catch {
+            // Ignore errors deleting old icon
+          }
+        }
+      }
+    }
+
+    // Decode base64 to buffer
+    const buffer = Buffer.from(base64, 'base64')
+
+    // For SVGs, just write directly (no resizing needed)
+    if (mimeType === 'image/svg+xml' || ext === '.svg') {
+      writeFileSync(absolutePath, buffer)
+      return
+    }
+
+    // For raster images, resize to max 256x256 using nativeImage
+    const image = nativeImage.createFromBuffer(buffer)
+    const size = image.getSize()
+
+    // Only resize if larger than 256px
+    if (size.width > 256 || size.height > 256) {
+      const ratio = Math.min(256 / size.width, 256 / size.height)
+      const newWidth = Math.round(size.width * ratio)
+      const newHeight = Math.round(size.height * ratio)
+      const resized = image.resize({ width: newWidth, height: newHeight, quality: 'best' })
+
+      // Write as PNG for consistency
+      writeFileSync(absolutePath, resized.toPNG())
+    } else {
+      // Small enough, write as-is
+      writeFileSync(absolutePath, buffer)
+    }
   })
 
   // Register onboarding handlers
   registerOnboardingHandlers(sessionManager)
+
+  // ============================================================
+  // Theme (cascading: app → workspace → agent)
+  // ============================================================
+
+  ipcMain.handle(IPC_CHANNELS.THEME_GET_APP, async () => {
+    const { loadAppTheme } = await import('@craft-agent/shared/config/storage')
+    return loadAppTheme()
+  })
+
+  ipcMain.handle(IPC_CHANNELS.THEME_GET_WORKSPACE, async (_event, workspaceId: string) => {
+    const workspace = getWorkspaceByNameOrId(workspaceId)
+    if (!workspace) {
+      return null
+    }
+    const { loadWorkspaceTheme } = await import('@craft-agent/shared/config/storage')
+    return loadWorkspaceTheme(workspace.rootPath)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.THEME_GET_AGENT, async (_event, workspaceId: string, agentSlug: string) => {
+    const workspace = getWorkspaceByNameOrId(workspaceId)
+    if (!workspace) {
+      return null
+    }
+    const { loadAgentTheme } = await import('@craft-agent/shared/config/storage')
+    return loadAgentTheme(workspace.rootPath, agentSlug)
+  })
 }

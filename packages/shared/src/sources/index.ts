@@ -38,8 +38,6 @@ export {
   loadSourceGuide,
   loadAgentSourceGuide,
   saveSourceGuide,
-  updateSourceCache,
-  setNestedValue,
   // Icon operations
   findSourceIcon,
   findIconInDir,

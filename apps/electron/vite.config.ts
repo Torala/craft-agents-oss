@@ -18,7 +18,7 @@ export default defineConfig({
         'diff-preview': resolve(__dirname, 'src/renderer/diff-preview.html'),
         'code-preview': resolve(__dirname, 'src/renderer/code-preview.html'),
         'terminal-preview': resolve(__dirname, 'src/renderer/terminal-preview.html'),
-        'session-diff': resolve(__dirname, 'src/renderer/session-diff.html'),
+        'multi-file-diff': resolve(__dirname, 'src/renderer/multi-file-diff.html'),
       }
     }
   },

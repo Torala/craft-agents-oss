@@ -11,7 +11,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, rmSync } from 'fs';
 import { join, basename } from 'path';
 import { randomUUID } from 'crypto';
-import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import type {
   FolderSourceConfig,
   SourceGuide,
@@ -179,26 +178,14 @@ export function saveAgentSourceConfig(
 // ============================================================
 
 /**
- * Parse guide markdown with YAML frontmatter
+ * Parse guide markdown.
+ * Extracts sections (Scope, Guidelines, Context, API Notes) and Cache (JSON in code block).
  */
 function parseGuideMarkdown(raw: string): SourceGuide {
   const guide: SourceGuide = { raw };
 
-  // Extract YAML frontmatter
-  const frontmatterMatch = raw.match(/^---\n([\s\S]*?)\n---\n?/);
-  if (frontmatterMatch && frontmatterMatch[1]) {
-    try {
-      const frontmatter = parseYaml(frontmatterMatch[1]);
-      if (frontmatter && typeof frontmatter === 'object' && 'cache' in frontmatter) {
-        guide.cache = frontmatter.cache as Record<string, unknown>;
-      }
-    } catch {
-      // Invalid YAML, ignore
-    }
-  }
-
-  // Extract sections by headers
-  const sectionRegex = /^## (Scope|Guidelines|Context|API Notes)\n([\s\S]*?)(?=\n## |\n---|\Z)/gim;
+  // Extract sections by headers (including Cache)
+  const sectionRegex = /^## (Scope|Guidelines|Context|API Notes|Cache)\n([\s\S]*?)(?=\n## |\Z)/gim;
   let match;
   while ((match = sectionRegex.exec(raw)) !== null) {
     const sectionName = (match[1] ?? '').toLowerCase().replace(/\s+/g, '');
@@ -216,6 +203,17 @@ function parseGuideMarkdown(raw: string): SourceGuide {
         break;
       case 'apinotes':
         guide.apiNotes = content;
+        break;
+      case 'cache':
+        // Parse JSON from code block: ```json ... ```
+        const jsonMatch = content.match(/```json\n([\s\S]*?)\n```/);
+        if (jsonMatch && jsonMatch[1]) {
+          try {
+            guide.cache = JSON.parse(jsonMatch[1]);
+          } catch {
+            // Invalid JSON, ignore
+          }
+        }
         break;
     }
   }
@@ -265,8 +263,7 @@ export function loadAgentSourceGuide(
 export function extractTagline(guide: SourceGuide | null): string | null {
   if (!guide?.raw) return null;
 
-  // Remove YAML frontmatter if present
-  let content = guide.raw.replace(/^---\n[\s\S]*?\n---\n?/, '');
+  const content = guide.raw;
 
   // Try to get first paragraph after the title (# Title)
   // Match: # Title\n\n<first paragraph>
@@ -321,56 +318,6 @@ export function saveAgentSourceGuide(
   }
 
   writeFileSync(join(dir, 'guide.md'), guide.raw);
-}
-
-/**
- * Update cache in guide.md frontmatter
- */
-export function updateSourceCache(
-  workspaceRootPath: string,
-  sourceSlug: string,
-  updates: Record<string, unknown>
-): void {
-  const guide = loadSourceGuide(workspaceRootPath, sourceSlug) || { raw: '' };
-  const existingCache = guide.cache || {};
-  const newCache = { ...existingCache, ...updates, lastUpdated: new Date().toISOString() };
-
-  // Get content without frontmatter
-  let content = guide.raw;
-  content = content.replace(/^---\n[\s\S]*?\n---\n?/, '');
-
-  // Add new frontmatter
-  const yamlCache = stringifyYaml({ cache: newCache });
-  const newRaw = `---\n${yamlCache}---\n\n${content.trim()}\n`;
-
-  saveSourceGuide(workspaceRootPath, sourceSlug, { ...guide, raw: newRaw, cache: newCache });
-}
-
-/**
- * Set a nested value in an object using dot notation
- * e.g., setNestedValue({}, "projectIds.Backend", "123") -> { projectIds: { Backend: "123" } }
- */
-export function setNestedValue(
-  obj: Record<string, unknown>,
-  path: string,
-  value: unknown
-): Record<string, unknown> {
-  const keys = path.split('.');
-  let current = obj;
-
-  for (let i = 0; i < keys.length - 1; i++) {
-    const key = keys[i]!;
-    if (!(key in current) || typeof current[key] !== 'object' || current[key] === null) {
-      current[key] = {};
-    }
-    current = current[key] as Record<string, unknown>;
-  }
-
-  const lastKey = keys[keys.length - 1];
-  if (lastKey !== undefined) {
-    current[lastKey] = value;
-  }
-  return obj;
 }
 
 // ============================================================

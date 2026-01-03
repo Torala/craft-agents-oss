@@ -180,6 +180,8 @@ export interface UseAgentResult {
   approvePlan: () => void;
   shouldSuggestPlanning: (message: string) => boolean;
   // Permission mode control
+  permissionMode: PermissionMode;
+  cycleMode: () => PermissionMode;
   setSessionPermissionMode: (mode: PermissionMode) => void;
   // Todos (from TodoWrite tool)
   todos: TodoItem[];

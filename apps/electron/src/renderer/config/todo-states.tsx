@@ -63,12 +63,13 @@ export async function resolveStatusIcon(
 
     case 'file': {
       // Check cache first
-      const cacheKey = `${workspaceId}:${icon.value}`
+      const relativePath = `statuses/icons/${icon.value}`
+      const cacheKey = `${workspaceId}:${relativePath}`
       let fileContent = iconCache.get(cacheKey)
 
       if (!fileContent) {
         try {
-          fileContent = await window.electronAPI.readIconFile(workspaceId, icon.value)
+          fileContent = await window.electronAPI.readWorkspaceImage(workspaceId, relativePath)
           iconCache.set(cacheKey, fileContent)
         } catch (error) {
           console.error(`[resolveStatusIcon] Failed to load icon ${icon.value}:`, error)
@@ -88,11 +89,10 @@ export async function resolveStatusIcon(
           />
         )
       } else {
-        // PNG, JPG, etc. (base64 encoded)
-        const ext = icon.value.split('.').pop()?.toLowerCase() || 'png'
+        // PNG, JPG, etc. - readWorkspaceImage returns a data URL
         return (
           <img
-            src={`data:image/${ext};base64,${fileContent}`}
+            src={fileContent}
             className={className}
             alt=""
             style={{ display: 'inline-block' }}

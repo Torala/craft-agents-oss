@@ -64,6 +64,7 @@ import { useSession } from "@/hooks/useSession"
 import { useAgentState } from "@/hooks/useAgentState"
 import { TabContainer, useTabs, type ChatTab } from "@/tabs"
 import { ChatProvider, type ChatContextType } from "@/context/ChatContext"
+import { useTheme } from "@/context/ThemeContext"
 import { getResizeGradientStyle } from "@/hooks/useResizeGradient"
 import { useFocusZone, useGlobalShortcuts } from "@/hooks/keyboard"
 import { useFocusContext } from "@/context/FocusContext"
@@ -84,6 +85,11 @@ import {
   parseSidebarModeKey,
 } from "./sidebar-types"
 import { SourcesListPanel } from "./SourcesListPanel"
+
+/** Check if a string is a hex color code (e.g., #3B82F6) */
+function isHexColor(str: string | undefined): boolean {
+  return !!str && /^#[0-9A-Fa-f]{6}$/.test(str)
+}
 
 /**
  * ChatProps - Minimal props interface for Chat component
@@ -554,7 +560,7 @@ export function Chat({
     onOpenSettings,
     onOpenKeyboardShortcuts,
     onOpenStoredUserPreferences,
-    onLogout,
+    onReset,
     onSendMessage,
   } = contextValue
   const [isSidebarVisible, setIsSidebarVisible] = React.useState(() => {
@@ -573,6 +579,7 @@ export function Chat({
   const resizeHandleRef = React.useRef<HTMLDivElement>(null)
   const sessionListHandleRef = React.useRef<HTMLDivElement>(null)
   const [session, setSession] = useSession()
+  const { resolvedMode } = useTheme()
 
   // Sidebar mode - persisted to localStorage
   const [sidebarMode, setSidebarMode] = React.useState<SidebarMode>(() => {
@@ -1758,7 +1765,7 @@ export function Chat({
           <div
             ref={sidebarRef}
             style={{ width: sidebarWidth }}
-            className="h-full bg-sidebar font-sans relative border-r border-border"
+            className={`h-full ${resolvedMode === 'dark' ? 'bg-background/90' : 'bg-background/70'} font-sans relative border-r border-border`}
             data-focus-zone="sidebar"
             tabIndex={sidebarFocused ? 0 : -1}
             onKeyDown={handleSidebarKeyDown}
@@ -1774,7 +1781,7 @@ export function Chat({
                   onOpenStoredUserPreferences={onOpenStoredUserPreferences}
                   onOpenHelp={() => window.electronAPI.openUrl('https://agents.craft.do/docs')}
                   onOpenCraft={() => window.electronAPI.openUrl('craftdocs://')}
-                  onLogout={onLogout}
+                  onReset={onReset}
                 />
               </div>
               {/* Toggle button - right aligned */}
@@ -1887,7 +1894,7 @@ export function Chat({
                           title: "Done",
                           label: String(todoStateCounts['done']),
                           icon: <CircleCheckFilled className="h-3.5 w-3.5" />,
-                          iconColor: "text-[#9570BE]",
+                          iconColor: "text-accent",
                           variant: chatFilter?.kind === 'state' && chatFilter.stateId === 'done' ? "default" : "ghost",
                           onClick: () => handleTodoStateClick('done'),
                         },
@@ -2080,7 +2087,7 @@ export function Chat({
                       size="icon"
                       className={cn(
                         "h-7 w-7 shrink-0 rounded-[4px] titlebar-no-drag",
-                        listFilter.size > 0 ? "text-primary" : "text-muted-foreground hover:text-foreground"
+                        listFilter.size > 0 ? "text-foreground" : "text-muted-foreground hover:text-foreground"
                       )}
                     >
                       <ListFilter className="h-4 w-4" />
@@ -2115,7 +2122,7 @@ export function Chat({
                     >
                       <CircleDashed className="h-3.5 w-3.5 text-muted-foreground" />
                       <span className="flex-1">Todo</span>
-                      <span className="w-3.5 ml-4">{listFilter.has('todo') && <Check className="h-3.5 w-3.5 text-primary" />}</span>
+                      <span className="w-3.5 ml-4">{listFilter.has('todo') && <Check className="h-3.5 w-3.5 text-foreground" />}</span>
                     </StyledDropdownMenuItem>
                     <StyledDropdownMenuItem
                       onClick={(e) => {
@@ -2128,9 +2135,9 @@ export function Chat({
                         })
                       }}
                     >
-                      <CircleProgress className={cn("h-3.5 w-3.5", getStateColor('in-progress', todoStates))} />
+                      <CircleProgress className="h-3.5 w-3.5" style={isHexColor(getStateColor('in-progress', todoStates)) ? { color: getStateColor('in-progress', todoStates) } : undefined} />
                       <span className="flex-1">In Progress</span>
-                      <span className="w-3.5 ml-4">{listFilter.has('in-progress') && <Check className="h-3.5 w-3.5 text-primary" />}</span>
+                      <span className="w-3.5 ml-4">{listFilter.has('in-progress') && <Check className="h-3.5 w-3.5 text-foreground" />}</span>
                     </StyledDropdownMenuItem>
                     <StyledDropdownMenuItem
                       onClick={(e) => {
@@ -2143,9 +2150,9 @@ export function Chat({
                         })
                       }}
                     >
-                      <CircleEye className={cn("h-3.5 w-3.5", getStateColor('needs-review', todoStates))} />
+                      <CircleEye className="h-3.5 w-3.5" style={isHexColor(getStateColor('needs-review', todoStates)) ? { color: getStateColor('needs-review', todoStates) } : undefined} />
                       <span className="flex-1">Needs Review</span>
-                      <span className="w-3.5 ml-4">{listFilter.has('needs-review') && <Check className="h-3.5 w-3.5 text-primary" />}</span>
+                      <span className="w-3.5 ml-4">{listFilter.has('needs-review') && <Check className="h-3.5 w-3.5 text-foreground" />}</span>
                     </StyledDropdownMenuItem>
                     <StyledDropdownMenuItem
                       onClick={(e) => {
@@ -2158,9 +2165,9 @@ export function Chat({
                         })
                       }}
                     >
-                      <CircleCheckFilled className="h-3.5 w-3.5 text-[#9570BE]" />
+                      <CircleCheckFilled className="h-3.5 w-3.5 text-accent" />
                       <span className="flex-1">Done</span>
-                      <span className="w-3.5 ml-4">{listFilter.has('done') && <Check className="h-3.5 w-3.5 text-primary" />}</span>
+                      <span className="w-3.5 ml-4">{listFilter.has('done') && <Check className="h-3.5 w-3.5 text-foreground" />}</span>
                     </StyledDropdownMenuItem>
                     <StyledDropdownMenuItem
                       onClick={(e) => {
@@ -2175,7 +2182,7 @@ export function Chat({
                     >
                       <CircleXFilled className="h-3.5 w-3.5 text-muted-foreground/60" />
                       <span className="flex-1">Cancelled</span>
-                      <span className="w-3.5 ml-4">{listFilter.has('cancelled') && <Check className="h-3.5 w-3.5 text-primary" />}</span>
+                      <span className="w-3.5 ml-4">{listFilter.has('cancelled') && <Check className="h-3.5 w-3.5 text-foreground" />}</span>
                     </StyledDropdownMenuItem>
                     <StyledDropdownMenuSeparator />
                     <StyledDropdownMenuItem
@@ -2298,7 +2305,7 @@ export function Chat({
             <div className="absolute h-px bg-border" style={{ top: 50, left: -6, right: 0 }} />
             {/* Touch area */}
             <div className="absolute inset-y-0 -left-1.5 -right-1.5 flex justify-center cursor-col-resize">
-              <div className="w-px h-full bg-border" />
+              <div className="w-px h-full bg-foreground-5" />
               <div
                 className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-0.5"
                 style={getResizeGradientStyle(sessionListHandleY)}

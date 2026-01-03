@@ -43,7 +43,7 @@ import { TabBar } from './TabBar'
 import { TabContent } from './TabContent'
 import { useTabs } from './useTabs'
 import type { Tab, FileTab, BrowserTab, ChatTab } from './types'
-import type { FileChange, SessionDiffData } from '../../shared/types'
+import type { FileChange, MultiFileDiffData } from '../../shared/types'
 
 interface TabContainerProps {
   className?: string
@@ -230,41 +230,37 @@ function TabHeaderActions({ tab, onOpenRename }: TabHeaderActionsProps) {
   const handleViewAllChanges = React.useCallback(() => {
     if (!session) return
 
-    // Collect all Edit/Write tool messages from session
-    const changes: FileChange[] = session.messages
-      .filter(m => m.role === 'tool' && (m.toolName === 'Edit' || m.toolName === 'Write'))
-      .map(m => {
-        const input = m.toolInput as Record<string, unknown> | undefined
-        if (m.toolName === 'Edit' && input) {
-          return {
-            id: m.id,
-            filePath: (input.file_path as string) || 'unknown',
-            toolType: 'Edit' as const,
-            original: (input.old_string as string) || '',
-            modified: (input.new_string as string) || '',
-            error: m.isError ? m.content : undefined,
-          }
-        } else if (m.toolName === 'Write' && input) {
-          return {
-            id: m.id,
-            filePath: (input.file_path as string) || 'unknown',
-            toolType: 'Write' as const,
-            original: '',
-            modified: (input.content as string) || '',
-            error: m.isError ? m.content : undefined,
-          }
-        }
-        return null
-      })
-      .filter((c): c is FileChange => c !== null)
+    // Collect all successful Edit/Write tool messages from session
+    const changes: FileChange[] = []
+    for (const m of session.messages) {
+      if (m.role !== 'tool' || m.isError) continue
+      const input = m.toolInput as Record<string, unknown> | undefined
+      if (m.toolName === 'Edit' && input) {
+        changes.push({
+          id: m.id,
+          filePath: (input.file_path as string) || 'unknown',
+          toolType: 'Edit',
+          original: (input.old_string as string) || '',
+          modified: (input.new_string as string) || '',
+        })
+      } else if (m.toolName === 'Write' && input) {
+        changes.push({
+          id: m.id,
+          filePath: (input.file_path as string) || 'unknown',
+          toolType: 'Write',
+          original: '',
+          modified: (input.content as string) || '',
+        })
+      }
+    }
 
     if (changes.length > 0) {
-      const diffData: SessionDiffData = {
+      const diffData: MultiFileDiffData = {
         sessionId: session.id,
         turnId: 'session', // Use 'session' as a special turnId for session-level view
         changes,
       }
-      window.electronAPI.openSessionDiff(session.id, 'session', diffData)
+      window.electronAPI.openMultiFileDiff(session.id, 'session', diffData)
     }
   }, [session])
 

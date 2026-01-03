@@ -274,7 +274,7 @@ export function TerminalPreviewApp({ sessionId, previewId }: TerminalPreviewAppP
 
         {/* Error overlay */}
         {error && (
-          <div className="flex-1 flex items-center justify-center text-red-400">
+          <div className="flex-1 flex items-center justify-center text-destructive">
             Error: {error}
           </div>
         )}
@@ -298,7 +298,7 @@ export function TerminalPreviewApp({ sessionId, previewId }: TerminalPreviewAppP
                       className={`h-6 w-6 rounded ${isDark ? 'hover:bg-white/10' : 'hover:bg-black/5'}`}
                     >
                       {copied === 'command' ? (
-                        <Check className="h-3.5 w-3.5 text-green-400" />
+                        <Check className="h-3.5 w-3.5 text-success" />
                       ) : (
                         <Copy className="h-3.5 w-3.5" style={{ color: mutedColor }} />
                       )}
@@ -344,7 +344,7 @@ export function TerminalPreviewApp({ sessionId, previewId }: TerminalPreviewAppP
                       className={`h-6 w-6 rounded ${isDark ? 'hover:bg-white/10' : 'hover:bg-black/5'}`}
                     >
                       {copied === 'output' ? (
-                        <Check className="h-3.5 w-3.5 text-green-400" />
+                        <Check className="h-3.5 w-3.5 text-success" />
                       ) : (
                         <Copy className="h-3.5 w-3.5" style={{ color: mutedColor }} />
                       )}

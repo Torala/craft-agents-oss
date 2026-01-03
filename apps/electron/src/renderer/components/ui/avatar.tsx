@@ -76,9 +76,20 @@ function CrossfadeAvatar({
   // Detect if the image is an SVG
   const isSvg = React.useMemo(() => src?.endsWith('.svg') ?? false, [src])
 
-  // Reset loaded state when src changes
+  // Reset loaded state when src changes (but check if new image is already cached first)
   React.useEffect(() => {
     if (src !== currentSrc) {
+      // Check if new image is already in browser cache
+      if (src) {
+        const img = new Image()
+        img.src = src
+        if (img.complete && img.naturalWidth > 0) {
+          // Image is already cached, no need to show fallback
+          setCurrentSrc(src)
+          setIsLoaded(true)
+          return
+        }
+      }
       setIsLoaded(false)
       setCurrentSrc(src)
     }

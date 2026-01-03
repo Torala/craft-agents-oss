@@ -24,6 +24,8 @@ import {
   setSessionTodoState as setStoredSessionTodoState,
   updateSessionMetadata,
   getSessionAttachmentsPath,
+  getSessionPath as getSessionStoragePath,
+  sessionPersistenceQueue,
   type StoredSession,
   type StoredMessage,
   type SessionMetadata,
@@ -246,6 +248,18 @@ export class SessionManager {
         console.log(`[SessionManager] Status icon changed: ${iconFilename} in ${workspaceId}`)
         this.broadcastStatusesChanged(workspaceId)
       },
+      onAppThemeChange: (theme) => {
+        console.log(`[SessionManager] App theme changed`)
+        this.broadcastAppThemeChanged(theme)
+      },
+      onWorkspaceThemeChange: (theme) => {
+        console.log(`[SessionManager] Workspace theme changed in ${workspaceRootPath}`)
+        this.broadcastWorkspaceThemeChanged(theme)
+      },
+      onAgentThemeChange: (agentSlug, theme) => {
+        console.log(`[SessionManager] Agent theme changed: ${agentSlug}`)
+        this.broadcastAgentThemeChanged(agentSlug, theme)
+      },
     }
 
     const watcher = new ConfigWatcher(workspaceRootPath, callbacks)
@@ -278,6 +292,33 @@ export class SessionManager {
     if (!this.windowManager) return
     console.log(`[SessionManager] Broadcasting statuses changed for ${workspaceId}`)
     this.windowManager.broadcastToAll(IPC_CHANNELS.STATUSES_CHANGED, workspaceId)
+  }
+
+  /**
+   * Broadcast app theme changed event to all windows
+   */
+  private broadcastAppThemeChanged(theme: import('@craft-agent/shared/config').ThemeOverrides | null): void {
+    if (!this.windowManager) return
+    console.log(`[SessionManager] Broadcasting app theme changed`)
+    this.windowManager.broadcastToAll(IPC_CHANNELS.THEME_APP_CHANGED, theme)
+  }
+
+  /**
+   * Broadcast workspace theme changed event to all windows
+   */
+  private broadcastWorkspaceThemeChanged(theme: import('@craft-agent/shared/config').ThemeOverrides | null): void {
+    if (!this.windowManager) return
+    console.log(`[SessionManager] Broadcasting workspace theme changed`)
+    this.windowManager.broadcastToAll(IPC_CHANNELS.THEME_WORKSPACE_CHANGED, theme)
+  }
+
+  /**
+   * Broadcast agent theme changed event to all windows
+   */
+  private broadcastAgentThemeChanged(agentSlug: string, theme: import('@craft-agent/shared/config').ThemeOverrides | null): void {
+    if (!this.windowManager) return
+    console.log(`[SessionManager] Broadcasting agent theme changed for ${agentSlug}`)
+    this.windowManager.broadcastToAll(IPC_CHANNELS.THEME_AGENT_CHANGED, agentSlug, theme)
   }
 
   /**
@@ -635,7 +676,7 @@ Use oauth_trigger for OAuth sources, credential_prompt for API key/bearer token 
 </setup_required>`
   }
 
-  // Persist a session to disk
+  // Persist a session to disk (async with debouncing)
   private persistSession(managed: ManagedSession): void {
     try {
       // Filter out transient messages (error, status, system) that shouldn't be persisted
@@ -668,11 +709,21 @@ Use oauth_trigger for OAuth sources, credential_prompt for API key/bearer token 
         },
       }
 
-      saveStoredSession(storedSession)
-      console.log(`[SessionManager] Persisted session ${managed.id}`)
+      // Queue for async persistence with debouncing
+      sessionPersistenceQueue.enqueue(storedSession)
     } catch (error) {
-      console.error(`[SessionManager] Failed to persist session ${managed.id}:`, error)
+      console.error(`[SessionManager] Failed to queue session ${managed.id} for persistence:`, error)
     }
+  }
+
+  // Flush a specific session immediately (call on session close/switch)
+  async flushSession(sessionId: string): Promise<void> {
+    await sessionPersistenceQueue.flush(sessionId)
+  }
+
+  // Flush all pending sessions (call on app quit)
+  async flushAllSessions(): Promise<void> {
+    await sessionPersistenceQueue.flushAll()
   }
 
   getWorkspaces(): Workspace[] {
@@ -699,6 +750,15 @@ Use oauth_trigger for OAuth sources, credential_prompt for API key/bearer token 
         enabledSourceSlugs: m.enabledSourceSlugs,
       }))
       .sort((a, b) => b.lastMessageAt - a.lastMessageAt)
+  }
+
+  /**
+   * Get the filesystem path to a session's folder
+   */
+  getSessionPath(sessionId: string): string | null {
+    const managed = this.sessions.get(sessionId)
+    if (!managed) return null
+    return getSessionStoragePath(managed.workspace.rootPath, sessionId)
   }
 
   async createSession(workspaceId: string, agentId?: string, agentName?: string): Promise<Session> {
@@ -1202,6 +1262,9 @@ Use oauth_trigger for OAuth sources, credential_prompt for API key/bearer token 
       this.deltaFlushTimers.delete(sessionId)
     }
     this.pendingDeltas.delete(sessionId)
+
+    // Cancel any pending persistence write (session is being deleted, no need to save)
+    sessionPersistenceQueue.cancel(sessionId)
 
     // Clean up session-scoped tool callbacks to prevent memory accumulation
     unregisterSessionScopedToolCallbacks(sessionId)

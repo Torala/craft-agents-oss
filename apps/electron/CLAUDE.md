@@ -411,14 +411,16 @@ const config = await window.electronAPI.getSourceSafeModeConfig(workspaceId, sou
 
 **Why?** The `@craft-agent/shared` package uses Node.js APIs (`crypto`, `fs`, etc.) that aren't available in the browser/renderer context. All business logic must run in the main process and communicate via IPC.
 
-### IPC Communication
+### Directory Structure (continued)
+
+```
 │   │   │   └── sessions.ts # Per-session Jotai atoms for performance isolation
 │   │   ├── components/
 │   │   │   ├── chat/      # Chat UI (Chat, ChatInput, ChatDisplay, SessionList, PermissionBanner)
 │   │   │   ├── icons/     # Custom SVG icons (PanelLeftRounded, SquarePenRounded)
 │   │   │   ├── markdown/  # Markdown renderer with syntax highlighting
 │   │   │   ├── onboarding/ # Onboarding flow components
-│   │   │   ├── agent-setup/ # Agent setup components
+│   │   │   ├── multi-file-diff/ # Multi-file diff viewer
 │   │   │   └── ui/        # shadcn/ui components
 │   │   ├── config/        # Renderer configuration
 │   │   ├── context/
@@ -427,10 +429,12 @@ const config = await window.electronAPI.getSourceSafeModeConfig(workspaceId, sou
 │   │   │   └── ThemeContext.tsx       # Theme state management
 │   │   ├── hooks/
 │   │   │   ├── useAgentState.ts  # Agent activation state machine (IPC-based)
+│   │   │   ├── useBackgroundTasks.ts # Background task tracking
+│   │   │   ├── useStatuses.ts    # Workspace status configuration
+│   │   │   ├── useTheme.ts       # Cascading theme resolution
 │   │   │   ├── useDeepLinkNavigation.ts  # Deep link tab navigation
 │   │   │   ├── useSession.ts     # Session hook for isolated access
 │   │   │   ├── useOnboarding.ts  # Onboarding flow management
-│   │   │   ├── useAgentSetup.ts  # Agent setup flow
 │   │   │   └── keyboard/         # Keyboard handling hooks
 │   │   ├── tabs/          # Tab system management
 │   │   ├── utils/         # Utility functions
@@ -456,18 +460,25 @@ The app uses Electron's IPC for main ↔ renderer communication:
 | `sessions:setPermissionMode` | renderer → main | Set session permission mode ('safe', 'ask', 'allow-all') |
 | `workspaces:get` | renderer → main | Get configured workspaces |
 | `agents:*` | renderer → main | Get agents, refresh, check auth status |
-| `session:event` | main → renderer | Stream events (text_delta, tool_start, title_generated, etc.) |
+| `session:event` | main → renderer | Stream events (text_delta, tool_start, task_backgrounded, etc.) |
 | `file:read` | renderer → main | Read files (path-validated) |
 | `file:openDialog` | renderer → main | Open native file picker |
 | `file:readAttachment` | renderer → main | Read file as FileAttachment |
 | `shell:openUrl` | renderer → main | Open URL in external browser |
 | `shell:openFile` | renderer → main | Open file in default application |
+| `shell:killShell` | renderer → main | Kill a background shell by ID |
 | `theme:*` | both | Theme preference sync |
 | `deeplink:navigate` | main → renderer | Deep link tab navigation |
-| `sources:getSafeMode` | renderer → main | Get safe mode config for a source |
+| `sources:getPermissions` | renderer → main | Get permissions config for a source |
 | `sources:getMcpTools` | renderer → main | Get MCP tools with permission status |
 | `settings:getDefaultPermissionMode` | renderer → main | Get default permission mode for new sessions |
 | `settings:setDefaultPermissionMode` | renderer → main | Set default permission mode |
+| `multiFileDiff:open` | renderer → main | Open multi-file diff window |
+| `multiFileDiff:getData` | main → renderer | Get diff data for window |
+| `multiFileDiff:readFile` | renderer → main | Read file for diff context |
+| `statuses:list` | renderer → main | Get workspace statuses |
+| `statuses:changed` | main → renderer | Broadcast status config changes |
+| `workspaceSettings:*` | both | Workspace settings CRUD |
 
 **Event streaming pattern:** `sendMessage` returns immediately. Results stream via `SESSION_EVENT` channel.
 
@@ -961,6 +972,69 @@ The `PermissionBanner` component shows bash command approval requests:
 ```
 
 **Styling:** Amber border/background with shield icon, three action buttons.
+
+## Background Tasks
+
+The app supports running long-running tasks (tests, builds, agents) in the background:
+
+**Components:**
+- `ActiveOptionBadges.tsx` - Displays active options including background tasks bar
+- `ActiveTasksBar.tsx` - Shows running tasks with elapsed time and actions
+- `TaskActionMenu.tsx` - Dropdown menu for task actions (view output, stop, copy ID)
+
+**Hook:** `useBackgroundTasks.ts`
+- Per-session task tracking via Jotai atoms
+- Methods: `addTask`, `updateTaskProgress`, `removeTask`, `killTask`
+- Task structure: `{ id, type, toolUseId, startTime, elapsedSeconds, intent }`
+
+**Session events:**
+- `task_backgrounded` - Agent task started in background
+- `shell_backgrounded` - Bash shell backgrounded
+- `task_progress` - Elapsed time updates
+
+**Limitations:**
+- Task output retrieval not yet implemented (check main chat panel)
+- Agent task killing not available (no SDK API)
+
+## Multi-File Diff Window
+
+VS Code-style pop-out window for viewing all file changes in a turn:
+
+**Components:**
+- `MultiFileDiffWindowManager` (`main/multi-file-diff-window.ts`) - Window lifecycle
+- `MultiFileDiffApp.tsx` - React app with sidebar + Monaco DiffEditor
+
+**Features:**
+- Sidebar file tree with change counts
+- Consolidated view (by file) or ungrouped (by operation)
+- Monaco DiffEditor with syntax highlighting
+- Full file context reconstruction
+
+**Types:**
+```typescript
+interface FileChange {
+  id: string
+  filePath: string
+  toolType: 'Edit' | 'Write'
+  original: string
+  modified: string
+}
+```
+
+**Integration:** TurnCard shows "View all file changes" button when turn has Edit/Write activities.
+
+## Dynamic Statuses
+
+Workspace-level customizable session status configuration:
+
+**Hook:** `useStatuses.ts`
+- Loads status config from workspace
+- Auto-refreshes on workspace change
+- Subscribes to live status changes
+
+**Config location:** `~/.craft-agent/workspaces/{id}/statuses/config.json`
+
+**Integration:** `config/todo-states.tsx` loads dynamic statuses instead of hardcoded values.
 
 ## Current Limitations
 

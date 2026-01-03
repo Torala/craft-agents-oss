@@ -6,7 +6,7 @@ import {
   StyledDropdownMenuItem,
   StyledDropdownMenuSeparator,
 } from "@/components/ui/styled-dropdown"
-import { ChevronDown, Settings, Keyboard, HelpCircle, ExternalLink, LogOut, User } from "lucide-react"
+import { ChevronDown, Settings, Keyboard, HelpCircle, ExternalLink, RotateCcw, User } from "lucide-react"
 import { CraftAgentsSymbol } from "./icons/CraftAgentsSymbol"
 import { SquarePenRounded } from "./icons/SquarePenRounded"
 
@@ -17,7 +17,7 @@ interface AppMenuProps {
   onOpenStoredUserPreferences: () => void
   onOpenHelp: () => void
   onOpenCraft: () => void
-  onLogout: () => void
+  onReset: () => void
 }
 
 /**
@@ -33,7 +33,7 @@ export function AppMenu({
   onOpenStoredUserPreferences,
   onOpenHelp,
   onOpenCraft,
-  onLogout,
+  onReset,
 }: AppMenuProps) {
   return (
     <DropdownMenu>
@@ -42,7 +42,7 @@ export function AppMenu({
           className="flex items-center gap-1 p-1.5 rounded-[4px] hover:bg-foreground/5 data-[state=open]:bg-foreground/5 focus:outline-none focus-visible:ring-0"
           aria-label="Craft menu"
         >
-          <CraftAgentsSymbol className="h-4" />
+          <CraftAgentsSymbol className="h-4 text-accent" />
           <ChevronDown className="h-3 w-3 text-muted-foreground" />
         </button>
       </DropdownMenuTrigger>
@@ -86,10 +86,10 @@ export function AppMenu({
 
         <StyledDropdownMenuSeparator />
 
-        {/* Logout */}
-        <StyledDropdownMenuItem onClick={onLogout}>
-          <LogOut className="h-3.5 w-3.5" />
-          Log Out
+        {/* Reset App */}
+        <StyledDropdownMenuItem onClick={onReset} variant="destructive">
+          <RotateCcw className="h-3.5 w-3.5" />
+          Reset App...
         </StyledDropdownMenuItem>
       </StyledDropdownMenuContent>
     </DropdownMenu>

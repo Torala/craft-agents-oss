@@ -90,9 +90,11 @@ export function getDateTimeContext(): string {
  */
 export function getSystemPrompt(
   activeAgent?: SubAgentDefinition,
-  temporaryClarifications?: string
+  temporaryClarifications?: string,
+  pinnedPreferencesPrompt?: string
 ): string {
-  const preferences = formatPreferencesForPrompt();
+  // Use pinned preferences if provided (for session consistency after compaction)
+  const preferences = pinnedPreferencesPrompt ?? formatPreferencesForPrompt();
   const agentContext = activeAgent ? formatAgentContext(activeAgent, temporaryClarifications) : '';
 
   debug('[getSystemPrompt] activeAgent:', activeAgent?.name || 'none');

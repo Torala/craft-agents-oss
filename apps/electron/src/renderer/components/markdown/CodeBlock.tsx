@@ -1,6 +1,7 @@
 import * as React from 'react'
 import { codeToHtml, bundledLanguages, type BundledLanguage } from 'shiki'
 import { cn } from '@/lib/utils'
+import { useTheme } from '@/context/ThemeContext'
 
 interface CodeBlockProps {
   code: string
@@ -170,7 +171,7 @@ export function CodeBlock({ code, language = 'text', className, mode = 'full' }:
           aria-label="Copy code"
         >
           {copied ? (
-            <svg className="w-4 h-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className="w-4 h-4 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
             </svg>
           ) : (

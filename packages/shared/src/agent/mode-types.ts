@@ -33,7 +33,16 @@ export const PERMISSION_MODE_CONFIG: Record<PermissionMode, {
   description: string;
   /** SVG path data for the icon (viewBox 0 0 24 24, stroke-based) */
   svgPath: string;
-  /** Hex colors for different contexts */
+  /** Tailwind color classes for consistent theming */
+  colorClass: {
+    /** Text color class (e.g., 'text-info') */
+    text: string;
+    /** Background color class (e.g., 'bg-info') */
+    bg: string;
+    /** Border color class (e.g., 'border-info') */
+    border: string;
+  };
+  /** Fallback hex colors for contexts where CSS variables aren't available */
   colors: {
     /** Primary color - used for icons, borders, accents */
     primary: string;
@@ -47,9 +56,14 @@ export const PERMISSION_MODE_CONFIG: Record<PermissionMode, {
     description: 'Read-only exploration. Blocks writes, never prompts.',
     // Compass icon from Lucide
     svgPath: 'M16.24 7.76l-1.804 5.411a2 2 0 0 1-1.265 1.265L7.76 16.24l1.804-5.411a2 2 0 0 1 1.265-1.265z M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z',
+    colorClass: {
+      text: 'text-foreground-60',
+      bg: 'bg-foreground-60',
+      border: 'border-foreground-60',
+    },
     colors: {
-      primary: '#6b7280', // gray-500
-      muted: '#4b5563',   // gray-600 (darker for text)
+      primary: '#6b7280', // gray-500 fallback
+      muted: '#4b5563',   // gray-600 fallback
     },
   },
   'ask': {
@@ -58,9 +72,14 @@ export const PERMISSION_MODE_CONFIG: Record<PermissionMode, {
     description: 'Prompts before making edits.',
     // Info icon from Lucide
     svgPath: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM12 8v4m0 4h.01',
+    colorClass: {
+      text: 'text-info',
+      bg: 'bg-info',
+      border: 'border-info',
+    },
     colors: {
-      primary: '#f59e0b', // amber-500
-      muted: '#d97706',   // amber-600 (darker for text)
+      primary: '#f59e0b', // amber-500 fallback
+      muted: '#d97706',   // amber-600 fallback
     },
   },
   'allow-all': {
@@ -69,9 +88,14 @@ export const PERMISSION_MODE_CONFIG: Record<PermissionMode, {
     description: 'Automatic execution, no prompts.',
     // Repeat icon from Lucide (loop)
     svgPath: 'm17 1 4 4-4 4M3 11V9a4 4 0 0 1 4-4h14M7 23l-4-4 4-4M21 13v2a4 4 0 0 1-4 4H3',
+    colorClass: {
+      text: 'text-accent',
+      bg: 'bg-accent',
+      border: 'border-accent',
+    },
     colors: {
-      primary: '#9570BE', // brand purple
-      muted: '#7c5aa8',   // darker purple for text
+      primary: '#9570BE', // brand purple fallback
+      muted: '#7c5aa8',   // darker purple fallback
     },
   },
 };

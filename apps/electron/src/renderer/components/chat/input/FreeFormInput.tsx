@@ -125,6 +125,23 @@ export function FreeFormInput({
   const [input, setInput] = React.useState(inputValue ?? '')
   const [attachments, setAttachments] = React.useState<FileAttachment[]>([])
 
+  // Optimistic state for source selection - updates UI immediately before IPC round-trip completes
+  const [optimisticSourceSlugs, setOptimisticSourceSlugs] = React.useState(enabledSourceSlugs)
+
+  // Sync from prop when server state changes (reconciles after IPC or on external updates)
+  // Use content comparison (not reference) to avoid infinite loops with empty arrays
+  const prevEnabledSourceSlugsRef = React.useRef(enabledSourceSlugs)
+  React.useEffect(() => {
+    const prev = prevEnabledSourceSlugsRef.current
+    const changed = enabledSourceSlugs.length !== prev.length ||
+      enabledSourceSlugs.some((slug, i) => slug !== prev[i])
+
+    if (changed) {
+      setOptimisticSourceSlugs(enabledSourceSlugs)
+      prevEnabledSourceSlugsRef.current = enabledSourceSlugs
+    }
+  }, [enabledSourceSlugs])
+
   // Sync from parent when inputValue changes externally (e.g., switching sessions)
   const prevInputValueRef = React.useRef(inputValue)
   React.useEffect(() => {
@@ -571,7 +588,7 @@ export function FreeFormInput({
           // Container styling - only when not wrapped by InputContainer
           !unstyled && 'rounded-[8px] shadow-middle',
           !unstyled && 'bg-background',
-          isDraggingOver && 'ring-2 ring-primary ring-offset-2 ring-offset-background bg-primary/5'
+          isDraggingOver && 'ring-2 ring-foreground ring-offset-2 ring-offset-background bg-foreground/5'
         )}
         onDragEnter={handleDragEnter}
         onDragLeave={handleDragLeave}
@@ -711,8 +728,9 @@ export function FreeFormInput({
                     ref={sourceButtonRef}
                     type="button"
                     className={cn(
-                      "inline-flex items-center justify-center h-7 w-7 shrink-0 rounded-[4px] hover:bg-foreground/5 transition-colors disabled:opacity-50 disabled:pointer-events-none",
-                      enabledSourceSlugs.length > 0 && "text-primary",
+                      "inline-flex items-center justify-center h-7 shrink-0 rounded-[6px] hover:bg-foreground/5 transition-colors disabled:opacity-50 disabled:pointer-events-none",
+                      optimisticSourceSlugs.length === 0 && "w-7",
+                      optimisticSourceSlugs.length > 0 && "px-0.5",
                       sourceDropdownOpen && "bg-foreground/5"
                     )}
                     disabled={disabled}
@@ -732,11 +750,37 @@ export function FreeFormInput({
                       setSourceDropdownOpen(!sourceDropdownOpen)
                     }}
                   >
-                    <CloudCog className="h-4 w-4" />
-                    {enabledSourceSlugs.length > 0 && (
-                      <span className="absolute -top-1 -right-1 h-4 w-4 text-[10px] font-medium bg-primary text-primary-foreground rounded-full flex items-center justify-center">
-                        {enabledSourceSlugs.length}
-                      </span>
+                    {optimisticSourceSlugs.length === 0 ? (
+                      <CloudCog className="h-4 w-4" />
+                    ) : (
+                      <div className="flex items-center">
+                        {(() => {
+                          const enabledSources = sources.filter(s => optimisticSourceSlugs.includes(s.config.slug))
+                          const displaySources = enabledSources.slice(0, 3)
+                          const remainingCount = enabledSources.length - 3
+                          return (
+                            <>
+                              {displaySources.map((source, index) => (
+                                <div
+                                  key={source.config.slug}
+                                  className={cn("relative h-6 w-6 rounded-[6px] bg-background shadow-minimal flex items-center justify-center", index > 0 && "-ml-1.5")}
+                                  style={{ zIndex: index + 1 }}
+                                >
+                                  <SourceAvatar source={source} size="sm" />
+                                </div>
+                              ))}
+                              {remainingCount > 0 && (
+                                <div
+                                  className="-ml-1.5 h-6 w-6 rounded-[6px] bg-background shadow-minimal flex items-center justify-center text-[9px] font-medium text-muted-foreground"
+                                  style={{ zIndex: displaySources.length + 1 }}
+                                >
+                                  +{remainingCount}
+                                </div>
+                              )}
+                            </>
+                          )
+                        })()}
+                      </div>
                     )}
                   </button>
                 </TooltipTrigger>
@@ -752,7 +796,7 @@ export function FreeFormInput({
                     }}
                   />
                   <div
-                    className="fixed z-[9999] min-w-[200px] overflow-hidden rounded-[8px] bg-background text-popover-foreground shadow-modal-small"
+                    className="fixed z-[9999] min-w-[200px] overflow-hidden rounded-[8px] bg-background text-foreground shadow-modal-small"
                     style={{
                       top: sourceDropdownPosition.top - 8,
                       left: sourceDropdownPosition.left,
@@ -783,24 +827,27 @@ export function FreeFormInput({
                           {sources
                             .filter(source => source.config.name.toLowerCase().includes(sourceFilter.toLowerCase()))
                             .map(source => {
-                              const isEnabled = enabledSourceSlugs.includes(source.config.slug)
+                              const isEnabled = optimisticSourceSlugs.includes(source.config.slug)
                               return (
                                 <CommandPrimitive.Item
                                   key={source.config.slug}
                                   value={source.config.slug}
                                   onSelect={() => {
                                     const newSlugs = isEnabled
-                                      ? enabledSourceSlugs.filter(slug => slug !== source.config.slug)
-                                      : [...enabledSourceSlugs, source.config.slug]
-                                    onSourcesChange(newSlugs)
+                                      ? optimisticSourceSlugs.filter(slug => slug !== source.config.slug)
+                                      : [...optimisticSourceSlugs, source.config.slug]
+                                    // Optimistic update - UI updates immediately
+                                    setOptimisticSourceSlugs(newSlugs)
+                                    // Then trigger async server update
+                                    onSourcesChange?.(newSlugs)
                                   }}
                                   className={cn(
                                     "flex cursor-pointer select-none items-center gap-3 rounded-[6px] px-3 py-2 text-[13px]",
-                                    "outline-none data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground",
-                                    isEnabled && "bg-accent/40"
+                                    "outline-none data-[selected=true]:bg-foreground/5",
+                                    isEnabled && "bg-foreground/3"
                                   )}
                                 >
-                                  <div className="shrink-0 text-muted-foreground">
+                                  <div className="shrink-0 text-muted-foreground flex items-center">
                                     <SourceAvatar
                                       source={source}
                                       size="sm"
@@ -886,14 +933,14 @@ export function FreeFormInput({
                             onModelChange(model.id)
                             setModelDropdownOpen(false)
                           }}
-                          className="w-full flex items-center justify-between px-2 py-2 rounded-lg hover:bg-accent/50 transition-colors"
+                          className="w-full flex items-center justify-between px-2 py-2 rounded-lg hover:bg-foreground/3 transition-colors"
                         >
                           <div className="text-left">
                             <div className="font-medium text-sm">{model.name}</div>
                             <div className="text-xs text-muted-foreground">{descriptions[model.id] || model.description}</div>
                           </div>
                           {isSelected && (
-                            <Check className="h-4 w-4 text-primary shrink-0 ml-3" />
+                            <Check className="h-4 w-4 text-foreground shrink-0 ml-3" />
                           )}
                         </button>
                       )
@@ -957,12 +1004,12 @@ function addRecentDir(path: string): void {
 }
 
 /**
- * Format path for display, replacing home directory with ~
+ * Format path for display, replacing home directory with home icon
  */
-function formatPathForDisplay(path: string): string {
-  const homeDir = window.electronAPI?.getHomeDir?.() || '/Users'
-  if (path.startsWith(homeDir)) {
-    return '~' + path.slice(homeDir.length)
+function formatPathForDisplay(path: string, homeDir: string): string {
+  if (homeDir && path.startsWith(homeDir)) {
+    const relativePath = path.slice(homeDir.length)
+    return `~${relativePath || '/'}`
   }
   return path
 }
@@ -979,10 +1026,14 @@ function WorkingDirectorySelector({
 }) {
   const [recentDirs, setRecentDirs] = React.useState<string[]>([])
   const [dropdownOpen, setDropdownOpen] = React.useState(false)
+  const [homeDir, setHomeDir] = React.useState<string>('')
 
-  // Load recent directories on mount
+  // Load home directory and recent directories on mount
   React.useEffect(() => {
     setRecentDirs(getRecentDirs())
+    window.electronAPI?.getHomeDir?.().then((dir: string) => {
+      if (dir) setHomeDir(dir)
+    })
   }, [])
 
   const handleChooseFolder = async () => {
@@ -1020,7 +1071,7 @@ function WorkingDirectorySelector({
         </TooltipTrigger>
         <TooltipContent side="top" className="flex flex-col gap-0.5">
           <span className="font-medium">Working directory</span>
-          <span className="text-xs opacity-70">{formatPathForDisplay(workingDirectory)}</span>
+          <span className="text-xs opacity-70">{formatPathForDisplay(workingDirectory, homeDir)}</span>
         </TooltipContent>
       </Tooltip>
       <StyledDropdownMenuContent side="top" align="start" sideOffset={8} className="w-auto min-w-[200px] max-w-[400px]">
@@ -1033,7 +1084,7 @@ function WorkingDirectorySelector({
                 onClick={() => handleSelectRecent(path)}
                 className="text-sm"
               >
-                <span className="whitespace-nowrap">{formatPathForDisplay(path)}</span>
+                <span className="whitespace-nowrap">{formatPathForDisplay(path, homeDir)}</span>
               </StyledDropdownMenuItem>
             ))}
             <div className="h-px bg-border my-1" />

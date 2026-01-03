@@ -463,7 +463,7 @@ function ActiveTasksBarContext({ tasks = sampleBackgroundTasks }: ActiveTasksBar
       <div className="flex-1 overflow-auto px-5 py-8 space-y-2.5">
         {/* User message */}
         <div className="pt-3 flex justify-end">
-          <div className="max-w-[80%] rounded-2xl bg-primary text-primary-foreground px-4 py-2">
+          <div className="max-w-[80%] rounded-2xl bg-foreground text-background px-4 py-2">
             <p className="text-sm">Can you explore the codebase structure and analyze the API endpoints?</p>
           </div>
         </div>
@@ -487,7 +487,6 @@ function ActiveTasksBarContext({ tasks = sampleBackgroundTasks }: ActiveTasksBar
           tasks={tasks}
           sessionId="playground-session"
           onKillTask={(taskId) => console.log('[Playground] Kill task:', taskId)}
-          variant="dropdown"
         />
 
         {/* Real InputContainer */}
@@ -596,7 +595,6 @@ function PermissionInputToggle({ autoToggle = false, autoToggleInterval = 3000, 
         onUltrathinkChange={setUltrathinkEnabled}
         permissionMode={permissionMode}
         onPermissionModeChange={setPermissionMode}
-        variant="dropdown"
       />
 
       {/* Real InputContainer - handles animation automatically */}

@@ -38,26 +38,26 @@ const STATUS_CONFIG: Record<SourceConnectionStatus, {
   description: string
 }> = {
   connected: {
-    color: 'bg-green-500',
-    pulseColor: 'bg-green-400',
+    color: 'bg-success',
+    pulseColor: 'bg-success/80',
     label: 'Connected',
     description: 'Source is connected and working',
   },
   needs_auth: {
-    color: 'bg-amber-500',
-    pulseColor: 'bg-amber-400',
+    color: 'bg-info',
+    pulseColor: 'bg-info/80',
     label: 'Needs Authentication',
     description: 'Source requires authentication to connect',
   },
   failed: {
-    color: 'bg-red-500',
-    pulseColor: 'bg-red-400',
+    color: 'bg-destructive',
+    pulseColor: 'bg-destructive/80',
     label: 'Connection Failed',
     description: 'Failed to connect to source',
   },
   untested: {
-    color: 'bg-gray-400',
-    pulseColor: 'bg-gray-300',
+    color: 'bg-foreground/40',
+    pulseColor: 'bg-foreground/30',
     label: 'Not Tested',
     description: 'Connection has not been tested',
   },

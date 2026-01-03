@@ -7,7 +7,7 @@ import { StepFormLayout } from "./primitives"
 
 interface ReauthScreenProps {
   onLogin: () => Promise<void>
-  onLogout: () => void
+  onReset: () => void
 }
 
 /**
@@ -16,7 +16,7 @@ interface ReauthScreenProps {
  * Shown when the user has existing workspaces/config but the Craft token
  * is missing or expired. Much simpler than full onboarding - just re-authenticate.
  */
-export function ReauthScreen({ onLogin, onLogout }: ReauthScreenProps) {
+export function ReauthScreen({ onLogin, onReset }: ReauthScreenProps) {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -40,8 +40,8 @@ export function ReauthScreen({ onLogin, onLogout }: ReauthScreenProps) {
       <main className="flex flex-1 items-center justify-center p-8">
         <StepFormLayout
           iconElement={
-            <div className="flex size-16 items-center justify-center rounded-full bg-amber-500/10">
-              <AlertCircle className="size-8 text-amber-500" />
+            <div className="flex size-16 items-center justify-center rounded-full bg-info/10">
+              <AlertCircle className="size-8 text-info" />
             </div>
           }
           title="Session Expired"
@@ -78,12 +78,12 @@ export function ReauthScreen({ onLogin, onLogout }: ReauthScreenProps) {
               </Button>
               <Button
                 variant="ghost"
-                onClick={onLogout}
+                onClick={onReset}
                 disabled={isLoading}
                 className="w-full text-muted-foreground"
                 size="sm"
               >
-                Log out and start fresh
+                Reset app and start fresh...
               </Button>
             </div>
           }

@@ -10,6 +10,7 @@
  * - 'allow-all': Skip all permission checks (everything allowed)
  */
 
+import { homedir } from 'os';
 import { debug } from '../utils/debug.ts';
 import type { PermissionsContext, MergedPermissionsConfig } from './permissions-config.ts';
 import {
@@ -60,16 +61,74 @@ export interface CompiledApiEndpointRule {
 export interface ModeConfig {
   /** Tools that are always blocked in safe mode (Write, Edit, etc.) */
   blockedTools: Set<string>;
+  /** Tools blocked via permissions.json only - used in ask/allow-all modes */
+  customBlockedTools?: Set<string>;
   /** Read-only Bash command patterns (commands matching these are allowed) */
   readOnlyBashPatterns: RegExp[];
   /** Read-only MCP patterns (tools matching these are allowed) */
   readOnlyMcpPatterns: RegExp[];
   /** Fine-grained API endpoint rules (method + path pattern) */
   allowedApiEndpoints: CompiledApiEndpointRule[];
+  /** File paths allowed for writes in Explore mode (glob patterns) */
+  allowedWritePaths?: string[];
   /** User-friendly name */
   displayName: string;
   /** Keyboard shortcut hint */
   shortcutHint: string;
+}
+
+// ============================================================
+// Path Matching Utilities
+// ============================================================
+
+/**
+ * Expand ~ to home directory
+ */
+function expandHome(path: string): string {
+  if (path.startsWith('~/') || path === '~') {
+    return path.replace(/^~/, homedir());
+  }
+  return path;
+}
+
+/**
+ * Convert a simple glob pattern to a regex
+ * Supports: ** (recursive), * (single segment), ? (single char)
+ */
+function globToRegex(pattern: string): RegExp {
+  // Expand ~ in pattern
+  const expandedPattern = expandHome(pattern);
+
+  // Escape special regex chars except glob wildcards
+  let regex = expandedPattern
+    .replace(/[.+^${}()|[\]\\]/g, '\\$&')  // Escape regex special chars
+    .replace(/\*\*/g, '\0DOUBLE_STAR\0')   // Temporarily replace **
+    .replace(/\*/g, '[^/]*')                // * matches single path segment
+    .replace(/\0DOUBLE_STAR\0/g, '.*')      // ** matches anything including /
+    .replace(/\?/g, '.');                   // ? matches single char
+
+  return new RegExp(`^${regex}$`);
+}
+
+/**
+ * Check if a path matches any of the allowed write path patterns
+ */
+function matchesAllowedWritePath(filePath: string, allowedPaths: string[]): boolean {
+  // Normalize path (expand ~ and use forward slashes)
+  const normalizedPath = expandHome(filePath).replace(/\\/g, '/');
+
+  for (const pattern of allowedPaths) {
+    try {
+      const regex = globToRegex(pattern);
+      if (regex.test(normalizedPath)) {
+        debug(`[Mode] Path "${normalizedPath}" matches allowed pattern "${pattern}"`);
+        return true;
+      }
+    } catch (e) {
+      debug(`[Mode] Invalid glob pattern "${pattern}":`, e);
+    }
+  }
+  return false;
 }
 
 // ============================================================
@@ -513,9 +572,10 @@ export function shouldAllowToolInMode(
     config = SAFE_MODE_CONFIG;
   }
 
-  // In 'allow-all' mode, still check explicitly blocked tools from permissions.json
+  // In 'allow-all' mode, only check explicitly blocked tools from permissions.json
+  // (not safe mode defaults like Write, Edit, etc.)
   if (mode === 'allow-all') {
-    if (config.blockedTools.has(toolName)) {
+    if (config.customBlockedTools?.has(toolName)) {
       return {
         allowed: false,
         reason: `Tool "${toolName}" is explicitly blocked in permissions.json`
@@ -524,9 +584,10 @@ export function shouldAllowToolInMode(
     return { allowed: true };
   }
 
-  // In 'ask' mode, still check explicitly blocked tools from permissions.json
+  // In 'ask' mode, only check explicitly blocked tools from permissions.json
+  // (not safe mode defaults like Write, Edit, etc.)
   if (mode === 'ask') {
-    if (config.blockedTools.has(toolName)) {
+    if (config.customBlockedTools?.has(toolName)) {
       return {
         allowed: false,
         reason: `Tool "${toolName}" is explicitly blocked in permissions.json`
@@ -562,19 +623,30 @@ export function shouldAllowToolInMode(
     };
   }
 
-  // Handle Write/Edit/MultiEdit - allow if targeting plans folder
-  if (toolName === 'Write' || toolName === 'Edit' || toolName === 'MultiEdit') {
+  // Handle Write/Edit/MultiEdit/NotebookEdit - allow if targeting plans folder or allowedWritePaths
+  if (toolName === 'Write' || toolName === 'Edit' || toolName === 'MultiEdit' || toolName === 'NotebookEdit') {
     const input = toolInput as Record<string, unknown> | null;
-    const filePath = input?.file_path as string | undefined;
+    const filePath = (input?.file_path ?? input?.notebook_path) as string | undefined;
 
-    if (filePath && options?.plansFolderPath) {
-      const normalizedPath = filePath.replace(/\\/g, '/');
-      const normalizedPlansDir = options.plansFolderPath.replace(/\\/g, '/');
-      debug(`[Mode] Checking plans folder exception: path="${normalizedPath}", plansDir="${normalizedPlansDir}"`);
+    if (filePath) {
+      // Check plans folder exception
+      if (options?.plansFolderPath) {
+        const normalizedPath = filePath.replace(/\\/g, '/');
+        const normalizedPlansDir = options.plansFolderPath.replace(/\\/g, '/');
+        debug(`[Mode] Checking plans folder exception: path="${normalizedPath}", plansDir="${normalizedPlansDir}"`);
 
-      if (normalizedPath.startsWith(normalizedPlansDir)) {
-        debug(`[Mode] Allowing ${toolName} to plans folder`);
-        return { allowed: true };
+        if (normalizedPath.startsWith(normalizedPlansDir)) {
+          debug(`[Mode] Allowing ${toolName} to plans folder`);
+          return { allowed: true };
+        }
+      }
+
+      // Check allowedWritePaths from permissions config
+      if (config.allowedWritePaths && config.allowedWritePaths.length > 0) {
+        if (matchesAllowedWritePath(filePath, config.allowedWritePaths)) {
+          debug(`[Mode] Allowing ${toolName} via allowedWritePaths`);
+          return { allowed: true };
+        }
       }
     }
   }
@@ -592,6 +664,28 @@ export function shouldAllowToolInMode(
     // Always allow preferences tools
     if (toolName.startsWith('mcp__preferences__')) {
       return { allowed: true };
+    }
+
+    // Handle session-scoped tools - allow read-only, block mutations
+    if (toolName.startsWith('mcp__session__')) {
+      // Read-only session tools - always allowed
+      const readOnlySessionTools = [
+        'mcp__session__SubmitPlan',
+        'mcp__session__change_working_directory',
+        'mcp__session__config_validate',
+        'mcp__session__source_list',
+        'mcp__session__source_test',
+        'mcp__session__agent_list',
+      ];
+      if (readOnlySessionTools.includes(toolName)) {
+        return { allowed: true };
+      }
+
+      // Write session tools - blocked in safe mode
+      return {
+        allowed: false,
+        reason: `Session configuration changes are blocked in ${config.displayName}. Switch to Ask or Allow All mode (${config.shortcutHint}) to create, update, or delete sources and agents.`
+      };
     }
 
     if (isReadOnlyMcpToolWithConfig(toolName, config)) {

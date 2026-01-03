@@ -62,7 +62,7 @@ Core `CraftAgent` wrapping `@anthropic-ai/claude-agent-sdk`:
 - `formatSourceState()` injects `<sources>` context into user messages
 - Session continuity via `resume` option
 
-**AgentEvent types:** `status`, `text_delta`, `text_complete`, `tool_start`, `tool_result`, `permission_request`, `ask_user`, `error`, `complete`
+**AgentEvent types:** `status`, `text_delta`, `text_complete`, `tool_start`, `tool_result`, `permission_request`, `ask_user`, `error`, `complete`, `task_backgrounded`, `shell_backgrounded`, `task_progress`
 
 ### Configuration (`packages/shared/src/config/storage.ts`)
 
@@ -121,9 +121,6 @@ agent_source_oauth::{agentSlug}::{sourceSlug}
 agent_source_bearer::{agentSlug}::{sourceSlug}
 agent_source_apikey::{agentSlug}::{sourceSlug}
 agent_source_basic::{agentSlug}::{sourceSlug}
-
-# Agent-managed secrets
-agent_secret::{name}
 ```
 
 **Backend priority:** 1. Env vars (`ANTHROPIC_API_KEY`, `CRAFT_CLAUDE_OAUTH_TOKEN`) 2. Encrypted file
@@ -154,11 +151,26 @@ Fetch interceptor injects `_displayName` and `_intent` into MCP tool schemas:
 - `PreToolUse` strips them before forwarding to MCP
 - Used for UI display and summarization context
 
-### Safe Mode
+### Permission Modes
 
-Read-only mode (SHIFT+TAB or `/safe`):
+Three-level permission system (SHIFT+TAB cycles through modes):
+
+| Mode | Display Name | Behavior |
+|------|--------------|----------|
+| `'safe'` | Explore | Read-only, blocks all write operations |
+| `'ask'` | Ask to Edit | Prompts for bash commands (default) |
+| `'allow-all'` | Auto | Auto-approves all commands |
+
+**In Explore mode:**
 - **Blocked:** `api_*`, Bash, Write, Edit, MCP write tools
-- **Allowed:** Read, Glob, Grep, Task, WebFetch, WebSearch, MCP read tools, TodoWrite
+- **Allowed:** Read, Glob, Grep, Task, WebFetch, WebSearch, MCP read tools, TodoWrite, AskUserQuestion, SubmitPlan, LSP
+
+**Customizable permissions:** Each workspace, source, and agent can have a `permissions.json` file with custom rules:
+- `blockedTools` - Additional tools to block
+- `allowedBashPatterns` - Regex patterns for safe bash commands
+- `allowedMcpPatterns` - Regex patterns for allowed MCP tools
+- `allowedApiEndpoints` - Fine-grained API rules (method + path)
+- `allowedWritePaths` - Glob patterns for writable directories
 
 ### Headless Mode (`packages/shared/src/headless/`)
 
@@ -173,6 +185,54 @@ When `isHeadless: true`: prompts wrapped in `<headless_mode>` tags, safe mode di
 Extends Anthropic cache from 5min to 1hr via fetch interceptor (loaded via `bunfig.toml` preload).
 - **Default:** Auto - 1h for Opus, 5m for others
 - **Config:** `extendedCacheTtl: true/false` to force
+
+### Dynamic Status System (`packages/shared/src/statuses/`)
+
+Workspace-level customizable status configuration for session workflow states.
+
+**Storage:** `~/.craft-agent/workspaces/{id}/statuses/config.json`
+
+**Status properties:**
+- `id` - Slug identifier (e.g., `todo`, `in-progress`)
+- `label` - Display name
+- `color` - Hex color code
+- `icon` - Emoji or file reference (`statuses/icons/`)
+- `shortcut` - Single-char keyboard shortcut
+- `category` - `'open'` (inbox) or `'closed'` (archive)
+- `isFixed` - Built-in status (cannot delete)
+- `order` - Display order
+
+**Default statuses:** Todo, In Progress, Needs Review, Done, Cancelled
+
+**CRUD:** `createStatus()`, `updateStatus()`, `deleteStatus()`, `reorderStatuses()` via session-scoped tools.
+
+### Theme System (`packages/shared/src/config/theme.ts`)
+
+Cascading theme configuration: app → workspace → agent (last wins).
+
+**Storage:**
+- App: `~/.craft-agent/theme.json`
+- Workspace: `~/.craft-agent/workspaces/{id}/theme.json`
+- Agent: `~/.craft-agent/workspaces/{id}/agents/{slug}/theme.json`
+
+**6-color system:**
+```typescript
+{ background, foreground, accent, info, success, destructive }
+```
+
+**Dark mode:** Optional `dark: { ... }` overrides. Uses oklch color space for modern CSS.
+
+### Session-Scoped Tools (`packages/shared/src/agent/session-scoped-tools.ts`)
+
+Tools available within agent sessions with per-session callbacks:
+
+**Source management:** `source_create`, `source_list`, `source_configuration_update`, `source_delete`, `source_test`, `source_oauth_trigger`, `source_gmail_oauth_trigger`, `source_permissions_update`, `source_credential_prompt`
+
+**Agent management:** `agent_list`, `agent_create`, `agent_delete`
+
+**Utilities:** `SubmitPlan`, `change_working_directory`, `config_validate`
+
+**Callback types:** `onPlanSubmitted`, `onWorkingDirectoryChange`, `onOAuthBrowserOpen`, `onOAuthSuccess`, `onOAuthError`, `onCredentialRequest`, `onSourcesChanged`, `onSourceActivated`, `onAgentsChanged`
 
 ## Key Patterns
 
@@ -190,16 +250,19 @@ Extends Anthropic cache from 5min to 1hr via fetch interceptor (loaded via `bunf
 
 | Directory | Purpose |
 |-----------|---------|
-| `agent/` | CraftAgent, session-scoped-tools, mode-manager |
+| `agent/` | CraftAgent, session-scoped-tools, mode-manager, mode-types, permissions-config |
 | `agents/` | folder-manager, folder-storage, api-tools, builtin-agents |
 | `sources/` | types, storage, service |
-| `auth/` | oauth, craft-token, claude-token, gmail-oauth |
-| `config/` | storage, preferences, models |
+| `auth/` | oauth, craft-token, claude-token, gmail-oauth, state |
+| `config/` | storage, preferences, models, theme, watcher |
 | `credentials/` | manager, backends (secure-storage, env) |
 | `mcp/` | client, validation |
 | `prompts/` | system prompt |
 | `headless/` | runner, types, output |
+| `sessions/` | index, storage, persistence-queue |
+| `statuses/` | types, crud, storage, default-icons |
 | `utils/` | debug, files, summarize, icon, title-generator |
+| `workspaces/` | storage |
 
 ## Debugging
 

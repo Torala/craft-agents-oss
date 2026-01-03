@@ -7,13 +7,11 @@
  * Tools included:
  * - SubmitPlan: Submit a plan file for user review/display
  * - change_working_directory: Change the working directory for the session
- * - secret_write: Store a secret in the encrypted credential store
- * - secret_read: Retrieve a secret (masked by default)
- * - secret_delete: Delete a secret
- * - secret_list: List all secret names
  * - config_validate: Validate configuration files
  * - source_test: Test a source connection (MCP or API)
- * - oauth_trigger: Start OAuth authentication for a source
+ * - source_oauth_trigger: Start OAuth authentication for a source
+ * - source_gmail_oauth_trigger: Start Gmail OAuth authentication
+ * - source_credential_prompt: Prompt user for credentials
  */
 
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
@@ -22,7 +20,6 @@ import { existsSync, readFileSync, statSync } from 'fs';
 import { getSessionPlansPath } from '../sessions/storage.ts';
 import { debug } from '../utils/debug.ts';
 import { getCredentialManager } from '../credentials/index.ts';
-import type { CredentialId, StoredCredential } from '../credentials/types.ts';
 import {
   validateConfig,
   validateSource,
@@ -44,16 +41,12 @@ import {
 import {
   loadSourceConfig,
   saveSourceConfig,
-  loadSourceGuide,
-  saveSourceGuide,
-  updateSourceCache,
-  setNestedValue,
   sourceExists,
   loadSourceConfigWithFallback,
   saveSourceConfigWithContext,
   type SourceWithContext,
 } from '../sources/storage.ts';
-import type { FolderSourceConfig, SourceGuide, LoadedSource } from '../sources/types.ts';
+import type { FolderSourceConfig, LoadedSource } from '../sources/types.ts';
 import { createSourceService } from '../sources/service.ts';
 import { CraftOAuth, getMcpBaseUrl, type OAuthConfig, type OAuthCallbacks } from '../auth/oauth.ts';
 import { startGmailOAuth } from '../auth/gmail-oauth.ts';
@@ -374,281 +367,6 @@ Use this when:
         }],
         isError: false,
       };
-    }
-  );
-}
-
-// ============================================================
-// Secret Management Tools
-// ============================================================
-
-/**
- * Helper to create a CredentialId for agent secrets.
- * Agent secrets use the format: agent_secret::{name}
- */
-function createSecretCredentialId(name: string): CredentialId {
-  return { type: 'agent_secret', name };
-}
-
-/**
- * Mask a secret value for display.
- * Shows first 4 chars and last 4 chars with *** in between.
- */
-function maskSecretValue(value: string): string {
-  if (value.length <= 8) {
-    return '****';
-  }
-  return `${value.slice(0, 4)}****${value.slice(-4)}`;
-}
-
-/**
- * Create a session-scoped secret_write tool.
- * Stores a secret in the encrypted credential store.
- */
-export function createSecretWriteTool(sessionId: string) {
-  return tool(
-    'secret_write',
-    `Store a secret securely in the encrypted credential store.
-
-Use this to save sensitive values like:
-- API keys
-- Access tokens
-- Passwords
-- Other secrets the user provides
-
-The secret is encrypted at rest using AES-256-GCM and is only accessible
-to the agent through the secret_read tool.
-
-**Important:** Always confirm with the user before storing sensitive information.`,
-    {
-      name: z.string().min(1).max(128).regex(/^[a-zA-Z0-9_-]+$/).describe(
-        'Unique identifier for the secret (alphanumeric, underscore, hyphen only)'
-      ),
-      value: z.string().min(1).describe('The secret value to store'),
-      description: z.string().optional().describe('Optional description of what this secret is for'),
-    },
-    async (args) => {
-      debug('[secret_write] Storing secret:', args.name);
-
-      try {
-        const credentialManager = getCredentialManager();
-        const credentialId = createSecretCredentialId(args.name);
-
-        // Store the secret with optional description in a metadata-like way
-        // We use the tokenType field to store description since StoredCredential
-        // doesn't have a dedicated description field
-        const credential: StoredCredential = {
-          value: args.value,
-          tokenType: args.description,
-        };
-
-        await credentialManager.set(credentialId, credential);
-
-        return {
-          content: [{
-            type: 'text' as const,
-            text: `Secret '${args.name}' stored successfully.${args.description ? ` Description: ${args.description}` : ''}`,
-          }],
-          isError: false,
-        };
-      } catch (error) {
-        debug('[secret_write] Error:', error);
-        return {
-          content: [{
-            type: 'text' as const,
-            text: `Error storing secret: ${error instanceof Error ? error.message : 'Unknown error'}`,
-          }],
-          isError: true,
-        };
-      }
-    }
-  );
-}
-
-/**
- * Create a session-scoped secret_read tool.
- * Retrieves a secret from the encrypted credential store.
- */
-export function createSecretReadTool(sessionId: string) {
-  return tool(
-    'secret_read',
-    `Retrieve a secret from the encrypted credential store.
-
-By default, the secret value is masked for safety. Use unmask=true only when
-you need to actually use the secret value (e.g., to include in an API call).
-
-**Security:** Prefer to keep secrets masked unless absolutely necessary.
-When using unmask=true, avoid displaying the raw value to the user.`,
-    {
-      name: z.string().describe('The identifier of the secret to retrieve'),
-      unmask: z.boolean().default(false).describe(
-        'If true, return the actual value. If false (default), return a masked version.'
-      ),
-    },
-    async (args) => {
-      debug('[secret_read] Reading secret:', args.name, 'unmask:', args.unmask);
-
-      try {
-        const credentialManager = getCredentialManager();
-        const credentialId = createSecretCredentialId(args.name);
-
-        const credential = await credentialManager.get(credentialId);
-
-        if (!credential) {
-          return {
-            content: [{
-              type: 'text' as const,
-              text: `Secret '${args.name}' not found.`,
-            }],
-            isError: false,
-          };
-        }
-
-        const displayValue = args.unmask ? credential.value : maskSecretValue(credential.value);
-        const description = credential.tokenType ? ` (${credential.tokenType})` : '';
-
-        return {
-          content: [{
-            type: 'text' as const,
-            text: `Secret '${args.name}'${description}: ${displayValue}`,
-          }],
-          isError: false,
-        };
-      } catch (error) {
-        debug('[secret_read] Error:', error);
-        return {
-          content: [{
-            type: 'text' as const,
-            text: `Error reading secret: ${error instanceof Error ? error.message : 'Unknown error'}`,
-          }],
-          isError: true,
-        };
-      }
-    }
-  );
-}
-
-/**
- * Create a session-scoped secret_delete tool.
- * Removes a secret from the encrypted credential store.
- */
-export function createSecretDeleteTool(sessionId: string) {
-  return tool(
-    'secret_delete',
-    `Delete a secret from the encrypted credential store.
-
-**Warning:** This action is irreversible. The secret will be permanently removed.
-Always confirm with the user before deleting secrets.`,
-    {
-      name: z.string().describe('The identifier of the secret to delete'),
-    },
-    async (args) => {
-      debug('[secret_delete] Deleting secret:', args.name);
-
-      try {
-        const credentialManager = getCredentialManager();
-        const credentialId = createSecretCredentialId(args.name);
-
-        const deleted = await credentialManager.delete(credentialId);
-
-        if (deleted) {
-          return {
-            content: [{
-              type: 'text' as const,
-              text: `Secret '${args.name}' deleted successfully.`,
-            }],
-            isError: false,
-          };
-        } else {
-          return {
-            content: [{
-              type: 'text' as const,
-              text: `Secret '${args.name}' not found (may have already been deleted).`,
-            }],
-            isError: false,
-          };
-        }
-      } catch (error) {
-        debug('[secret_delete] Error:', error);
-        return {
-          content: [{
-            type: 'text' as const,
-            text: `Error deleting secret: ${error instanceof Error ? error.message : 'Unknown error'}`,
-          }],
-          isError: true,
-        };
-      }
-    }
-  );
-}
-
-/**
- * Create a session-scoped secret_list tool.
- * Lists all agent-managed secrets (names only, not values).
- */
-export function createSecretListTool(sessionId: string) {
-  return tool(
-    'secret_list',
-    `List all stored secrets by name.
-
-Returns only the secret names (identifiers), not the values.
-Use secret_read to retrieve individual secret values.
-
-Optionally filter by prefix to find secrets in a specific category.`,
-    {
-      prefix: z.string().optional().describe(
-        'Optional prefix to filter secrets (e.g., "api_" to list all API-related secrets)'
-      ),
-    },
-    async (args) => {
-      debug('[secret_list] Listing secrets, prefix:', args.prefix);
-
-      try {
-        const credentialManager = getCredentialManager();
-
-        // List all agent_secret credentials
-        const allSecrets = await credentialManager.list({ type: 'agent_secret' });
-
-        // Extract names and filter by prefix if provided
-        let secretNames = allSecrets
-          .map((id) => id.name)
-          .filter((name): name is string => name !== undefined);
-
-        if (args.prefix) {
-          secretNames = secretNames.filter((name) => name.startsWith(args.prefix!));
-        }
-
-        if (secretNames.length === 0) {
-          const filterNote = args.prefix ? ` matching prefix '${args.prefix}'` : '';
-          return {
-            content: [{
-              type: 'text' as const,
-              text: `No secrets found${filterNote}.`,
-            }],
-            isError: false,
-          };
-        }
-
-        const secretList = secretNames.map((name) => `- ${name}`).join('\n');
-        const filterNote = args.prefix ? ` (filtered by prefix '${args.prefix}')` : '';
-
-        return {
-          content: [{
-            type: 'text' as const,
-            text: `Found ${secretNames.length} secret(s)${filterNote}:\n${secretList}`,
-          }],
-          isError: false,
-        };
-      } catch (error) {
-        debug('[secret_list] Error:', error);
-        return {
-          content: [{
-            type: 'text' as const,
-            text: `Error listing secrets: ${error instanceof Error ? error.message : 'Unknown error'}`,
-          }],
-          isError: true,
-        };
-      }
     }
   );
 }
@@ -1107,7 +825,7 @@ export function createSourceTestTool(sessionId: string, workspaceId: string, act
 
           if (result.errorType === 'needs-auth') {
             lines.push('');
-            lines.push('Use the oauth_trigger tool to authenticate this source.');
+            lines.push('Use the source_oauth_trigger tool to authenticate this source.');
           }
 
           return {
@@ -1137,12 +855,12 @@ export function createSourceTestTool(sessionId: string, workspaceId: string, act
 // ============================================================
 
 /**
- * Create a session-scoped oauth_trigger tool.
+ * Create a session-scoped source_oauth_trigger tool.
  * Initiates OAuth authentication for an MCP source.
  */
 export function createOAuthTriggerTool(sessionId: string, workspaceId: string, activeAgentSlug?: string) {
   return tool(
-    'oauth_trigger',
+    'source_oauth_trigger',
     `Start OAuth authentication for an MCP source.
 
 This tool initiates the OAuth 2.0 + PKCE flow for sources that require authentication.
@@ -1167,7 +885,7 @@ A browser window will open for the user to complete authentication.
       sourceSlug: z.string().describe('The slug of the source to authenticate'),
     },
     async (args) => {
-      debug('[oauth_trigger] Starting OAuth for source:', args.sourceSlug);
+      debug('[source_oauth_trigger] Starting OAuth for source:', args.sourceSlug);
 
       try {
         // Load the source config (checks agent folder first if activeAgentSlug set, then workspace)
@@ -1225,10 +943,10 @@ A browser window will open for the user to complete authentication.
         // Create OAuth callbacks
         const oauthCallbacks: OAuthCallbacks = {
           onStatus: (message: string) => {
-            debug('[oauth_trigger] Status:', message);
+            debug('[source_oauth_trigger] Status:', message);
           },
           onError: (error: string) => {
-            debug('[oauth_trigger] Error:', error);
+            debug('[source_oauth_trigger] Error:', error);
             callbacks?.onOAuthError?.(args.sourceSlug, error);
           },
         };
@@ -1281,16 +999,16 @@ A browser window will open for the user to complete authentication.
         // Activate the source for this session
         try {
           await callbacks?.onSourceActivated?.(args.sourceSlug);
-          debug('[oauth_trigger] Source activated for session:', args.sourceSlug);
+          debug('[source_oauth_trigger] Source activated for session:', args.sourceSlug);
         } catch (err) {
-          console.log('[oauth_trigger] onSourceActivated callback error:', err);
+          console.log('[source_oauth_trigger] onSourceActivated callback error:', err);
         }
 
         // Trigger source reload callback so new tools are available (don't let failures affect tool result)
         try {
           await callbacks?.onSourcesChanged?.();
         } catch (err) {
-          console.log('[oauth_trigger] onSourcesChanged callback error:', err);
+          console.log('[source_oauth_trigger] onSourcesChanged callback error:', err);
         }
 
         return {
@@ -1301,7 +1019,7 @@ A browser window will open for the user to complete authentication.
           isError: false,
         };
       } catch (error) {
-        debug('[oauth_trigger] Error:', error);
+        debug('[source_oauth_trigger] Error:', error);
 
         // Notify error callback
         const callbacks = getSessionScopedToolCallbacks(sessionId);
@@ -1320,12 +1038,12 @@ A browser window will open for the user to complete authentication.
 }
 
 /**
- * Create a session-scoped gmail_oauth_trigger tool.
+ * Create a session-scoped source_gmail_oauth_trigger tool.
  * Initiates Gmail OAuth authentication for a Gmail source.
  */
 export function createGmailOAuthTriggerTool(sessionId: string, workspaceId: string, activeAgentSlug?: string) {
   return tool(
-    'gmail_oauth_trigger',
+    'source_gmail_oauth_trigger',
     `Trigger Gmail OAuth authentication flow.
 
 Opens a browser window for the user to sign in with their Google account and authorize Gmail access.
@@ -1342,7 +1060,7 @@ After successful authentication, the tokens are stored and the source is marked 
       sourceSlug: z.string().describe('The slug of the Gmail source to authenticate'),
     },
     async (args) => {
-      debug('[gmail_oauth_trigger] Starting Gmail OAuth for source:', args.sourceSlug);
+      debug('[source_gmail_oauth_trigger] Starting Gmail OAuth for source:', args.sourceSlug);
 
       try {
         // Load the source config (checks agent folder first if activeAgentSlug set, then workspace)
@@ -1364,7 +1082,7 @@ After successful authentication, the tokens are stored and the source is marked 
           return {
             content: [{
               type: 'text' as const,
-              text: `Source '${args.sourceSlug}' is provider '${source.provider}'. gmail_oauth_trigger is only for Gmail sources. Use oauth_trigger for MCP sources.`,
+              text: `Source '${args.sourceSlug}' is provider '${source.provider}'. source_gmail_oauth_trigger is only for Gmail sources. Use source_oauth_trigger for MCP sources.`,
             }],
             isError: true,
           };
@@ -1425,16 +1143,16 @@ After successful authentication, the tokens are stored and the source is marked 
         // Activate the source for this session
         try {
           await callbacks?.onSourceActivated?.(args.sourceSlug);
-          debug('[gmail_oauth_trigger] Source activated for session:', args.sourceSlug);
+          debug('[source_gmail_oauth_trigger] Source activated for session:', args.sourceSlug);
         } catch (err) {
-          console.log('[gmail_oauth_trigger] onSourceActivated callback error:', err);
+          console.log('[source_gmail_oauth_trigger] onSourceActivated callback error:', err);
         }
 
         // Trigger source reload callback so new tools are available (don't let failures affect tool result)
         try {
           await callbacks?.onSourcesChanged?.();
         } catch (err) {
-          console.log('[gmail_oauth_trigger] onSourcesChanged callback error:', err);
+          console.log('[source_gmail_oauth_trigger] onSourcesChanged callback error:', err);
         }
 
         return {
@@ -1445,7 +1163,7 @@ After successful authentication, the tokens are stored and the source is marked 
           isError: false,
         };
       } catch (error) {
-        debug('[gmail_oauth_trigger] Error:', error);
+        debug('[source_gmail_oauth_trigger] Error:', error);
 
         const callbacks = getSessionScopedToolCallbacks(sessionId);
         callbacks?.onOAuthError?.(args.sourceSlug, error instanceof Error ? error.message : 'Unknown error');
@@ -1454,281 +1172,6 @@ After successful authentication, the tokens are stored and the source is marked 
           content: [{
             type: 'text' as const,
             text: `Gmail OAuth failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
-          }],
-          isError: true,
-        };
-      }
-    }
-  );
-}
-
-// ============================================================
-// Source Cache Tools
-// ============================================================
-
-/**
- * Create a session-scoped source_cache_update tool.
- * Updates cached values in a source's guide.md frontmatter.
- */
-export function createSourceCacheUpdateTool(sessionId: string, workspaceId: string) {
-  return tool(
-    'source_cache_update',
-    `Update cached values in a source's guide.md frontmatter.
-
-Use this to store frequently-used data like project IDs, folder mappings, or other
-values that you discover during conversations. This avoids re-fetching the same
-information in future sessions.
-
-**Cache is stored in YAML frontmatter:**
-\`\`\`yaml
----
-cache:
-  projectIds:
-    Backend: "proj_123"
-    Frontend: "proj_456"
-  lastUpdated: "2025-01-15T10:30:00Z"
----
-\`\`\`
-
-**Examples:**
-- \`path: "projectIds.Backend", value: "proj_123"\` - Store a project ID
-- \`path: "userIds.alice", value: "user_789"\` - Store a user mapping
-- \`path: "defaultFolder", value: "Documents"\` - Store a preference
-
-The cache is persisted between sessions and can be read from the guide.md file.`,
-    {
-      sourceSlug: z.string().describe('The slug of the source to update'),
-      path: z.string().describe('Dot-notation path in the cache object (e.g., "projectIds.Backend")'),
-      value: z.union([z.string(), z.number(), z.boolean(), z.null()]).describe('The value to store'),
-    },
-    async (args) => {
-      debug('[source_cache_update] Updating cache:', args.sourceSlug, args.path, args.value);
-
-      try {
-        // Check if source exists
-        if (!sourceExists(workspaceId, args.sourceSlug)) {
-          return {
-            content: [{
-              type: 'text' as const,
-              text: `Source '${args.sourceSlug}' not found. Use source_list to see available sources.`,
-            }],
-            isError: true,
-          };
-        }
-
-        // Build the update object using dot notation
-        const updates: Record<string, unknown> = {};
-        setNestedValue(updates, args.path, args.value);
-
-        // Update the cache
-        updateSourceCache(workspaceId, args.sourceSlug, updates);
-
-        return {
-          content: [{
-            type: 'text' as const,
-            text: `Cache updated for source '${args.sourceSlug}': ${args.path} = ${JSON.stringify(args.value)}`,
-          }],
-          isError: false,
-        };
-      } catch (error) {
-        debug('[source_cache_update] Error:', error);
-        return {
-          content: [{
-            type: 'text' as const,
-            text: `Error updating cache: ${error instanceof Error ? error.message : 'Unknown error'}`,
-          }],
-          isError: true,
-        };
-      }
-    }
-  );
-}
-
-/**
- * Create a session-scoped source_guide_append tool.
- * Appends content to a specific section of a source's guide.md.
- */
-export function createSourceGuideAppendTool(sessionId: string, workspaceId: string) {
-  return tool(
-    'source_guide_append',
-    `Append content to a specific section of a source's guide.md file.
-
-Use this to add notes, guidelines, or context that you learn during conversations.
-This helps build up a knowledge base about the source over time.
-
-**Available sections:**
-- \`scope\`: What this source is for, what data it accesses
-- \`guidelines\`: How to use this source effectively
-- \`context\`: Background information, project structure, etc.
-- \`apiNotes\`: API-specific notes, endpoints, rate limits, etc.
-
-**Note:** Content is appended to the end of the specified section.
-If the section doesn't exist, it will be created.`,
-    {
-      sourceSlug: z.string().describe('The slug of the source to update'),
-      section: z.enum(['scope', 'guidelines', 'context', 'apiNotes']).describe('Which section to append to'),
-      content: z.string().describe('The markdown content to append'),
-    },
-    async (args) => {
-      debug('[source_guide_append] Appending to guide:', args.sourceSlug, args.section);
-
-      try {
-        // Check if source exists
-        if (!sourceExists(workspaceId, args.sourceSlug)) {
-          return {
-            content: [{
-              type: 'text' as const,
-              text: `Source '${args.sourceSlug}' not found. Use source_list to see available sources.`,
-            }],
-            isError: true,
-          };
-        }
-
-        // Load current guide
-        const guide = loadSourceGuide(workspaceId, args.sourceSlug) || { raw: '' };
-
-        // Map section name to header
-        const sectionHeaders: Record<string, string> = {
-          scope: '## Scope',
-          guidelines: '## Guidelines',
-          context: '## Context',
-          apiNotes: '## API Notes',
-        };
-
-        const header = sectionHeaders[args.section];
-        if (!header) {
-          return {
-            content: [{
-              type: 'text' as const,
-              text: `Invalid section: ${args.section}`,
-            }],
-            isError: true,
-          };
-        }
-
-        let newRaw = guide.raw;
-
-        // Check if section exists
-        const sectionRegex = new RegExp(`^${header.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\n`, 'm');
-        const sectionMatch = sectionRegex.exec(newRaw);
-
-        if (sectionMatch) {
-          // Find the end of this section (next ## or end of file)
-          const sectionStart = sectionMatch.index + sectionMatch[0].length;
-          const nextSectionMatch = /\n## /.exec(newRaw.slice(sectionStart));
-          const sectionEnd = nextSectionMatch ? sectionStart + nextSectionMatch.index : newRaw.length;
-
-          // Insert content before the next section (or at end)
-          const beforeSection = newRaw.slice(0, sectionEnd).trimEnd();
-          const afterSection = newRaw.slice(sectionEnd);
-          newRaw = `${beforeSection}\n\n${args.content.trim()}${afterSection}`;
-        } else {
-          // Section doesn't exist, add it at the end
-          newRaw = `${newRaw.trimEnd()}\n\n${header}\n\n${args.content.trim()}\n`;
-        }
-
-        // Save the updated guide
-        saveSourceGuide(workspaceId, args.sourceSlug, { ...guide, raw: newRaw });
-
-        return {
-          content: [{
-            type: 'text' as const,
-            text: `Content appended to ${args.section} section in source '${args.sourceSlug}'.`,
-          }],
-          isError: false,
-        };
-      } catch (error) {
-        debug('[source_guide_append] Error:', error);
-        return {
-          content: [{
-            type: 'text' as const,
-            text: `Error appending to guide: ${error instanceof Error ? error.message : 'Unknown error'}`,
-          }],
-          isError: true,
-        };
-      }
-    }
-  );
-}
-
-/**
- * Create a session-scoped source_cache_read tool.
- * Reads cached values from a source's guide.md frontmatter.
- */
-export function createSourceCacheReadTool(sessionId: string, workspaceId: string) {
-  return tool(
-    'source_cache_read',
-    `Read cached values from a source's guide.md frontmatter.
-
-Use this to retrieve previously stored cache values like project IDs,
-user mappings, or other data discovered in previous sessions.
-
-**Returns the entire cache object or a specific path:**
-- No path: Returns the full cache object
-- With path: Returns the value at that path (e.g., "projectIds.Backend")`,
-    {
-      sourceSlug: z.string().describe('The slug of the source to read from'),
-      path: z.string().optional().describe('Optional dot-notation path to read (e.g., "projectIds.Backend")'),
-    },
-    async (args) => {
-      debug('[source_cache_read] Reading cache:', args.sourceSlug, args.path);
-
-      try {
-        // Check if source exists
-        if (!sourceExists(workspaceId, args.sourceSlug)) {
-          return {
-            content: [{
-              type: 'text' as const,
-              text: `Source '${args.sourceSlug}' not found. Use source_list to see available sources.`,
-            }],
-            isError: true,
-          };
-        }
-
-        // Load guide to get cache
-        const guide = loadSourceGuide(workspaceId, args.sourceSlug);
-        if (!guide?.cache) {
-          return {
-            content: [{
-              type: 'text' as const,
-              text: `No cache found for source '${args.sourceSlug}'.`,
-            }],
-            isError: false,
-          };
-        }
-
-        // Get value at path or full cache
-        let value: unknown = guide.cache;
-        if (args.path) {
-          const keys = args.path.split('.');
-          for (const key of keys) {
-            if (value && typeof value === 'object' && key in value) {
-              value = (value as Record<string, unknown>)[key];
-            } else {
-              return {
-                content: [{
-                  type: 'text' as const,
-                  text: `Path '${args.path}' not found in cache for source '${args.sourceSlug}'.`,
-                }],
-                isError: false,
-              };
-            }
-          }
-        }
-
-        return {
-          content: [{
-            type: 'text' as const,
-            text: `Cache for source '${args.sourceSlug}'${args.path ? ` at '${args.path}'` : ''}:\n\`\`\`json\n${JSON.stringify(value, null, 2)}\n\`\`\``,
-          }],
-          isError: false,
-        };
-      } catch (error) {
-        debug('[source_cache_read] Error:', error);
-        return {
-          content: [{
-            type: 'text' as const,
-            text: `Error reading cache: ${error instanceof Error ? error.message : 'Unknown error'}`,
           }],
           isError: true,
         };
@@ -1962,11 +1405,11 @@ ${scopeDescription}
         }
 
         const authNote = args.type === 'mcp' && args.mcpAuthType === 'oauth'
-          ? '\n\nUse `oauth_trigger` to authenticate this source.'
+          ? '\n\nUse `source_oauth_trigger` to authenticate this source.'
           : args.type === 'mcp' && args.mcpAuthType === 'bearer'
           ? '\n\nA bearer token will need to be configured for authentication.'
           : args.type === 'api' && args.apiAuthType && args.apiAuthType !== 'none'
-          ? '\n\nUse `credential_prompt` to provide credentials for this API.'
+          ? '\n\nUse `source_credential_prompt` to provide credentials for this API.'
           : '';
 
         const scopeNote = effectiveAgentSlug
@@ -1995,11 +1438,11 @@ ${scopeDescription}
 }
 
 /**
- * Update an existing source in the workspace.
+ * Update an existing source's configuration.
  */
-export function createSourceUpdateTool(sessionId: string, workspaceId: string, activeAgentSlug?: string) {
+export function createSourceConfigurationUpdateTool(sessionId: string, workspaceId: string, activeAgentSlug?: string) {
   return tool(
-    'source_update',
+    'source_configuration_update',
     `Update an existing source's configuration.
 
 Only the provided fields will be updated; others remain unchanged.`,
@@ -2289,12 +1732,12 @@ Rules are additive - they extend the defaults to make ${exploreName} mode more p
 // ============================================================
 
 /**
- * Create a session-scoped credential_prompt tool.
+ * Create a session-scoped source_credential_prompt tool.
  * Prompts the user to enter credentials for a source via the secure input UI.
  */
 export function createCredentialPromptTool(sessionId: string, workspaceId: string, activeAgentSlug?: string) {
   return tool(
-    'credential_prompt',
+    'source_credential_prompt',
     `Prompt the user to enter credentials for a source.
 
 Use this when a source requires authentication that isn't OAuth.
@@ -2313,7 +1756,7 @@ The user will see a secure input UI with appropriate fields based on the auth mo
 
 **Example usage:**
 \`\`\`
-credential_prompt({
+source_credential_prompt({
   sourceSlug: "my-api",
   mode: "bearer",
   labels: { credential: "API Key" },
@@ -2333,7 +1776,7 @@ credential_prompt({
       hint: z.string().optional().describe('Hint about where to find credentials'),
     },
     async (args) => {
-      debug('[credential_prompt] Prompting for credentials:', args.sourceSlug, args.mode);
+      debug('[source_credential_prompt] Prompting for credentials:', args.sourceSlug, args.mode);
 
       try {
         // Load source to get name and validate (checks agent folder first if activeAgentSlug set, then workspace)
@@ -2429,16 +1872,16 @@ credential_prompt({
         // Activate the source for this session
         try {
           await callbacks?.onSourceActivated?.(args.sourceSlug);
-          debug('[credential_prompt] Source activated for session:', args.sourceSlug);
+          debug('[source_credential_prompt] Source activated for session:', args.sourceSlug);
         } catch (err) {
-          console.log('[credential_prompt] onSourceActivated callback error:', err);
+          console.log('[source_credential_prompt] onSourceActivated callback error:', err);
         }
 
         // Trigger source reload callback so new tools are available (don't let failures affect tool result)
         try {
           await callbacks?.onSourcesChanged?.();
         } catch (err) {
-          console.log('[credential_prompt] onSourcesChanged callback error:', err);
+          console.log('[source_credential_prompt] onSourcesChanged callback error:', err);
         }
 
         return {
@@ -2449,7 +1892,7 @@ credential_prompt({
           isError: false,
         };
       } catch (error) {
-        debug('[credential_prompt] Error:', error);
+        debug('[source_credential_prompt] Error:', error);
         return {
           content: [{
             type: 'text' as const,
@@ -2686,11 +2129,6 @@ export function getSessionScopedTools(sessionId: string, workspaceId: string, ac
       tools: [
         createSubmitPlanTool(sessionId),
         createChangeWorkingDirectoryTool(sessionId),
-        // Secret management tools
-        createSecretWriteTool(sessionId),
-        createSecretReadTool(sessionId),
-        createSecretDeleteTool(sessionId),
-        createSecretListTool(sessionId),
         // Config validation tool
         createConfigValidateTool(sessionId, workspaceId),
         // Source tools (agent-aware: checks agent folder first, then workspace)
@@ -2698,13 +2136,10 @@ export function getSessionScopedTools(sessionId: string, workspaceId: string, ac
         createOAuthTriggerTool(sessionId, workspaceId, activeAgentSlug),
         createGmailOAuthTriggerTool(sessionId, workspaceId, activeAgentSlug),
         createCredentialPromptTool(sessionId, workspaceId, activeAgentSlug),
-        createSourceCacheUpdateTool(sessionId, workspaceId),
-        createSourceCacheReadTool(sessionId, workspaceId),
-        createSourceGuideAppendTool(sessionId, workspaceId),
         // Source CRUD tools
         createSourceListTool(sessionId, workspaceId),
         createSourceCreateTool(sessionId, workspaceId, activeAgentSlug),
-        createSourceUpdateTool(sessionId, workspaceId, activeAgentSlug),
+        createSourceConfigurationUpdateTool(sessionId, workspaceId, activeAgentSlug),
         createSourceDeleteTool(sessionId, workspaceId),
         createSourcePermissionsUpdateTool(sessionId, workspaceId, activeAgentSlug),
         // Agent tools

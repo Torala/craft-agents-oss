@@ -280,7 +280,7 @@ export function FileTypeIcon({ type, mimeType, className }: FileTypeIconProps) {
 
   // Images get dedicated icon
   if (type === 'image') {
-    return <ImageIcon className={cn(baseClass, "text-purple-500")} />
+    return <ImageIcon className={cn(baseClass, "text-accent")} />
   }
 
   // Everything else gets generic file icon with color tint
@@ -289,16 +289,16 @@ export function FileTypeIcon({ type, mimeType, className }: FileTypeIconProps) {
 }
 
 function getFileColor(type: FileTypeIconProps['type'], mimeType: string): string {
-  // Code files get green tint
+  // Code files get success color
   if (isCodeFile(mimeType)) {
-    return "text-green-500"
+    return "text-success"
   }
 
   switch (type) {
     case 'pdf':
-      return "text-red-500"
+      return "text-destructive"
     case 'office':
-      return "text-blue-500"
+      return "text-accent"
     case 'text':
       return "text-muted-foreground"
     default:

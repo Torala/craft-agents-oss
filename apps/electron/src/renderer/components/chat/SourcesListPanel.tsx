@@ -49,7 +49,7 @@ export function SourcesListPanel({
             </p>
             <button
               onClick={onAddSource}
-              className="mt-2 text-sm text-primary hover:underline"
+              className="mt-2 text-sm text-foreground hover:underline"
             >
               Add your first source
             </button>
@@ -103,11 +103,11 @@ function getSourceTypeLabel(type: string): string {
 function getSourceTypeBadgeClasses(type: string): string {
   switch (type) {
     case 'mcp':
-      return 'bg-blue-500/10 text-blue-600'
+      return 'bg-accent/10 text-accent'
     case 'api':
-      return 'bg-emerald-500/10 text-emerald-600'
+      return 'bg-success/10 text-success'
     case 'local':
-      return 'bg-amber-500/10 text-amber-600'
+      return 'bg-info/10 text-info'
     default:
       return 'bg-foreground/10 text-foreground/70'
   }
@@ -122,9 +122,9 @@ function getStatusBadge(status: SourceConnectionStatus): { label: string; classe
     case 'connected':
       return null // No badge for connected sources
     case 'needs_auth':
-      return { label: 'Needs Auth', classes: 'bg-amber-500/10 text-amber-600' }
+      return { label: 'Needs Auth', classes: 'bg-info/10 text-info' }
     case 'failed':
-      return { label: 'Failed', classes: 'bg-red-500/10 text-red-600' }
+      return { label: 'Failed', classes: 'bg-destructive/10 text-destructive' }
     case 'untested':
       return { label: 'Not Tested', classes: 'bg-foreground/10 text-foreground/50' }
     default:

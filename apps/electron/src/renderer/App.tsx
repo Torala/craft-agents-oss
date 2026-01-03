@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { useTheme } from '@/hooks/useTheme'
+import type { ThemeOverrides } from '@config/theme'
 import { useSetAtom, useStore } from 'jotai'
 import type { Session, Workspace, SessionEvent, Message, SubAgentMetadata, FileAttachment, StoredAttachment, PermissionRequest, CredentialRequest, CredentialResponse, SetupNeeds, TodoState } from '../shared/types'
 import type { SessionOptions, SessionOptionUpdates } from './hooks/useSessionOptions'
@@ -9,6 +11,7 @@ import type { AgentEvent, Effect } from './event-processor'
 import { Chat } from '@/components/chat/Chat'
 import type { ChatContextType } from '@/context/ChatContext'
 import { OnboardingWizard, ReauthScreen } from '@/components/onboarding'
+import { ResetConfirmationDialog } from '@/components/ResetConfirmationDialog'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { FocusProvider } from '@/context/FocusContext'
 import { useGlobalShortcuts } from '@/hooks/keyboard'
@@ -42,53 +45,55 @@ function handleBackgroundTaskEvent(
   store: JotaiStore,
   sessionId: string,
   event: { type: string },
-  agentEvent: Record<string, unknown>
+  agentEvent: unknown
 ): void {
+  // Type guard for accessing properties
+  const evt = agentEvent as Record<string, unknown>
   const backgroundTasksAtom = backgroundTasksAtomFamily(sessionId)
 
-  if (event.type === 'task_backgrounded' && 'taskId' in agentEvent && 'toolUseId' in agentEvent) {
+  if (event.type === 'task_backgrounded' && 'taskId' in evt && 'toolUseId' in evt) {
     const currentTasks = store.get(backgroundTasksAtom)
-    const exists = currentTasks.some(t => t.toolUseId === agentEvent.toolUseId)
+    const exists = currentTasks.some(t => t.toolUseId === evt.toolUseId)
     if (!exists) {
       store.set(backgroundTasksAtom, [
         ...currentTasks,
         {
-          id: agentEvent.taskId as string,
+          id: evt.taskId as string,
           type: 'agent' as const,
-          toolUseId: agentEvent.toolUseId as string,
+          toolUseId: evt.toolUseId as string,
           startTime: Date.now(),
           elapsedSeconds: 0,
-          intent: agentEvent.intent as string | undefined,
+          intent: evt.intent as string | undefined,
         },
       ])
     }
-  } else if (event.type === 'shell_backgrounded' && 'shellId' in agentEvent && 'toolUseId' in agentEvent) {
+  } else if (event.type === 'shell_backgrounded' && 'shellId' in evt && 'toolUseId' in evt) {
     const currentTasks = store.get(backgroundTasksAtom)
-    const exists = currentTasks.some(t => t.toolUseId === agentEvent.toolUseId)
+    const exists = currentTasks.some(t => t.toolUseId === evt.toolUseId)
     if (!exists) {
       store.set(backgroundTasksAtom, [
         ...currentTasks,
         {
-          id: agentEvent.shellId as string,
+          id: evt.shellId as string,
           type: 'shell' as const,
-          toolUseId: agentEvent.toolUseId as string,
+          toolUseId: evt.toolUseId as string,
           startTime: Date.now(),
           elapsedSeconds: 0,
-          intent: agentEvent.intent as string | undefined,
+          intent: evt.intent as string | undefined,
         },
       ])
     }
-  } else if (event.type === 'task_progress' && 'toolUseId' in agentEvent && 'elapsedSeconds' in agentEvent) {
+  } else if (event.type === 'task_progress' && 'toolUseId' in evt && 'elapsedSeconds' in evt) {
     const currentTasks = store.get(backgroundTasksAtom)
     store.set(backgroundTasksAtom, currentTasks.map(t =>
-      t.toolUseId === agentEvent.toolUseId
-        ? { ...t, elapsedSeconds: agentEvent.elapsedSeconds as number }
+      t.toolUseId === evt.toolUseId
+        ? { ...t, elapsedSeconds: evt.elapsedSeconds as number }
         : t
     ))
-  } else if (event.type === 'tool_result' && 'toolUseId' in agentEvent) {
+  } else if (event.type === 'tool_result' && 'toolUseId' in evt) {
     // Remove task when it completes
     const currentTasks = store.get(backgroundTasksAtom)
-    store.set(backgroundTasksAtom, currentTasks.filter(t => t.toolUseId !== agentEvent.toolUseId))
+    store.set(backgroundTasksAtom, currentTasks.filter(t => t.toolUseId !== evt.toolUseId))
   }
 }
 
@@ -134,6 +139,15 @@ export default function App() {
   // All session-scoped options in one place (ultrathink, permissionMode)
   const [sessionOptions, setSessionOptions] = useState<Map<string, SessionOptions>>(new Map())
 
+  // Theme state (cascading: app → workspace → agent)
+  const [appTheme, setAppTheme] = useState<ThemeOverrides | null>(null)
+  const [workspaceTheme, setWorkspaceTheme] = useState<ThemeOverrides | null>(null)
+  // Reset confirmation dialog
+  const [showResetDialog, setShowResetDialog] = useState(false)
+
+  // Apply theme via hook (injects CSS variables)
+  useTheme({ appTheme, workspaceTheme })
+
   // Ref for sessionOptions to access current value in event handlers without re-registering
   const sessionOptionsRef = useRef(sessionOptions)
   // Keep ref in sync with state
@@ -147,19 +161,20 @@ export default function App() {
   const DRAFT_SAVE_DEBOUNCE_MS = 500
 
   // Handle onboarding completion
-  const handleOnboardingComplete = useCallback(() => {
+  const handleOnboardingComplete = useCallback(async () => {
     // Reload workspaces after onboarding
-    window.electronAPI.getWorkspaces().then((ws) => {
-      if (ws.length > 0) {
-        // Open new workspace window, then close this (stale) window
-        window.electronAPI.openWorkspace(ws[0].id)
-        window.electronAPI.closeWindow()
-        return
-      }
-      // Fallback: no workspaces (shouldn't happen after onboarding)
+    const ws = await window.electronAPI.getWorkspaces()
+    if (ws.length > 0) {
+      // Switch to workspace in-place (no window close/reopen)
+      await window.electronAPI.switchWorkspace(ws[0].id)
+      setWindowWorkspaceId(ws[0].id)
       setWorkspaces(ws)
       setAppState('ready')
-    })
+      return
+    }
+    // Fallback: no workspaces (shouldn't happen after onboarding)
+    setWorkspaces(ws)
+    setAppState('ready')
   }, [])
 
   // Onboarding hook
@@ -186,15 +201,9 @@ export default function App() {
     }
   }, [])
 
-  // Reauth logout handler - clear everything and start fresh
-  const handleReauthLogout = useCallback(async () => {
-    const confirmed = await window.electronAPI.showLogoutConfirmation()
-    if (confirmed) {
-      await window.electronAPI.logout()
-      // Reset to full onboarding
-      setSetupNeeds(null)
-      setAppState('onboarding')
-    }
+  // Reauth reset handler - open reset confirmation dialog
+  const handleReauthReset = useCallback(() => {
+    setShowResetDialog(true)
   }, [])
 
   // Check auth state and get window's workspace ID on mount
@@ -276,15 +285,19 @@ export default function App() {
         sessionDraftsRef.current = new Map(Object.entries(drafts))
       }
     })
+    // Load app-level theme
+    window.electronAPI.getAppTheme().then(setAppTheme)
   }, [appState])
 
-  // Load agents when window's workspace is set
+  // Load agents and workspace theme when window's workspace is set
   useEffect(() => {
     if (windowWorkspaceId) {
       setIsLoadingAgents(true)
       window.electronAPI.getAgents(windowWorkspaceId)
         .then(setAgents)
         .finally(() => setIsLoadingAgents(false))
+      // Load workspace-level theme
+      window.electronAPI.getWorkspaceTheme(windowWorkspaceId).then(setWorkspaceTheme)
     } else {
       setAgents([])
       setIsLoadingAgents(false)
@@ -302,6 +315,23 @@ export default function App() {
     })
     return cleanup
   }, [windowWorkspaceId])
+
+  // Subscribe to theme change events (live updates when theme.json files change)
+  useEffect(() => {
+    const cleanupApp = window.electronAPI.onAppThemeChange((theme) => {
+      console.log('[App] App theme changed')
+      setAppTheme(theme)
+    })
+    const cleanupWorkspace = window.electronAPI.onWorkspaceThemeChange((theme) => {
+      console.log('[App] Workspace theme changed')
+      setWorkspaceTheme(theme)
+    })
+    // Note: Agent theme changes are not yet wired up (would need active agent tracking)
+    return () => {
+      cleanupApp()
+      cleanupWorkspace()
+    }
+  }, [])
 
   // Listen for session events - uses centralized event processor for consistent state transitions
   //
@@ -409,7 +439,7 @@ export default function App() {
         handleEffects(effects, sessionId, event.type)
 
         // Handle background task events
-        handleBackgroundTaskEvent(store, sessionId, event, agentEvent as Record<string, unknown>)
+        handleBackgroundTaskEvent(store, sessionId, event, agentEvent)
 
         // For handoff events, also sync to React state
         // This reconciles React state with all the streaming updates
@@ -440,7 +470,7 @@ export default function App() {
         handleEffects(effects, sessionId, event.type)
 
         // Handle background task events
-        handleBackgroundTaskEvent(store, sessionId, event, agentEvent as Record<string, unknown>)
+        handleBackgroundTaskEvent(store, sessionId, event, agentEvent)
 
         // If session didn't exist before, add it
         if (!currentSession) {
@@ -893,12 +923,14 @@ export default function App() {
     openPreferencesTab()
   }, [openPreferencesTab])
 
-  const handleLogout = useCallback(async () => {
-    try {
-      // Show native confirmation dialog
-      const confirmed = await window.electronAPI.showLogoutConfirmation()
-      if (!confirmed) return
+  // Show reset confirmation dialog
+  const handleReset = useCallback(() => {
+    setShowResetDialog(true)
+  }, [])
 
+  // Execute reset after user confirms in dialog
+  const executeReset = useCallback(async () => {
+    try {
       await window.electronAPI.logout()
       // Reset all state
       setSessions([])
@@ -917,17 +949,43 @@ export default function App() {
       onboarding.reset()
       setAppState('onboarding')
     } catch (error) {
-      console.error('Logout failed:', error)
+      console.error('Reset failed:', error)
+    } finally {
+      setShowResetDialog(false)
     }
   }, [onboarding])
 
-  // Handle workspace selection - opens workspace in its own window (multi-window architecture)
-  const handleSelectWorkspace = useCallback((workspaceId: string) => {
+  // Handle workspace selection
+  // - Default: switch workspace in same window (in-window switching)
+  // - With openInNewWindow=true: open in new window (or focus existing)
+  const handleSelectWorkspace = useCallback(async (workspaceId: string, openInNewWindow = false) => {
     // If selecting current workspace, do nothing
     if (workspaceId === windowWorkspaceId) return
-    // Open (or focus) the window for the selected workspace
-    window.electronAPI.openWorkspace(workspaceId)
+
+    if (openInNewWindow) {
+      // Open (or focus) the window for the selected workspace
+      window.electronAPI.openWorkspace(workspaceId)
+    } else {
+      // Switch workspace in current window
+      // 1. Update the main process's window-workspace mapping
+      await window.electronAPI.switchWorkspace(workspaceId)
+
+      // 2. Update React state to trigger re-renders
+      setWindowWorkspaceId(workspaceId)
+
+      // 3. Clear pending permissions/credentials (not relevant to new workspace)
+      setPendingPermissions(new Map())
+      setPendingCredentials(new Map())
+
+      // Note: Agents and theme will reload automatically due to windowWorkspaceId dependency
+      // in useEffect hooks
+    }
   }, [windowWorkspaceId])
+
+  // Handle workspace refresh (e.g., after icon upload)
+  const handleRefreshWorkspaces = useCallback(() => {
+    window.electronAPI.getWorkspaces().then(setWorkspaces)
+  }, [])
 
   // Handle cancel during onboarding
   const handleOnboardingCancel = useCallback(() => {
@@ -968,12 +1026,13 @@ export default function App() {
     onModelChange: handleModelChange,
     // Workspace
     onSelectWorkspace: handleSelectWorkspace,
+    onRefreshWorkspaces: handleRefreshWorkspaces,
     // App actions
     onOpenSettings: handleOpenSettings,
     onOpenKeyboardShortcuts: handleOpenKeyboardShortcuts,
     onOpenStoredUserPreferences: handleOpenStoredUserPreferences,
     onRefreshAgents: handleRefreshAgents,
-    onLogout: handleLogout,
+    onReset: handleReset,
     // Session options
     onSessionOptionsChange: handleSessionOptionsChange,
     onInputChange: handleInputChange,
@@ -1003,11 +1062,12 @@ export default function App() {
     handleOpenUrl,
     handleModelChange,
     handleSelectWorkspace,
+    handleRefreshWorkspaces,
     handleOpenSettings,
     handleOpenKeyboardShortcuts,
     handleOpenStoredUserPreferences,
     handleRefreshAgents,
-    handleLogout,
+    handleReset,
     handleSessionOptionsChange,
     handleInputChange,
   ])
@@ -1027,10 +1087,17 @@ export default function App() {
   // Reauth state - session expired, need to re-login
   if (appState === 'reauth') {
     return (
-      <ReauthScreen
-        onLogin={handleReauthLogin}
-        onLogout={handleReauthLogout}
-      />
+      <>
+        <ReauthScreen
+          onLogin={handleReauthLogin}
+          onReset={handleReauthReset}
+        />
+        <ResetConfirmationDialog
+          open={showResetDialog}
+          onConfirm={executeReset}
+          onCancel={() => setShowResetDialog(false)}
+        />
+      </>
     )
   }
 
@@ -1066,6 +1133,11 @@ export default function App() {
             defaultLayout={[20, 32, 48]}
             menuNewChatTrigger={menuNewChatTrigger}
             menuNewChatTabTrigger={menuNewChatTabTrigger}
+          />
+          <ResetConfirmationDialog
+            open={showResetDialog}
+            onConfirm={executeReset}
+            onCancel={() => setShowResetDialog(false)}
           />
         </div>
       </TooltipProvider>

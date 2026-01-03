@@ -14,12 +14,12 @@ interface PermissionBannerProps {
  */
 export function PermissionBanner({ request, onRespond }: PermissionBannerProps) {
   return (
-    <div className="rounded-[8px] border shadow-middle overflow-hidden py-2 bg-[#fffcf5] dark:bg-[#1a1608] border-amber-500/30">
+    <div className="rounded-[8px] border shadow-middle overflow-hidden py-2 bg-info/5 border-info/30">
       <div className="p-4 space-y-3">
         {/* Header with shield icon */}
         <div className="flex items-start gap-3">
           <div className="shrink-0 mt-0.5">
-            <Shield className="h-5 w-5 text-amber-500" />
+            <Shield className="h-5 w-5 text-info" />
           </div>
           <div className="flex-1 min-w-0 space-y-1">
             <div className="flex items-center gap-2">
@@ -61,7 +61,7 @@ export function PermissionBanner({ request, onRespond }: PermissionBannerProps) 
         <Button
           size="sm"
           variant="ghost"
-          className="h-7 gap-1.5 text-red-600 dark:text-red-400 hover:text-red-600 dark:hover:text-red-400 border border-dashed border-red-500/50 hover:bg-red-500/10 hover:border-red-500/70 active:bg-red-500/20"
+          className="h-7 gap-1.5 text-destructive hover:text-destructive border border-dashed border-destructive/50 hover:bg-destructive/10 hover:border-destructive/70 active:bg-destructive/20"
           onClick={() => onRespond(false, false)}
         >
           <X className="h-3.5 w-3.5" />

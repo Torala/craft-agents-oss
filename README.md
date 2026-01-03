@@ -8,6 +8,11 @@ A Claude Code-like agent for Craft documents using the Anthropic SDK and Craft M
 - **Craft MCP Integration**: Access to 32+ Craft document tools (blocks, collections, search, tasks)
 - **Subagents**: Define specialized agents in Craft documents with custom instructions, MCP servers, and REST APIs
 - **Dynamic API Integration**: Automatically extract REST APIs from documentation and create flexible tools
+- **Permission Modes**: Three-level system (Explore, Ask to Edit, Auto) with customizable rules
+- **Background Tasks**: Run long-running operations in the background with progress tracking
+- **Dynamic Status System**: Workspace-customizable session workflow states (Todo, In Progress, etc.)
+- **Theme System**: Cascading themes at app, workspace, and agent levels
+- **Multi-File Diff**: VS Code-style window for viewing all file changes in a turn (Electron)
 - **Rich Terminal UI**: Built with Ink (React for CLIs)
 - **Ultrathink Mode**: Type "ultrathink" in your message for extended thinking
 - **Command History**: Navigate previous inputs with arrow keys
@@ -186,34 +191,46 @@ craft --print "Step 2" --session my-workflow-123
 | 0 | Success |
 | 1 | Error (auth required, agent not found, execution error) |
 
-## Safe Mode
+## Permission Modes
 
-Safe Mode is a read-only exploration mode that blocks write operations. Use it when you want Claude to analyze, understand, or explain code without making any changes.
+Three-level permission system that controls what operations Claude can perform:
 
-### Why Safe Mode?
+| Mode | Display Name | Behavior |
+|------|--------------|----------|
+| `'safe'` | Explore | Read-only, blocks all write operations |
+| `'ask'` | Ask to Edit | Prompts for bash commands (default) |
+| `'allow-all'` | Auto | Auto-approves all commands |
 
-Safe Mode is useful when:
-- Exploring unfamiliar codebases
-- Understanding code before making changes
-- Getting explanations without risk of modifications
-- Reviewing plans without executing them
+### When to Use Each Mode
 
-### What's Blocked in Safe Mode
+- **Explore (safe)**: Exploring unfamiliar codebases, understanding code, reviewing plans
+- **Ask to Edit (ask)**: Normal development with approval for sensitive commands
+- **Auto (allow-all)**: Trusted automation, running tests, builds
+
+### What's Blocked in Explore Mode
 
 | Blocked | Allowed |
 |---------|---------|
 | `Bash`, `Write`, `Edit` | `Read`, `Glob`, `Grep` |
 | API calls (`api_*`) | `Task` (research agents) |
-| Craft MCP write tools | `WebSearch`, `WebFetch` |
+| Craft MCP write tools | `WebSearch`, `WebFetch`, `TodoWrite` |
 
 ### Usage
 
 ```bash
-SHIFT+TAB   # Toggle safe mode
-/safe       # Toggle safe mode
+SHIFT+TAB   # Cycle through modes
+/safe       # Toggle explore mode
 ```
 
-The header shows `SAFE` indicator when active.
+The header shows the current mode indicator.
+
+### Customizable Permissions
+
+Each workspace, source, and agent can have a `permissions.json` file with custom rules:
+- `blockedTools` - Additional tools to block
+- `allowedBashPatterns` - Regex patterns for safe bash commands
+- `allowedMcpPatterns` - Regex patterns for allowed MCP tools
+- `allowedWritePaths` - Glob patterns for writable directories
 
 ## Keyboard Shortcuts
 
@@ -360,27 +377,18 @@ craft-tui-agent/
 │           ├── hooks/         # useAgent, useAgentState, useCommands
 │           ├── keyboard/      # Keyboard handling
 │           └── utils/         # Terminal utilities
-├── packages/
-│   ├── core/                  # Shared types (Workspace, Session, Message)
-│   └── shared/                # Shared business logic (agent, auth, storage)
-└── src/                       # Legacy - being migrated to packages/shared
-    ├── agent/
-    │   ├── craft-agent.ts     # Claude Agent SDK wrapper
-    │   └── plan-tools.ts      # SubmitPlan tool for plan submission
-    ├── agents/
-    │   ├── types.ts           # SubAgentDefinition, AgentStatus
-    │   ├── plan-types.ts      # Plan, PlanStep interfaces
-    │   ├── agent-state.ts     # AgentStateManager - activation state machine
-    │   ├── manager.ts         # SubAgentManager
-    │   ├── extractor.ts       # Extract agent definitions from docs
-    │   └── api-tools.ts       # Dynamic REST API tools
-    ├── credentials/
-    │   ├── manager.ts         # Credential management
-    │   └── backends/          # AES-256-GCM encrypted storage
-    ├── config/
-    │   └── storage.ts         # Persistent config (~/.craft-agent/)
-    └── prompts/
-        └── system.ts          # System prompt
+└── packages/
+    ├── core/                  # Shared types (Workspace, Session, Message)
+    └── shared/                # Shared business logic
+        └── src/
+            ├── agent/         # CraftAgent, session-scoped-tools, permissions
+            ├── agents/        # Agent management, API tools
+            ├── auth/          # OAuth, tokens, state
+            ├── config/        # Storage, preferences, themes
+            ├── credentials/   # AES-256-GCM encrypted storage
+            ├── sessions/      # Session persistence
+            ├── sources/       # MCP, API, local sources
+            └── statuses/      # Dynamic status system
 ```
 
 ## Development

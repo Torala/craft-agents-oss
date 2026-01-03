@@ -19,6 +19,7 @@ import { join } from 'path';
 import { homedir } from 'os';
 import { randomUUID } from 'crypto';
 import { expandPath, toPortablePath } from '../utils/paths.ts';
+import { getDefaultStatusConfig, saveStatusConfig, ensureDefaultIconFiles } from '../statuses/storage.ts';
 import type {
   WorkspaceConfig,
   CreateWorkspaceInput,
@@ -245,6 +246,10 @@ export function createWorkspaceAtPath(rootPath: string, name: string): Workspace
 
   // Save config
   saveWorkspaceConfig(rootPath, config);
+
+  // Initialize status configuration with defaults
+  saveStatusConfig(rootPath, getDefaultStatusConfig());
+  ensureDefaultIconFiles(rootPath);
 
   return config;
 }

@@ -25,7 +25,6 @@ import { cn } from '@/lib/utils'
 import { Mail, Plug, Globe, HardDrive } from 'lucide-react'
 import { McpIcon } from '@/components/icons/McpIcon'
 import { getLogoUrl } from '@craft-agent/shared/utils/logo'
-import { resolveSourceIconUrl } from '@craft-agent/shared/utils/icon'
 import type { LoadedSource } from '@craft-agent/shared/sources/types'
 import type { SourceConnectionStatus } from '../../../shared/types'
 import { SourceStatusIndicator, deriveConnectionStatus } from './source-status-indicator'
@@ -118,24 +117,117 @@ const STATUS_SIZE_CONFIG: Record<SourceAvatarSize, 'xs' | 'sm' | 'md'> = {
   lg: 'sm',
 }
 
+// Cache for loaded workspace images (to avoid repeated IPC calls)
+const imageCache = new Map<string, string>()
+
+/**
+ * Clear the image cache (useful when sources are updated)
+ */
+export function clearSourceIconCache(): void {
+  imageCache.clear()
+}
+
+/**
+ * Hook to load a workspace image via IPC
+ * Returns the loaded image URL (data URL for binary, raw content for SVG)
+ */
+function useWorkspaceImage(
+  workspaceId: string | undefined,
+  relativePath: string | undefined
+): string | null {
+  const [imageUrl, setImageUrl] = React.useState<string | null>(() => {
+    // Check cache on initial render
+    if (workspaceId && relativePath) {
+      const cacheKey = `${workspaceId}:${relativePath}`
+      return imageCache.get(cacheKey) ?? null
+    }
+    return null
+  })
+
+  React.useEffect(() => {
+    if (!workspaceId || !relativePath) {
+      setImageUrl(null)
+      return
+    }
+
+    const cacheKey = `${workspaceId}:${relativePath}`
+
+    // Check cache first
+    const cached = imageCache.get(cacheKey)
+    if (cached) {
+      setImageUrl(cached)
+      return
+    }
+
+    // Load via IPC
+    let cancelled = false
+    window.electronAPI.readWorkspaceImage(workspaceId, relativePath)
+      .then((result) => {
+        if (cancelled) return
+
+        // For SVG, convert to data URL for use in img src
+        let url = result
+        if (relativePath.endsWith('.svg')) {
+          url = `data:image/svg+xml;base64,${btoa(result)}`
+        }
+
+        imageCache.set(cacheKey, url)
+        setImageUrl(url)
+      })
+      .catch((error) => {
+        if (cancelled) return
+        console.error(`[SourceAvatar] Failed to load image ${relativePath}:`, error)
+        setImageUrl(null)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [workspaceId, relativePath])
+
+  return imageUrl
+}
+
 export function SourceAvatar(props: SourceAvatarProps) {
   const { size = 'md', className, showStatus } = props
 
   // Extract type, name, logo URL, and status based on props variant
   let type: SourceType
   let name: string
-  let resolvedLogoUrl: string | null
   let connectionStatus: SourceConnectionStatus | undefined
   let connectionError: string | undefined
+
+  // For local icons, we need workspaceId and relative path
+  let workspaceId: string | undefined
+  let localIconPath: string | undefined
+  let remoteIconUrl: string | null = null
 
   if ('source' in props && props.source) {
     // LoadedSource mode
     const source = props.source
     type = source.config.type as SourceType
     name = source.config.name
-    // Priority: explicit iconUrl → derive from service URL → null
-    resolvedLogoUrl = resolveSourceIconUrl(source.config.iconUrl, source.folderPath)
-      ?? deriveServiceFavicon(source)
+    workspaceId = source.workspaceId
+
+    // Check if iconUrl is a local path
+    const iconUrl = source.config.iconUrl
+    if (iconUrl?.startsWith('./')) {
+      // Local icon - need to load via IPC
+      // Path format: sources/{slug}/icon.png (or agents/{agentSlug}/sources/{slug}/icon.png)
+      const iconFilename = iconUrl.slice(2) // Remove './'
+      if (source.agentSlug) {
+        localIconPath = `agents/${source.agentSlug}/sources/${source.config.slug}/${iconFilename}`
+      } else {
+        localIconPath = `sources/${source.config.slug}/${iconFilename}`
+      }
+    } else if (iconUrl) {
+      // Remote URL - use directly
+      remoteIconUrl = iconUrl
+    } else {
+      // No explicit icon - derive from service URL
+      remoteIconUrl = deriveServiceFavicon(source)
+    }
+
     // Derive status from source
     connectionStatus = deriveConnectionStatus(source)
     connectionError = source.config.connectionError
@@ -144,10 +236,16 @@ export function SourceAvatar(props: SourceAvatarProps) {
     const directProps = props as DirectSourceAvatarProps
     type = directProps.type
     name = directProps.name
-    resolvedLogoUrl = directProps.logoUrl ?? (directProps.serviceUrl ? getLogoUrl(directProps.serviceUrl) : null)
+    remoteIconUrl = directProps.logoUrl ?? (directProps.serviceUrl ? getLogoUrl(directProps.serviceUrl) : null)
     connectionStatus = directProps.status
     connectionError = directProps.statusError
   }
+
+  // Load local icon via IPC if needed
+  const loadedLocalIcon = useWorkspaceImage(workspaceId, localIconPath)
+
+  // Final resolved URL: local icon (if loaded) > remote URL > null
+  const resolvedLogoUrl = loadedLocalIcon ?? remoteIconUrl
 
   const FallbackIcon = FALLBACK_ICONS[type] ?? Plug
   const statusSize = STATUS_SIZE_CONFIG[size]

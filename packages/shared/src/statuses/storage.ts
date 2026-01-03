@@ -18,79 +18,66 @@ const STATUS_ICONS_DIR = 'statuses/icons';
  * Get default status configuration (matches current hardcoded behavior)
  */
 export function getDefaultStatusConfig(): WorkspaceStatusConfig {
-  const now = Date.now();
-
   return {
     version: 1,
     statuses: [
       {
         id: 'todo',
         label: 'Todo',
-        color: 'text-muted-foreground',
+        color: '#71717A',
         icon: { type: 'file', value: 'todo.svg' },
         shortcut: 't',
         category: 'open',
         isFixed: true,
         isDefault: false,
         order: 0,
-        createdAt: now,
-        updatedAt: now,
       },
       {
         id: 'in-progress',
         label: 'In Progress',
-        color: 'text-blue-500',
+        color: '#3B82F6',
         icon: { type: 'file', value: 'in-progress.svg' },
         shortcut: 'p',
         category: 'open',
         isFixed: false,
         isDefault: true,
         order: 1,
-        createdAt: now,
-        updatedAt: now,
       },
       {
         id: 'needs-review',
         label: 'Needs Review',
-        color: 'text-amber-500',
+        color: '#F59E0B',
         icon: { type: 'file', value: 'needs-review.svg' },
         shortcut: 'v',
         category: 'open',
         isFixed: false,
         isDefault: true,
         order: 2,
-        createdAt: now,
-        updatedAt: now,
       },
       {
         id: 'done',
         label: 'Done',
-        color: 'text-[#9570BE]',
+        color: '#9570BE',
         icon: { type: 'file', value: 'done.svg' },
         shortcut: 'd',
         category: 'closed',
         isFixed: true,
         isDefault: false,
         order: 3,
-        createdAt: now,
-        updatedAt: now,
       },
       {
         id: 'cancelled',
         label: 'Cancelled',
-        color: 'text-muted-foreground/60',
+        color: '#A1A1AA',
         icon: { type: 'file', value: 'cancelled.svg' },
         shortcut: 'x',
         category: 'closed',
         isFixed: true,
         isDefault: false,
         order: 4,
-        createdAt: now,
-        updatedAt: now,
       },
     ],
     defaultStatusId: 'todo',
-    updatedAt: now,
   };
 }
 
@@ -177,9 +164,6 @@ export function saveStatusConfig(
   if (!existsSync(statusDir)) {
     mkdirSync(statusDir, { recursive: true });
   }
-
-  // Update timestamp
-  config.updatedAt = Date.now();
 
   // Write config to disk
   try {

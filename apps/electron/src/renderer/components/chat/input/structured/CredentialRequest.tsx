@@ -80,7 +80,7 @@ export function CredentialRequest({ request, onResponse, unstyled = false }: Cre
         {/* Header */}
         <div className="flex items-start gap-3">
           <div className="shrink-0 mt-0.5">
-            <Key className="h-5 w-5 text-primary" />
+            <Key className="h-5 w-5 text-foreground" />
           </div>
           <div className="flex-1 min-w-0 space-y-1">
             <div className="flex items-center gap-2">

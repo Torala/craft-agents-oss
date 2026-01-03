@@ -2,9 +2,9 @@ import { useCallback } from 'react';
 import {
   getWorkspaces,
   removeWorkspace,
-  renameWorkspace,
   type Workspace,
 } from '@craft-agent/shared/config';
+import { renameWorkspaceFolder } from '@craft-agent/shared/workspaces';
 import type { ModalName } from './useModalState.ts';
 import type { Message } from '../../components/Messages.tsx';
 
@@ -120,7 +120,7 @@ export function useWorkspaceHandlers(props: UseWorkspaceHandlersProps): UseWorks
 
   const handleWorkspaceRenameSubmit = useCallback((newName: string) => {
     closeModal();
-    const success = renameWorkspace(workspace.id, newName);
+    const success = renameWorkspaceFolder(workspace.rootPath, newName);
     if (success) {
       setWorkspace({ ...workspace, name: newName });
     }

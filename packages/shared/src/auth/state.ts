@@ -102,11 +102,19 @@ export async function getAuthState(): Promise<AuthState> {
  * Derive what setup steps are needed based on current auth state
  */
 export function getSetupNeeds(state: AuthState): SetupNeeds {
-  // Distinguish between new user vs returning user with expired token:
-  // - needsCraftAuth: No token AND no workspace → full onboarding (new user)
-  // - needsReauth: Has workspace but token missing → simple re-login (session expired)
+  // Craft OAuth is only required for:
+  // 1. New users (no workspace) who need to select a space during onboarding
+  // 2. Users with craft_credits billing (Craft handles the billing)
+  //
+  // Users with api_key or oauth_token billing do NOT need Craft auth.
   const needsCraftAuth = !state.craft.hasToken && !state.workspace.hasWorkspace;
-  const needsReauth = !state.craft.hasToken && state.workspace.hasWorkspace;
+
+  // Reauth is only needed if:
+  // - User has craft_credits billing AND token expired AND has a workspace
+  // Users with api_key or oauth_token should never see the reauth screen.
+  const needsReauth = state.billing.type === 'craft_credits'
+    && !state.craft.hasToken
+    && state.workspace.hasWorkspace;
 
   // Need billing config if no billing type is set
   const needsBillingConfig = state.billing.type === null;

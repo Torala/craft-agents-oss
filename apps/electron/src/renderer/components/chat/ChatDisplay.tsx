@@ -20,7 +20,7 @@ import { AnimatedCollapsibleContent } from "@/components/ui/collapsible"
 import { FileTypeIcon, getFileTypeLabel } from "./AttachmentPreview"
 import { Spinner } from "@/components/ui/loading-indicator"
 import { useFocusZone } from "@/hooks/keyboard"
-import type { Session, Message, FileAttachment, StoredAttachment, PermissionRequest, CredentialRequest, CredentialResponse, LoadedSource, FileChange, SessionDiffData } from "../../../shared/types"
+import type { Session, Message, FileAttachment, StoredAttachment, PermissionRequest, CredentialRequest, CredentialResponse, LoadedSource, FileChange, MultiFileDiffData } from "../../../shared/types"
 import type { PermissionMode } from "@craft-agent/shared/agent/modes"
 import { SetupAuthBanner, type BannerState } from "./SetupAuthBanner"
 import { TurnCard } from "./TurnCard"
@@ -552,17 +552,43 @@ export function ChatDisplay({
                           if (session) {
                             const input = activity.toolInput as Record<string, unknown> | undefined
 
-                            // Edit tool → Diff preview (Monaco DiffEditor)
-                            if (activity.toolName === 'Edit' && input) {
-                              const filePath = (input.file_path as string) || 'unknown'
-                              const oldString = (input.old_string as string) || ''
-                              const newString = (input.new_string as string) || ''
-                              window.electronAPI.openDiffPreview(session.id, `diff-${activity.id}`, {
-                                filePath,
-                                original: oldString,
-                                modified: newString,
-                                error: activity.error,
-                              })
+                            // Edit/Write tool → Multi-file diff (ungrouped, focused on this change)
+                            if ((activity.toolName === 'Edit' || activity.toolName === 'Write') && input) {
+                              // Collect all Edit/Write activities from this turn
+                              const changes: FileChange[] = []
+                              for (const a of turn.activities) {
+                                const actInput = a.toolInput as Record<string, unknown> | undefined
+                                if (a.toolName === 'Edit' && actInput) {
+                                  changes.push({
+                                    id: a.id,
+                                    filePath: (actInput.file_path as string) || 'unknown',
+                                    toolType: 'Edit',
+                                    original: (actInput.old_string as string) || '',
+                                    modified: (actInput.new_string as string) || '',
+                                    error: a.error || undefined,
+                                  })
+                                } else if (a.toolName === 'Write' && actInput) {
+                                  changes.push({
+                                    id: a.id,
+                                    filePath: (actInput.file_path as string) || 'unknown',
+                                    toolType: 'Write',
+                                    original: '',
+                                    modified: (actInput.content as string) || '',
+                                    error: a.error || undefined,
+                                  })
+                                }
+                              }
+
+                              if (changes.length > 0) {
+                                const diffData: MultiFileDiffData = {
+                                  sessionId: session.id,
+                                  turnId: turn.turnId,
+                                  changes,
+                                  consolidated: false, // Ungrouped mode
+                                  focusedChangeId: activity.id, // Focus on clicked activity
+                                }
+                                window.electronAPI.openMultiFileDiff(session.id, turn.turnId, diffData)
+                              }
                             }
                             // Read tool → Code preview (read mode)
                             else if (activity.toolName === 'Read' && input) {
@@ -594,17 +620,6 @@ export function ChatDisplay({
                                 numLines,
                                 startLine,
                                 totalLines,
-                              })
-                            }
-                            // Write tool → Code preview (write mode)
-                            else if (activity.toolName === 'Write' && input) {
-                              const filePath = (input.file_path as string) || 'unknown'
-                              const content = (input.content as string) || ''
-                              window.electronAPI.openCodePreview(session.id, `code-${activity.id}`, {
-                                filePath,
-                                content,
-                                mode: 'write',
-                                error: activity.error,
                               })
                             }
                             // Bash tool → Terminal preview
@@ -728,43 +743,40 @@ export function ChatDisplay({
                         hasEditOrWriteActivities={turn.activities.some(a =>
                           a.toolName === 'Edit' || a.toolName === 'Write'
                         )}
-                        onOpenSessionDiff={() => {
+                        onOpenMultiFileDiff={() => {
                           if (session) {
                             // Collect all Edit/Write activities from this turn
-                            const changes: FileChange[] = turn.activities
-                              .filter(a => a.toolName === 'Edit' || a.toolName === 'Write')
-                              .map(a => {
-                                const input = a.toolInput as Record<string, unknown> | undefined
-                                if (a.toolName === 'Edit' && input) {
-                                  return {
-                                    id: a.id,
-                                    filePath: (input.file_path as string) || 'unknown',
-                                    toolType: 'Edit' as const,
-                                    original: (input.old_string as string) || '',
-                                    modified: (input.new_string as string) || '',
-                                    error: a.error,
-                                  }
-                                } else if (a.toolName === 'Write' && input) {
-                                  return {
-                                    id: a.id,
-                                    filePath: (input.file_path as string) || 'unknown',
-                                    toolType: 'Write' as const,
-                                    original: '', // Write creates new content
-                                    modified: (input.content as string) || '',
-                                    error: a.error,
-                                  }
-                                }
-                                return null
-                              })
-                              .filter((c): c is FileChange => c !== null)
+                            const changes: FileChange[] = []
+                            for (const a of turn.activities) {
+                              const input = a.toolInput as Record<string, unknown> | undefined
+                              if (a.toolName === 'Edit' && input) {
+                                changes.push({
+                                  id: a.id,
+                                  filePath: (input.file_path as string) || 'unknown',
+                                  toolType: 'Edit',
+                                  original: (input.old_string as string) || '',
+                                  modified: (input.new_string as string) || '',
+                                  error: a.error || undefined,
+                                })
+                              } else if (a.toolName === 'Write' && input) {
+                                changes.push({
+                                  id: a.id,
+                                  filePath: (input.file_path as string) || 'unknown',
+                                  toolType: 'Write',
+                                  original: '',
+                                  modified: (input.content as string) || '',
+                                  error: a.error || undefined,
+                                })
+                              }
+                            }
 
                             if (changes.length > 0) {
-                              const diffData: SessionDiffData = {
+                              const diffData: MultiFileDiffData = {
                                 sessionId: session.id,
                                 turnId: turn.turnId,
                                 changes,
                               }
-                              window.electronAPI.openSessionDiff(session.id, turn.turnId, diffData)
+                              window.electronAPI.openMultiFileDiff(session.id, turn.turnId, diffData)
                             }
                           }
                         }}
@@ -814,7 +826,6 @@ export function ChatDisplay({
                   tasks={backgroundTasks}
                   sessionId={session.id}
                   onKillTask={(taskId) => killTask(taskId, backgroundTasks.find(t => t.id === taskId)?.type ?? 'shell')}
-                  variant="dropdown"
                 />
                 <InputContainer
                   placeholder={`Message ${session.agentName || session.workspaceName || 'Chat'}...`}
@@ -853,7 +864,7 @@ export function ChatDisplay({
  * MessageBubble - Renders a single message based on its role
  *
  * Message Roles & Styles:
- * - user:      Right-aligned, blue (bg-primary), white text
+ * - user:      Right-aligned, blue (bg-foreground), white text
  * - assistant: Left-aligned, gray (bg-muted), markdown rendered with clickable links
  * - error:     Left-aligned, red border/bg, warning icon + error message
  * - status:    Centered pill badge with pulsing dot (e.g., "Thinking...")
@@ -1070,9 +1081,9 @@ function MessageBubble({
     const level = message.infoLevel || 'info'
     const config = {
       info: { icon: Info, className: 'text-muted-foreground' },
-      warning: { icon: AlertTriangle, className: 'text-amber-600' },
+      warning: { icon: AlertTriangle, className: 'text-info' },
       error: { icon: CircleAlert, className: 'text-destructive' },
-      success: { icon: CheckCircle2, className: 'text-emerald-600' },
+      success: { icon: CheckCircle2, className: 'text-success' },
     }[level]
     const Icon = config.icon
 
@@ -1086,15 +1097,15 @@ function MessageBubble({
     )
   }
 
-  // === WARNING MESSAGE: Amber themed bubble ===
+  // === WARNING MESSAGE: Info themed bubble ===
   if (message.role === 'warning') {
     return (
       <div className="flex justify-start">
-        <div className="max-w-[80%] bg-amber-500/10 rounded-[8px] pl-5 pr-4 pt-2 pb-2.5 break-words">
-          <div className="text-xs text-amber-600/50 dark:text-amber-500/50 mb-0.5 font-semibold">
+        <div className="max-w-[80%] bg-info/10 rounded-[8px] pl-5 pr-4 pt-2 pb-2.5 break-words">
+          <div className="text-xs text-info/50 mb-0.5 font-semibold">
             Warning
           </div>
-          <p className="text-sm text-amber-700 dark:text-amber-400">{message.content}</p>
+          <p className="text-sm text-info">{message.content}</p>
         </div>
       </div>
     )

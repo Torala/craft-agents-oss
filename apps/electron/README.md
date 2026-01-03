@@ -198,8 +198,12 @@ DevTools opens automatically (configured in `index.ts`). Remove `mainWindow.webC
 - **AI-generated titles** - Sessions get automatic titles after first exchange
 - **Subagent support** - Load and apply agent definitions from Craft documents
 - **Shell integration** - Open URLs in browser, open files in default apps
-- **Permission handling** - PermissionBanner component for bash command approval
-- **Agent state machine** - useAgentState hook manages activation flow (extracting → review → auth → active)
+- **Permission modes** - Three-level permission system (Explore, Ask to Edit, Auto)
+- **Background tasks** - Run long-running tasks in background with progress tracking
+- **Multi-file diff** - VS Code-style window for viewing all file changes in a turn
+- **Dynamic statuses** - Workspace-customizable session workflow states
+- **Theme system** - Cascading themes (app → workspace → agent)
+- **Agent state machine** - useAgentState hook manages activation flow
 - **Application menu** - Standard macOS/Windows menus with keyboard shortcuts
 - **Component playground** - Development tool for testing UI components in isolation
 
@@ -216,6 +220,9 @@ DevTools opens automatically (configured in `index.ts`). Remove `mainWindow.webC
 | `preload/index.ts` | Context bridge API |
 | `renderer/App.tsx` | React root, state management |
 | `renderer/hooks/useAgentState.ts` | Agent activation state machine (IPC-based) |
+| `renderer/hooks/useBackgroundTasks.ts` | Background task tracking |
+| `renderer/hooks/useStatuses.ts` | Workspace status configuration |
+| `renderer/hooks/useTheme.ts` | Cascading theme resolution |
 | `renderer/components/chat/Chat.tsx` | Main chat layout with resizable panels |
 | `renderer/components/chat/ChatInput.tsx` | Message input with file attachments |
 | `renderer/components/chat/ChatDisplay.tsx` | Message list with markdown rendering |

@@ -69,7 +69,7 @@ function ApiKeyInputPlayground({ error, isValidating, hasExistingKey }: ApiKeyIn
       {/* Description */}
       <p className="text-xs text-muted-foreground">
         Pay-as-you-go with your own API key.{' '}
-        <a href="#" className="text-primary hover:underline inline-flex items-center gap-0.5">
+        <a href="#" className="text-foreground hover:underline inline-flex items-center gap-0.5">
           Get one from Anthropic
           <ExternalLink className="size-3" />
         </a>
@@ -156,7 +156,7 @@ function ClaudeOAuthPlayground({ hasExistingToken, isCliInstalled = true, isLoad
         <Header />
         <p className="text-xs text-muted-foreground">
           Use your Claude Pro or Max subscription. Requires Claude Code CLI.{' '}
-          <a href="#" className="text-primary hover:underline inline-flex items-center gap-0.5">
+          <a href="#" className="text-foreground hover:underline inline-flex items-center gap-0.5">
             Install Claude Code
             <ExternalLink className="size-3" />
           </a>

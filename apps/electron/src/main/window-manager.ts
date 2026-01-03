@@ -181,6 +181,20 @@ export class WindowManager {
   }
 
   /**
+   * Update the workspace ID for an existing window (for in-window switching)
+   * @param webContentsId - The webContents.id of the window
+   * @param workspaceId - The new workspace ID
+   */
+  updateWindowWorkspace(webContentsId: number, workspaceId: string): void {
+    const managed = this.windows.get(webContentsId)
+    if (managed) {
+      const oldWorkspaceId = managed.workspaceId
+      managed.workspaceId = workspaceId
+      console.log(`[WindowManager] Updated window ${webContentsId} from workspace ${oldWorkspaceId} to ${workspaceId}`)
+    }
+  }
+
+  /**
    * Get all managed windows
    */
   getAllWindows(): ManagedWindow[] {

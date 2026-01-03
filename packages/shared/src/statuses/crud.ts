@@ -42,7 +42,6 @@ export function createStatus(
     throw new Error(`Shortcut '${input.shortcut}' is already in use`);
   }
 
-  const now = Date.now();
   const maxOrder = Math.max(...config.statuses.map(s => s.order), -1);
 
   const status: StatusConfig = {
@@ -55,8 +54,6 @@ export function createStatus(
     isFixed: false,
     isDefault: false,
     order: maxOrder + 1,
-    createdAt: now,
-    updatedAt: now,
   };
 
   config.statuses.push(status);
@@ -100,7 +97,6 @@ export function updateStatus(
   if (updates.icon !== undefined) status.icon = updates.icon;
   if ('shortcut' in updates) status.shortcut = updates.shortcut || undefined;
   if (updates.category !== undefined) status.category = updates.category;
-  status.updatedAt = Date.now();
 
   saveStatusConfig(workspaceRootPath, config);
   return status;

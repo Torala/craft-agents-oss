@@ -3,6 +3,11 @@ import * as React from "react"
 
 import { cn } from "@/lib/utils"
 
+/** Check if a string is a hex color code (e.g., #3B82F6) */
+function isHexColor(str: string | undefined): boolean {
+  return !!str && /^#[0-9A-Fa-f]{6}$/.test(str)
+}
+
 export interface LinkItem {
   id: string            // Unique ID for navigation (e.g., 'nav:inbox')
   title: string
@@ -66,12 +71,20 @@ export function LeftSidebar({ links, isCollapsed, getItemProps, focusedItemId }:
                 const isComponent = typeof link.icon === 'function' ||
                   (typeof link.icon === 'object' && link.icon !== null && 'render' in link.icon)
                 if (isComponent) {
-                  const Icon = link.icon as React.ComponentType<{ className?: string }>
-                  return <Icon className={cn("h-3.5 w-3.5 shrink-0", link.iconColor || "text-muted-foreground")} />
+                  const Icon = link.icon as React.ComponentType<{ className?: string; style?: React.CSSProperties }>
+                  return (
+                    <Icon
+                      className={cn("h-3.5 w-3.5 shrink-0", !isHexColor(link.iconColor) && (link.iconColor || "text-muted-foreground"))}
+                      style={isHexColor(link.iconColor) ? { color: link.iconColor } : undefined}
+                    />
+                  )
                 }
                 // Already a React element or primitive ReactNode
                 return (
-                  <span className={cn("h-3.5 w-3.5 shrink-0 flex items-center justify-center", link.iconColor || "text-muted-foreground")}>
+                  <span
+                    className={cn("h-3.5 w-3.5 shrink-0 flex items-center justify-center", !isHexColor(link.iconColor) && (link.iconColor || "text-muted-foreground"))}
+                    style={isHexColor(link.iconColor) ? { color: link.iconColor } : undefined}
+                  >
                     {link.icon as React.ReactNode}
                   </span>
                 )

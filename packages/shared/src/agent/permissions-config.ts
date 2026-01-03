@@ -17,6 +17,7 @@ import { z } from 'zod';
 import { debug } from '../utils/debug.ts';
 import { getWorkspacePath } from '../workspaces/storage.ts';
 import { getSourcePath } from '../sources/storage.ts';
+import { getAgentPath } from '../agents/folder-storage.ts';
 import { SAFE_MODE_CONFIG } from './mode-manager.ts';
 
 // ============================================================
@@ -57,6 +58,8 @@ export const PermissionsConfigSchema = z.object({
   allowedMcpPatterns: z.array(PatternSchema).optional(),
   /** API endpoint rules - method + path pattern */
   allowedApiEndpoints: z.array(ApiEndpointRuleSchema).optional(),
+  /** File paths to allow writes in Explore mode (glob patterns) */
+  allowedWritePaths: z.array(PatternSchema).optional(),
 });
 
 export type PermissionsConfigFile = z.infer<typeof PermissionsConfigSchema>;
@@ -77,6 +80,8 @@ export interface PermissionsCustomConfig {
   allowedMcpPatterns: string[];
   /** API endpoint rules for fine-grained control */
   allowedApiEndpoints: ApiEndpointRule[];
+  /** File paths to allow writes in Explore mode (glob pattern strings) */
+  allowedWritePaths: string[];
 }
 
 /**
@@ -91,11 +96,16 @@ export interface CompiledApiEndpointRule {
  * Merged permissions config for runtime use
  */
 export interface MergedPermissionsConfig {
+  /** All blocked tools (safe mode defaults + custom) - used in safe mode */
   blockedTools: Set<string>;
+  /** Only tools blocked via permissions.json - used in ask/allow-all modes */
+  customBlockedTools: Set<string>;
   readOnlyBashPatterns: RegExp[];
   readOnlyMcpPatterns: RegExp[];
   /** Fine-grained API endpoint rules */
   allowedApiEndpoints: CompiledApiEndpointRule[];
+  /** File paths allowed for writes in Explore mode (glob patterns) */
+  allowedWritePaths: string[];
   /** Display name for error messages */
   displayName: string;
   /** Keyboard shortcut hint */
@@ -103,12 +113,14 @@ export interface MergedPermissionsConfig {
 }
 
 /**
- * Context for permissions checking (includes workspace/source info)
+ * Context for permissions checking (includes workspace/source/agent info)
  */
 export interface PermissionsContext {
   workspaceSlug: string;
   /** Active source slugs for source-specific rules */
   activeSourceSlugs?: string[];
+  /** Active agent slug for agent-specific rules */
+  activeAgentSlug?: string;
 }
 
 // ============================================================
@@ -124,6 +136,7 @@ export function parsePermissionsJson(content: string): PermissionsCustomConfig {
     allowedBashPatterns: [],
     allowedMcpPatterns: [],
     allowedApiEndpoints: [],
+    allowedWritePaths: [],
   };
 
   try {
@@ -152,6 +165,7 @@ export function parsePermissionsJson(content: string): PermissionsCustomConfig {
       allowedBashPatterns: normalizePatterns(data.allowedBashPatterns),
       allowedMcpPatterns: normalizePatterns(data.allowedMcpPatterns),
       allowedApiEndpoints: data.allowedApiEndpoints ?? [],
+      allowedWritePaths: normalizePatterns(data.allowedWritePaths),
     };
   } catch (error) {
     debug('[SafeMode] JSON parse error:', error);
@@ -224,6 +238,13 @@ export function getSourcePermissionsPath(workspaceSlug: string, sourceSlug: stri
 }
 
 /**
+ * Get path to agent permissions.json
+ */
+export function getAgentPermissionsPath(workspaceSlug: string, agentSlug: string): string {
+  return join(getAgentPath(workspaceSlug, agentSlug), 'permissions.json');
+}
+
+/**
  * Load workspace-level permissions config
  */
 export function loadWorkspacePermissionsConfig(workspaceSlug: string): PermissionsCustomConfig | null {
@@ -258,6 +279,27 @@ export function loadSourcePermissionsConfig(
     return config;
   } catch (error) {
     debug(`[Permissions] Error loading source config:`, error);
+    return null;
+  }
+}
+
+/**
+ * Load agent-level permissions config
+ */
+export function loadAgentPermissionsConfig(
+  workspaceSlug: string,
+  agentSlug: string
+): PermissionsCustomConfig | null {
+  const path = getAgentPermissionsPath(workspaceSlug, agentSlug);
+  if (!existsSync(path)) return null;
+
+  try {
+    const content = readFileSync(path, 'utf-8');
+    const config = parsePermissionsJson(content);
+    debug(`[Permissions] Loaded agent config from ${path}:`, config);
+    return config;
+  } catch (error) {
+    debug(`[Permissions] Error loading agent config:`, error);
     return null;
   }
 }
@@ -300,6 +342,7 @@ export function isApiEndpointAllowed(
 class PermissionsConfigCache {
   private workspaceConfigs: Map<string, PermissionsCustomConfig | null> = new Map();
   private sourceConfigs: Map<string, PermissionsCustomConfig | null> = new Map();
+  private agentConfigs: Map<string, PermissionsCustomConfig | null> = new Map();
   private mergedConfigs: Map<string, MergedPermissionsConfig> = new Map();
 
   /**
@@ -321,6 +364,17 @@ class PermissionsConfigCache {
       this.sourceConfigs.set(key, loadSourcePermissionsConfig(workspaceSlug, sourceSlug));
     }
     return this.sourceConfigs.get(key) ?? null;
+  }
+
+  /**
+   * Get or load agent config
+   */
+  getAgentConfig(workspaceSlug: string, agentSlug: string): PermissionsCustomConfig | null {
+    const key = `${workspaceSlug}::agent::${agentSlug}`;
+    if (!this.agentConfigs.has(key)) {
+      this.agentConfigs.set(key, loadAgentPermissionsConfig(workspaceSlug, agentSlug));
+    }
+    return this.agentConfigs.get(key) ?? null;
   }
 
   /**
@@ -352,6 +406,20 @@ class PermissionsConfigCache {
   }
 
   /**
+   * Invalidate agent config (called by ConfigWatcher)
+   */
+  invalidateAgent(workspaceSlug: string, agentSlug: string): void {
+    debug(`[Permissions] Invalidating agent config: ${workspaceSlug}/${agentSlug}`);
+    this.agentConfigs.delete(`${workspaceSlug}::agent::${agentSlug}`);
+    // Clear merged configs that include this agent
+    for (const key of this.mergedConfigs.keys()) {
+      if (key.startsWith(`${workspaceSlug}::`) && key.includes(`agent:${agentSlug}`)) {
+        this.mergedConfigs.delete(key);
+      }
+    }
+  }
+
+  /**
    * Get merged config for a context (workspace + active sources)
    * Uses additive merging: custom configs extend defaults
    */
@@ -372,9 +440,11 @@ class PermissionsConfigCache {
     // Start with defaults
     const merged: MergedPermissionsConfig = {
       blockedTools: new Set(defaults.blockedTools),
+      customBlockedTools: new Set(), // Empty - only from permissions.json
       readOnlyBashPatterns: [...defaults.readOnlyBashPatterns],
       readOnlyMcpPatterns: [...defaults.readOnlyMcpPatterns],
       allowedApiEndpoints: [],
+      allowedWritePaths: [],
       displayName: defaults.displayName,
       shortcutHint: defaults.shortcutHint,
     };
@@ -395,13 +465,22 @@ class PermissionsConfigCache {
       }
     }
 
+    // Add agent-level customizations (additive)
+    if (context.activeAgentSlug) {
+      const agentConfig = this.getAgentConfig(context.workspaceSlug, context.activeAgentSlug);
+      if (agentConfig) {
+        this.applyCustomConfig(merged, agentConfig);
+      }
+    }
+
     return merged;
   }
 
   private applyCustomConfig(merged: MergedPermissionsConfig, custom: PermissionsCustomConfig): void {
-    // Add blocked tools
+    // Add blocked tools to both sets (blockedTools for safe mode, customBlockedTools for ask/allow-all)
     for (const tool of custom.blockedTools) {
       merged.blockedTools.add(tool);
+      merged.customBlockedTools.add(tool);
     }
 
     // Add allowed bash patterns (making config more permissive)
@@ -436,11 +515,17 @@ class PermissionsConfigCache {
         debug(`[Permissions] Invalid API endpoint path pattern, skipping: ${rule.path}`);
       }
     }
+
+    // Add allowed write paths (glob patterns, stored as strings)
+    for (const pattern of custom.allowedWritePaths) {
+      merged.allowedWritePaths.push(pattern);
+    }
   }
 
   private buildCacheKey(context: PermissionsContext): string {
     const sources = context.activeSourceSlugs?.sort().join(',') ?? '';
-    return `${context.workspaceSlug}::${sources}`;
+    const agent = context.activeAgentSlug ? `agent:${context.activeAgentSlug}` : '';
+    return `${context.workspaceSlug}::${sources}::${agent}`;
   }
 
   /**
@@ -449,6 +534,7 @@ class PermissionsConfigCache {
   clear(): void {
     this.workspaceConfigs.clear();
     this.sourceConfigs.clear();
+    this.agentConfigs.clear();
     this.mergedConfigs.clear();
   }
 }

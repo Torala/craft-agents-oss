@@ -1,9 +1,14 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from "react"
 import { formatDistanceToNow, isToday, isYesterday, format, startOfDay } from "date-fns"
-import { Trash2, Pencil, MoreHorizontal, ExternalLink, Flag, FlagOff, MailOpen, Search, X } from "lucide-react"
+import { Trash2, Pencil, MoreHorizontal, ExternalLink, Flag, FlagOff, MailOpen, Search, X, FolderOpen } from "lucide-react"
 import { toast } from "sonner"
 
 import { cn } from "@/lib/utils"
+
+/** Check if a string is a hex color code (e.g., #3B82F6) */
+function isHexColor(str: string | undefined): boolean {
+  return !!str && /^#[0-9A-Fa-f]{6}$/.test(str)
+}
 import { Spinner } from "@/components/ui/loading-indicator"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
@@ -30,6 +35,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { RenameDialog } from "@/components/ui/rename-dialog"
 import { useSession } from "@/hooks/useSession"
 import { useFocusZone, useRovingTabIndex } from "@/hooks/keyboard"
 import { useFocusContext } from "@/context/FocusContext"
@@ -162,7 +168,7 @@ function highlightMatch(text: string, query: string): React.ReactNode {
   return (
     <>
       {before}
-      <span className="bg-yellow-500/30 rounded-sm">{match}</span>
+      <span className="bg-info/30 rounded-sm">{match}</span>
       {highlightMatch(after, query)}
     </>
   )
@@ -262,8 +268,9 @@ function SessionItem({
                 className={cn(
                   "w-4 h-4 flex items-center justify-center rounded-full transition-colors cursor-pointer",
                   "hover:bg-foreground/5",
-                  getStateColor(currentTodoState, todoStates) || 'text-muted-foreground'
+                  !isHexColor(getStateColor(currentTodoState, todoStates)) && (getStateColor(currentTodoState, todoStates) || 'text-muted-foreground')
                 )}
+                style={isHexColor(getStateColor(currentTodoState, todoStates)) ? { color: getStateColor(currentTodoState, todoStates) } : undefined}
                 role="button"
                 aria-haspopup="menu"
                 aria-expanded={todoMenuOpen}
@@ -316,18 +323,21 @@ function SessionItem({
             {/* Subtitle - with optional flag at start, single line with truncation */}
             <div className="flex items-center gap-1.5 text-xs text-foreground/70 w-full -mb-[2px] pr-6 min-w-0">
               {item.isProcessing && (
-                <Spinner className="text-[8px] text-primary shrink-0" />
+                <Spinner className="text-[8px] text-foreground shrink-0" />
               )}
               {!item.isProcessing && hasUnreadMessages(item) && (
-                <div className="w-2 h-2 rounded-full bg-[#9570BE] shrink-0" />
+                <div className="w-2 h-2 rounded-full bg-accent shrink-0" />
               )}
               {item.isFlagged && (
-                <Flag className="h-[10px] w-[10px] text-amber-500 fill-amber-500 shrink-0" />
+                <Flag className="h-[10px] w-[10px] text-info fill-info shrink-0" />
               )}
               {permissionMode && (
                 <span
-                  className="shrink-0 px-1.5 py-0.5 text-[10px] font-medium rounded"
-                  style={{
+                  className={cn(
+                    "shrink-0 px-1.5 py-0.5 text-[10px] font-medium rounded",
+                    permissionMode === 'allow-all' && "bg-accent/10 text-accent"
+                  )}
+                  style={permissionMode === 'allow-all' ? undefined : {
                     backgroundColor: `${PERMISSION_MODE_CONFIG[permissionMode].colors.primary}1A`, // 10% opacity
                     color: PERMISSION_MODE_CONFIG[permissionMode].colors.muted,
                   }}
@@ -368,10 +378,17 @@ function SessionItem({
                 <ExternalLink />
                 Open in new tab
               </StyledDropdownMenuItem>
+              <StyledDropdownMenuItem onClick={() => window.electronAPI.showSessionInFinder(item.id)}>
+                <FolderOpen />
+                View in Finder
+              </StyledDropdownMenuItem>
               <StyledDropdownMenuSeparator />
               <DropdownMenuSub>
                 <StyledDropdownMenuSubTrigger>
-                  <span className={cn("shrink-0 flex items-center -mt-px", getStateColor(currentTodoState, todoStates) || 'text-muted-foreground')}>
+                  <span
+                    className={cn("shrink-0 flex items-center -mt-px", !isHexColor(getStateColor(currentTodoState, todoStates)) && (getStateColor(currentTodoState, todoStates) || 'text-muted-foreground'))}
+                    style={isHexColor(getStateColor(currentTodoState, todoStates)) ? { color: getStateColor(currentTodoState, todoStates) } : undefined}
+                  >
                     {getStateIcon(currentTodoState, todoStates)}
                   </span>
                   Status
@@ -383,7 +400,10 @@ function SessionItem({
                       onClick={() => onTodoStateChange(item.id, state.id)}
                       className={currentTodoState === state.id ? "bg-foreground/5" : ""}
                     >
-                      <span className={cn("shrink-0 flex items-center -mt-px", state.color)}>
+                      <span
+                        className={cn("shrink-0 flex items-center -mt-px", !isHexColor(state.color) && state.color)}
+                        style={isHexColor(state.color) ? { color: state.color } : undefined}
+                      >
                         {state.icon}
                       </span>
                       {state.label}
@@ -768,7 +788,7 @@ export function SessionList({
               <p className="text-sm text-muted-foreground">No conversations found</p>
               <button
                 onClick={() => onSearchChange?.('')}
-                className="text-xs text-primary hover:underline mt-1"
+                className="text-xs text-foreground hover:underline mt-1"
               >
                 Clear search
               </button>
@@ -824,70 +844,13 @@ export function SessionList({
       <RenameDialog
         open={renameDialogOpen}
         onOpenChange={setRenameDialogOpen}
-        name={renameName}
-        onNameChange={setRenameName}
+        title="Rename conversation"
+        value={renameName}
+        onValueChange={setRenameName}
         onSubmit={handleRenameSubmit}
+        placeholder="Enter a name..."
       />
     </>
   )
 }
 
-/**
- * RenameDialog - Extracted dialog component for better lifecycle isolation
- */
-interface RenameDialogProps {
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  name: string
-  onNameChange: (name: string) => void
-  onSubmit: () => void
-}
-
-function RenameDialog({ open, onOpenChange, name, onNameChange, onSubmit }: RenameDialogProps) {
-  const inputRef = useRef<HTMLInputElement>(null)
-
-  // Focus input after dialog opens (avoids Radix Dialog focus race condition)
-  useEffect(() => {
-    if (open) {
-      const timer = setTimeout(() => {
-        inputRef.current?.focus()
-      }, 0)
-      return () => clearTimeout(timer)
-    }
-  }, [open])
-
-  const handleSubmit = () => {
-    onSubmit()
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[400px]">
-        <DialogHeader>
-          <DialogTitle>Rename conversation</DialogTitle>
-        </DialogHeader>
-        <div className="py-4">
-          <Input
-            ref={inputRef}
-            value={name}
-            onChange={(e) => onNameChange(e.target.value)}
-            placeholder="Enter a name..."
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                handleSubmit()
-              }
-            }}
-          />
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button onClick={handleSubmit}>
-            Save
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
-}

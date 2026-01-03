@@ -37,6 +37,7 @@ import {
   Unlock,
 } from 'lucide-react'
 import { Spinner } from '@/components/ui/loading-indicator'
+import { RenameDialog } from '@/components/ui/rename-dialog'
 import type { Tab } from '../types'
 import type { AuthType, PermissionMode } from '../../../shared/types'
 
@@ -66,7 +67,7 @@ function SectionHeader({ children }: { children: React.ReactNode }) {
 
 function GroupHeader({ children }: { children: React.ReactNode }) {
   return (
-    <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-4 pb-1.5 border-b border-border/50">
+    <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-4 pb-1.5 border-b border-border">
       {children}
     </h2>
   )
@@ -153,10 +154,10 @@ function RadioOption({ selected, onClick, label, description, disabled }: RadioO
       <div
         className={cn(
           'w-[14px] h-[14px] rounded-full border-[1.5px] grid place-items-center transition-colors shrink-0 ml-4',
-          selected ? 'border-primary bg-primary' : 'border-muted-foreground/30'
+          selected ? 'border-foreground bg-foreground' : 'border-muted-foreground/30'
         )}
       >
-        {selected && <div className="w-[6px] h-[6px] rounded-full bg-primary-foreground" />}
+        {selected && <div className="w-[6px] h-[6px] rounded-full bg-background" />}
       </div>
     </button>
   )
@@ -241,10 +242,10 @@ function CraftCreditsOption({ selected, onClick }: CraftCreditsOptionProps) {
         <div
           className={cn(
             'w-[14px] h-[14px] rounded-full border-[1.5px] grid place-items-center transition-colors shrink-0 ml-4',
-            selected ? 'border-primary bg-primary' : 'border-muted-foreground/30'
+            selected ? 'border-foreground bg-foreground' : 'border-muted-foreground/30'
           )}
         >
-          {selected && <div className="w-[6px] h-[6px] rounded-full bg-primary-foreground" />}
+          {selected && <div className="w-[6px] h-[6px] rounded-full bg-background" />}
         </div>
       </button>
       {selected && (
@@ -308,7 +309,7 @@ function ApiKeyInput({ value, onChange, onSave, onCancel, isSaving, hasExistingK
           href="https://console.anthropic.com"
           target="_blank"
           rel="noopener noreferrer"
-          className="text-primary hover:underline inline-flex items-center gap-0.5"
+          className="text-foreground hover:underline inline-flex items-center gap-0.5"
           onClick={(e) => {
             e.preventDefault()
             window.electronAPI?.openUrl('https://console.anthropic.com')
@@ -419,7 +420,7 @@ function ClaudeOAuth({
     return (
       <div className="py-1.5 px-3 -mx-3 rounded-lg bg-foreground/[0.02] border border-border/50 space-y-2">
         <Header />
-        <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
+        <div className="flex items-center gap-2 text-sm text-success">
           <CheckCircle2 className="size-4" />
           Connected to Claude
         </div>
@@ -437,7 +438,7 @@ function ClaudeOAuth({
             href="https://docs.anthropic.com/claude-code/getting-started"
             target="_blank"
             rel="noopener noreferrer"
-            className="text-primary hover:underline inline-flex items-center gap-0.5"
+            className="text-foreground hover:underline inline-flex items-center gap-0.5"
             onClick={(e) => {
               e.preventDefault()
               window.electronAPI?.openUrl('https://docs.anthropic.com/claude-code/getting-started')
@@ -613,7 +614,7 @@ function PasswordDialog({ mode, onSubmit, onCancel, isLoading, error }: Password
 
       {/* Short password warning (non-blocking) */}
       {isShortPassword && (
-        <div className="flex items-start gap-2 text-xs text-amber-600 dark:text-amber-400">
+        <div className="flex items-start gap-2 text-xs text-info">
           <AlertTriangle className="size-3.5 mt-0.5 shrink-0" />
           <span>Short passwords are easier to guess. Consider 12+ characters.</span>
         </div>
@@ -673,6 +674,7 @@ function PasswordDialog({ mode, onSubmit, onCancel, isLoading, error }: Password
 // ============================================
 
 interface WorkspaceSettings {
+  name?: string
   model?: string
   permissionMode?: PermissionMode
   workingDirectory?: string
@@ -697,6 +699,7 @@ export default function SettingsTabPanel({
   const model = propModel ?? chatContext.currentModel ?? 'claude-sonnet-4-5-20250929'
   const onModelChange = propOnModelChange ?? chatContext.onModelChange
   const activeWorkspaceId = chatContext.activeWorkspaceId
+  const onRefreshWorkspaces = chatContext.onRefreshWorkspaces
 
   // Billing state
   const [authType, setAuthType] = useState<AuthType>(propAuthType ?? 'craft_credits')
@@ -716,6 +719,11 @@ export default function SettingsTabPanel({
   const [claudeOAuthError, setClaudeOAuthError] = useState<string | undefined>()
 
   // Workspace settings state
+  const [wsName, setWsName] = useState('')
+  const [wsNameEditing, setWsNameEditing] = useState('')
+  const [renameDialogOpen, setRenameDialogOpen] = useState(false)
+  const [wsIconUrl, setWsIconUrl] = useState<string | null>(null)
+  const [isUploadingIcon, setIsUploadingIcon] = useState(false)
   const [wsModel, setWsModel] = useState('claude-sonnet-4-5-20250929')
   const [permissionMode, setPermissionMode] = useState<PermissionMode>('ask')
   const [workingDirectory, setWorkingDirectory] = useState('')
@@ -756,10 +764,34 @@ export default function SettingsTabPanel({
       try {
         const settings = await window.electronAPI.getWorkspaceSettings(activeWorkspaceId)
         if (settings) {
+          setWsName(settings.name || '')
+          setWsNameEditing(settings.name || '')
           setWsModel(settings.model || 'claude-sonnet-4-5-20250929')
           setPermissionMode(settings.permissionMode || 'ask')
           setWorkingDirectory(settings.workingDirectory || '')
           setCredentialStrategy(settings.credentialStrategy || 'local')
+        }
+
+        // Try to load workspace icon (check common extensions)
+        const ICON_EXTENSIONS = ['png', 'jpg', 'jpeg', 'svg', 'webp', 'gif']
+        let iconFound = false
+        for (const ext of ICON_EXTENSIONS) {
+          try {
+            const iconData = await window.electronAPI.readWorkspaceImage(activeWorkspaceId, `./icon.${ext}`)
+            // For SVG, wrap in data URL
+            if (ext === 'svg' && !iconData.startsWith('data:')) {
+              setWsIconUrl(`data:image/svg+xml;base64,${btoa(iconData)}`)
+            } else {
+              setWsIconUrl(iconData)
+            }
+            iconFound = true
+            break
+          } catch {
+            // Icon not found with this extension, try next
+          }
+        }
+        if (!iconFound) {
+          setWsIconUrl(null)
         }
       } catch (error) {
         console.error('Failed to load workspace settings:', error)
@@ -910,6 +942,70 @@ export default function SettingsTabPanel({
     },
     [activeWorkspaceId]
   )
+
+  // Workspace name handler
+  const handleNameSave = useCallback(async () => {
+    if (!activeWorkspaceId || wsNameEditing.trim() === wsName) return
+    const newName = wsNameEditing.trim()
+    if (!newName) {
+      setWsNameEditing(wsName)
+      return
+    }
+    setWsName(newName)
+    await updateWorkspaceSetting('name', newName)
+  }, [activeWorkspaceId, wsName, wsNameEditing, updateWorkspaceSetting])
+
+  // Workspace icon upload handler
+  const handleIconUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file || !activeWorkspaceId || !window.electronAPI) return
+
+    // Validate file type
+    const validTypes = ['image/png', 'image/jpeg', 'image/svg+xml', 'image/webp', 'image/gif']
+    if (!validTypes.includes(file.type)) {
+      console.error('Invalid file type:', file.type)
+      return
+    }
+
+    setIsUploadingIcon(true)
+    try {
+      // Read file as base64
+      const buffer = await file.arrayBuffer()
+      const base64 = btoa(
+        new Uint8Array(buffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
+      )
+
+      // Determine extension from mime type
+      const extMap: Record<string, string> = {
+        'image/png': 'png',
+        'image/jpeg': 'jpg',
+        'image/svg+xml': 'svg',
+        'image/webp': 'webp',
+        'image/gif': 'gif',
+      }
+      const ext = extMap[file.type] || 'png'
+
+      // Upload to workspace
+      await window.electronAPI.writeWorkspaceImage(activeWorkspaceId, `./icon.${ext}`, base64, file.type)
+
+      // Reload the icon locally for settings display
+      const iconData = await window.electronAPI.readWorkspaceImage(activeWorkspaceId, `./icon.${ext}`)
+      if (ext === 'svg' && !iconData.startsWith('data:')) {
+        setWsIconUrl(`data:image/svg+xml;base64,${btoa(iconData)}`)
+      } else {
+        setWsIconUrl(iconData)
+      }
+
+      // Refresh workspaces to update sidebar icon
+      onRefreshWorkspaces?.()
+    } catch (error) {
+      console.error('Failed to upload icon:', error)
+    } finally {
+      setIsUploadingIcon(false)
+      // Reset the input so the same file can be selected again
+      e.target.value = ''
+    }
+  }, [activeWorkspaceId, onRefreshWorkspaces])
 
   // Workspace settings handlers
   const handleModelChange = useCallback(
@@ -1091,6 +1187,79 @@ export default function SettingsTabPanel({
           {activeWorkspaceId && !isLoadingWorkspace && (
             <>
               <GroupHeader>Workspace</GroupHeader>
+
+              {/* Name & Icon */}
+              <div>
+                {/* Name */}
+                <div className="flex items-center py-1.5">
+                <span className="text-sm">Name</span>
+                <span className="text-sm text-muted-foreground ml-1.5">
+                  · {wsName || 'Untitled'} ·
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setWsNameEditing(wsName)
+                    setRenameDialogOpen(true)
+                  }}
+                  className="text-sm text-muted-foreground ml-1.5 hover:text-foreground transition-colors underline"
+                >
+                  Edit
+                </button>
+              </div>
+              {/* Icon */}
+              <div className="flex items-center py-1.5">
+                <span className="text-sm">Icon</span>
+                <span className="text-sm text-muted-foreground ml-1.5">·</span>
+                <div className={cn(
+                  "w-3.5 h-3.5 rounded-full overflow-hidden bg-foreground/5 flex items-center justify-center ml-1.5",
+                  "ring-1 ring-border/50"
+                )}>
+                  {isUploadingIcon ? (
+                    <Spinner className="text-muted-foreground text-[6px]" />
+                  ) : wsIconUrl ? (
+                    <img src={wsIconUrl} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    <span className="text-[8px] font-medium text-muted-foreground">
+                      {wsName?.charAt(0)?.toUpperCase() || 'W'}
+                    </span>
+                  )}
+                </div>
+                <span className="text-sm text-muted-foreground ml-1.5">·</span>
+                <label className="cursor-pointer">
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/svg+xml,image/webp,image/gif"
+                    onChange={handleIconUpload}
+                    className="sr-only"
+                    disabled={isUploadingIcon}
+                  />
+                  <span className="text-sm text-muted-foreground ml-1.5 hover:text-foreground transition-colors underline">
+                    {isUploadingIcon ? 'Uploading...' : 'Edit'}
+                  </span>
+                </label>
+              </div>
+
+              {/* Rename Dialog */}
+              <RenameDialog
+                open={renameDialogOpen}
+                onOpenChange={setRenameDialogOpen}
+                title="Rename workspace"
+                value={wsNameEditing}
+                onValueChange={setWsNameEditing}
+                onSubmit={() => {
+                  const newName = wsNameEditing.trim()
+                  if (newName && newName !== wsName) {
+                    setWsName(newName)
+                    updateWorkspaceSetting('name', newName)
+                    // Refresh workspaces list so UI updates everywhere
+                    onRefreshWorkspaces?.()
+                  }
+                  setRenameDialogOpen(false)
+                }}
+                placeholder="Enter workspace name..."
+              />
+              </div>
 
               {/* Model */}
               <div>

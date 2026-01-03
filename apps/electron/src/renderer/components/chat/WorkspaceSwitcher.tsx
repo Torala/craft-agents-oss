@@ -1,6 +1,6 @@
 import * as React from "react"
-import { useState } from "react"
-import { Check, FolderPlus } from "lucide-react"
+import { useState, useEffect, useMemo } from "react"
+import { Check, FolderPlus, ExternalLink } from "lucide-react"
 import { toast } from "sonner"
 
 import { cn } from "@/lib/utils"
@@ -19,7 +19,7 @@ interface WorkspaceSwitcherProps {
   isCollapsed: boolean
   workspaces: Workspace[]
   activeWorkspaceId: string | null
-  onSelect: (workspaceId: string) => void
+  onSelect: (workspaceId: string, openInNewWindow?: boolean) => void
   onWorkspaceCreated?: (workspace: Workspace) => void
 }
 
@@ -42,7 +42,58 @@ export function WorkspaceSwitcher({
   onWorkspaceCreated,
 }: WorkspaceSwitcherProps) {
   const [isCreating, setIsCreating] = useState(false)
+  // Cache stores { dataUrl, sourceUrl } to detect when icon file changes
+  const [iconCache, setIconCache] = useState<Record<string, { dataUrl: string; sourceUrl: string }>>({})
   const selectedWorkspace = workspaces.find(w => w.id === activeWorkspaceId)
+
+  // Fetch workspace icons via IPC (converts local files to data URLs)
+  useEffect(() => {
+    const fetchIcons = async () => {
+      for (const workspace of workspaces) {
+        // Skip if workspace has a remote iconUrl (use directly, no caching needed)
+        if (workspace.iconUrl?.startsWith('http://') || workspace.iconUrl?.startsWith('https://')) continue
+
+        // Extract icon filename from file:// URL (e.g., "file:///path/to/icon.png?t=123" -> "icon.png")
+        if (!workspace.iconUrl?.startsWith('file://')) continue
+        // Remove query params (cache-buster) before extracting filename
+        const urlWithoutQuery = workspace.iconUrl.split('?')[0]
+        const iconFilename = urlWithoutQuery.split('/').pop()
+        if (!iconFilename) continue
+
+        // Skip if already cached with the same source URL
+        const cached = iconCache[workspace.id]
+        if (cached && cached.sourceUrl === workspace.iconUrl) continue
+
+        try {
+          const result = await window.electronAPI.readWorkspaceImage(workspace.id, iconFilename)
+          if (result) {
+            // readWorkspaceImage returns raw SVG for .svg files, data URL for others
+            let dataUrl = result
+            if (iconFilename.endsWith('.svg')) {
+              dataUrl = `data:image/svg+xml;base64,${btoa(result)}`
+            }
+            setIconCache(prev => ({ ...prev, [workspace.id]: { dataUrl, sourceUrl: workspace.iconUrl! } }))
+          }
+        } catch (error) {
+          console.error(`Failed to load icon for workspace ${workspace.id}:`, error)
+        }
+      }
+    }
+    fetchIcons()
+  }, [workspaces])
+
+  // Merge iconCache with workspace iconUrls
+  const getIconUrl = (workspace: Workspace): string | undefined => {
+    // If cached, use the data URL
+    const cached = iconCache[workspace.id]
+    if (cached) return cached.dataUrl
+    // If remote URL, use it directly
+    if (workspace.iconUrl?.startsWith('http://') || workspace.iconUrl?.startsWith('https://')) {
+      return workspace.iconUrl
+    }
+    // Otherwise, no icon yet (will show fallback)
+    return undefined
+  }
 
   const handleNewWorkspace = async () => {
     if (isCreating) return
@@ -90,10 +141,10 @@ export function WorkspaceSwitcher({
         >
           {/* Workspace Avatar: Image with crossfade, border, first letter fallback */}
           <CrossfadeAvatar
-            src={selectedWorkspace?.iconUrl}
+            src={selectedWorkspace ? getIconUrl(selectedWorkspace) : undefined}
             alt={selectedWorkspace?.name}
-            className="h-4 w-4 ring-1 ring-border/50"
-            fallbackClassName="bg-primary text-primary-foreground text-[10px]"
+            className="h-4 w-4 rounded-full ring-1 ring-border/50"
+            fallbackClassName="bg-foreground text-background text-[10px] rounded-full"
             fallback={selectedWorkspace?.name?.charAt(0) || 'W'}
           />
           {/* Workspace Name: Hidden when collapsed, gradient fade on overflow */}
@@ -109,25 +160,44 @@ export function WorkspaceSwitcher({
         {workspaces.map((workspace) => (
           <StyledDropdownMenuItem
             key={workspace.id}
-            onClick={() => onSelect(workspace.id)}
+            onClick={(e) => {
+              // Cmd/Ctrl+Click opens in new window
+              const openInNewWindow = e.metaKey || e.ctrlKey
+              onSelect(workspace.id, openInNewWindow)
+            }}
             className={cn(
-              "justify-between",
+              "justify-between group",
               activeWorkspaceId === workspace.id && "bg-foreground/10"
             )}
           >
             <div className="flex items-center gap-3 font-sans">
               <CrossfadeAvatar
-                src={workspace.iconUrl}
+                src={getIconUrl(workspace)}
                 alt={workspace.name}
-                className="h-5 w-5 ring-1 ring-border/50"
-                fallbackClassName="bg-muted text-xs"
+                className="h-5 w-5 rounded-full ring-1 ring-border/50"
+                fallbackClassName="bg-muted text-xs rounded-full"
                 fallback={workspace.name.charAt(0)}
               />
               {workspace.name}
             </div>
-            {activeWorkspaceId === workspace.id && (
-              <Check className="h-3.5 w-3.5 ml-2" />
-            )}
+            <div className="flex items-center gap-1">
+              {/* Open in new window button - only visible on hover for non-active workspaces */}
+              {activeWorkspaceId !== workspace.id && (
+                <button
+                  className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-foreground/10 transition-opacity"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onSelect(workspace.id, true)
+                  }}
+                  title="Open in new window"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                </button>
+              )}
+              {activeWorkspaceId === workspace.id && (
+                <Check className="h-3.5 w-3.5" />
+              )}
+            </div>
           </StyledDropdownMenuItem>
         ))}
 
