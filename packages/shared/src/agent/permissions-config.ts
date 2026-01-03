@@ -15,7 +15,6 @@ import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { z } from 'zod';
 import { debug } from '../utils/debug.ts';
-import { getWorkspacePath } from '../workspaces/storage.ts';
 import { getSourcePath } from '../sources/storage.ts';
 import { getAgentPath } from '../agents/folder-storage.ts';
 import { SAFE_MODE_CONFIG } from './mode-manager.ts';
@@ -116,7 +115,7 @@ export interface MergedPermissionsConfig {
  * Context for permissions checking (includes workspace/source/agent info)
  */
 export interface PermissionsContext {
-  workspaceSlug: string;
+  workspaceRootPath: string;
   /** Active source slugs for source-specific rules */
   activeSourceSlugs?: string[];
   /** Active agent slug for agent-specific rules */
@@ -226,29 +225,29 @@ export function validatePermissionsConfig(config: PermissionsConfigFile): string
 /**
  * Get path to workspace permissions.json
  */
-export function getWorkspacePermissionsPath(workspaceSlug: string): string {
-  return join(getWorkspacePath(workspaceSlug), 'permissions.json');
+export function getWorkspacePermissionsPath(workspaceRootPath: string): string {
+  return join(workspaceRootPath, 'permissions.json');
 }
 
 /**
  * Get path to source permissions.json
  */
-export function getSourcePermissionsPath(workspaceSlug: string, sourceSlug: string): string {
-  return join(getSourcePath(workspaceSlug, sourceSlug), 'permissions.json');
+export function getSourcePermissionsPath(workspaceRootPath: string, sourceSlug: string): string {
+  return join(getSourcePath(workspaceRootPath, sourceSlug), 'permissions.json');
 }
 
 /**
  * Get path to agent permissions.json
  */
-export function getAgentPermissionsPath(workspaceSlug: string, agentSlug: string): string {
-  return join(getAgentPath(workspaceSlug, agentSlug), 'permissions.json');
+export function getAgentPermissionsPath(workspaceRootPath: string, agentSlug: string): string {
+  return join(getAgentPath(workspaceRootPath, agentSlug), 'permissions.json');
 }
 
 /**
  * Load workspace-level permissions config
  */
-export function loadWorkspacePermissionsConfig(workspaceSlug: string): PermissionsCustomConfig | null {
-  const path = getWorkspacePermissionsPath(workspaceSlug);
+export function loadWorkspacePermissionsConfig(workspaceRootPath: string): PermissionsCustomConfig | null {
+  const path = getWorkspacePermissionsPath(workspaceRootPath);
   if (!existsSync(path)) return null;
 
   try {
@@ -266,10 +265,10 @@ export function loadWorkspacePermissionsConfig(workspaceSlug: string): Permissio
  * Load source-level permissions config
  */
 export function loadSourcePermissionsConfig(
-  workspaceSlug: string,
+  workspaceRootPath: string,
   sourceSlug: string
 ): PermissionsCustomConfig | null {
-  const path = getSourcePermissionsPath(workspaceSlug, sourceSlug);
+  const path = getSourcePermissionsPath(workspaceRootPath, sourceSlug);
   if (!existsSync(path)) return null;
 
   try {
@@ -287,10 +286,10 @@ export function loadSourcePermissionsConfig(
  * Load agent-level permissions config
  */
 export function loadAgentPermissionsConfig(
-  workspaceSlug: string,
+  workspaceRootPath: string,
   agentSlug: string
 ): PermissionsCustomConfig | null {
-  const path = getAgentPermissionsPath(workspaceSlug, agentSlug);
+  const path = getAgentPermissionsPath(workspaceRootPath, agentSlug);
   if (!existsSync(path)) return null;
 
   try {
@@ -348,20 +347,20 @@ class PermissionsConfigCache {
   /**
    * Get or load workspace config
    */
-  getWorkspaceConfig(workspaceSlug: string): PermissionsCustomConfig | null {
-    if (!this.workspaceConfigs.has(workspaceSlug)) {
-      this.workspaceConfigs.set(workspaceSlug, loadWorkspacePermissionsConfig(workspaceSlug));
+  getWorkspaceConfig(workspaceRootPath: string): PermissionsCustomConfig | null {
+    if (!this.workspaceConfigs.has(workspaceRootPath)) {
+      this.workspaceConfigs.set(workspaceRootPath, loadWorkspacePermissionsConfig(workspaceRootPath));
     }
-    return this.workspaceConfigs.get(workspaceSlug) ?? null;
+    return this.workspaceConfigs.get(workspaceRootPath) ?? null;
   }
 
   /**
    * Get or load source config
    */
-  getSourceConfig(workspaceSlug: string, sourceSlug: string): PermissionsCustomConfig | null {
-    const key = `${workspaceSlug}::${sourceSlug}`;
+  getSourceConfig(workspaceRootPath: string, sourceSlug: string): PermissionsCustomConfig | null {
+    const key = `${workspaceRootPath}::${sourceSlug}`;
     if (!this.sourceConfigs.has(key)) {
-      this.sourceConfigs.set(key, loadSourcePermissionsConfig(workspaceSlug, sourceSlug));
+      this.sourceConfigs.set(key, loadSourcePermissionsConfig(workspaceRootPath, sourceSlug));
     }
     return this.sourceConfigs.get(key) ?? null;
   }
@@ -369,10 +368,10 @@ class PermissionsConfigCache {
   /**
    * Get or load agent config
    */
-  getAgentConfig(workspaceSlug: string, agentSlug: string): PermissionsCustomConfig | null {
-    const key = `${workspaceSlug}::agent::${agentSlug}`;
+  getAgentConfig(workspaceRootPath: string, agentSlug: string): PermissionsCustomConfig | null {
+    const key = `${workspaceRootPath}::agent::${agentSlug}`;
     if (!this.agentConfigs.has(key)) {
-      this.agentConfigs.set(key, loadAgentPermissionsConfig(workspaceSlug, agentSlug));
+      this.agentConfigs.set(key, loadAgentPermissionsConfig(workspaceRootPath, agentSlug));
     }
     return this.agentConfigs.get(key) ?? null;
   }
@@ -380,12 +379,12 @@ class PermissionsConfigCache {
   /**
    * Invalidate workspace config (called by ConfigWatcher)
    */
-  invalidateWorkspace(workspaceSlug: string): void {
-    debug(`[Permissions] Invalidating workspace config: ${workspaceSlug}`);
-    this.workspaceConfigs.delete(workspaceSlug);
+  invalidateWorkspace(workspaceRootPath: string): void {
+    debug(`[Permissions] Invalidating workspace config: ${workspaceRootPath}`);
+    this.workspaceConfigs.delete(workspaceRootPath);
     // Clear all merged configs for this workspace
     for (const key of this.mergedConfigs.keys()) {
-      if (key.startsWith(`${workspaceSlug}::`)) {
+      if (key.startsWith(`${workspaceRootPath}::`)) {
         this.mergedConfigs.delete(key);
       }
     }
@@ -394,12 +393,12 @@ class PermissionsConfigCache {
   /**
    * Invalidate source config (called by ConfigWatcher)
    */
-  invalidateSource(workspaceSlug: string, sourceSlug: string): void {
-    debug(`[Permissions] Invalidating source config: ${workspaceSlug}/${sourceSlug}`);
-    this.sourceConfigs.delete(`${workspaceSlug}::${sourceSlug}`);
+  invalidateSource(workspaceRootPath: string, sourceSlug: string): void {
+    debug(`[Permissions] Invalidating source config: ${workspaceRootPath}/${sourceSlug}`);
+    this.sourceConfigs.delete(`${workspaceRootPath}::${sourceSlug}`);
     // Clear merged configs that include this source
     for (const key of this.mergedConfigs.keys()) {
-      if (key.startsWith(`${workspaceSlug}::`) && key.includes(sourceSlug)) {
+      if (key.startsWith(`${workspaceRootPath}::`) && key.includes(sourceSlug)) {
         this.mergedConfigs.delete(key);
       }
     }
@@ -408,12 +407,12 @@ class PermissionsConfigCache {
   /**
    * Invalidate agent config (called by ConfigWatcher)
    */
-  invalidateAgent(workspaceSlug: string, agentSlug: string): void {
-    debug(`[Permissions] Invalidating agent config: ${workspaceSlug}/${agentSlug}`);
-    this.agentConfigs.delete(`${workspaceSlug}::agent::${agentSlug}`);
+  invalidateAgent(workspaceRootPath: string, agentSlug: string): void {
+    debug(`[Permissions] Invalidating agent config: ${workspaceRootPath}/${agentSlug}`);
+    this.agentConfigs.delete(`${workspaceRootPath}::agent::${agentSlug}`);
     // Clear merged configs that include this agent
     for (const key of this.mergedConfigs.keys()) {
-      if (key.startsWith(`${workspaceSlug}::`) && key.includes(`agent:${agentSlug}`)) {
+      if (key.startsWith(`${workspaceRootPath}::`) && key.includes(`agent:${agentSlug}`)) {
         this.mergedConfigs.delete(key);
       }
     }
@@ -450,7 +449,7 @@ class PermissionsConfigCache {
     };
 
     // Add workspace-level customizations
-    const wsConfig = this.getWorkspaceConfig(context.workspaceSlug);
+    const wsConfig = this.getWorkspaceConfig(context.workspaceRootPath);
     if (wsConfig) {
       this.applyCustomConfig(merged, wsConfig);
     }
@@ -458,7 +457,7 @@ class PermissionsConfigCache {
     // Add source-level customizations (additive)
     if (context.activeSourceSlugs) {
       for (const sourceSlug of context.activeSourceSlugs) {
-        const srcConfig = this.getSourceConfig(context.workspaceSlug, sourceSlug);
+        const srcConfig = this.getSourceConfig(context.workspaceRootPath, sourceSlug);
         if (srcConfig) {
           this.applyCustomConfig(merged, srcConfig);
         }
@@ -467,7 +466,7 @@ class PermissionsConfigCache {
 
     // Add agent-level customizations (additive)
     if (context.activeAgentSlug) {
-      const agentConfig = this.getAgentConfig(context.workspaceSlug, context.activeAgentSlug);
+      const agentConfig = this.getAgentConfig(context.workspaceRootPath, context.activeAgentSlug);
       if (agentConfig) {
         this.applyCustomConfig(merged, agentConfig);
       }
@@ -525,7 +524,7 @@ class PermissionsConfigCache {
   private buildCacheKey(context: PermissionsContext): string {
     const sources = context.activeSourceSlugs?.sort().join(',') ?? '';
     const agent = context.activeAgentSlug ? `agent:${context.activeAgentSlug}` : '';
-    return `${context.workspaceSlug}::${sources}::${agent}`;
+    return `${context.workspaceRootPath}::${sources}::${agent}`;
   }
 
   /**

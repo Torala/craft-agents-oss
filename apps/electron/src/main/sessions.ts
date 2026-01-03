@@ -31,7 +31,7 @@ import {
   type SessionMetadata,
   type TodoState,
 } from '@craft-agent/shared/sessions'
-import { loadWorkspaceSources, getSourcesBySlugs, type LoadedSource, createSourceService, type McpServerConfig, getSourcesNeedingAuth } from '@craft-agent/shared/sources'
+import { loadWorkspaceSources, getSourcesBySlugs, type LoadedSource, type McpServerConfig, getSourcesNeedingAuth, getSourceCredentialManager, getSourceServerBuilder, type SourceWithCredential } from '@craft-agent/shared/sources'
 import { ConfigWatcher, type ConfigWatcherCallbacks } from '@craft-agent/shared/config'
 import { getAuthState } from '@craft-agent/shared/auth'
 import { setAnthropicOptionsEnv, setPathToClaudeCodeExecutable, setInterceptorPath } from '@craft-agent/shared/agent'
@@ -52,6 +52,38 @@ export const AGENT_FLAGS = {
   /** Default modes enabled for new sessions */
   defaultModesEnabled: true,
 } as const
+
+/**
+ * Build MCP and API servers from sources using the new unified modules.
+ * Handles credential loading and server building in one step.
+ */
+async function buildServersFromSources(sources: LoadedSource[]) {
+  const credManager = getSourceCredentialManager()
+  const serverBuilder = getSourceServerBuilder()
+
+  // Load credentials for all sources
+  const sourcesWithCreds: SourceWithCredential[] = await Promise.all(
+    sources.map(async (source) => ({
+      source,
+      token: await credManager.getToken(source),
+      credential: await credManager.getApiCredential(source),
+    }))
+  )
+
+  // Build token getter for OAuth sources (Gmail, etc.)
+  const getTokenForSource = (source: LoadedSource) => {
+    if (source.config.provider === 'gmail' || source.config.api?.authType === 'oauth') {
+      return async () => {
+        const token = await credManager.getToken(source)
+        if (!token) throw new Error(`No token for ${source.config.slug}`)
+        return token
+      }
+    }
+    return undefined
+  }
+
+  return serverBuilder.buildAll(sourcesWithCreds, getTokenForSource)
+}
 
 interface ManagedSession {
   id: string
@@ -982,8 +1014,7 @@ Use oauth_trigger for OAuth sources, credential_prompt for API key/bearer token 
         const enabledSources = allSources.filter(s =>
           enabledSlugs.includes(s.config.slug) && s.config.enabled && s.config.isAuthenticated
         )
-        const sourceService = createSourceService()
-        const { mcpServers, apiServers } = await sourceService.buildAllServers(enabledSources)
+        const { mcpServers, apiServers } = await buildServersFromSources(enabledSources)
         managed.sourceMcpServers = mcpServers
         managed.sourceApiServers = apiServers
         // Pass intended slugs so agent shows sources as active even if build failed
@@ -1016,8 +1047,7 @@ Use oauth_trigger for OAuth sources, credential_prompt for API key/bearer token 
         const enabledSources = allSources.filter(s =>
           managed.enabledSourceSlugs!.includes(s.config.slug) && s.config.enabled && s.config.isAuthenticated
         )
-        const sourceService = createSourceService()
-        const { mcpServers, apiServers } = await sourceService.buildAllServers(enabledSources)
+        const { mcpServers, apiServers } = await buildServersFromSources(enabledSources)
         managed.sourceMcpServers = mcpServers
         managed.sourceApiServers = apiServers
         // Pass intended slugs so agent shows sources as active even if build failed
@@ -1099,8 +1129,7 @@ Use oauth_trigger for OAuth sources, credential_prompt for API key/bearer token 
 
     // Build server configs from selected sources
     const sources = getSourcesBySlugs(workspaceRootPath, sourceSlugs)
-    const sourceService = createSourceService()
-    const { mcpServers, apiServers, errors } = await sourceService.buildAllServers(sources)
+    const { mcpServers, apiServers, errors } = await buildServersFromSources(sources)
 
     if (errors.length > 0) {
       console.warn(`[SessionManager] Source build errors:`, errors)
@@ -1400,8 +1429,7 @@ Use oauth_trigger for OAuth sources, credential_prompt for API key/bearer token 
       // Build server configs if not already built
       const sources = getSourcesBySlugs(workspaceRootPath, managed.enabledSourceSlugs)
       if (!managed.sourceMcpServers) {
-        const sourceService = createSourceService()
-        const { mcpServers, apiServers, errors } = await sourceService.buildAllServers(sources)
+        const { mcpServers, apiServers, errors } = await buildServersFromSources(sources)
         if (errors.length > 0) {
           console.warn(`[SessionManager] Source build errors:`, errors)
         }

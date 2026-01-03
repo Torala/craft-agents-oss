@@ -1129,7 +1129,7 @@ export class CraftAgent {
 
               // Build permissions context for loading custom permissions.json files
               const permissionsContext: PermissionsContext = {
-                workspaceSlug: this.workspaceRootPath,
+                workspaceRootPath: this.workspaceRootPath,
                 activeSourceSlugs: Array.from(this.activeSourceServerNames),
                 activeAgentSlug: this.activeAgentDefinition?.slug,
               };
@@ -1966,7 +1966,7 @@ export class CraftAgent {
             this.pinnedPreferencesPrompt = null;
             this.pinnedAgentDefinition = null;
             // Use 'info' instead of 'status' to show message without spinner
-            yield { type: 'info', message: 'Session expired, starting fresh...', level: 'info' };
+            yield { type: 'info', message: 'Session expired, starting fresh...' };
             // Recursively call with isRetry=true (yield* delegates all events)
             yield* this.chat(userMessage, attachments, true);
             return;
@@ -2037,7 +2037,7 @@ export class CraftAgent {
             : 'Request failed, retrying without history...';
 
           // Use 'info' instead of 'status' to show message without spinner
-          yield { type: 'info', message: statusMessage, level: 'info' };
+          yield { type: 'info', message: statusMessage };
           // Recursively call with isRetry=true (yield* delegates all events)
           yield* this.chat(userMessage, attachments, true);
           return;

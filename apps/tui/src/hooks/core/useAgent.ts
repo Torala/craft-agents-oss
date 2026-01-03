@@ -42,10 +42,39 @@ import { FolderAgentManager } from '@craft-agent/shared/agents';
 import type { SubAgentDefinition, McpServerConfig, ApiConfig } from '@craft-agent/shared/agents';
 import type { Plan } from '@craft-agent/shared/agents';
 import { debug } from '@craft-agent/shared/utils';
-import { loadWorkspaceSources, createSourceService } from '@craft-agent/shared/sources';
+import { loadWorkspaceSources, getSourceCredentialManager, getSourceServerBuilder, type SourceWithCredential, type LoadedSource } from '@craft-agent/shared/sources';
 import { containsUltrathink, stripUltrathink } from '../../utils/gradient.ts';
 import { useAgentState } from './useAgentState.ts';
 import { useSafeMode, usePermissionMode } from './useModeState.ts';
+
+/**
+ * Build MCP and API servers from sources using the new unified modules.
+ */
+async function buildServersFromSources(sources: LoadedSource[]) {
+  const credManager = getSourceCredentialManager();
+  const serverBuilder = getSourceServerBuilder();
+
+  const sourcesWithCreds: SourceWithCredential[] = await Promise.all(
+    sources.map(async (source) => ({
+      source,
+      token: await credManager.getToken(source),
+      credential: await credManager.getApiCredential(source),
+    }))
+  );
+
+  const getTokenForSource = (source: LoadedSource) => {
+    if (source.config.provider === 'gmail' || source.config.api?.authType === 'oauth') {
+      return async () => {
+        const token = await credManager.getToken(source);
+        if (!token) throw new Error(`No token for ${source.config.slug}`);
+        return token;
+      };
+    }
+    return undefined;
+  };
+
+  return serverBuilder.buildAll(sourcesWithCreds, getTokenForSource);
+}
 
 // MCP auth request for sub-agent servers
 export interface PendingMcpAuthRequest {
@@ -514,8 +543,7 @@ export function useAgent(config: CraftAgentConfig): UseAgentResult {
 
         // Rebuild MCP and API servers for enabled+authenticated sources
         const enabledSources = allSources.filter(s => s.config.enabled && s.config.isAuthenticated);
-        const sourceService = createSourceService();
-        const { mcpServers, apiServers } = await sourceService.buildAllServers(enabledSources);
+        const { mcpServers, apiServers } = await buildServersFromSources(enabledSources);
         agentRef.current?.setSourceServers(mcpServers, apiServers);
 
         debug('[useAgent] Sources reloaded:', Object.keys(mcpServers).length, 'MCP servers,', Object.keys(apiServers).length, 'API servers');

@@ -8,10 +8,14 @@
  * - SubmitPlan: Submit a plan file for user review/display
  * - change_working_directory: Change the working directory for the session
  * - config_validate: Validate configuration files
- * - source_test: Test a source connection (MCP or API)
- * - source_oauth_trigger: Start OAuth authentication for a source
+ * - source_test: Validate schema, download icons, test connections
+ * - source_oauth_trigger: Start OAuth authentication for MCP sources
  * - source_gmail_oauth_trigger: Start Gmail OAuth authentication
- * - source_credential_prompt: Prompt user for credentials
+ * - source_credential_prompt: Prompt user for API credentials
+ * - agent_list, agent_create, agent_delete: Agent management
+ *
+ * Source/agent CRUD is done via standard file editing tools (Read/Write/Edit).
+ * See ~/.craft-agent/docs/ for config format documentation.
  */
 
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
@@ -48,7 +52,7 @@ import {
   type SourceWithContext,
 } from '../sources/storage.ts';
 import type { FolderSourceConfig, LoadedSource } from '../sources/types.ts';
-import { createSourceService } from '../sources/service.ts';
+import { getSourceCredentialManager, getSourceServerBuilder, type SourceWithCredential } from '../sources/index.ts';
 import { CraftOAuth, getMcpBaseUrl, type OAuthConfig, type OAuthCallbacks } from '../auth/oauth.ts';
 import { startGmailOAuth } from '../auth/gmail-oauth.ts';
 
@@ -483,9 +487,9 @@ async function testApiSource(
     // Get credentials if needed - try multiple credential types
     if (source.api.authType && source.api.authType !== 'none') {
       const credentialManager = getCredentialManager();
-      // Use basename for credential lookups - workspaceId might be a full path
-      const workspaceSlug = basename(workspaceId);
-      const baseId = { workspaceId: workspaceSlug, sourceId: source.slug };
+      // Extract workspace ID from root path for credential lookups
+      const wsId = basename(workspaceId);
+      const baseId = { workspaceId: wsId, sourceId: source.slug };
 
       // Try credential types in order of preference
       const credTypesToTry: Array<'source_oauth' | 'source_bearer' | 'source_apikey' | 'source_basic'> = [
@@ -588,25 +592,35 @@ async function testApiSource(
 
 /**
  * Create a session-scoped source_test tool.
- * Tests if an MCP or API source is reachable.
+ * Validates config, downloads icons, and tests connections.
  */
 export function createSourceTestTool(sessionId: string, workspaceId: string, activeAgentSlug?: string) {
   return tool(
     'source_test',
-    `Test a source to verify it's reachable and working.
+    `Validate and test a source configuration.
+
+**This tool performs three checks:**
+1. **Schema validation**: Validates config.json against the schema
+2. **Icon caching**: Downloads and caches icon if not already local
+3. **Connection test**: Tests if the source is reachable
 
 **Supports:**
-- **MCP sources**: Validates server URL, authentication, tool availability, and schema compatibility
+- **MCP sources**: Validates server URL, authentication, tool availability
 - **API sources**: Tests endpoint reachability and authentication
+- **Local sources**: Validates path exists
 
 **Usage:**
-- Provide a source slug to test an existing source from the current workspace
-- The tool will use the source's configured URL and any stored credentials
+After creating or editing a source's config.json, run this tool to:
+- Catch config errors before they cause issues
+- Auto-download icons from service URLs
+- Verify the connection works
+
+**Reference:** See \`~/.craft-agent/docs/sources.md\` for config format.
 
 **Returns:**
-- Success status with server info (MCP) or HTTP status (API)
-- Detailed error information if connection fails
-- Authentication hints if credentials are missing or invalid`,
+- Validation status with specific errors if invalid
+- Icon status (cached, downloaded, or failed)
+- Connection status with server info (MCP) or HTTP status (API)`,
     {
       sourceSlug: z.string().describe('The slug of the source to test'),
     },
@@ -620,13 +634,95 @@ export function createSourceTestTool(sessionId: string, workspaceId: string, act
           return {
             content: [{
               type: 'text' as const,
-              text: `Source '${args.sourceSlug}' not found. Use source_list to see available sources.`,
+              text: `Source '${args.sourceSlug}' not found.\n\nCreate the source folder at:\n\`~/.craft-agent/workspaces/{workspace}/sources/${args.sourceSlug}/config.json\`\n\nSee \`~/.craft-agent/docs/sources.md\` for config format.`,
             }],
             isError: true,
           };
         }
         const source = sourceResult.config;
         const sourceContext = { isAgentScoped: sourceResult.isAgentScoped, agentSlug: sourceResult.agentSlug };
+
+        const results: string[] = [];
+        let hasErrors = false;
+
+        // ============================================================
+        // Step 1: Schema Validation
+        // ============================================================
+        const validationResult = validateSource(workspaceId, args.sourceSlug);
+        if (!validationResult.valid) {
+          hasErrors = true;
+          results.push('**❌ Schema Validation Failed**\n');
+          for (const error of validationResult.errors) {
+            results.push(`- \`${error.path}\`: ${error.message}`);
+            if (error.suggestion) {
+              results.push(`  → ${error.suggestion}`);
+            }
+          }
+          results.push('');
+          results.push('See `~/.craft-agent/docs/sources.md` for config format.');
+
+          return {
+            content: [{
+              type: 'text' as const,
+              text: results.join('\n'),
+            }],
+            isError: true,
+          };
+        }
+        results.push('**✓ Schema Valid**');
+
+        // ============================================================
+        // Step 2: Icon Handling
+        // ============================================================
+        const { getSourcePath, getAgentSourcePath } = await import('../sources/storage.ts');
+        const sourcePath = sourceContext.isAgentScoped && sourceContext.agentSlug
+          ? getAgentSourcePath(workspaceId, sourceContext.agentSlug, args.sourceSlug)
+          : getSourcePath(workspaceId, args.sourceSlug);
+
+        // Check if icon needs to be downloaded
+        if (source.iconUrl && !source.iconUrl.startsWith('./')) {
+          // Remote URL - try to download and cache
+          const { cacheIcon } = await import('../utils/logo.ts');
+          const cached = await cacheIcon(source.iconUrl, sourcePath);
+          if (cached) {
+            source.iconSourceUrl = source.iconUrl;
+            source.iconUrl = cached;
+            saveSourceConfigWithContext(workspaceId, source, sourceContext);
+            results.push(`**✓ Icon Downloaded** (${cached})`);
+          } else {
+            results.push('**⚠ Icon Download Failed** - URL may be invalid');
+          }
+        } else if (!source.iconUrl) {
+          // No icon - try to auto-fetch from service URL
+          const serviceUrl = source.type === 'api' ? source.api?.baseUrl :
+                            source.type === 'mcp' ? source.mcp?.url : null;
+          if (serviceUrl) {
+            const { getHighQualityLogoUrl, cacheIcon } = await import('../utils/logo.ts');
+            const logoUrl = await getHighQualityLogoUrl(serviceUrl);
+            if (logoUrl) {
+              const cached = await cacheIcon(logoUrl, sourcePath);
+              if (cached) {
+                source.iconUrl = cached;
+                source.iconSourceUrl = logoUrl;
+                saveSourceConfigWithContext(workspaceId, source, sourceContext);
+                results.push(`**✓ Icon Auto-fetched** (${cached})`);
+              } else {
+                results.push('**○ No Icon** (auto-fetch failed)');
+              }
+            } else {
+              results.push('**○ No Icon** (no favicon found)');
+            }
+          } else {
+            results.push('**○ No Icon**');
+          }
+        } else {
+          results.push(`**✓ Icon Cached** (${source.iconUrl})`);
+        }
+
+        // ============================================================
+        // Step 3: Connection Test
+        // ============================================================
+        results.push('');
 
         // Handle API sources
         if (source.type === 'api') {
@@ -644,242 +740,175 @@ export function createSourceTestTool(sessionId: string, workspaceId: string, act
           saveSourceConfigWithContext(workspaceId, source, sourceContext);
 
           if (result.success) {
-            const lines: string[] = [
-              `**API Source '${args.sourceSlug}' is working**`,
-              '',
-              `URL: ${source.api?.baseUrl}`,
-              `Status: ${result.status}`,
-            ];
+            results.push(`**✓ API Connected** (${result.status})`);
+            results.push(`  URL: ${source.api?.baseUrl}`);
 
             if (result.credentialType) {
-              lines.push(`Credential: ${result.credentialType}`);
+              results.push(`  Credential: ${result.credentialType}`);
             }
 
-            // Verify the source can be built for session use
-            const sourceService = createSourceService();
+            // Verify the source has valid credentials for session use
             const loadedSource: LoadedSource = {
               config: source,
               guide: null,
-              folderPath: '', // Not needed for credential lookup
+              folderPath: sourcePath,
               workspaceId,
               agentSlug: sourceContext.agentSlug,
             };
-            const apiServer = await sourceService.buildApiServer(loadedSource);
+            const credManager = getSourceCredentialManager();
+            const hasCredentials = await credManager.hasValidCredentials(loadedSource);
 
-            if (!apiServer) {
-              lines.push('');
-              lines.push('⚠️ **Warning**: API is reachable, but session credential lookup failed.');
-              lines.push('The source may not work in this session. Try re-authenticating with the correct auth type.');
-              if (source.api?.authType) {
-                lines.push(`Current authType: ${source.api.authType}`);
-              }
-            } else {
-              lines.push('');
-              lines.push('✓ Source is ready for session use.');
+            if (!hasCredentials && source.api?.authType !== 'none') {
+              results.push('');
+              results.push('**⚠ Credentials Missing**');
+              results.push(`Auth type: ${source.api?.authType}`);
+              results.push('Use `source_credential_prompt` to add credentials.');
             }
-
-            return {
-              content: [{
-                type: 'text' as const,
-                text: lines.join('\n'),
-              }],
-              isError: false,
-            };
           } else {
-            return {
-              content: [{
-                type: 'text' as const,
-                text: `**API Source '${args.sourceSlug}' failed**\n\nURL: ${source.api?.baseUrl}\nError: ${result.error}`,
-              }],
-              isError: true,
-            };
+            hasErrors = true;
+            results.push(`**❌ API Connection Failed**`);
+            results.push(`  URL: ${source.api?.baseUrl}`);
+            results.push(`  Error: ${result.error}`);
           }
         }
 
         // Handle local sources
-        if (source.type === 'local') {
-          // Update status - local sources are always connected
-          source.lastTestedAt = Date.now();
-          source.connectionStatus = 'connected';
-          source.connectionError = undefined;
-          saveSourceConfigWithContext(workspaceId, source, sourceContext);
-
-          return {
-            content: [{
-              type: 'text' as const,
-              text: `Source '${args.sourceSlug}' is type 'local'. Local sources don't require network testing.`,
-            }],
-            isError: false,
-          };
+        else if (source.type === 'local') {
+          const localPath = source.local?.path;
+          if (localPath && existsSync(localPath)) {
+            source.lastTestedAt = Date.now();
+            source.connectionStatus = 'connected';
+            source.connectionError = undefined;
+            saveSourceConfigWithContext(workspaceId, source, sourceContext);
+            results.push(`**✓ Local Path Exists** (${localPath})`);
+          } else {
+            hasErrors = true;
+            source.connectionStatus = 'failed';
+            source.connectionError = 'Path not found';
+            saveSourceConfigWithContext(workspaceId, source, sourceContext);
+            results.push(`**❌ Local Path Not Found** (${localPath || 'not configured'})`);
+          }
         }
 
         // Handle MCP sources
-        if (source.type !== 'mcp') {
-          return {
-            content: [{
-              type: 'text' as const,
-              text: `Source '${args.sourceSlug}' has unknown type '${source.type}'.`,
-            }],
-            isError: true,
-          };
-        }
-
-        if (!source.mcp?.url) {
-          return {
-            content: [{
-              type: 'text' as const,
-              text: `Source '${args.sourceSlug}' has no MCP URL configured.`,
-            }],
-            isError: true,
-          };
-        }
-
-        // Get MCP access token if the source is authenticated
-        let mcpAccessToken: string | undefined;
-        if (source.isAuthenticated && source.mcp.authType !== 'none') {
-          const credentialManager = getCredentialManager();
-          // Use basename for credential lookups - workspaceId might be a full path
-          const workspaceSlug = basename(workspaceId);
-          // Try OAuth first, then bearer
-          const oauthCred = await credentialManager.get({
-            type: 'source_oauth',
-            workspaceId: workspaceSlug,
-            sourceId: args.sourceSlug,
-          });
-          if (oauthCred?.value) {
-            mcpAccessToken = oauthCred.value;
+        else if (source.type === 'mcp') {
+          if (!source.mcp?.url) {
+            hasErrors = true;
+            results.push('**❌ No MCP URL configured**');
           } else {
-            const bearerCred = await credentialManager.get({
-              type: 'source_bearer',
-              workspaceId: workspaceSlug,
-              sourceId: args.sourceSlug,
-            });
-            if (bearerCred?.value) {
-              mcpAccessToken = bearerCred.value;
+            // Get MCP access token if the source is authenticated
+            let mcpAccessToken: string | undefined;
+            if (source.isAuthenticated && source.mcp.authType !== 'none') {
+              const credentialManager = getCredentialManager();
+              // Extract workspace ID from root path for credential lookups
+              const wsId = basename(workspaceId);
+              // Try OAuth first, then bearer
+              const oauthCred = await credentialManager.get({
+                type: 'source_oauth',
+                workspaceId: wsId,
+                sourceId: args.sourceSlug,
+              });
+              if (oauthCred?.value) {
+                mcpAccessToken = oauthCred.value;
+              } else {
+                const bearerCred = await credentialManager.get({
+                  type: 'source_bearer',
+                  workspaceId: wsId,
+                  sourceId: args.sourceSlug,
+                });
+                if (bearerCred?.value) {
+                  mcpAccessToken = bearerCred.value;
+                }
+              }
+            }
+
+            // Get Claude credentials for the validation request
+            const claudeApiKey = await getAnthropicApiKey();
+            const claudeOAuthToken = await getClaudeOAuthToken();
+
+            if (!claudeApiKey && !claudeOAuthToken) {
+              hasErrors = true;
+              results.push('**❌ Cannot Test MCP**: No Claude API key or OAuth token configured.');
+            } else {
+              // Run the validation
+              const mcpResult = await validateMcpConnection({
+                mcpUrl: source.mcp.url,
+                mcpAccessToken,
+                claudeApiKey: claudeApiKey ?? undefined,
+                claudeOAuthToken: claudeOAuthToken ?? undefined,
+              });
+
+              // Update the source's status and timestamp
+              source.lastTestedAt = Date.now();
+              if (mcpResult.success) {
+                source.connectionStatus = 'connected';
+                source.connectionError = undefined;
+                saveSourceConfigWithContext(workspaceId, source, sourceContext);
+
+                results.push('**✓ MCP Connected**');
+                if (mcpResult.serverInfo) {
+                  results.push(`  Server: ${mcpResult.serverInfo.name} v${mcpResult.serverInfo.version}`);
+                }
+                if (mcpResult.tools && mcpResult.tools.length > 0) {
+                  results.push(`  Tools: ${mcpResult.tools.length} available`);
+                }
+
+                // Verify credentials
+                const loadedSource: LoadedSource = {
+                  config: source,
+                  guide: null,
+                  folderPath: sourcePath,
+                  workspaceId,
+                  agentSlug: sourceContext.agentSlug,
+                };
+                const credManager = getSourceCredentialManager();
+                const hasCredentials = await credManager.hasValidCredentials(loadedSource);
+
+                if (!hasCredentials && source.mcp?.authType !== 'none') {
+                  results.push('');
+                  results.push('**⚠ Credentials Missing**');
+                  results.push('Use `source_oauth_trigger` to authenticate.');
+                }
+              } else if (mcpResult.errorType === 'needs-auth') {
+                source.connectionStatus = 'needs_auth';
+                saveSourceConfigWithContext(workspaceId, source, sourceContext);
+                results.push('**⚠ MCP Needs Authentication**');
+                results.push('Use `source_oauth_trigger` to authenticate.');
+              } else {
+                hasErrors = true;
+                source.connectionStatus = 'failed';
+                source.connectionError = getValidationErrorMessage(mcpResult);
+                saveSourceConfigWithContext(workspaceId, source, sourceContext);
+                results.push(`**❌ MCP Connection Failed**`);
+                results.push(`  Error: ${getValidationErrorMessage(mcpResult)}`);
+
+                if (mcpResult.errorType === 'invalid-schema' && mcpResult.invalidProperties) {
+                  results.push('  Invalid tool properties:');
+                  for (const prop of mcpResult.invalidProperties.slice(0, 5)) {
+                    results.push(`    - ${prop.toolName}: ${prop.propertyPath}`);
+                  }
+                }
+              }
             }
           }
-        }
-
-        // Get Claude credentials for the validation request
-        const claudeApiKey = await getAnthropicApiKey();
-        const claudeOAuthToken = await getClaudeOAuthToken();
-
-        if (!claudeApiKey && !claudeOAuthToken) {
-          return {
-            content: [{
-              type: 'text' as const,
-              text: 'Cannot test MCP source: No Claude API key or OAuth token configured. Complete setup first.',
-            }],
-            isError: true,
-          };
-        }
-
-        // Run the validation
-        const result = await validateMcpConnection({
-          mcpUrl: source.mcp.url,
-          mcpAccessToken,
-          claudeApiKey: claudeApiKey ?? undefined,
-          claudeOAuthToken: claudeOAuthToken ?? undefined,
-        });
-
-        // Update the source's status and timestamp
-        source.lastTestedAt = Date.now();
-        if (result.success) {
-          source.connectionStatus = 'connected';
-          source.connectionError = undefined;
-        } else if (result.errorType === 'needs-auth') {
-          source.connectionStatus = 'needs_auth';
-          source.connectionError = undefined;
         } else {
-          source.connectionStatus = 'failed';
-          source.connectionError = getValidationErrorMessage(result);
+          hasErrors = true;
+          results.push(`**❌ Unknown source type**: '${source.type}'`);
         }
-        saveSourceConfigWithContext(workspaceId, source, sourceContext);
 
-        if (result.success) {
-          const lines: string[] = [
-            `**MCP Source '${args.sourceSlug}' is working**`,
-            '',
-          ];
-
-          if (result.serverInfo) {
-            lines.push(`Server: ${result.serverInfo.name} v${result.serverInfo.version}`);
-          }
-
-          if (result.tools && result.tools.length > 0) {
-            lines.push(`Tools available: ${result.tools.length}`);
-            // List first few tools
-            const preview = result.tools.slice(0, 5);
-            for (const toolName of preview) {
-              lines.push(`  - ${toolName}`);
-            }
-            if (result.tools.length > 5) {
-              lines.push(`  ... and ${result.tools.length - 5} more`);
-            }
-          }
-
-          // Verify the source can be built for session use
-          // This checks if credentials are properly configured for the session's credential lookup
-          const sourceService = createSourceService();
-          const loadedSource: LoadedSource = {
-            config: source,
-            guide: null,
-            folderPath: '', // Not needed for credential lookup
-            workspaceId,
-            agentSlug: sourceContext.agentSlug,
-          };
-          const mcpConfig = await sourceService.buildMcpServerConfig(loadedSource);
-
-          if (!mcpConfig) {
-            lines.push('');
-            lines.push('⚠️ **Warning**: MCP server is reachable, but session credential lookup failed.');
-            lines.push('The source may not work in this session. Try re-authenticating with the correct auth type.');
-            if (source.mcp?.authType) {
-              lines.push(`Current authType: ${source.mcp.authType}`);
-            }
-          } else {
-            lines.push('');
-            lines.push('✓ Source is ready for session use.');
-          }
-
-          return {
-            content: [{
-              type: 'text' as const,
-              text: lines.join('\n'),
-            }],
-            isError: false,
-          };
-        } else {
-          const lines: string[] = [
-            `**MCP Source '${args.sourceSlug}' failed**`,
-            '',
-            `Error: ${getValidationErrorMessage(result)}`,
-          ];
-
-          if (result.errorType === 'invalid-schema' && result.invalidProperties) {
-            lines.push('');
-            lines.push('Invalid tool properties:');
-            for (const prop of result.invalidProperties.slice(0, 10)) {
-              lines.push(`  - ${prop.toolName}: ${prop.propertyPath} (key: '${prop.propertyKey}')`);
-            }
-            if (result.invalidProperties.length > 10) {
-              lines.push(`  ... and ${result.invalidProperties.length - 10} more`);
-            }
-          }
-
-          if (result.errorType === 'needs-auth') {
-            lines.push('');
-            lines.push('Use the source_oauth_trigger tool to authenticate this source.');
-          }
-
-          return {
-            content: [{
-              type: 'text' as const,
-              text: lines.join('\n'),
-            }],
-            isError: true,
-          };
+        // Add summary
+        results.push('');
+        if (!hasErrors) {
+          results.push(`**Source '${source.name}' is ready.**`);
         }
+
+        return {
+          content: [{
+            type: 'text' as const,
+            text: results.join('\n'),
+          }],
+          isError: hasErrors,
+        };
       } catch (error) {
         debug('[source_test] Error:', error);
         return {
@@ -1015,12 +1044,12 @@ A browser window will open for the user to complete authentication.
 
         // Store the tokens
         const credentialManager = getCredentialManager();
-        // Use basename for credential storage - workspaceId might be a full path
-        const workspaceSlug = basename(workspaceId);
+        // Extract workspace ID from root path for credential storage
+        const wsId = basename(workspaceId);
         await credentialManager.set(
           {
             type: 'source_oauth',
-            workspaceId: workspaceSlug,
+            workspaceId: wsId,
             sourceId: args.sourceSlug,
           },
           {
@@ -1162,12 +1191,12 @@ After successful authentication, the tokens are stored and the source is marked 
 
         // Store the tokens
         const credentialManager = getCredentialManager();
-        // Use basename for credential storage - workspaceId might be a full path
-        const workspaceSlug = basename(workspaceId);
+        // Extract workspace ID from root path for credential storage
+        const wsId = basename(workspaceId);
         await credentialManager.set(
           {
             type: 'source_oauth',
-            workspaceId: workspaceSlug,
+            workspaceId: wsId,
             sourceId: args.sourceSlug,
           },
           {
@@ -1887,25 +1916,25 @@ source_credential_prompt({
 
         // Store credentials based on mode
         const credManager = getCredentialManager();
-        // Use basename for credential storage - workspaceId might be a full path
-        const workspaceSlug = basename(workspaceId);
+        // Extract workspace ID from root path for credential storage
+        const wsId = basename(workspaceId);
 
         if (args.mode === 'basic') {
           // Encode basic auth as base64 (username:password)
           const encoded = Buffer.from(`${response.username}:${response.password}`).toString('base64');
           await credManager.set(
-            { type: 'source_basic', workspaceId: workspaceSlug, sourceId: args.sourceSlug },
+            { type: 'source_basic', workspaceId: wsId, sourceId: args.sourceSlug },
             { value: encoded }
           );
         } else if (args.mode === 'bearer') {
           await credManager.set(
-            { type: 'source_bearer', workspaceId: workspaceSlug, sourceId: args.sourceSlug },
+            { type: 'source_bearer', workspaceId: wsId, sourceId: args.sourceSlug },
             { value: response.value! }
           );
         } else {
           // header or query - stored as API key
           await credManager.set(
-            { type: 'source_apikey', workspaceId: workspaceSlug, sourceId: args.sourceSlug },
+            { type: 'source_apikey', workspaceId: wsId, sourceId: args.sourceSlug },
             { value: response.value! }
           );
         }
@@ -2179,6 +2208,8 @@ export function getSessionScopedTools(sessionId: string, workspaceId: string, ac
   let cached = sessionScopedToolsCache.get(cacheKey);
   if (!cached) {
     // Create session-scoped tools that capture the sessionId, workspaceId, and activeAgentSlug in their closures
+    // Note: Source/agent CRUD is done via standard file editing tools (Read/Write/Edit).
+    // See ~/.craft-agent/docs/ for config format documentation.
     cached = createSdkMcpServer({
       name: 'session',
       version: '1.0.0',
@@ -2187,17 +2218,11 @@ export function getSessionScopedTools(sessionId: string, workspaceId: string, ac
         createChangeWorkingDirectoryTool(sessionId),
         // Config validation tool
         createConfigValidateTool(sessionId, workspaceId),
-        // Source tools (agent-aware: checks agent folder first, then workspace)
+        // Source tools: test + auth only (CRUD via file editing)
         createSourceTestTool(sessionId, workspaceId, activeAgentSlug),
         createOAuthTriggerTool(sessionId, workspaceId, activeAgentSlug),
         createGmailOAuthTriggerTool(sessionId, workspaceId, activeAgentSlug),
         createCredentialPromptTool(sessionId, workspaceId, activeAgentSlug),
-        // Source CRUD tools
-        createSourceListTool(sessionId, workspaceId),
-        createSourceCreateTool(sessionId, workspaceId, activeAgentSlug),
-        createSourceConfigurationUpdateTool(sessionId, workspaceId, activeAgentSlug),
-        createSourceDeleteTool(sessionId, workspaceId),
-        createSourcePermissionsUpdateTool(sessionId, workspaceId, activeAgentSlug),
         // Agent tools
         createAgentListTool(sessionId, workspaceId),
         createAgentCreateTool(sessionId, workspaceId),

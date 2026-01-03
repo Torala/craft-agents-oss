@@ -10,7 +10,7 @@
  *   import { getCredentialManager } from '@craft-agent/shared/credentials';
  *   import { CraftMcpClient } from '@craft-agent/shared/mcp';
  *   import { debug } from '@craft-agent/shared/utils';
- *   import { loadSource, createSource, SourceService } from '@craft-agent/shared/sources';
+ *   import { loadSource, createSource, getSourceCredentialManager } from '@craft-agent/shared/sources';
  *   import { createWorkspace, loadWorkspace } from '@craft-agent/shared/workspaces';
  *
  * Available modules:
