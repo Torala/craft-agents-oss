@@ -2178,6 +2178,24 @@ export class CraftAgent {
   }
 
   /**
+   * Format workspace capabilities for prompt injection.
+   * Informs the agent about what features are available in this workspace.
+   */
+  private formatWorkspaceCapabilities(): string {
+    const capabilities: string[] = [];
+
+    // Check local MCP server capability
+    const localMcpEnabled = isLocalMcpEnabled(this.workspaceRootPath);
+    if (localMcpEnabled) {
+      capabilities.push('local-mcp: enabled (stdio subprocess servers supported)');
+    } else {
+      capabilities.push('local-mcp: disabled (only HTTP/SSE servers)');
+    }
+
+    return `<workspace_capabilities>\n${capabilities.join('\n')}\n</workspace_capabilities>`;
+  }
+
+  /**
    * Build a simple text prompt with embedded text file contents (for text-only messages)
    * Prepends date/time context for prompt caching optimization (keeps system prompt static)
    * Injects session state (including mode state) for every message
@@ -2196,6 +2214,9 @@ export class CraftAgent {
 
     // Add source state (always included to inform agent about available sources)
     parts.push(this.formatSourceState());
+
+    // Add workspace capabilities (local MCP enabled/disabled, etc.)
+    parts.push(this.formatWorkspaceCapabilities());
 
     // Add working directory context if set
     const workingDirContext = getWorkingDirectoryContext(this.config.session?.workingDirectory);
@@ -2240,6 +2261,9 @@ export class CraftAgent {
 
     // Add source state (always included to inform agent about available sources)
     contentBlocks.push({ type: 'text', text: this.formatSourceState() });
+
+    // Add workspace capabilities (local MCP enabled/disabled, etc.)
+    contentBlocks.push({ type: 'text', text: this.formatWorkspaceCapabilities() });
 
     // Add working directory context if set
     const workingDirContext = getWorkingDirectoryContext(this.config.session?.workingDirectory);
