@@ -324,6 +324,34 @@ export function discoverWorkspacesInDefaultLocation(): string[] {
 }
 
 // ============================================================
+// Local MCP Configuration
+// ============================================================
+
+/**
+ * Check if local (stdio) MCP servers are enabled for a workspace.
+ * Resolution order: ENV (CRAFT_LOCAL_MCP_ENABLED) > workspace config > default (true)
+ *
+ * @param rootPath - Absolute path to workspace root folder
+ * @returns true if local MCP servers should be enabled
+ */
+export function isLocalMcpEnabled(rootPath: string): boolean {
+  // 1. Environment variable override (highest priority)
+  const envValue = process.env.CRAFT_LOCAL_MCP_ENABLED;
+  if (envValue !== undefined) {
+    return envValue.toLowerCase() === 'true';
+  }
+
+  // 2. Workspace config
+  const config = loadWorkspaceConfig(rootPath);
+  if (config?.localMcpServers?.enabled !== undefined) {
+    return config.localMcpServers.enabled;
+  }
+
+  // 3. Default: enabled
+  return true;
+}
+
+// ============================================================
 // Exports
 // ============================================================
 

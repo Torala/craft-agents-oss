@@ -9,6 +9,7 @@ import { parseError, type AgentError } from './errors.ts';
 import { runErrorDiagnostics } from './diagnostics.ts';
 import { updateAgentInstructions as agenticUpdateInstructions, type UpdateInstructionsContext, type UpdateInstructionsResult, type UpdateInstructionsProgressEvent } from '../agents/instruction-updater.ts';
 import { shouldUseExtendedCacheTtl, loadStoredConfig, getDefaultPermissionMode, type Workspace } from '../config/storage.ts';
+import { isLocalMcpEnabled } from '../workspaces/storage.ts';
 import { loadPlanFromPath, type SessionConfig as Session } from '../sessions/storage.ts';
 import { DEFAULT_MODEL } from '../config/models.ts';
 import { getCredentialManager } from '../credentials/index.ts';
@@ -520,6 +521,14 @@ function getPreferencesServer(hasActiveAgent: boolean): ReturnType<typeof create
   }
 }
 
+/**
+ * SDK-compatible MCP server configuration.
+ * Supports HTTP/SSE (remote) and stdio (local subprocess) transports.
+ */
+export type SdkMcpServerConfig =
+  | { type: 'http' | 'sse'; url: string; headers?: Record<string, string> }
+  | { type: 'stdio'; command: string; args?: string[]; env?: Record<string, string> };
+
 export class CraftAgent {
   private config: CraftAgentConfig;
   private currentQuery: Query | null = null;
@@ -531,11 +540,13 @@ export class CraftAgent {
   private alwaysAllowedDomains: Set<string> = new Set(); // Domains allowed for curl/wget (session-scoped)
   private activeAgentDefinition: SubAgentDefinition | null = null;
   // Pre-built MCP server configs for the active agent (includes auth headers)
-  private agentMcpServers: Record<string, { type: 'http' | 'sse'; url: string; headers?: Record<string, string> }> = {};
+  // Supports both HTTP/SSE and stdio transports
+  private agentMcpServers: Record<string, SdkMcpServerConfig> = {};
   // In-process MCP servers for API integrations (created from ApiConfig)
   private agentApiServers: Record<string, ReturnType<typeof createSdkMcpServer>> = {};
   // Pre-built source server configs (user-defined sources, separate from agent)
-  private sourceMcpServers: Record<string, { type: 'http' | 'sse'; url: string; headers?: Record<string, string> }> = {};
+  // Supports both HTTP/SSE and stdio transports
+  private sourceMcpServers: Record<string, SdkMcpServerConfig> = {};
   // In-process MCP servers for source API integrations
   private sourceApiServers: Record<string, ReturnType<typeof createSdkMcpServer>> = {};
   // Set of active source server names (for blocking disabled sources)
@@ -994,6 +1005,8 @@ export class CraftAgent {
 
       const hasActiveAgent = this.activeAgentDefinition !== null;
       const activeAgentSlug = this.activeAgentDefinition?.slug;
+      // Get filtered source servers (respects local MCP setting)
+      const sourceMcpServers = this.getSourceMcpServers();
       const mcpServers: Options['mcpServers'] = {
         preferences: getPreferencesServer(hasActiveAgent),
         // Session-scoped tools (SubmitPlan, source_test, agent_create, etc.)
@@ -1004,13 +1017,13 @@ export class CraftAgent {
           type: 'http',
           url: 'https://agents.craft.do/docs/mcp',
         },
-        // Add agent-specific MCP servers if an agent is active
+        // Add agent-specific MCP servers if an agent is active (filtered by local MCP setting)
         ...agentMcpServers,
         // Add in-process API servers (REST APIs converted to MCP tools)
         ...agentApiServers,
-        // Add user-defined source servers (MCP and API)
+        // Add user-defined source servers (MCP and API, filtered by local MCP setting)
         // Note: Craft MCP server is now added via sources system
-        ...this.sourceMcpServers,
+        ...sourceMcpServers,
         ...this.sourceApiServers,
       };
 
@@ -2992,7 +3005,7 @@ export class CraftAgent {
    */
   setActiveAgentDefinition(
     definition: SubAgentDefinition | null,
-    mcpServers?: Record<string, { type: 'http' | 'sse'; url: string; headers?: Record<string, string> }>,
+    mcpServers?: Record<string, SdkMcpServerConfig>,
     apiServers?: Record<string, ReturnType<typeof createSdkMcpServer>>,
     sourcesNeedingAuth?: LoadedSource[]
   ): void {
@@ -3043,7 +3056,7 @@ When you see <setup_required> in a message, help the user authenticate those sou
    *                      (what the UI shows as active, even if build failed)
    */
   setSourceServers(
-    mcpServers: Record<string, { type: 'http' | 'sse'; url: string; headers?: Record<string, string> }>,
+    mcpServers: Record<string, SdkMcpServerConfig>,
     apiServers: Record<string, ReturnType<typeof createSdkMcpServer>>,
     intendedSlugs?: string[]
   ): void {
@@ -3111,9 +3124,44 @@ When you see <setup_required> in a message, help the user authenticate those sou
    * Get SDK-compatible MCP server config for the active agent's custom MCP servers
    * Returns the pre-built config that was set via setActiveAgentDefinition()
    * The config is built by SubAgentManager.buildMcpServerConfig() which handles auth
+   *
+   * Filters out stdio servers if local MCP is disabled for the workspace.
    */
-  private getAgentMcpServers(): Record<string, { type: 'http' | 'sse'; url: string; headers?: Record<string, string> }> {
-    return this.agentMcpServers;
+  private getAgentMcpServers(): Record<string, SdkMcpServerConfig> {
+    return this.filterMcpServersByLocalEnabled(this.agentMcpServers);
+  }
+
+  /**
+   * Get filtered source MCP servers based on local MCP setting
+   */
+  private getSourceMcpServers(): Record<string, SdkMcpServerConfig> {
+    return this.filterMcpServersByLocalEnabled(this.sourceMcpServers);
+  }
+
+  /**
+   * Filter MCP servers based on whether local (stdio) MCP is enabled for this workspace.
+   * When local MCP is disabled, stdio servers are filtered out.
+   */
+  private filterMcpServersByLocalEnabled(
+    servers: Record<string, SdkMcpServerConfig>
+  ): Record<string, SdkMcpServerConfig> {
+    const localEnabled = isLocalMcpEnabled(this.workspaceRootPath);
+
+    if (localEnabled) {
+      // Local MCP is enabled, return all servers
+      return servers;
+    }
+
+    // Local MCP is disabled, filter out stdio servers
+    const filtered: Record<string, SdkMcpServerConfig> = {};
+    for (const [name, config] of Object.entries(servers)) {
+      if (config.type !== 'stdio') {
+        filtered[name] = config;
+      } else {
+        debug(`[filterMcpServers] Filtering out stdio server "${name}" (local MCP disabled)`);
+      }
+    }
+    return filtered;
   }
 
   /**

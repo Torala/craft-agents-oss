@@ -22,6 +22,19 @@ import type { PermissionMode } from '../agent/mode-manager.ts';
 export type CredentialStrategy = 'local' | 'portable';
 
 /**
+ * Local MCP server configuration
+ * Controls whether stdio-based (local subprocess) MCP servers can be spawned.
+ */
+export interface LocalMcpConfig {
+  /**
+   * Whether local (stdio) MCP servers are enabled for this workspace.
+   * When false, only HTTP-based MCP servers will be used.
+   * Default: true (can be overridden by CRAFT_LOCAL_MCP_ENABLED env var)
+   */
+  enabled: boolean;
+}
+
+/**
  * Workspace configuration (stored in config.json)
  */
 export interface WorkspaceConfig {
@@ -39,6 +52,13 @@ export interface WorkspaceConfig {
     workingDirectory?: string;
     credentialStrategy?: CredentialStrategy; // How to store workspace credentials (default: 'local')
   };
+
+  /**
+   * Local MCP server configuration.
+   * Controls whether stdio-based MCP servers can be spawned in this workspace.
+   * Resolution order: ENV (CRAFT_LOCAL_MCP_ENABLED) > workspace config > default (true)
+   */
+  localMcpServers?: LocalMcpConfig;
 
   createdAt: number;
   updatedAt: number;

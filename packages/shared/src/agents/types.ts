@@ -62,17 +62,54 @@ export interface SubAgentDefinition {
 }
 
 /**
+ * MCP transport type
+ * - 'http': HTTP-based MCP server (URL endpoint)
+ * - 'sse': Server-Sent Events MCP server (URL endpoint)
+ * - 'stdio': Local subprocess MCP server (spawned command)
+ */
+export type McpTransport = 'http' | 'sse' | 'stdio';
+
+/**
  * MCP server configuration parsed from agent document
+ * Supports both HTTP-based and local stdio-based MCP servers.
  */
 export interface McpServerConfig {
   /** Server identifier */
   name: string;
-  /** MCP server URL */
-  url: string;
+
+  /**
+   * Transport type (defaults to 'http' for backwards compatibility)
+   * - 'http'/'sse': Remote server, requires `url`
+   * - 'stdio': Local subprocess, requires `command`
+   */
+  transport?: McpTransport;
+
+  // ─────────────────────────────────────────────────────────────
+  // HTTP/SSE transport fields
+  // ─────────────────────────────────────────────────────────────
+
+  /** MCP server URL (required for http/sse transport) */
+  url?: string;
   /** If true, needs OAuth authentication */
   requiresAuth?: boolean;
   /** Static bearer token (alternative to OAuth) */
   bearerToken?: string;
+
+  // ─────────────────────────────────────────────────────────────
+  // Stdio transport fields
+  // ─────────────────────────────────────────────────────────────
+
+  /** Command to spawn (required for stdio transport, e.g., "npx", "bunx", "node") */
+  command?: string;
+  /** Arguments to pass to the command */
+  args?: string[];
+  /** Environment variables to set for the subprocess */
+  env?: Record<string, string>;
+
+  // ─────────────────────────────────────────────────────────────
+  // Common fields
+  // ─────────────────────────────────────────────────────────────
+
   /** Optional description */
   description?: string;
   /** Tools available on this server (populated after connection) */

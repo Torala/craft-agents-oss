@@ -1,4 +1,4 @@
-import { CraftAgent, type CraftAgentConfig, type PermissionMode } from '../agent/craft-agent.ts';
+import { CraftAgent, type CraftAgentConfig, type PermissionMode, type SdkMcpServerConfig } from '../agent/craft-agent.ts';
 import { FolderAgentManager } from '../agents/folder-manager.ts';
 import type { SubAgentDefinition } from '../agents/types.ts';
 import type { AgentDefinition } from '../agents/folder-types.ts';
@@ -59,7 +59,7 @@ export class HeadlessRunner {
 
   // Temporary storage for agent activation
   private activeDefinition: SubAgentDefinition | null = null;
-  private mcpServers: Record<string, { type: 'http' | 'sse'; url: string; headers?: Record<string, string> }> = {};
+  private mcpServers: Record<string, SdkMcpServerConfig> = {};
   private apiServers: Record<string, unknown> = {};
 
   // Session management
@@ -418,33 +418,55 @@ ${this.config.prompt}
   /**
    * Build MCP server config from agent definition
    * Fetches credentials from the credential store for authenticated servers
+   * Supports both HTTP/SSE and stdio transports
    */
   private async buildMcpServers(
     agentDef: AgentDefinition
-  ): Promise<Record<string, { type: 'http' | 'sse'; url: string; headers?: Record<string, string> }>> {
-    const result: Record<string, { type: 'http' | 'sse'; url: string; headers?: Record<string, string> }> = {};
+  ): Promise<Record<string, SdkMcpServerConfig>> {
+    const result: Record<string, SdkMcpServerConfig> = {};
 
     for (const server of agentDef.mcpServers || []) {
-      const config: { type: 'http' | 'sse'; url: string; headers?: Record<string, string> } = {
-        type: 'sse', // Default to SSE for MCP servers
-        url: server.url,
-      };
+      const transport = server.transport || 'http';
 
-      // Add authorization header if server requires auth
-      if (server.requiresAuth) {
-        // Try OAuth first, then bearer token
-        let token = await this.getSourceCredential(server.name, 'oauth');
-        if (!token) {
-          token = await this.getSourceCredential(server.name, 'bearer');
+      if (transport === 'stdio') {
+        // Stdio server - local subprocess, no auth headers
+        if (!server.command) {
+          debug(`[buildMcpServers] Skipping stdio server "${server.name}" - no command specified`);
+          continue;
         }
-        if (token) {
-          config.headers = {
-            Authorization: `Bearer ${token}`,
-          };
+        result[server.name] = {
+          type: 'stdio',
+          command: server.command,
+          args: server.args,
+          env: server.env,
+        };
+      } else {
+        // HTTP/SSE server
+        if (!server.url) {
+          debug(`[buildMcpServers] Skipping HTTP server "${server.name}" - no URL specified`);
+          continue;
         }
+        const config: SdkMcpServerConfig = {
+          type: transport === 'sse' ? 'sse' : 'http',
+          url: server.url,
+        };
+
+        // Add authorization header if server requires auth
+        if (server.requiresAuth) {
+          // Try OAuth first, then bearer token
+          let token = await this.getSourceCredential(server.name, 'oauth');
+          if (!token) {
+            token = await this.getSourceCredential(server.name, 'bearer');
+          }
+          if (token) {
+            (config as { type: 'http' | 'sse'; url: string; headers?: Record<string, string> }).headers = {
+              Authorization: `Bearer ${token}`,
+            };
+          }
+        }
+
+        result[server.name] = config;
       }
-
-      result[server.name] = config;
     }
 
     return result;
