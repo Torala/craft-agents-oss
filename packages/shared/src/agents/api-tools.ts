@@ -25,10 +25,23 @@ export interface BasicAuthCredential {
 export type ApiCredential = string | BasicAuthCredential;
 
 /**
+ * API credential source - can be a static credential or a function that returns a token.
+ * Token getter functions are used for OAuth sources that need auto-refresh.
+ */
+export type ApiCredentialSource = ApiCredential | (() => Promise<string>);
+
+/**
  * Type guard to check if credential is BasicAuthCredential
  */
 function isBasicAuthCredential(cred: ApiCredential): cred is BasicAuthCredential {
   return typeof cred === 'object' && cred !== null && 'username' in cred && 'password' in cred;
+}
+
+/**
+ * Type guard to check if credential source is a token getter function
+ */
+function isTokenGetter(cred: ApiCredentialSource): cred is () => Promise<string> {
+  return typeof cred === 'function';
 }
 
 
@@ -151,12 +164,13 @@ function buildToolDescription(config: ApiConfig): string {
  * The tool accepts { path, method, params } and handles auth automatically.
  *
  * @param config - API configuration with documentation
- * @param credential - API credential (string for API key/token, BasicAuthCredential for basic auth, empty string for public APIs)
+ * @param credential - API credential source (string for API key/token, BasicAuthCredential for basic auth,
+ *                     empty string for public APIs, or async function for OAuth token refresh)
  * @returns SDK tool that can be included in an MCP server
  */
 export function createApiTool(
   config: ApiConfig,
-  credential: ApiCredential
+  credential: ApiCredentialSource
 ) {
   const toolName = `api_${config.name}`;
   debug(`[api-tools] Creating flexible tool: ${toolName}`);
@@ -176,8 +190,13 @@ export function createApiTool(
       const { path, method, params, _intent } = args;
 
       try {
-        const url = buildUrl(config.baseUrl, path, method, params, config.auth, credential);
-        const headers = buildHeaders(config.auth, credential, config.defaultHeaders);
+        // Resolve credential - if it's a token getter function, call it to get fresh token
+        const resolvedCredential: ApiCredential = isTokenGetter(credential)
+          ? await credential()
+          : credential;
+
+        const url = buildUrl(config.baseUrl, path, method, params, config.auth, resolvedCredential);
+        const headers = buildHeaders(config.auth, resolvedCredential, config.defaultHeaders);
 
         debug(`[api-tools] ${config.name}: ${method} ${url}`);
 
@@ -247,12 +266,13 @@ export function createApiTool(
  * Create an in-process MCP server with a single flexible API tool.
  *
  * @param config - API configuration
- * @param credential - API credential (string for API key/token, BasicAuthCredential for basic auth, empty string for public APIs)
+ * @param credential - API credential source (string for API key/token, BasicAuthCredential for basic auth,
+ *                     empty string for public APIs, or async function for OAuth token refresh)
  * @returns SDK MCP server that can be passed to query()
  */
 export function createApiServer(
   config: ApiConfig,
-  credential: ApiCredential
+  credential: ApiCredentialSource
 ): ReturnType<typeof createSdkMcpServer> {
   debug(`[api-tools] Creating server for ${config.name}`);
 

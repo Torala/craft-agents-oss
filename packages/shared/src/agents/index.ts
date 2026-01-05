@@ -9,7 +9,6 @@ export * from './builtin-agents.ts';
 // Supporting modules
 export * from './agent-state.ts';
 export * from './api-tools.ts';
-export * from './gmail-tools.ts';
 export * from './instruction-updater.ts';
 export * from './parser.ts';
 export * from './plan-types.ts';

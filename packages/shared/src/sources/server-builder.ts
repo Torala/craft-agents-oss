@@ -14,7 +14,6 @@
 import type { LoadedSource } from './types.ts';
 import type { ApiConfig } from '../agents/types.ts';
 import type { ApiCredential } from './credential-manager.ts';
-import { createGmailServer } from '../agents/gmail-tools.ts';
 import { createApiServer } from '../agents/api-tools.ts';
 import { createSdkMcpServer } from '@anthropic-ai/claude-agent-sdk';
 import { debug } from '../utils/debug.ts';
@@ -126,7 +125,7 @@ export class SourceServerBuilder {
    *
    * @param source - The source configuration
    * @param credential - API credential (null for public APIs)
-   * @param getToken - Token getter for OAuth APIs (Gmail, etc.)
+   * @param getToken - Token getter for OAuth APIs (Google, etc.) - supports auto-refresh
    */
   async buildApiServer(
     source: LoadedSource,
@@ -139,18 +138,22 @@ export class SourceServerBuilder {
       return null;
     }
 
-    // Gmail special handling - uses OAuth tokens with dedicated Gmail tools
-    if (source.config.provider === 'gmail') {
-      if (!source.config.isAuthenticated || !getToken) {
-        debug(`[SourceServerBuilder] Gmail source ${source.config.slug} not authenticated`);
-        return null;
-      }
-      debug(`[SourceServerBuilder] Building Gmail server for ${source.config.slug}`);
-      return createGmailServer(getToken);
-    }
-
     const apiConfig = source.config.api;
     const authType = apiConfig.authType;
+    const provider = source.config.provider;
+
+    // Google APIs (including legacy 'gmail' provider) - use token getter with auto-refresh
+    if (provider === 'google' || provider === 'gmail') {
+      if (!source.config.isAuthenticated || !getToken) {
+        debug(`[SourceServerBuilder] Google API source ${source.config.slug} not authenticated`);
+        return null;
+      }
+      debug(`[SourceServerBuilder] Building Google API server for ${source.config.slug}`);
+      const config = this.buildApiConfig(source);
+      // Pass the token getter function - it will be called before each request
+      // to get a fresh token (with auto-refresh if expired)
+      return createApiServer(config, getToken);
+    }
 
     // Public APIs (no auth) can be used immediately
     if (authType === 'none') {
@@ -159,19 +162,19 @@ export class SourceServerBuilder {
       return createApiServer(config, '');
     }
 
-    // OAuth APIs - use token getter
+    // OAuth APIs (non-Google) - use token getter
     if (authType === 'oauth') {
       if (!source.config.isAuthenticated || !getToken) {
         debug(`[SourceServerBuilder] OAuth API source ${source.config.slug} not authenticated`);
         return null;
       }
-      const token = await getToken();
       debug(`[SourceServerBuilder] Building OAuth API server for ${source.config.slug}`);
       const config = this.buildApiConfig(source);
-      return createApiServer(config, token);
+      // Pass the token getter function for auto-refresh support
+      return createApiServer(config, getToken);
     }
 
-    // API key/bearer/header/query/basic auth - use credential
+    // API key/bearer/header/query/basic auth - use static credential
     if (!credential) {
       debug(`[SourceServerBuilder] API source ${source.config.slug} needs credentials`);
       return null;

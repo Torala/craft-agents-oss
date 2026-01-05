@@ -624,6 +624,18 @@ URL: \`https://api.githubcopilot.com/mcp/\`, **bearer auth** (PAT required - OAu
 Provider: \`exa\`, Type: \`api\`
 Base URL: \`https://api.exa.ai\`, header auth with \`x-api-key\`.
 
+### Filesystem (Local)
+Provider: \`filesystem\`, Type: \`mcp\`
+Transport: \`stdio\`, Command: \`npx -y @modelcontextprotocol/server-filesystem /path\`, no auth.
+
+### Brave Search
+Provider: \`brave\`, Type: \`mcp\`
+Transport: \`stdio\`, Command: \`npx -y @modelcontextprotocol/server-brave-search\`, requires \`BRAVE_API_KEY\` env.
+
+### Memory
+Provider: \`memory\`, Type: \`mcp\`
+Transport: \`stdio\`, Command: \`npx -y @modelcontextprotocol/server-memory\`, no auth.
+
 ## Workflow
 
 ### Creating a Source

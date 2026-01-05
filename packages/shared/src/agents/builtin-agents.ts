@@ -54,7 +54,7 @@ You configure Craft Agent - sources, agents, preferences, themes, and settings.
 
 - \`source_test\` - Validate and test source connections
 - \`source_oauth_trigger\` - Start OAuth flow for MCP sources
-- \`source_gmail_oauth_trigger\` - Start Gmail OAuth flow
+- \`source_google_oauth_trigger\` - Start Google OAuth flow (Gmail, Calendar, Drive)
 - \`source_credential_prompt\` - Prompt user for API credentials
 - \`agent_list\`, \`agent_create\`, \`agent_delete\`
 - \`config_validate\`
@@ -289,9 +289,11 @@ When adding a local source, **actively discover** what it is and set the appropr
    - Look for: \`favicon.ico\`, \`logo.png\`, \`logo.svg\` in root or \`public/\` folder
    - If found, copy it to the source folder and use \`iconUrl: "./icon.png"\`
 
-## Gmail Setup
+## Google API Setup (Gmail, Calendar, Drive)
 
-Gmail is a special API source that uses Google OAuth:
+Google APIs use Google OAuth with baked-in credentials. All Google services use the same OAuth flow.
+
+### Gmail Setup
 
 1. Create the source config at \`sources/gmail/config.json\`:
    \`\`\`json
@@ -300,26 +302,59 @@ Gmail is a special API source that uses Google OAuth:
      "name": "Gmail",
      "slug": "gmail",
      "enabled": true,
-     "provider": "gmail",
+     "provider": "google",
      "type": "api",
      "api": {
        "baseUrl": "https://gmail.googleapis.com",
-       "authType": "bearer"
+       "authType": "oauth",
+       "googleService": "gmail"
      },
      "iconUrl": "https://mail.google.com"
    }
    \`\`\`
-   **CRITICAL**: The \`"provider": "gmail"\` field is REQUIRED. OAuth will fail without it.
 
-2. Trigger Gmail OAuth (uses dedicated tool, NOT source_oauth_trigger):
+2. Trigger Google OAuth:
    \`\`\`
-   source_gmail_oauth_trigger({ sourceSlug: "gmail" })
+   source_google_oauth_trigger({ sourceSlug: "gmail" })
    \`\`\`
 
 3. After successful OAuth, tell the user:
    - Gmail is now configured and authenticated
-   - To use Gmail tools in a session, enable it via the **source selector** (bottom of chat input, next to the send button)
-   - Available tools: \`gmail_list_messages\`, \`gmail_get_message\`, \`gmail_search\`, \`gmail_trash_message\`, \`gmail_create_draft\`
+   - Use the \`api_gmail\` tool with \`path\`, \`method\`, and \`params\` to access the Gmail API
+
+### Google Calendar Setup
+
+1. Create the source config at \`sources/google-calendar/config.json\`:
+   \`\`\`json
+   {
+     "provider": "google",
+     "type": "api",
+     "api": {
+       "baseUrl": "https://www.googleapis.com/calendar/v3",
+       "authType": "oauth",
+       "googleService": "calendar"
+     }
+   }
+   \`\`\`
+
+2. Use \`source_google_oauth_trigger\` to authenticate.
+
+### Google Drive Setup
+
+1. Create the source config at \`sources/google-drive/config.json\`:
+   \`\`\`json
+   {
+     "provider": "google",
+     "type": "api",
+     "api": {
+       "baseUrl": "https://www.googleapis.com/drive/v3",
+       "authType": "oauth",
+       "googleService": "drive"
+     }
+   }
+   \`\`\`
+
+2. Use \`source_google_oauth_trigger\` to authenticate.
 
 ## Important Notes
 

@@ -12,11 +12,16 @@
  * - IPC handlers for credential storage
  */
 
-import type { LoadedSource } from './types.ts';
+import type { LoadedSource, GoogleService } from './types.ts';
 import type { CredentialId, StoredCredential } from '../credentials/types.ts';
 import { getCredentialManager } from '../credentials/index.ts';
 import { CraftOAuth, getMcpBaseUrl, type OAuthCallbacks, type OAuthTokens } from '../auth/oauth.ts';
-import { startGmailOAuth, refreshGmailToken, type GmailOAuthResult } from '../auth/gmail-oauth.ts';
+import {
+  startGoogleOAuth,
+  refreshGoogleToken,
+  type GoogleOAuthResult,
+  type GoogleOAuthOptions,
+} from '../auth/google-oauth.ts';
 import { debug } from '../utils/debug.ts';
 
 /**
@@ -217,8 +222,8 @@ export class SourceCredentialManager {
     if (source.config.type === 'mcp') {
       type = mcp?.authType === 'bearer' ? 'source_bearer' : 'source_oauth';
     } else if (source.config.type === 'api') {
-      // Gmail always uses OAuth
-      if (source.config.provider === 'gmail') {
+      // Google APIs (including Gmail) always use OAuth
+      if (source.config.provider === 'google' || source.config.provider === 'gmail') {
         type = 'source_oauth';
       } else if (api?.authType === 'oauth') {
         type = 'source_oauth';
@@ -316,9 +321,9 @@ export class SourceCredentialManager {
     };
     const cb = callbacks || defaultCallbacks;
 
-    // Gmail has its own OAuth flow
-    if (source.config.provider === 'gmail') {
-      return this.authenticateGmail(source, cb);
+    // Google APIs (including Gmail) use Google OAuth
+    if (source.config.provider === 'google' || source.config.provider === 'gmail') {
+      return this.authenticateGoogle(source, cb);
     }
 
     // MCP OAuth flow
@@ -326,9 +331,9 @@ export class SourceCredentialManager {
       return this.authenticateMcp(source, cb);
     }
 
-    // API OAuth flow (non-Gmail)
+    // API OAuth flow (non-Google)
     if (source.config.type === 'api' && source.config.api?.authType === 'oauth') {
-      // For non-Gmail APIs, we'd need the API's OAuth config
+      // For non-Google APIs, we'd need the API's OAuth config
       // This is a placeholder - specific APIs need custom handling
       return {
         success: false,
@@ -379,19 +384,50 @@ export class SourceCredentialManager {
   }
 
   /**
-   * Authenticate Gmail source via Google OAuth
+   * Authenticate Google API source via Google OAuth
+   *
+   * Supports multiple Google services (Gmail, Calendar, Drive) via:
+   * - provider: "gmail" (legacy, defaults to gmail service)
+   * - provider: "google" with googleService field
+   * - provider: "google" with custom googleScopes
    */
-  private async authenticateGmail(
+  private async authenticateGoogle(
     source: LoadedSource,
     callbacks: OAuthCallbacks
   ): Promise<AuthResult> {
     try {
-      callbacks.onStatus('Starting Gmail OAuth flow...');
+      // Determine service/scopes from config
+      const api = source.config.api;
+      let service: GoogleService | undefined;
+      let scopes: string[] | undefined;
 
-      const result: GmailOAuthResult = await startGmailOAuth('electron');
+      if (source.config.provider === 'gmail') {
+        // Legacy provider: "gmail" - use Gmail scopes
+        service = 'gmail';
+      } else if (api?.googleScopes && api.googleScopes.length > 0) {
+        // Custom scopes take precedence
+        scopes = api.googleScopes;
+      } else if (api?.googleService) {
+        // Use predefined service scopes
+        service = api.googleService;
+      } else {
+        // Default to Gmail for backwards compatibility
+        service = 'gmail';
+      }
+
+      const serviceName = service || 'Google API';
+      callbacks.onStatus(`Starting ${serviceName} OAuth flow...`);
+
+      const options: GoogleOAuthOptions = {
+        service,
+        scopes,
+        appType: 'electron',
+      };
+
+      const result: GoogleOAuthResult = await startGoogleOAuth(options);
 
       if (!result.success) {
-        return { success: false, error: result.error || 'Gmail OAuth failed' };
+        return { success: false, error: result.error || 'Google OAuth failed' };
       }
 
       // Save the credentials
@@ -401,7 +437,7 @@ export class SourceCredentialManager {
         expiresAt: result.expiresAt,
       });
 
-      callbacks.onStatus('Gmail authentication successful');
+      callbacks.onStatus(`${serviceName} authentication successful`);
       return { success: true, email: result.email };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -423,9 +459,9 @@ export class SourceCredentialManager {
       return null;
     }
 
-    // Gmail refresh
-    if (source.config.provider === 'gmail') {
-      return this.refreshGmail(source, cred);
+    // Google API refresh (includes Gmail)
+    if (source.config.provider === 'google' || source.config.provider === 'gmail') {
+      return this.refreshGoogle(source, cred);
     }
 
     // MCP refresh
@@ -437,14 +473,14 @@ export class SourceCredentialManager {
   }
 
   /**
-   * Refresh Gmail token
+   * Refresh Google OAuth token
    */
-  private async refreshGmail(
+  private async refreshGoogle(
     source: LoadedSource,
     cred: StoredCredential
   ): Promise<string | null> {
     try {
-      const result = await refreshGmailToken(cred.refreshToken!);
+      const result = await refreshGoogleToken(cred.refreshToken!);
 
       // Update stored credentials
       await this.save(source, {
@@ -453,10 +489,10 @@ export class SourceCredentialManager {
         expiresAt: result.expiresAt,
       });
 
-      debug(`[SourceCredentialManager] Refreshed Gmail token for ${source.config.slug}`);
+      debug(`[SourceCredentialManager] Refreshed Google token for ${source.config.slug}`);
       return result.accessToken;
     } catch (error) {
-      debug(`[SourceCredentialManager] Gmail token refresh failed:`, error);
+      debug(`[SourceCredentialManager] Google token refresh failed:`, error);
       return null;
     }
   }
