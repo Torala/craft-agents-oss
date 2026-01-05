@@ -543,7 +543,6 @@ domains:
   - api.gmail.com
   - gmail.googleapis.com
 providers:
-  - gmail
   - google
 ---
 

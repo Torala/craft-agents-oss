@@ -60,26 +60,8 @@ import {
   type GoogleOAuthOptions,
   type GoogleOAuthResult,
 } from '../auth/google-oauth.ts';
-import type { GoogleService } from '../sources/types.ts';
+import { inferGoogleServiceFromUrl, type GoogleService } from '../sources/types.ts';
 import { DOC_REFS } from '../docs/index.ts';
-
-// ============================================================
-// Helper Functions
-// ============================================================
-
-/**
- * Infer Google service from API baseUrl
- * Returns undefined if URL doesn't match a known Google API pattern
- */
-function inferGoogleServiceFromUrl(baseUrl: string | undefined): GoogleService | undefined {
-  if (!baseUrl) return undefined;
-  const url = baseUrl.toLowerCase();
-
-  if (url.includes('calendar.googleapis.com') || url.includes('/calendar/')) return 'calendar';
-  if (url.includes('drive.googleapis.com') || url.includes('/drive/')) return 'drive';
-  if (url.includes('gmail.googleapis.com') || url.includes('/gmail/')) return 'gmail';
-  return undefined;
-}
 
 // ============================================================
 // Session-Scoped Tool Callbacks
@@ -538,7 +520,7 @@ async function testApiSource(
   workspaceId: string
 ): Promise<{ success: boolean; status?: number; error?: string; credentialType?: string }> {
   // Google APIs (Gmail, Calendar, Drive) - use Google-specific test
-  if (source.provider === 'google' || source.provider === 'gmail') {
+  if (source.provider === 'google') {
     return testGoogleSource(source, workspaceId);
   }
 
@@ -1312,7 +1294,7 @@ After successful authentication, the tokens are stored and the source is marked 
 - Drive: Read and manage Google Drive files
 
 **Prerequisites:**
-- The source must have provider 'google' or 'gmail'
+- The source must have provider 'google'
 - Google OAuth must be configured in the build
 
 **Returns:**
@@ -1337,8 +1319,8 @@ After successful authentication, the tokens are stored and the source is marked 
         const source = sourceResult.config;
         const sourceContext = { isAgentScoped: sourceResult.isAgentScoped, agentSlug: sourceResult.agentSlug };
 
-        // Verify this is a Google source (either 'google' or legacy 'gmail' provider)
-        if (source.provider !== 'google' && source.provider !== 'gmail') {
+        // Verify this is a Google source
+        if (source.provider !== 'google') {
           const hint = !source.provider
             ? `Add "provider": "google" to config.json and retry.`
             : `This source has provider '${source.provider}'. Use source_oauth_trigger for MCP sources.`;
@@ -1366,10 +1348,7 @@ After successful authentication, the tokens are stored and the source is marked 
         let scopes: string[] | undefined;
         const api = source.api;
 
-        if (source.provider === 'gmail') {
-          // Legacy provider: "gmail" - use Gmail scopes
-          service = 'gmail';
-        } else if (api?.googleScopes && api.googleScopes.length > 0) {
+        if (api?.googleScopes && api.googleScopes.length > 0) {
           // Custom scopes take precedence
           scopes = api.googleScopes;
         } else if (api?.googleService) {

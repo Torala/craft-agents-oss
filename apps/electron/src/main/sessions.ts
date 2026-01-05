@@ -73,7 +73,7 @@ async function buildServersFromSources(sources: LoadedSource[]) {
 
   // Build token getter for OAuth sources (Google APIs, etc.)
   const getTokenForSource = (source: LoadedSource) => {
-    if (source.config.provider === 'google' || source.config.provider === 'gmail' || source.config.api?.authType === 'oauth') {
+    if (source.config.provider === 'google' || source.config.api?.authType === 'oauth') {
       return async () => {
         const token = await credManager.getToken(source)
         if (!token) throw new Error(`No token for ${source.config.slug}`)

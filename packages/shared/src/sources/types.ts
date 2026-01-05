@@ -34,6 +34,20 @@ export type ApiAuthType = 'bearer' | 'header' | 'query' | 'basic' | 'oauth' | 'n
 export type GoogleService = 'gmail' | 'calendar' | 'drive';
 
 /**
+ * Infer Google service from API baseUrl.
+ * Returns undefined if URL doesn't match a known Google API pattern.
+ */
+export function inferGoogleServiceFromUrl(baseUrl: string | undefined): GoogleService | undefined {
+  if (!baseUrl) return undefined;
+  const url = baseUrl.toLowerCase();
+
+  if (url.includes('calendar.googleapis.com') || url.includes('/calendar/')) return 'calendar';
+  if (url.includes('drive.googleapis.com') || url.includes('/drive/')) return 'drive';
+  if (url.includes('gmail.googleapis.com') || url.includes('/gmail/')) return 'gmail';
+  return undefined;
+}
+
+/**
  * Known providers for special handling (OAuth flows, icons, etc.)
  * These have well-known OAuth endpoints or special behavior.
  */

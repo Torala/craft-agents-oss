@@ -142,8 +142,8 @@ export class SourceServerBuilder {
     const authType = apiConfig.authType;
     const provider = source.config.provider;
 
-    // Google APIs (including legacy 'gmail' provider) - use token getter with auto-refresh
-    if (provider === 'google' || provider === 'gmail') {
+    // Google APIs - use token getter with auto-refresh
+    if (provider === 'google') {
       if (!source.config.isAuthenticated || !getToken) {
         debug(`[SourceServerBuilder] Google API source ${source.config.slug} not authenticated`);
         return null;
