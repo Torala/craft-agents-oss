@@ -23,6 +23,7 @@ import { join } from 'path';
 import { randomUUID } from 'crypto';
 import { getWorkspaceSessionsPath } from '../workspaces/storage.ts';
 import { toPortablePath, expandPath } from '../utils/paths.ts';
+import { perf } from '../utils/perf.ts';
 import type {
   SessionConfig,
   StoredSession,
@@ -253,6 +254,7 @@ export { sessionPersistenceQueue } from './persistence-queue.js'
  * Loads session from folder structure
  */
 export function loadSession(workspaceRootPath: string, sessionId: string): StoredSession | null {
+  const end = perf.start('session.loadSession', { sessionId });
   // Load from folder structure: {id}/session.json
   const filePath = getSessionFilePath(workspaceRootPath, sessionId);
   try {
@@ -265,12 +267,14 @@ export function loadSession(workspaceRootPath: string, sessionId: string): Store
       if (session.workingDirectory) {
         session.workingDirectory = expandPath(session.workingDirectory);
       }
+      end();
       return session;
     }
   } catch {
     // Session not found
   }
 
+  end();
   return null;
 }
 
@@ -279,12 +283,15 @@ export function loadSession(workspaceRootPath: string, sessionId: string): Store
  * Lists sessions from folder structure
  */
 export function listSessions(workspaceRootPath: string): SessionMetadata[] {
+  const span = perf.span('session.listSessions');
   const sessionsDir = getWorkspaceSessionsPath(workspaceRootPath);
   if (!existsSync(sessionsDir)) {
+    span.end();
     return [];
   }
 
   const entries = readdirSync(sessionsDir, { withFileTypes: true });
+  span.mark('readdir');
   const sessions: SessionMetadata[] = [];
 
   // Process session folders: {id}/session.json
@@ -304,9 +311,13 @@ export function listSessions(workspaceRootPath: string): SessionMetadata[] {
       }
     }
   }
+  span.mark('parsed');
+  span.setMetadata('count', sessions.length);
 
   // Sort by lastUsedAt descending (most recent first)
-  return sessions.sort((a, b) => b.lastUsedAt - a.lastUsedAt);
+  const sorted = sessions.sort((a, b) => b.lastUsedAt - a.lastUsedAt);
+  span.end();
+  return sorted;
 }
 
 /**

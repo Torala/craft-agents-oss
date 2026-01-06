@@ -15,9 +15,15 @@ import { getWorkspaces } from '@craft-agent/shared/config'
 import { initializeDocs } from '@craft-agent/shared/docs'
 import { handleDeepLink } from './deep-link'
 import log, { isDebugMode, mainLog, getLogFilePath } from './logger'
+import { setPerfEnabled } from '@craft-agent/shared/utils'
 
 // Initialize electron-log for renderer process support
 log.initialize()
+
+// Enable performance tracking in debug mode (running from source)
+if (isDebugMode) {
+  setPerfEnabled(true)
+}
 
 // Custom URL scheme for deeplinks (e.g., craftagents://auth-complete)
 const DEEPLINK_SCHEME = 'craftagents'

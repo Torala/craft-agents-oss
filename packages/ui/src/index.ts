@@ -56,6 +56,9 @@ export {
 // UI primitives
 export { Spinner, type SpinnerProps } from './components/ui'
 
+// Overlay components
+export { CodeOverlay, detectLanguageFromPath, type CodeOverlayProps } from './components/overlay'
+
 // Utilities
 export { cn } from './lib/utils'
 

@@ -43,7 +43,7 @@ import { FolderAgentManager } from '@craft-agent/shared/agents'
 import type { SubAgentDefinition, AgentStatus, AgentActivateOptions } from '@craft-agent/shared/agents'
 import { AgentStateManager } from '@craft-agent/shared/agents'
 import { type Session, type Message, type SessionEvent, type FileAttachment, type StoredAttachment, type SendMessageOptions, IPC_CHANNELS, generateMessageId } from '../shared/types'
-import { generateSessionTitle, formatPathsToRelative, formatToolInputPaths } from '@craft-agent/shared/utils'
+import { generateSessionTitle, formatPathsToRelative, formatToolInputPaths, perf } from '@craft-agent/shared/utils'
 import { DEFAULT_MODEL } from '@craft-agent/shared/config'
 
 /**
@@ -59,6 +59,7 @@ export const AGENT_FLAGS = {
  * Handles credential loading and server building in one step.
  */
 async function buildServersFromSources(sources: LoadedSource[]) {
+  const span = perf.span('sources.buildServers', { count: sources.length })
   const credManager = getSourceCredentialManager()
   const serverBuilder = getSourceServerBuilder()
 
@@ -70,6 +71,7 @@ async function buildServersFromSources(sources: LoadedSource[]) {
       credential: await credManager.getApiCredential(source),
     }))
   )
+  span.mark('credentials.loaded')
 
   // Build token getter for OAuth sources (Gmail, etc.)
   const getTokenForSource = (source: LoadedSource) => {
@@ -83,7 +85,12 @@ async function buildServersFromSources(sources: LoadedSource[]) {
     return undefined
   }
 
-  return serverBuilder.buildAll(sourcesWithCreds, getTokenForSource)
+  const result = await serverBuilder.buildAll(sourcesWithCreds, getTokenForSource)
+  span.mark('servers.built')
+  span.setMetadata('mcpCount', Object.keys(result.mcpServers).length)
+  span.setMetadata('apiCount', Object.keys(result.apiServers).length)
+  span.end()
+  return result
 }
 
 interface ManagedSession {
@@ -944,6 +951,7 @@ Use oauth_trigger for OAuth sources, credential_prompt for API key/bearer token 
    */
   private async getOrCreateAgent(managed: ManagedSession): Promise<CraftAgent> {
     if (!managed.agent) {
+      const end = perf.start('agent.create', { sessionId: managed.id })
       const config = loadStoredConfig()
       managed.agent = new CraftAgent({
         workspace: managed.workspace,
@@ -1096,6 +1104,7 @@ Use oauth_trigger for OAuth sources, credential_prompt for API key/bearer token 
         setPermissionMode(managed.id, managed.permissionMode)
         sessionLog.info(`Applied permission mode '${managed.permissionMode}' to agent for session ${managed.id}`)
       }
+      end()
     }
     return managed.agent
   }
@@ -1420,8 +1429,12 @@ Use oauth_trigger for OAuth sources, credential_prompt for API key/bearer token 
     // This prevents the finally block from clobbering state when a follow-up message arrives
     const myAbortController = managed.abortController
 
+    // Start perf span for entire sendMessage flow
+    const sendSpan = perf.span('session.sendMessage', { sessionId, hasAgent: !!managed.agentId })
+
     // Get or create the agent (lazy loading)
     const agent = await this.getOrCreateAgent(managed)
+    sendSpan.mark('agent.ready')
 
     // If session has an agent that hasn't been activated yet, activate via AgentStateManager
     // This is the source of truth for agent state - ensures proper extraction, auth handling, etc.
@@ -1490,12 +1503,14 @@ Use oauth_trigger for OAuth sources, credential_prompt for API key/bearer token 
       } else {
         sessionLog.warn(`Could not create AgentStateManager for session ${sessionId}`)
       }
+      sendSpan.mark('agent.activated')
     }
 
     // Always set all sources for context (even if none are enabled)
     const workspaceRootPath = managed.workspace.rootPath
     const allSources = loadWorkspaceSources(workspaceRootPath)
     agent.setAllSources(allSources)
+    sendSpan.mark('sources.loaded')
 
     // Apply source servers if any are enabled
     if (managed.enabledSourceSlugs?.length) {
@@ -1519,6 +1534,7 @@ Use oauth_trigger for OAuth sources, credential_prompt for API key/bearer token 
         agent.setSourceServers(managed.sourceMcpServers || {}, managed.sourceApiServers || {}, intendedSlugs)
         sessionLog.info(`Applied ${mcpCount} MCP + ${apiCount} API sources to session ${sessionId} (${allSources.length} total)`)
       }
+      sendSpan.mark('servers.applied')
     }
 
     // Auto-setup: prepend setup context on first message if sources need auth
@@ -1547,6 +1563,7 @@ Use oauth_trigger for OAuth sources, credential_prompt for API key/bearer token 
       if (attachments?.length) {
         sessionLog.info('Attachments:', attachments.length)
       }
+      sendSpan.mark('chat.starting')
       const chatIterator = agent.chat(message, attachments)
       sessionLog.info('Got chat iterator, starting iteration...')
 
@@ -1578,6 +1595,8 @@ Use oauth_trigger for OAuth sources, credential_prompt for API key/bearer token 
         // This is the central place where processing ends
         if (event.type === 'complete') {
           sessionLog.info('Chat completed via complete event')
+          sendSpan.mark('chat.complete')
+          sendSpan.end()
           this.onProcessingStopped(sessionId, 'complete')
           return  // Exit function, skip finally block (onProcessingStopped handles cleanup)
         }
@@ -1603,12 +1622,17 @@ Use oauth_trigger for OAuth sources, credential_prompt for API key/bearer token 
 
       if (isAbortError) {
         sessionLog.info('Chat aborted (expected when interrupted)')
+        sendSpan.mark('chat.aborted')
+        sendSpan.end()
         // Abort is expected - just call onProcessingStopped with 'interrupted'
         this.onProcessingStopped(sessionId, 'interrupted')
       } else {
         sessionLog.error('Error in chat:', error)
         sessionLog.error('Error message:', error instanceof Error ? error.message : String(error))
         sessionLog.error('Error stack:', error instanceof Error ? error.stack : 'No stack')
+        sendSpan.mark('chat.error')
+        sendSpan.setMetadata('error', error instanceof Error ? error.message : String(error))
+        sendSpan.end()
         this.sendEvent({
           type: 'error',
           sessionId,
@@ -1623,6 +1647,8 @@ Use oauth_trigger for OAuth sources, credential_prompt for API key/bearer token 
       // Errors are handled in catch block
       if (managed.isProcessing && managed.abortController === myAbortController) {
         sessionLog.info('Finally block cleanup - unexpected exit')
+        sendSpan.mark('chat.unexpected_exit')
+        sendSpan.end()
         this.onProcessingStopped(sessionId, 'interrupted')
       }
     }

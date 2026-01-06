@@ -23,6 +23,7 @@ import type {
 } from './types.ts';
 import type { SdkMcpServerConfig } from '../agent/craft-agent.ts';
 import { debug } from '../utils/debug.ts';
+import { perf } from '../utils/perf.ts';
 import { createApiServer } from './api-tools.ts';
 import { getCredentialManager } from '../credentials/index.ts';
 import type { CredentialId, CredentialType } from '../credentials/types.ts';
@@ -159,12 +160,16 @@ export class AgentStateManager extends TypedEventEmitter<AgentStateEvents> {
 
     this.isActivating = true;
     debug('[AgentStateManager.activate] Starting activation for:', agentId);
+    const span = perf.span('agent.activate', { agentId });
 
     try {
       // Load agent definition from folder
       const agentDef = this.agentManager.getAgentDefinition(agentId);
+      span.mark('definition.loaded');
 
       if (!agentDef) {
+        span.mark('error.not_found');
+        span.end();
         const errorStatus: AgentStatus = {
           status: 'error',
           agentId,
@@ -191,9 +196,17 @@ export class AgentStateManager extends TypedEventEmitter<AgentStateEvents> {
       this.pendingDefinition = definition;
 
       // Continue to auth checks
-      return this.checkAuthAndProceed(agentId, agentDef.name, definition);
+      span.mark('auth.checking');
+      const result = await this.checkAuthAndProceed(agentId, agentDef.name, definition);
+      span.mark('auth.complete');
+      span.setMetadata('finalStatus', result.status);
+      span.end();
+      return result;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
+      span.mark('error');
+      span.setMetadata('error', errorMessage);
+      span.end();
       const errorStatus: AgentStatus = {
         status: 'error',
         agentId,
@@ -355,8 +368,10 @@ export class AgentStateManager extends TypedEventEmitter<AgentStateEvents> {
    * Supports both HTTP/SSE and stdio transports
    */
   async buildMcpServerConfig(): Promise<Record<string, SdkMcpServerConfig>> {
+    const end = perf.start('agent.buildMcpServerConfig');
     const definition = this.getDefinition();
     if (!definition) {
+      end();
       return {};
     }
 
@@ -406,6 +421,7 @@ export class AgentStateManager extends TypedEventEmitter<AgentStateEvents> {
       }
     }
 
+    end();
     return result;
   }
 
@@ -415,8 +431,10 @@ export class AgentStateManager extends TypedEventEmitter<AgentStateEvents> {
    * Fetches credentials from the credential store for authenticated APIs
    */
   async buildApiServers(): Promise<Record<string, ReturnType<typeof createApiServer>>> {
+    const end = perf.start('agent.buildApiServers');
     const definition = this.getDefinition();
     if (!definition) {
+      end();
       return {};
     }
 
@@ -433,6 +451,7 @@ export class AgentStateManager extends TypedEventEmitter<AgentStateEvents> {
       result[api.name] = createApiServer(api, credential);
     }
 
+    end();
     return result;
   }
 

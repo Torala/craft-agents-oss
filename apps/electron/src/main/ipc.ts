@@ -15,7 +15,7 @@ import { MultiFileDiffWindowManager } from './multi-file-diff-window'
 import { agentService } from './agent-service'
 import { registerOnboardingHandlers } from './onboarding'
 import { IPC_CHANNELS, type FileAttachment, type StoredAttachment, type AgentActivateOptions, type AuthType, type BillingMethodInfo, type SendMessageOptions, type DiffPreviewData, type CodePreviewData, type TerminalPreviewData, type MultiFileDiffData } from '../shared/types'
-import { readFileAttachment } from '@craft-agent/shared/utils'
+import { readFileAttachment, perf } from '@craft-agent/shared/utils'
 import { getAiCreditTopUpUrl } from '@craft-agent/shared/auth'
 import { getAuthType, setAuthType, getPreferencesPath, getModel, setModel, getSessionDraft, setSessionDraft, deleteSessionDraft, getAllSessionDrafts, getDefaultPermissionMode, setDefaultPermissionMode, getWorkspaceByNameOrId, addWorkspace, setActiveWorkspace, type Workspace } from '@craft-agent/shared/config'
 import { getSessionAttachmentsPath } from '@craft-agent/shared/sessions'
@@ -121,7 +121,10 @@ async function validateFilePath(filePath: string): Promise<string> {
 export function registerIpcHandlers(sessionManager: SessionManager, windowManager: WindowManager, previewWindowManager: PreviewWindowManager, diffPreviewWindowManager: DiffPreviewWindowManager, codePreviewWindowManager: CodePreviewWindowManager, terminalPreviewWindowManager: TerminalPreviewWindowManager, multiFileDiffWindowManager: MultiFileDiffWindowManager): void {
   // Get all sessions
   ipcMain.handle(IPC_CHANNELS.GET_SESSIONS, async () => {
-    return sessionManager.getSessions()
+    const end = perf.start('ipc.getSessions')
+    const sessions = sessionManager.getSessions()
+    end()
+    return sessions
   })
 
   // Get workspaces
@@ -174,6 +177,7 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
 
   // Switch workspace in current window (in-window switching)
   ipcMain.handle(IPC_CHANNELS.SWITCH_WORKSPACE, async (event, workspaceId: string) => {
+    const end = perf.start('ipc.switchWorkspace', { workspaceId })
     // Update the window's workspace mapping
     windowManager.updateWindowWorkspace(event.sender.id, workspaceId)
 
@@ -182,11 +186,15 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
     if (workspace) {
       sessionManager.setupConfigWatcher(workspace.rootPath)
     }
+    end()
   })
 
   // Create a new session (with optional agent assignment)
   ipcMain.handle(IPC_CHANNELS.CREATE_SESSION, async (_event, workspaceId: string, agentId?: string, agentName?: string) => {
-    return sessionManager.createSession(workspaceId, agentId, agentName)
+    const end = perf.start('ipc.createSession', { workspaceId, agentId })
+    const session = sessionManager.createSession(workspaceId, agentId, agentName)
+    end()
+    return session
   })
 
   // Delete a session
