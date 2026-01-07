@@ -222,7 +222,9 @@ export class SourceCredentialManager {
     if (source.config.type === 'mcp') {
       type = mcp?.authType === 'bearer' ? 'source_bearer' : 'source_oauth';
     } else if (source.config.type === 'api') {
-      // Google APIs always use OAuth
+      // Google APIs: OAuth token acquisition is triggered by provider='google',
+      // but the token is used as a Bearer token (authType='bearer' in config).
+      // This separates HOW we get credentials (OAuth flow) from HOW we send them (Bearer header).
       if (source.config.provider === 'google') {
         type = 'source_oauth';
       } else if (api?.authType === 'bearer') {
@@ -256,7 +258,9 @@ export class SourceCredentialManager {
     }
 
     if (source.config.type === 'api') {
-      // Google APIs always use OAuth
+      // Google APIs: OAuth token acquisition is triggered by provider='google',
+      // but the token is used as a Bearer token (authType='bearer' in config).
+      // This separates HOW we get credentials (OAuth flow) from HOW we send them (Bearer header).
       if (source.config.provider === 'google') {
         return 'agent_source_oauth';
       } else if (api?.authType === 'bearer') {
