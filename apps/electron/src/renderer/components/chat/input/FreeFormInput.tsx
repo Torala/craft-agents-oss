@@ -960,7 +960,7 @@ export function FreeFormInput({
           </div>
 
           {/* 5. Working Directory Selector */}
-          {workingDirectory && onWorkingDirectoryChange && (
+          {ENABLE_CUSTOM_FOLDER_SELECTION && workingDirectory && onWorkingDirectoryChange && (
             <WorkingDirectorySelector
               workingDirectory={workingDirectory}
               onWorkingDirectoryChange={onWorkingDirectoryChange}
@@ -1098,11 +1098,9 @@ function WorkingDirectorySelector({
           </>
         )}
         {/* Choose Folder option */}
-        {ENABLE_CUSTOM_FOLDER_SELECTION && (
-          <StyledDropdownMenuItem onClick={handleChooseFolder}>
-            Choose Folder...
-          </StyledDropdownMenuItem>
-        )}
+        <StyledDropdownMenuItem onClick={handleChooseFolder}>
+          Choose Folder...
+        </StyledDropdownMenuItem>
       </StyledDropdownMenuContent>
     </DropdownMenu>
   )
