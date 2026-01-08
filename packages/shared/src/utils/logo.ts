@@ -31,7 +31,10 @@ export const PROVIDER_ICON_URLS: Record<string, string> = {
   // Docs and Sheets need direct URLs - their domains return generic Google logo
   docs: 'https://ssl.gstatic.com/docs/documents/images/kix-favicon7.ico',
   sheets: 'https://ssl.gstatic.com/docs/spreadsheets/favicon3.ico',
-  // SharePoint needs direct URL - sharepoint.com returns generic Microsoft favicon
+  // Microsoft services need direct URLs - Microsoft domains return generic favicons
+  outlook: 'https://res.cdn.office.net/files/fabric-cdn-prod_20241209.001/assets/brand-icons/product/svg/outlook_48x1.svg',
+  'microsoft-calendar': 'https://res.cdn.office.net/files/fabric-cdn-prod_20241209.001/assets/brand-icons/product/svg/outlook_48x1.svg',
+  teams: 'https://res.cdn.office.net/files/fabric-cdn-prod_20241209.001/assets/brand-icons/product/svg/teams_48x1.svg',
   sharepoint: 'https://res.cdn.office.net/files/fabric-cdn-prod_20241209.001/assets/brand-icons/product/svg/sharepoint_48x1.svg',
 };
 

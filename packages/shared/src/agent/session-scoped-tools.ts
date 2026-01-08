@@ -799,9 +799,10 @@ After creating or editing a source's config.json, run this tool to:
           const serviceUrl = deriveServiceUrl(source);
 
           if (serviceUrl) {
-            // Use googleService for Google APIs (e.g., 'gmail') over provider (e.g., 'google')
-            const providerForIcon = source.api?.googleService || source.provider;
-            const logoUrl = await getHighQualityLogoUrl(serviceUrl, providerForIcon);
+            // Try slug first (most specific), then provider (fallback)
+            // This allows PROVIDER_ICON_URLS to map 'outlook', 'teams', 'gmail' etc. directly
+            const logoUrl = await getHighQualityLogoUrl(serviceUrl, source.slug)
+              || await getHighQualityLogoUrl(serviceUrl, source.provider);
             if (logoUrl) {
               const cached = await cacheIcon(logoUrl, sourcePath);
               if (cached) {

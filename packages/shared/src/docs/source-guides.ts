@@ -1406,7 +1406,7 @@ Microsoft Graph has throttling limits. If you receive 429 errors, wait before re
       "path": "me/mailFolders?$top=1"
     }
   },
-  "iconUrl": "https://outlook.live.com"
+  "iconUrl": "https://res.cdn.office.net/files/fabric-cdn-prod_20241209.001/assets/brand-icons/product/svg/outlook_48x1.svg"
 }
 \`\`\`
 
@@ -1513,7 +1513,7 @@ Microsoft Graph has throttling limits. If you receive 429 errors, wait before re
       "path": "me/joinedTeams?$top=1"
     }
   },
-  "iconUrl": "https://teams.microsoft.com"
+  "iconUrl": "https://res.cdn.office.net/files/fabric-cdn-prod_20241209.001/assets/brand-icons/product/svg/teams_48x1.svg"
 }
 \`\`\`
 
@@ -1595,6 +1595,124 @@ This is a **local stdio MCP server** with no external dependencies.
 
 ### No Authentication Required
 This is a local server - no API keys or OAuth needed.
+`;
+
+const MICROSOFT_CALENDAR_GUIDE = `---
+domains:
+  - outlook.live.com
+  - outlook.office.com
+  - graph.microsoft.com
+providers:
+  - microsoft
+  - microsoft-calendar
+---
+
+# Microsoft Calendar
+
+Access to Microsoft Outlook Calendar via the Microsoft Graph API.
+
+## Scope
+
+- List and manage calendar events
+- Access multiple calendars
+- Create, update, and delete events
+- View free/busy information
+
+## Guidelines
+
+- Use the \`api_microsoft-calendar\` tool with \`path\`, \`method\`, and optional \`params\`
+- Base URL: \`https://graph.microsoft.com/v1.0\`
+- All paths are relative to the base URL
+
+## Common Endpoints
+
+### List Calendars
+\`\`\`
+GET /me/calendars
+\`\`\`
+Returns all calendars for the user.
+
+### List Events
+\`\`\`
+GET /me/events
+\`\`\`
+Query params: \`$top\`, \`$skip\`, \`$filter\`, \`$orderby\`, \`$select\`
+
+### List Events in Date Range
+\`\`\`
+GET /me/calendarView?startDateTime={start}&endDateTime={end}
+\`\`\`
+Use ISO 8601 format for dates (e.g., 2024-01-01T00:00:00Z)
+
+### Get Event
+\`\`\`
+GET /me/events/{id}
+\`\`\`
+
+### Create Event
+\`\`\`
+POST /me/events
+Body: { "subject": "...", "start": { "dateTime": "...", "timeZone": "..." }, "end": { "dateTime": "...", "timeZone": "..." } }
+\`\`\`
+
+### Update Event
+\`\`\`
+PATCH /me/events/{id}
+Body: { fields to update }
+\`\`\`
+
+### Delete Event
+\`\`\`
+DELETE /me/events/{id}
+\`\`\`
+
+## Rate Limits
+
+Microsoft Graph has throttling limits. If you receive 429 errors, wait before retrying.
+
+<!-- SETUP: This section is ONLY for the setup agent -->
+
+## Setup Hints
+
+### Configuration
+
+**Required config.json:**
+\`\`\`json
+{
+  "id": "src_microsoft_calendar",
+  "name": "Microsoft Calendar",
+  "slug": "microsoft-calendar",
+  "enabled": true,
+  "provider": "microsoft",
+  "type": "api",
+  "api": {
+    "baseUrl": "https://graph.microsoft.com/v1.0/",
+    "authType": "bearer",
+    "microsoftService": "microsoft-calendar",
+    "testEndpoint": {
+      "method": "GET",
+      "path": "me/calendars?$top=1"
+    }
+  },
+  "iconUrl": "https://res.cdn.office.net/files/fabric-cdn-prod_20241209.001/assets/brand-icons/product/svg/outlook_48x1.svg"
+}
+\`\`\`
+
+### Authentication
+Use \`source_microsoft_oauth_trigger\` to start the Microsoft OAuth flow.
+
+### Recommended Questions
+- What types of calendar events do you typically work with?
+- Do you need to create/modify events or just view them?
+
+### Permissions for Explore Mode
+\`\`\`json
+{
+  "allowedApiEndpoints": [
+    { "method": "GET", "path": ".*", "comment": "All GET requests are read-only" }
+  ]
+}
+\`\`\`
 `;
 
 const SHAREPOINT_GUIDE = `---
@@ -1729,7 +1847,8 @@ Microsoft Graph has throttling limits. If you receive 429 errors, wait before re
       "method": "GET",
       "path": "sites?search=*"
     }
-  }
+  },
+  "iconUrl": "https://res.cdn.office.net/files/fabric-cdn-prod_20241209.001/assets/brand-icons/product/svg/sharepoint_48x1.svg"
 }
 \`\`\`
 
@@ -1765,6 +1884,7 @@ export const BUNDLED_SOURCE_GUIDES: Record<string, string> = {
   'google-sheets.md': GOOGLE_SHEETS_GUIDE,
   'slack.com.md': SLACK_GUIDE,
   'outlook.com.md': OUTLOOK_GUIDE,
+  'microsoft-calendar.md': MICROSOFT_CALENDAR_GUIDE,
   'teams.microsoft.com.md': TEAMS_GUIDE,
   'sharepoint.com.md': SHAREPOINT_GUIDE,
   'filesystem.md': FILESYSTEM_GUIDE,
