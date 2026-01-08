@@ -8,6 +8,7 @@ declare const CRAFT_AGENT_CLI_VERSION: string | undefined;
 let optionsEnv: Record<string, string> = {};
 let customPathToClaudeCodeExecutable: string | null = null;
 let customInterceptorPath: string | null = null;
+let customExecutable: string | null = null;
 
 export function setAnthropicOptionsEnv(env: Record<string, string>) {
     optionsEnv = env;
@@ -29,13 +30,21 @@ export function setInterceptorPath(path: string) {
     customInterceptorPath = path;
 }
 
+/**
+ * Set the path to the JavaScript runtime executable (e.g., bun or node).
+ * This is needed when bundling a runtime with the app (e.g., in Electron).
+ */
+export function setExecutable(path: string) {
+    customExecutable = path;
+}
+
 export function getDefaultOptions(): Partial<Options> {
     // If custom path is set (e.g., for Electron), use it with minimal options
     if (customPathToClaudeCodeExecutable) {
         const options: Partial<Options> = {
             pathToClaudeCodeExecutable: customPathToClaudeCodeExecutable,
-            // Use Bun to run the SDK (required for TypeScript preload)
-            executable: 'bun',
+            // Use custom executable if set, otherwise default to 'bun'
+            executable: (customExecutable || 'bun') as 'bun',
             env: {
                 ...process.env,
                 ... optionsEnv,
