@@ -1468,25 +1468,6 @@ export function Chat({
     }
   }, [activeWorkspace, onCreateSession, openChatTab, onSendMessage])
 
-  // Authenticate Source - starts OAuth flow for MCP sources
-  const handleAuthenticateSource = useCallback(async (source: LoadedSource) => {
-    if (!activeWorkspace) return
-
-    const authPromise = window.electronAPI.startSourceOAuth(activeWorkspace.id, source.config.slug)
-      .then((result) => {
-        if (result.success) {
-          return result
-        }
-        throw new Error(result.error || 'Authentication failed')
-      })
-
-    toast.promise(authPromise, {
-      loading: `Authenticating ${source.config.name}...`,
-      success: `${source.config.name} authenticated successfully`,
-      error: (err) => `${source.config.name}: ${err.message}`,
-    })
-  }, [activeWorkspace])
-
   // Respond to menu bar "New Chat" trigger
   const menuTriggerRef = useRef(menuNewChatTrigger)
   useEffect(() => {
@@ -2302,7 +2283,6 @@ export function Chat({
                 onAddSource={handleAddSource}
                 onDeleteSource={handleDeleteSource}
                 onSourceClick={handleOpenWorkspaceSourceInfo}
-                onAuthenticateSource={handleAuthenticateSource}
                 selectedSourceSlug={selectedSourceSlug}
                 localMcpEnabled={localMcpEnabled}
               />
