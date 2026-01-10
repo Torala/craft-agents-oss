@@ -124,7 +124,14 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         return Response.json({ error: 'Session not found' }, { status: 404, headers: corsHeaders })
       }
 
+      // Delete from R2
       await env.SESSIONS.delete(key)
+
+      // Purge from edge cache so deletion is immediate
+      const cache = caches.default
+      const cacheKey = new URL(`/s/api/${id}`, request.url).toString()
+      await cache.delete(cacheKey)
+
       return Response.json({ success: true }, { headers: corsHeaders })
     }
 
