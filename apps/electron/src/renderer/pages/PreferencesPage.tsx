@@ -177,8 +177,8 @@ export default function PreferencesPage() {
 
   return (
     <div className="h-full flex flex-col">
-      {/* Header with actions */}
-      <div className="px-4 py-3 border-b flex items-center justify-between shrink-0">
+      {/* Header with actions - z-50 to sit above titlebar drag region, titlebar-no-drag for clickable buttons */}
+      <div className="px-4 py-3 border-b flex items-center justify-between shrink-0 relative z-50 titlebar-no-drag">
         <div className="flex items-center gap-2">
           <button
             onClick={() => window.electronAPI.showInFolder('~/.craft-agent/preferences.json')}

@@ -292,6 +292,8 @@ export function ChatDisplay({
   const [shouldFadeIn, setShouldFadeIn] = React.useState(false)
   // Sticky-bottom: When true, auto-scroll on content changes. Toggled by user scroll behavior.
   const isStickToBottomRef = React.useRef(true)
+  // Skip smooth scroll briefly after session switch (instant scroll already happened)
+  const skipSmoothScrollUntilRef = React.useRef(0)
   const internalTextareaRef = React.useRef<HTMLTextAreaElement>(null)
   const textareaRef = externalTextareaRef || internalTextareaRef
 
@@ -395,7 +397,17 @@ export function ChatDisplay({
       setShouldFadeIn(false)
       isStickToBottomRef.current = true
       setVisibleTurnCount(TURNS_PER_PAGE)
-      messagesEndRef.current?.scrollIntoView({ behavior: 'instant' })
+      // Skip smooth scrolls for 500ms after session switch
+      skipSmoothScrollUntilRef.current = Date.now() + 500
+      // Instant scroll - retry if ref not ready yet (fixes timing issue with back/forward nav)
+      const doInstantScroll = () => {
+        if (messagesEndRef.current) {
+          messagesEndRef.current.scrollIntoView({ behavior: 'instant' })
+        } else {
+          requestAnimationFrame(doInstantScroll)
+        }
+      }
+      doInstantScroll()
     }
 
     // Messages just finished lazy loading: trigger fade-in animation, scroll immediately
@@ -405,7 +417,17 @@ export function ChatDisplay({
       setFadeInKey(k => k + 1)
       isStickToBottomRef.current = true
       setVisibleTurnCount(TURNS_PER_PAGE)
-      messagesEndRef.current?.scrollIntoView({ behavior: 'instant' })
+      // Skip smooth scrolls for 500ms after lazy load
+      skipSmoothScrollUntilRef.current = Date.now() + 500
+      // Instant scroll - retry if ref not ready yet
+      const doInstantScroll = () => {
+        if (messagesEndRef.current) {
+          messagesEndRef.current.scrollIntoView({ behavior: 'instant' })
+        } else {
+          requestAnimationFrame(doInstantScroll)
+        }
+      }
+      doInstantScroll()
     }
 
     // Debounced scroll - waits for layout to settle
@@ -417,6 +439,8 @@ export function ChatDisplay({
       // Clear pending scroll and wait for layout to settle
       if (debounceTimer) clearTimeout(debounceTimer)
       debounceTimer = setTimeout(() => {
+        // Skip smooth scroll if we just did an instant scroll (session switch/lazy load)
+        if (Date.now() < skipSmoothScrollUntilRef.current) return
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
       }, 200)
     })
