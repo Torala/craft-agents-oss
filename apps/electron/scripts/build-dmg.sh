@@ -268,7 +268,14 @@ echo "=== Build Complete ==="
 echo "DMG: $ELECTRON_DIR/release/${DMG_NAME}"
 echo "Size: $(du -h "$ELECTRON_DIR/release/${DMG_NAME}" | cut -f1)"
 
-# 12. Upload to S3 (if --upload flag is set)
+# 12. Create manifest.json for upload script
+# Read version from package.json
+ELECTRON_VERSION=$(cat "$ELECTRON_DIR/package.json" | grep '"version"' | head -1 | sed 's/.*"version": *"\([^"]*\)".*/\1/')
+echo "Creating manifest.json (version: $ELECTRON_VERSION)..."
+mkdir -p "$ROOT_DIR/.build/upload"
+echo "{\"version\": \"$ELECTRON_VERSION\"}" > "$ROOT_DIR/.build/upload/manifest.json"
+
+# 13. Upload to S3 (if --upload flag is set)
 if [ "$UPLOAD" = true ]; then
     echo ""
     echo "=== Uploading to S3 ==="

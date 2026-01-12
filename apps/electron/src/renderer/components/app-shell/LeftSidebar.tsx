@@ -1,6 +1,6 @@
 import type { LucideIcon } from "lucide-react"
 import * as React from "react"
-import { AnimatePresence, motion, type Variants } from "framer-motion"
+import { AnimatePresence, motion, type Variants } from "motion/react"
 import { ChevronRight } from "lucide-react"
 
 import { cn, isHexColor } from "@/lib/utils"
