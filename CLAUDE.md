@@ -31,12 +31,51 @@ bun run typecheck:all        # Type check all packages
 
 ## Releasing
 
+### TUI CLI
+
 Via [GitHub Actions](https://github.com/lukilabs/craft-terminal-agent/actions/workflows/build-and-upload.yml):
 1. Go to Actions → "Build and Upload" → Run workflow
 2. Enter version, check "upload to /latest" for default
 3. Builds: darwin-arm64, darwin-x64, linux-x64, linux-arm64
 
 **Install:** `curl -fsSL https://agents.craft.do/install.sh | bash`
+
+### Electron Desktop App (macOS)
+
+**Via GitHub Actions:**
+1. Go to Actions → "Build and Upload" → Run workflow
+2. Check "Build and upload Electron desktop app (macOS DMG)"
+3. Optionally check "upload to /latest" and "upload install.sh"
+4. Builds both arm64 and x64 DMG files
+
+**Local build:**
+```bash
+# Build DMG only
+bash apps/electron/scripts/build-dmg.sh arm64
+
+# Build and upload to S3
+bash apps/electron/scripts/build-dmg.sh arm64 --upload --latest --script
+
+# Show all options
+bash apps/electron/scripts/build-dmg.sh --help
+```
+
+**Build script options:**
+- `arm64` or `x64` - Target architecture (default: arm64)
+- `--upload` - Upload DMG to S3 after building
+- `--latest` - Also update `electron/latest` (requires --upload)
+- `--script` - Also upload `install-app.sh` (requires --upload)
+
+**Environment variables for build:**
+- `APPLE_SIGNING_IDENTITY` - Code signing identity (optional)
+- `APPLE_ID` - Apple ID for notarization (optional)
+- `APPLE_TEAM_ID` - Apple Team ID (optional)
+- `APPLE_APP_SPECIFIC_PASSWORD` - App-specific password (optional)
+- `S3_VERSIONS_BUCKET_ENDPOINT` - S3 endpoint (for --upload)
+- `S3_VERSIONS_BUCKET_ACCESS_KEY_ID` - S3 access key (for --upload)
+- `S3_VERSIONS_BUCKET_SECRET_ACCESS_KEY` - S3 secret key (for --upload)
+
+**Install:** `curl -fsSL https://agents.craft.do/install-app.sh | bash`
 
 ## Architecture
 

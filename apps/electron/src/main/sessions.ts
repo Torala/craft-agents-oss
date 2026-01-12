@@ -1,5 +1,6 @@
 import { app } from 'electron'
 import { join } from 'path'
+import { existsSync } from 'fs'
 import { rm, readFile } from 'fs/promises'
 import { CraftAgent, type AgentEvent, setPermissionMode, type PermissionMode, unregisterSessionScopedToolCallbacks, AbortReason, type AuthRequest, type AuthResult, type CredentialAuthRequest } from '@craft-agent/shared/agent'
 import { sessionLog, isDebugMode, getLogFilePath } from './logger'
@@ -37,7 +38,7 @@ import {
 import { loadWorkspaceSources, getSourcesBySlugs, type LoadedSource, type McpServerConfig, getSourcesNeedingAuth, getSourceCredentialManager, getSourceServerBuilder, type SourceWithCredential, isApiOAuthProvider } from '@craft-agent/shared/sources'
 import { ConfigWatcher, type ConfigWatcherCallbacks } from '@craft-agent/shared/config'
 import { getAuthState } from '@craft-agent/shared/auth'
-import { setAnthropicOptionsEnv, setPathToClaudeCodeExecutable, setInterceptorPath } from '@craft-agent/shared/agent'
+import { setAnthropicOptionsEnv, setPathToClaudeCodeExecutable, setInterceptorPath, setExecutable } from '@craft-agent/shared/agent'
 import { getCraftToken } from '@craft-agent/shared/auth'
 import { getCredentialManager } from '@craft-agent/shared/credentials'
 import { CraftMcpClient } from '@craft-agent/shared/mcp'
@@ -485,16 +486,42 @@ export class SessionManager {
 
   async initialize(): Promise<void> {
     // Set path to Claude Code executable (cli.js from SDK)
-    // This is critical because the bundled SDK can't auto-detect the path
-    const cliPath = join(process.cwd(), 'node_modules', '@anthropic-ai', 'claude-agent-sdk', 'cli.js')
+    // In packaged app: use app.getAppPath() (points to app.asar or app folder)
+    // In development: use process.cwd()
+    const basePath = app.isPackaged ? app.getAppPath() : process.cwd()
+
+    const cliPath = join(basePath, 'node_modules', '@anthropic-ai', 'claude-agent-sdk', 'cli.js')
+    if (!existsSync(cliPath)) {
+      const error = `Claude Code SDK not found at ${cliPath}. The app package may be corrupted.`
+      sessionLog.error(error)
+      throw new Error(error)
+    }
     sessionLog.info('Setting pathToClaudeCodeExecutable:', cliPath)
     setPathToClaudeCodeExecutable(cliPath)
 
     // Set path to cache-ttl-interceptor for SDK subprocess
     // This interceptor redirects requests to the Craft gateway when using Craft credits
-    const interceptorPath = join(process.cwd(), 'packages', 'shared', 'src', 'cache-ttl-interceptor.ts')
+    const interceptorPath = join(basePath, 'packages', 'shared', 'src', 'cache-ttl-interceptor.ts')
+    if (!existsSync(interceptorPath)) {
+      const error = `Cache TTL interceptor not found at ${interceptorPath}. The app package may be corrupted.`
+      sessionLog.error(error)
+      throw new Error(error)
+    }
     sessionLog.info('Setting interceptorPath:', interceptorPath)
     setInterceptorPath(interceptorPath)
+
+    // In packaged app: use bundled Bun binary
+    // In development: use system 'bun' command
+    if (app.isPackaged) {
+      const bunPath = join(basePath, 'vendor', 'bun', 'bun')
+      if (!existsSync(bunPath)) {
+        const error = `Bundled Bun runtime not found at ${bunPath}. The app package may be corrupted.`
+        sessionLog.error(error)
+        throw new Error(error)
+      }
+      sessionLog.info('Setting executable:', bunPath)
+      setExecutable(bunPath)
+    }
 
     // Set up authentication environment variables (critical for SDK to work)
     await this.reinitializeAuth()

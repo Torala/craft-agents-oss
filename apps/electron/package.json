@@ -19,6 +19,8 @@
     "start": "bun run build && electron .",
     "dev": "vite dev",
     "typecheck": "tsc --noEmit",
+    "dist:mac": "bash scripts/build-dmg.sh arm64",
+    "dist:mac:x64": "bash scripts/build-dmg.sh x64"
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix"
   },
