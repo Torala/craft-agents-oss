@@ -184,8 +184,6 @@ export interface TurnCardProps {
   onAcceptPlan?: () => void
   /** Whether this is the last response in the session (shows Accept Plan button only for last response) */
   isLastResponse?: boolean
-  /** Callback when user sends feedback via fullscreen commenting */
-  onSendFeedback?: (feedback: string) => void
 }
 
 // ============================================================================
@@ -850,8 +848,6 @@ export interface ResponseCardProps {
   onOpenUrl?: (url: string) => void
   /** Callback to open response in Monaco editor */
   onPopOut?: () => void
-  /** Callback when user sends feedback via fullscreen commenting */
-  onSendFeedback?: (feedback: string) => void
   /** Card variant - 'response' for AI messages, 'plan' for plan messages */
   variant?: 'response' | 'plan'
   /** Callback when user accepts the plan (plan variant only) */
@@ -885,7 +881,6 @@ export function ResponseCard({
   onOpenFile,
   onOpenUrl,
   onPopOut,
-  onSendFeedback,
   variant = 'response',
   onAccept,
   isLastResponse = true,
@@ -1067,7 +1062,7 @@ export function ResponseCard({
           </div>
         </div>
 
-        {/* Fullscreen overlay with commenting */}
+        {/* Fullscreen overlay */}
         <FullscreenOverlay
           content={text}
           isOpen={isFullscreen}
@@ -1075,7 +1070,6 @@ export function ResponseCard({
           variant={isPlan ? 'plan' : undefined}
           onOpenUrl={onOpenUrl}
           onOpenFile={onOpenFile}
-          onSendFeedback={onSendFeedback}
         />
       </>
     )
@@ -1223,7 +1217,6 @@ export const TurnCard = React.memo(function TurnCard({
   renderActionsMenu,
   onAcceptPlan,
   isLastResponse,
-  onSendFeedback,
 }: TurnCardProps) {
   const hasRunning = activities.some(a => a.status === 'running')
 
@@ -1474,7 +1467,6 @@ export const TurnCard = React.memo(function TurnCard({
             onOpenFile={onOpenFile}
             onOpenUrl={onOpenUrl}
             onPopOut={onPopOut ? () => onPopOut(response.text) : undefined}
-            onSendFeedback={onSendFeedback}
             variant={response.isPlan ? 'plan' : 'response'}
             onAccept={onAcceptPlan}
             isLastResponse={isLastResponse}

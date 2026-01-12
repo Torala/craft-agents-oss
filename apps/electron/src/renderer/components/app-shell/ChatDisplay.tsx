@@ -516,11 +516,11 @@ export function ChatDisplay({
   return (
     <div ref={zoneRef} className="flex h-full flex-col min-w-0" data-focus-zone="chat">
       {session ? (
-        <div className="flex flex-1 flex-col min-h-0 min-w-0 bg-foreground-2">
+        <div className="flex flex-1 flex-col min-h-0 min-w-0 bg-surface-below">
           {/* === MESSAGES AREA: Scrollable list of message bubbles === */}
           <div className="relative flex-1 min-h-0">
             {/* Top fade gradient - absolutely positioned overlay */}
-            <div className="absolute top-0 left-0 right-2 h-8 z-10 bg-gradient-to-b from-foreground-2 to-transparent pointer-events-none" />
+            <div className="absolute top-0 left-0 right-2 h-8 z-10 bg-gradient-to-b from-surface-below to-transparent pointer-events-none" />
             <ScrollArea className="h-full min-w-0" viewportRef={scrollViewportRef}>
             <div className={cn(CHAT_LAYOUT.maxWidth, "mx-auto", CHAT_LAYOUT.containerPadding, CHAT_LAYOUT.messageSpacing, "min-w-0")}>
               {messagesLoading ? (
@@ -884,7 +884,7 @@ export function ChatDisplay({
             </div>
           </ScrollArea>
             {/* Bottom fade gradient - absolutely positioned overlay */}
-            <div className="absolute bottom-0 left-0 right-2 h-8 z-10 bg-gradient-to-t from-foreground-2 to-transparent pointer-events-none" />
+            <div className="absolute bottom-0 left-0 right-2 h-8 z-10 bg-gradient-to-t from-surface-below to-transparent pointer-events-none" />
           </div>
 
           {/* === INPUT CONTAINER: FreeForm or Structured Input === */}

@@ -221,6 +221,8 @@ const api: ElectronAPI = {
   // Skills
   getSkills: (workspaceId: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.SKILLS_GET, workspaceId),
+  getSkillFiles: (workspaceId: string, skillSlug: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.SKILLS_GET_FILES, workspaceId, skillSlug),
   deleteSkill: (workspaceId: string, skillSlug: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.SKILLS_DELETE, workspaceId, skillSlug),
   openSkillInEditor: (workspaceId: string, skillSlug: string) =>

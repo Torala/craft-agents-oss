@@ -53,6 +53,9 @@
   --foreground-90: color-mix(in oklch, var(--foreground) 90%, var(--background));
   --foreground-95: color-mix(in oklch, var(--foreground) 95%, var(--background));
 
+  /* === SEMANTIC SURFACE COLORS === */
+  --surface-below: var(--foreground-2);
+
   /* Success/destructive interpolated toward foreground (for tinted text) */
   /* Using oklab for perceptually uniform mixing without hue shifts */
   --success-text: color-mix(in oklab, var(--success) 50%, var(--foreground));
@@ -131,6 +134,9 @@
   --foreground-90: color-mix(in oklch, var(--foreground) 90%, var(--background));
   --foreground-95: color-mix(in oklch, var(--foreground) 95%, var(--background));
 
+  /* === SEMANTIC SURFACE COLORS === */
+  --surface-below: var(--foreground-2);
+
   /* Success/destructive interpolated toward foreground (for tinted text) */
   /* Using oklab for perceptually uniform mixing without hue shifts */
   --success-text: color-mix(in oklab, var(--success) 50%, var(--foreground));
@@ -187,6 +193,9 @@ html[data-font="inter"] {
   --color-foreground-80: var(--foreground-80);
   --color-foreground-90: var(--foreground-90);
   --color-foreground-95: var(--foreground-95);
+
+  /* === SEMANTIC SURFACE COLORS === */
+  --color-surface-below: var(--surface-below);
 
   /* === LEGACY COMPATIBILITY === */
   --color-card: var(--card);

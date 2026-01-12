@@ -49,6 +49,7 @@ export function NavigatorPanel({
         title={title}
         actions={headerActions}
         compensateForStoplight={!isSidebarVisible}
+        className="bg-background"
       />
       <Separator />
       {children}

@@ -76,7 +76,7 @@ function handleNotificationClick(workspaceId: string, sessionId: string): void {
 
   if (!window) {
     // Create a new window for this workspace
-    windowManager.createWindow(workspaceId)
+    windowManager.createWindow({ workspaceId })
     window = windowManager.getWindowByWorkspace(workspaceId)
   }
 

@@ -169,7 +169,13 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
 
   // Open a session in a new window
   ipcMain.handle(IPC_CHANNELS.OPEN_SESSION_IN_NEW_WINDOW, async (_event, workspaceId: string, sessionId: string) => {
-    windowManager.createWindow(workspaceId, sessionId)
+    // Build deep link for session navigation
+    const deepLink = `craftagents://allChats/chat/${sessionId}`
+    windowManager.createWindow({
+      workspaceId,
+      focused: true,
+      initialDeepLink: deepLink,
+    })
   })
 
   // Get mode for the calling window (always 'main' now)
@@ -558,13 +564,23 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
     return !app.isPackaged
   })
 
-  // Shell operations - open URL in external browser
+  // Shell operations - open URL in external browser (or handle craftagents:// internally)
   ipcMain.handle(IPC_CHANNELS.OPEN_URL, async (_event, url: string) => {
     try {
       // Validate URL format
       const parsed = new URL(url)
+
+      // Handle craftagents:// URLs internally via deep link handler
+      // This ensures ?window= params work correctly for "Open in New Window"
+      if (parsed.protocol === 'craftagents:') {
+        const { handleDeepLink } = await import('./deep-link')
+        await handleDeepLink(url, windowManager)
+        return
+      }
+
+      // External URLs - open in default browser
       if (!['http:', 'https:', 'mailto:', 'craftdocs:'].includes(parsed.protocol)) {
-        throw new Error('Only http, https, mailto, and craftdocs URLs are allowed')
+        throw new Error('Only http, https, mailto, craftdocs URLs are allowed')
       }
       await shell.openExternal(url)
     } catch (error) {
@@ -1205,6 +1221,64 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
     }
     const { loadWorkspaceSkills } = await import('@craft-agent/shared/skills')
     return loadWorkspaceSkills(workspace.rootPath)
+  })
+
+  // Get files in a skill directory
+  ipcMain.handle(IPC_CHANNELS.SKILLS_GET_FILES, async (_event, workspaceId: string, skillSlug: string) => {
+    const workspace = getWorkspaceByNameOrId(workspaceId)
+    if (!workspace) {
+      ipcLog.error(`SKILLS_GET_FILES: Workspace not found: ${workspaceId}`)
+      return []
+    }
+
+    const { join } = await import('path')
+    const { readdirSync, statSync } = await import('fs')
+    const { getWorkspaceSkillsPath } = await import('@craft-agent/shared/workspaces')
+
+    const skillsDir = getWorkspaceSkillsPath(workspace.rootPath)
+    const skillDir = join(skillsDir, skillSlug)
+
+    interface SkillFile {
+      name: string
+      type: 'file' | 'directory'
+      size?: number
+      children?: SkillFile[]
+    }
+
+    function scanDirectory(dirPath: string): SkillFile[] {
+      try {
+        const entries = readdirSync(dirPath, { withFileTypes: true })
+        return entries
+          .filter(entry => !entry.name.startsWith('.')) // Skip hidden files
+          .map(entry => {
+            const fullPath = join(dirPath, entry.name)
+            if (entry.isDirectory()) {
+              return {
+                name: entry.name,
+                type: 'directory' as const,
+                children: scanDirectory(fullPath),
+              }
+            } else {
+              const stats = statSync(fullPath)
+              return {
+                name: entry.name,
+                type: 'file' as const,
+                size: stats.size,
+              }
+            }
+          })
+          .sort((a, b) => {
+            // Directories first, then files
+            if (a.type !== b.type) return a.type === 'directory' ? -1 : 1
+            return a.name.localeCompare(b.name)
+          })
+      } catch (err) {
+        ipcLog.error(`SKILLS_GET_FILES: Error scanning ${dirPath}:`, err)
+        return []
+      }
+    }
+
+    return scanDirectory(skillDir)
   })
 
   // Delete a skill from a workspace

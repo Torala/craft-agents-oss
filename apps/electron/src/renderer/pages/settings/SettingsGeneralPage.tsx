@@ -1153,7 +1153,7 @@ export default function SettingsGeneralPage({
   }, [])
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full flex flex-col bg-surface-below">
       <ScrollArea className="flex-1">
         <div className="px-5 py-7 max-w-3xl mx-auto">
           <div className="space-y-6">

@@ -34,6 +34,7 @@ import { AppMenu } from "../AppMenu"
 import { SquarePenRounded } from "../icons/SquarePenRounded"
 import { cn, isHexColor } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
+import { HeaderIconButton } from "@/components/ui/HeaderIconButton"
 import { Separator } from "@/components/ui/separator"
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip"
 import {
@@ -1139,22 +1140,17 @@ export function AppShell({
             <PanelHeader
               title={listTitle}
               compensateForStoplight={!isSidebarVisible}
+              className="bg-background"
               actions={
                 <>
                   {/* Filter dropdown - allows filtering by todo states (only in All Chats view) */}
                   {chatFilter?.kind === 'allChats' && (
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className={cn(
-                            "h-7 w-7 shrink-0 rounded-[4px] titlebar-no-drag",
-                            listFilter.size > 0 ? "text-foreground" : "text-muted-foreground hover:text-foreground"
-                          )}
-                        >
-                          <ListFilter className="h-4 w-4" />
-                        </Button>
+                        <HeaderIconButton
+                          icon={<ListFilter className="h-4 w-4" />}
+                          className={listFilter.size > 0 ? "text-foreground" : undefined}
+                        />
                       </DropdownMenuTrigger>
                       <StyledDropdownMenuContent align="end" light minWidth="min-w-[200px]">
                         {/* Header with title and clear button */}
@@ -1263,13 +1259,7 @@ export function AppShell({
                   {isChatsNavigation(navState) && chatFilter?.kind !== 'allChats' && (
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 shrink-0 rounded-[4px] titlebar-no-drag text-muted-foreground hover:text-foreground"
-                        >
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
+                        <HeaderIconButton icon={<MoreHorizontal className="h-4 w-4" />} />
                       </DropdownMenuTrigger>
                       <StyledDropdownMenuContent align="end" light>
                         <StyledDropdownMenuItem
@@ -1285,14 +1275,11 @@ export function AppShell({
                   )}
                   {/* Add Source button (only for sources mode) */}
                   {isSourcesNavigation(navState) && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 shrink-0 rounded-[4px] titlebar-no-drag text-muted-foreground hover:text-foreground"
+                    <HeaderIconButton
+                      icon={<Plus className="h-4 w-4" />}
                       onClick={handleAddSource}
-                    >
-                      <Plus className="h-4 w-4" />
-                    </Button>
+                      tooltip="Add Source"
+                    />
                   )}
                 </>
               }

@@ -22,10 +22,12 @@ import { Separator } from '@/components/ui/separator'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import { HeaderMenu } from '@/components/ui/HeaderMenu'
 import { useTheme, type FontFamily } from '@/context/ThemeContext'
 import { useAppShellContext } from '@/context/AppShellContext'
 import { cn } from '@/lib/utils'
 import { Switch } from '@/components/ui/switch'
+import { routes } from '@/lib/navigate'
 import {
   Monitor,
   Sun,
@@ -1192,8 +1194,8 @@ export default function SettingsPage({
   }, [])
 
   return (
-    <div className="h-full flex flex-col">
-      <PanelHeader title="Settings" />
+    <div className="h-full flex flex-col bg-surface-below">
+      <PanelHeader title="Settings" actions={<HeaderMenu route={routes.view.settings()} />} className="bg-surface-below" />
       <Separator />
       <ScrollArea className="flex-1">
         <div className="px-5 py-7 max-w-3xl mx-auto">

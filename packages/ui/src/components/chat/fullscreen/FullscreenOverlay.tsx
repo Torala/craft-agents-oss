@@ -1,21 +1,12 @@
 /**
- * FullscreenOverlay - Unified fullscreen view with inline commenting
- *
- * Features GitHub-style inline comments that appear below
- * highlighted text within the document flow.
+ * FullscreenOverlay - Fullscreen view for reading AI responses
  */
 
-import * as React from 'react'
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import ReactDOM from 'react-dom'
-import { motion, AnimatePresence } from 'motion/react'
-import { Check, Copy, ListTodo, Send, X } from 'lucide-react'
+import { Check, Copy, ListTodo, X } from 'lucide-react'
 import { cn } from '../../../lib/utils'
-import { useTextSelection } from './hooks/useTextSelection'
-import { useComments } from './hooks/useComments'
-import { HighlightedMarkdown, scrollToHighlight } from './HighlightedMarkdown'
-import { SelectionToolbar } from './SelectionToolbar'
-import type { Comment } from './hooks/useComments'
+import { Markdown } from '../../markdown'
 
 export interface FullscreenOverlayProps {
   /** The content to display (markdown) */
@@ -30,8 +21,6 @@ export interface FullscreenOverlayProps {
   onOpenUrl?: (url: string) => void
   /** Callback for file path clicks */
   onOpenFile?: (path: string) => void
-  /** Callback when user sends feedback (all comments formatted) */
-  onSendFeedback?: (feedback: string) => void
 }
 
 export function FullscreenOverlay({
@@ -41,23 +30,9 @@ export function FullscreenOverlay({
   variant = 'response',
   onOpenUrl,
   onOpenFile,
-  onSendFeedback,
 }: FullscreenOverlayProps) {
   // Copy state
   const [copied, setCopied] = useState(false)
-
-  // Comment management
-  const { comments, addComment, removeComment, clearComments, formatForLLM, count } = useComments()
-
-  // Comment input state
-  const [isAddingComment, setIsAddingComment] = useState(false)
-
-  // Refs
-  const scrollRef = useRef<HTMLDivElement>(null)
-  const contentRef = useRef<HTMLDivElement>(null)
-
-  // Text selection
-  const { selection, clearSelection } = useTextSelection({ containerRef: contentRef })
 
   // Handle escape key
   useEffect(() => {
@@ -65,31 +40,13 @@ export function FullscreenOverlay({
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        if (isAddingComment) {
-          setIsAddingComment(false)
-          clearSelection()
-          return
-        }
-        if (selection) {
-          clearSelection()
-          return
-        }
         onClose()
       }
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isOpen, selection, isAddingComment, clearSelection, onClose])
-
-  // Reset state when closing
-  useEffect(() => {
-    if (!isOpen) {
-      clearComments()
-      clearSelection()
-      setIsAddingComment(false)
-    }
-  }, [isOpen, clearComments, clearSelection])
+  }, [isOpen, onClose])
 
   // Copy handler
   const handleCopy = useCallback(async () => {
@@ -101,45 +58,6 @@ export function FullscreenOverlay({
       console.error('Failed to copy:', err)
     }
   }, [content])
-
-  // Handle toolbar comment button
-  const handleToolbarComment = useCallback(() => {
-    setIsAddingComment(true)
-  }, [])
-
-  // Handle toolbar copy
-  const handleToolbarCopy = useCallback(() => {
-    // Handled in SelectionToolbar
-  }, [])
-
-  // Handle adding a comment
-  const handleAddComment = useCallback((commentText: string) => {
-    if (selection) {
-      addComment(selection, commentText)
-      clearSelection()
-      setIsAddingComment(false)
-    }
-  }, [selection, addComment, clearSelection])
-
-  // Handle canceling comment input
-  const handleCancelComment = useCallback(() => {
-    setIsAddingComment(false)
-    clearSelection()
-  }, [clearSelection])
-
-  // Handle highlight click (scroll to it)
-  const handleHighlightClick = useCallback((comment: Comment, element: HTMLElement) => {
-    scrollToHighlight(comment.id, contentRef.current || undefined)
-  }, [])
-
-  // Handle sending feedback
-  const handleSendFeedback = useCallback(() => {
-    if (count > 0 && onSendFeedback) {
-      const feedback = formatForLLM()
-      onSendFeedback(feedback)
-      onClose()
-    }
-  }, [count, formatForLLM, onSendFeedback, onClose])
 
   if (!isOpen) return null
 
@@ -177,13 +95,10 @@ export function FullscreenOverlay({
       </div>
 
       {/* Main scrollable area */}
-      <div
-        ref={scrollRef}
-        className="flex-1 min-h-0 bg-foreground-3 overflow-y-auto"
-      >
+      <div className="flex-1 min-h-0 bg-foreground-3 overflow-y-auto">
         <div className="min-h-full flex justify-center pt-16 px-6 pb-24">
           {/* Content card */}
-          <div className="bg-background rounded-[16px] shadow-strong w-full max-w-[720px] h-fit">
+          <div className="bg-background rounded-[16px] shadow-strong w-full max-w-[960px] h-fit">
             {/* Plan header (variant="plan" only) */}
             {variant === 'plan' && (
               <div className="px-4 py-2 border-b border-border/30 flex items-center gap-2 bg-success/5 rounded-t-[16px]">
@@ -193,60 +108,20 @@ export function FullscreenOverlay({
             )}
 
             {/* Content area */}
-            <div ref={contentRef} className="px-10 pt-8 pb-8">
+            <div className="px-10 pt-8 pb-8">
               <div className="text-sm">
-                <HighlightedMarkdown
-                  content={content}
-                  comments={comments}
-                  activeSelection={selection}
-                  isAddingComment={isAddingComment}
-                  onAddComment={handleAddComment}
-                  onCancelComment={handleCancelComment}
-                  onDeleteComment={removeComment}
-                  onHighlightClick={handleHighlightClick}
+                <Markdown
+                  mode="minimal"
                   onUrlClick={onOpenUrl}
                   onFileClick={onOpenFile}
-                />
+                >
+                  {content}
+                </Markdown>
               </div>
             </div>
           </div>
         </div>
       </div>
-
-      {/* Selection toolbar - appears above selected text */}
-      {selection && !isAddingComment && (
-        <SelectionToolbar
-          selection={selection}
-          onComment={handleToolbarComment}
-          onCopy={handleToolbarCopy}
-        />
-      )}
-
-      {/* Floating feedback button */}
-      <AnimatePresence>
-        {count > 0 && onSendFeedback && (
-          <motion.button
-            initial={{ opacity: 0, scale: 0.9, y: 8 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.9, y: 8 }}
-            transition={{ duration: 0.15 }}
-            onClick={handleSendFeedback}
-            className={cn(
-              "fixed bottom-6 right-6 z-[60] flex items-center gap-2 px-4 py-2.5 rounded-full",
-              "bg-foreground text-background",
-              "shadow-middle hover:shadow-strong transition-shadow",
-              "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-              "[-webkit-app-region:no-drag]"
-            )}
-          >
-            <Send className="w-3.5 h-3.5" />
-            <span className="text-sm font-medium">Send Feedback</span>
-            <span className="flex items-center justify-center w-5 h-5 rounded-full bg-background/20 text-xs font-medium">
-              {count}
-            </span>
-          </motion.button>
-        )}
-      </AnimatePresence>
     </div>,
     document.body
   )

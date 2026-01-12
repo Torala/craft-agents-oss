@@ -8,6 +8,8 @@ import * as React from 'react'
 import { PanelHeader } from '@/components/app-shell/PanelHeader'
 import { Separator } from '@/components/ui/separator'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { HeaderMenu } from '@/components/ui/HeaderMenu'
+import { routes } from '@/lib/navigate'
 
 interface ShortcutItem {
   keys: string[]
@@ -85,8 +87,8 @@ function Kbd({ children, className }: { children: React.ReactNode; className?: s
 
 export default function ShortcutsPage() {
   return (
-    <div className="h-full flex flex-col">
-      <PanelHeader title="Shortcuts" />
+    <div className="h-full flex flex-col bg-surface-below">
+      <PanelHeader title="Shortcuts" actions={<HeaderMenu route={routes.view.settings('shortcuts')} />} className="bg-surface-below" />
       <Separator />
       <ScrollArea className="flex-1">
         <div className="px-5 py-4">

@@ -91,8 +91,8 @@ function Kbd({ children, className }: { children: React.ReactNode; className?: s
 
 export default function ShortcutsPage() {
   return (
-    <div className="h-full flex flex-col">
-      <PanelHeader title="Shortcuts" />
+    <div className="h-full flex flex-col bg-surface-below">
+      <PanelHeader title="Shortcuts" className="bg-surface-below" />
       <Separator />
       <ScrollArea className="flex-1">
         <div className="px-5 py-4">

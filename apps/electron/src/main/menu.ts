@@ -1,11 +1,12 @@
 import { Menu, app, shell, BrowserWindow } from 'electron'
 import { IPC_CHANNELS } from '../shared/types'
+import type { WindowManager } from './window-manager'
 
 /**
  * Creates and sets the application menu for macOS.
  * Includes only relevant items for the Craft Agents app.
  */
-export function createApplicationMenu(): void {
+export function createApplicationMenu(windowManager: WindowManager): void {
   const isMac = process.platform === 'darwin'
 
   const template: Electron.MenuItemConstructorOptions[] = [
@@ -37,6 +38,19 @@ export function createApplicationMenu(): void {
           label: 'New Chat',
           accelerator: 'CmdOrCtrl+N',
           click: () => sendToRenderer(IPC_CHANNELS.MENU_NEW_CHAT)
+        },
+        {
+          label: 'New Window',
+          accelerator: 'CmdOrCtrl+Shift+N',
+          click: () => {
+            const focused = BrowserWindow.getFocusedWindow()
+            if (focused) {
+              const workspaceId = windowManager.getWorkspaceForWindow(focused.webContents.id)
+              if (workspaceId) {
+                windowManager.createWindow({ workspaceId })
+              }
+            }
+          }
         },
         { type: 'separator' as const },
         isMac ? { role: 'close' as const } : { role: 'quit' as const }

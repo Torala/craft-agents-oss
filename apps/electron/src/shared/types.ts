@@ -41,6 +41,16 @@ export type { LoadedSource, FolderSourceConfig, SourceConnectionStatus };
 import type { LoadedSkill, SkillMetadata } from '@craft-agent/shared/skills/types';
 export type { LoadedSkill, SkillMetadata };
 
+/**
+ * File/directory entry in a skill folder
+ */
+export interface SkillFile {
+  name: string
+  type: 'file' | 'directory'
+  size?: number
+  children?: SkillFile[]
+}
+
 // Import auth request types for unified auth flow
 import type { AuthRequest as SharedAuthRequest, CredentialInputMode as SharedCredentialInputMode, CredentialAuthRequest as SharedCredentialAuthRequest } from '@craft-agent/shared/agent';
 export type { SharedAuthRequest as AuthRequest };
@@ -415,6 +425,7 @@ export const IPC_CHANNELS = {
 
   // Menu actions (main → renderer)
   MENU_NEW_CHAT: 'menu:newChat',
+  MENU_NEW_WINDOW: 'menu:newWindow',
   MENU_OPEN_SETTINGS: 'menu:openSettings',
   MENU_KEYBOARD_SHORTCUTS: 'menu:keyboardShortcuts',
   MENU_OPEN_HELP: 'menu:openHelp',
@@ -476,6 +487,7 @@ export const IPC_CHANNELS = {
 
   // Skills (workspace-scoped)
   SKILLS_GET: 'skills:get',
+  SKILLS_GET_FILES: 'skills:getFiles',
   SKILLS_DELETE: 'skills:delete',
   SKILLS_OPEN_EDITOR: 'skills:openEditor',
   SKILLS_OPEN_FINDER: 'skills:openFinder',
@@ -825,6 +837,7 @@ export interface ElectronAPI {
 
   // Skills
   getSkills(workspaceId: string): Promise<LoadedSkill[]>
+  getSkillFiles?(workspaceId: string, skillSlug: string): Promise<SkillFile[]>
   deleteSkill(workspaceId: string, skillSlug: string): Promise<void>
   openSkillInEditor(workspaceId: string, skillSlug: string): Promise<void>
   openSkillInFinder(workspaceId: string, skillSlug: string): Promise<void>

@@ -7,12 +7,15 @@
 
 import * as React from 'react'
 import { useAtomValue, useSetAtom } from 'jotai'
-import { AlertCircle } from 'lucide-react'
+import { AlertCircle, Trash2, Flag, FlagOff, Pencil } from 'lucide-react'
 import { ChatDisplay } from '@/components/app-shell/ChatDisplay'
 import { PanelHeader } from '@/components/app-shell/PanelHeader'
 import { Separator } from '@/components/ui/separator'
 import { useAppShellContext, usePendingPermission, usePendingCredential, useSessionOptionsFor, useSession as useSessionData } from '@/context/AppShellContext'
 import { rendererPerf } from '@/lib/perf'
+import { HeaderMenu } from '@/components/ui/HeaderMenu'
+import { StyledDropdownMenuItem, StyledDropdownMenuSeparator } from '@/components/ui/styled-dropdown'
+import { routes } from '@/lib/navigate'
 import { ensureSessionMessagesLoadedAtom, loadedSessionsAtom, sessionMetaMapAtom } from '@/atoms/sessions'
 
 export interface ChatPageProps {
@@ -42,6 +45,9 @@ const ChatPage = React.memo(function ChatPage({ sessionId, isFocusedMode }: Chat
     enabledSources,
     enabledModes,
     onSessionSourcesChange,
+    onRenameSession,
+    onFlagSession,
+    onDeleteSession,
   } = useAppShellContext()
 
   // Use the unified session options hook for clean access
@@ -169,6 +175,42 @@ const ChatPage = React.memo(function ChatPage({ sessionId, isFocusedMode }: Chat
 
   // Get display title for header
   const displayTitle = session?.name || sessionMeta?.name || 'Chat'
+  const isFlagged = session?.isFlagged || sessionMeta?.isFlagged || false
+
+  // Session action handlers
+  const handleRename = React.useCallback(() => {
+    const newName = window.prompt('Rename chat', displayTitle)
+    if (newName && newName !== displayTitle) {
+      onRenameSession(sessionId, newName)
+    }
+  }, [sessionId, displayTitle, onRenameSession])
+
+  const handleFlag = React.useCallback(() => {
+    onFlagSession(sessionId)
+  }, [sessionId, onFlagSession])
+
+  const handleDelete = React.useCallback(async () => {
+    await onDeleteSession(sessionId)
+  }, [sessionId, onDeleteSession])
+
+  // Build header menu for chat sessions
+  const headerMenu = React.useMemo(() => (
+    <HeaderMenu route={routes.view.allChats(sessionId)}>
+      <StyledDropdownMenuItem onClick={handleRename}>
+        <Pencil className="h-3.5 w-3.5" />
+        <span className="flex-1">Rename</span>
+      </StyledDropdownMenuItem>
+      <StyledDropdownMenuItem onClick={handleFlag}>
+        {isFlagged ? <FlagOff className="h-3.5 w-3.5" /> : <Flag className="h-3.5 w-3.5" />}
+        <span className="flex-1">{isFlagged ? 'Unflag' : 'Flag'}</span>
+      </StyledDropdownMenuItem>
+      <StyledDropdownMenuSeparator />
+      <StyledDropdownMenuItem onClick={handleDelete} variant="destructive">
+        <Trash2 className="h-3.5 w-3.5" />
+        <span className="flex-1">Delete</span>
+      </StyledDropdownMenuItem>
+    </HeaderMenu>
+  ), [sessionId, isFlagged, handleRename, handleFlag, handleDelete])
 
   // Handle missing session - loading or deleted
   if (!session) {
@@ -190,7 +232,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId, isFocusedMode }: Chat
 
       return (
         <div className="h-full flex flex-col">
-          <PanelHeader title={displayTitle} />
+          <PanelHeader title={displayTitle} actions={headerMenu} className="bg-surface-below" />
           <Separator />
           <div className="flex-1 flex flex-col min-h-0">
             <ChatDisplay
@@ -226,7 +268,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId, isFocusedMode }: Chat
     // Session truly doesn't exist
     return (
       <div className="h-full flex flex-col">
-        <PanelHeader title="Chat" />
+        <PanelHeader title="Chat" className="bg-surface-below" />
         <Separator />
         <div className="flex-1 flex flex-col items-center justify-center gap-3 text-muted-foreground">
           <AlertCircle className="h-10 w-10" />
@@ -238,7 +280,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId, isFocusedMode }: Chat
 
   return (
     <div className="h-full flex flex-col">
-      <PanelHeader title={displayTitle} />
+      <PanelHeader title={displayTitle} actions={headerMenu} className="bg-surface-below" />
       <Separator />
       <div className="flex-1 flex flex-col min-h-0">
         <ChatDisplay

@@ -20,6 +20,8 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Spinner } from '@craft-agent/ui'
 import { Save, RotateCcw, Check, ExternalLink } from 'lucide-react'
+import { HeaderMenu } from '@/components/ui/HeaderMenu'
+import { routes } from '@/lib/navigate'
 
 interface PreferencesFormState {
   name: string
@@ -213,12 +215,13 @@ export default function PreferencesPage() {
           Save
         </Button>
       </div>
+      <HeaderMenu route={routes.view.settings('preferences')} />
     </div>
   )
 
   return (
-    <div className="h-full flex flex-col">
-      <PanelHeader title="Preferences" actions={headerActions} />
+    <div className="h-full flex flex-col bg-surface-below">
+      <PanelHeader title="Preferences" actions={headerActions} className="bg-surface-below" />
       <Separator />
       <ScrollArea className="flex-1">
         <div className="p-4 space-y-6">

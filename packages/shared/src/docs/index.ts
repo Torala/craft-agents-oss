@@ -41,6 +41,8 @@ export function getDocPath(filename: string): string {
 export const DOC_REFS = {
   sources: '~/.craft-agent/docs/sources.md',
   permissions: '~/.craft-agent/docs/permissions.md',
+  skills: '~/.craft-agent/docs/skills.md',
+  themes: '~/.craft-agent/docs/themes.md',
   sourceGuides: '~/.craft-agent/docs/source-guides/',
   docsDir: '~/.craft-agent/docs/',
 } as const;
@@ -806,6 +808,300 @@ Use \`source_test\` with the source slug:
 - Check file exists in source folder
 `;
 
+const SKILLS_MD = `# Skills Configuration Guide
+
+This guide explains how to create and configure skills in Craft Agent.
+
+## What Are Skills?
+
+Skills are specialized instructions that extend Claude's capabilities for specific tasks. They use **the exact same SKILL.md format as the Claude Code SDK** - making skills fully compatible between systems.
+
+**Key points:**
+- Skills are invoked via slash commands (e.g., \`/commit\`, \`/review-pr\`)
+- Skills can be automatically triggered by file patterns (globs)
+- Skills can pre-approve specific tools to run without prompting
+- The SKILL.md format is identical to what Claude Code uses internally
+
+## Same Format as Claude Code SDK
+
+Craft Agent uses **the identical SKILL.md format** as the Claude Code SDK. This means:
+
+1. **Format compatibility**: Any skill written for Claude Code works in Craft Agent
+2. **Same frontmatter fields**: \`name\`, \`description\`, \`globs\`, \`alwaysAllow\`
+3. **Same content structure**: Markdown body with instructions for Claude
+
+**What Craft Agent adds:**
+- **Visual icons**: Display custom icons in the UI for each skill
+- **Workspace organization**: Skills are scoped to workspaces
+- **UI management**: Browse, edit, and validate skills through the interface
+
+## Skill Precedence
+
+When a skill is invoked (e.g., \`/commit\`):
+
+1. **Workspace skill checked first** - If \`~/.craft-agent/workspaces/{id}/skills/commit/SKILL.md\` exists, it's used
+2. **SDK skill as fallback** - If no workspace skill exists, the built-in SDK skill is used
+
+This allows you to:
+- **Override SDK skills** - Create a workspace skill with the same slug to replace built-in behavior
+- **Extend SDK skills** - Reference SDK behavior in your custom skill and add workspace-specific instructions
+- **Create new skills** - Add entirely new skills not in the SDK
+
+## Skill Storage
+
+Skills are stored as folders:
+\`\`\`
+~/.craft-agent/workspaces/{workspaceId}/skills/{slug}/
+├── SKILL.md          # Required: Skill definition (same format as Claude Code SDK)
+├── icon.svg          # Recommended: Skill icon for UI display
+├── icon.png          # Alternative: PNG icon
+└── (other files)     # Optional: Additional resources
+\`\`\`
+
+## SKILL.md Format
+
+The format is identical to Claude Code SDK skills:
+
+\`\`\`yaml
+---
+name: "Skill Display Name"
+description: "Brief description shown in skill list"
+globs: ["*.ts", "*.tsx"]     # Optional: file patterns that trigger skill
+alwaysAllow: ["Bash"]        # Optional: tools to always allow
+---
+
+# Skill Instructions
+
+Your skill content goes here. This is injected into Claude's context
+when the skill is active.
+
+## Guidelines
+
+- Specific instructions for Claude
+- Best practices to follow
+- Things to avoid
+
+## Examples
+
+Show Claude how to perform the task correctly.
+\`\`\`
+
+## Metadata Fields
+
+### name (required)
+Display name for the skill. Shown in the UI and skill list.
+
+### description (required)
+Brief description (1-2 sentences) explaining what the skill does.
+
+### globs (optional)
+Array of glob patterns. When a file matching these patterns is being worked on,
+the skill may be automatically suggested or activated.
+
+\`\`\`yaml
+globs:
+  - "*.test.ts"           # Test files
+  - "*.spec.tsx"          # React test files
+  - "**/__tests__/**"     # Test directories
+\`\`\`
+
+### alwaysAllow (optional)
+Array of tool names that are automatically allowed when this skill is active.
+Useful for skills that require specific tools without prompting.
+
+\`\`\`yaml
+alwaysAllow:
+  - "Bash"                # Allow bash commands
+  - "Write"               # Allow file writes
+\`\`\`
+
+## Creating a Skill
+
+### 1. Create the skill directory
+
+\`\`\`bash
+mkdir -p ~/.craft-agent/workspaces/{ws}/skills/my-skill
+\`\`\`
+
+### 2. Write SKILL.md
+
+\`\`\`markdown
+---
+name: "Code Review"
+description: "Review code changes for quality, security, and best practices"
+globs: ["*.ts", "*.tsx", "*.js", "*.jsx"]
+---
+
+# Code Review Skill
+
+When reviewing code, focus on:
+
+## Quality Checks
+- Consistent code style
+- Clear naming conventions
+- Appropriate abstractions
+
+## Security Checks
+- Input validation
+- Authentication/authorization
+- Sensitive data handling
+
+## Best Practices
+- Error handling
+- Performance considerations
+- Test coverage
+\`\`\`
+
+### 3. Add an icon (IMPORTANT)
+
+Every skill should have a visually relevant icon. This helps users quickly identify skills in the UI.
+
+**Icon requirements:**
+- **Filename**: Must be \`icon.svg\`, \`icon.png\`, \`icon.jpg\`, or \`icon.jpeg\`
+- **Format**: SVG preferred (scalable, crisp at all sizes)
+- **Size**: For PNG/JPG, use at least 64x64 pixels
+
+**How to get an icon:**
+
+1. **Search online icon libraries:**
+   - [Lucide Icons](https://lucide.dev/) - MIT licensed, great for dev tools
+   - [Heroicons](https://heroicons.com/) - MIT licensed
+   - [Feather Icons](https://feathericons.com/) - MIT licensed
+   - [Simple Icons](https://simpleicons.org/) - Brand icons (git, npm, etc.)
+
+2. **Use WebFetch to download:**
+   \`\`\`
+   # Find an appropriate icon URL and download it
+   WebFetch to get SVG content, then save to icon.svg
+   \`\`\`
+
+3. **Match the skill's purpose:**
+   - Git/commit skill → git icon or commit icon
+   - Test skill → checkmark or test tube icon
+   - Deploy skill → rocket or cloud icon
+   - Review skill → magnifying glass or eye icon
+
+### 4. Validate the skill
+
+**IMPORTANT**: Always validate after creating or editing a skill:
+
+\`\`\`
+skill_validate({ skillSlug: "my-skill" })
+\`\`\`
+
+This validates:
+- Slug format (lowercase, alphanumeric, hyphens only)
+- SKILL.md exists and is readable
+- YAML frontmatter is valid
+- Required fields present (name, description)
+- Content is non-empty
+- Icon format (if present)
+
+## Example Skills
+
+### Commit Message Skill
+
+\`\`\`yaml
+---
+name: "Commit"
+description: "Create well-formatted git commit messages"
+alwaysAllow: ["Bash"]
+---
+
+# Commit Message Guidelines
+
+When creating commits:
+
+1. **Format**: Use conventional commits
+   - \`feat:\` New feature
+   - \`fix:\` Bug fix
+   - \`docs:\` Documentation
+   - \`refactor:\` Code refactoring
+   - \`test:\` Adding tests
+
+2. **Style**:
+   - Keep subject line under 72 characters
+   - Use imperative mood ("Add feature" not "Added feature")
+   - Explain why, not what (the diff shows what)
+
+3. **Co-authorship**:
+   Always include: \`Co-Authored-By: Claude <noreply@anthropic.com>\`
+\`\`\`
+
+**Recommended icon**: Git commit icon from Lucide or Simple Icons
+
+### Team Standards Skill
+
+\`\`\`yaml
+---
+name: "Team Standards"
+description: "Enforce team coding conventions and patterns"
+globs: ["src/**/*.ts", "src/**/*.tsx"]
+---
+
+# Team Coding Standards
+
+## File Organization
+- One component per file
+- Co-locate tests with source files
+- Use barrel exports (index.ts)
+
+## Naming Conventions
+- Components: PascalCase
+- Hooks: camelCase with \`use\` prefix
+- Constants: SCREAMING_SNAKE_CASE
+
+## Import Order
+1. External packages
+2. Internal packages (@company/*)
+3. Relative imports
+\`\`\`
+
+**Recommended icon**: Clipboard list or checklist icon
+
+## Overriding SDK Skills
+
+To customize a built-in SDK skill like \`/commit\`:
+
+1. Create \`~/.craft-agent/workspaces/{ws}/skills/commit/SKILL.md\`
+2. Write your custom instructions
+3. Add an icon
+4. Run \`skill_validate({ skillSlug: "commit" })\`
+
+Your skill will be used instead of the SDK's built-in version.
+
+This is useful for:
+- Adding team-specific commit message formats
+- Enforcing project-specific coding standards
+- Customizing review criteria for your codebase
+
+## Best Practices
+
+1. **Be specific**: Give Claude clear, actionable instructions
+2. **Include examples**: Show the expected output format
+3. **Set boundaries**: Explain what NOT to do
+4. **Keep focused**: One skill = one specific task or domain
+5. **Add a relevant icon**: Makes skills easily identifiable in the UI
+6. **Always validate**: Run \`skill_validate\` after creating or editing
+
+## Troubleshooting
+
+**Skill not loading:**
+- Check slug format (lowercase, alphanumeric, hyphens only)
+- Verify SKILL.md exists and is readable
+- Run \`skill_validate\` for detailed errors
+
+**Skill not triggering:**
+- Check glob patterns match your files
+- Verify skill is in correct workspace
+
+**Icon not showing:**
+- Use supported formats: svg, png, jpg, jpeg
+- File must be named \`icon.{ext}\` (not \`my-icon.svg\`)
+- Check icon file is not corrupted
+- For SVG, ensure valid XML structure
+`;
+
 const PERMISSIONS_MD = `# Permissions Configuration Guide
 
 This guide explains how to configure custom permission rules for Explore mode.
@@ -998,12 +1294,224 @@ Rules are additive - they can only allow more operations, not restrict further.
 \`\`\`
 `;
 
+const THEMES_MD = `# Theme Configuration Guide
+
+This guide explains how to customize the visual theme of Craft Agent.
+
+## Overview
+
+Craft Agent uses a 6-color theme system with cascading configuration:
+- **App-level theme**: \`~/.craft-agent/theme.json\` - Global defaults
+- **Workspace-level theme**: \`~/.craft-agent/workspaces/{id}/theme.json\` - Per-workspace overrides
+
+Workspace themes override app-level themes. Both are optional - the app has sensible defaults.
+
+## 6-Color System
+
+| Color | Purpose | Usage |
+|-------|---------|-------|
+| \`background\` | Surface/page background | Light/dark surface color |
+| \`foreground\` | Text and icons | Primary text color |
+| \`accent\` | Brand color, Auto mode | Highlights, active states, purple UI elements |
+| \`info\` | Warnings, Ask mode | Amber indicators, attention states |
+| \`success\` | Connected status | Green checkmarks, success states |
+| \`destructive\` | Errors, delete actions | Red alerts, failed states |
+
+## Color Formats
+
+Any valid CSS color format is supported:
+- **Hex**: \`#8b5cf6\`, \`#8b5cf6cc\` (with alpha)
+- **RGB**: \`rgb(139, 92, 246)\`, \`rgba(139, 92, 246, 0.8)\`
+- **HSL**: \`hsl(262, 83%, 58%)\`
+- **OKLCH**: \`oklch(0.58 0.22 293)\` (recommended)
+- **Named**: \`purple\`, \`rebeccapurple\`
+
+**Recommendation**: Use OKLCH for perceptually uniform colors that look consistent across light/dark modes.
+
+## theme.json Schema
+
+\`\`\`json
+{
+  "background": "oklch(0.98 0.003 265)",
+  "foreground": "oklch(0.185 0.01 270)",
+  "accent": "oklch(0.58 0.22 293)",
+  "info": "oklch(0.75 0.16 70)",
+  "success": "oklch(0.55 0.17 145)",
+  "destructive": "oklch(0.58 0.24 28)",
+  "dark": {
+    "background": "oklch(0.145 0.015 270)",
+    "foreground": "oklch(0.95 0.01 270)",
+    "accent": "oklch(0.65 0.22 293)",
+    "info": "oklch(0.78 0.14 70)",
+    "success": "oklch(0.60 0.17 145)",
+    "destructive": "oklch(0.65 0.22 28)"
+  }
+}
+\`\`\`
+
+All fields are optional. Only specify colors you want to override.
+
+## Dark Mode
+
+The \`dark\` object provides optional overrides for dark mode. When the user's system is in dark mode:
+1. Base colors (top-level) are used as defaults
+2. Any colors defined in \`dark\` override the base colors
+
+This allows partial dark mode customization - only override what needs to differ.
+
+## Default Theme
+
+The built-in default theme uses OKLCH colors optimized for accessibility:
+
+**Light Mode:**
+- Background: \`oklch(0.98 0.003 265)\` - Very light gray with slight purple tint
+- Foreground: \`oklch(0.185 0.01 270)\` - Near-black for high contrast
+- Accent: \`oklch(0.58 0.22 293)\` - Vibrant purple
+- Info: \`oklch(0.75 0.16 70)\` - Warm amber
+- Success: \`oklch(0.55 0.17 145)\` - Clear green
+- Destructive: \`oklch(0.58 0.24 28)\` - Alert red
+
+**Dark Mode:**
+- Background: \`oklch(0.145 0.015 270)\` - Deep dark with purple tint
+- Foreground: \`oklch(0.95 0.01 270)\` - Near-white
+- Accent/Info/Success/Destructive: Slightly brighter versions for visibility
+
+## Examples
+
+### Minimal: Just change accent color
+\`\`\`json
+{
+  "accent": "#3b82f6"
+}
+\`\`\`
+
+### Custom brand colors
+\`\`\`json
+{
+  "accent": "oklch(0.55 0.25 250)",
+  "info": "oklch(0.70 0.15 200)",
+  "dark": {
+    "accent": "oklch(0.65 0.25 250)",
+    "info": "oklch(0.75 0.12 200)"
+  }
+}
+\`\`\`
+
+### High contrast theme
+\`\`\`json
+{
+  "background": "#ffffff",
+  "foreground": "#000000",
+  "dark": {
+    "background": "#000000",
+    "foreground": "#ffffff"
+  }
+}
+\`\`\`
+
+### Workspace-specific theme
+Create \`~/.craft-agent/workspaces/{id}/theme.json\`:
+\`\`\`json
+{
+  "accent": "oklch(0.60 0.20 150)"
+}
+\`\`\`
+This workspace will use green accent while others use the app default.
+
+## Cascading Behavior
+
+1. **App theme** (\`~/.craft-agent/theme.json\`) sets global defaults
+2. **Workspace theme** overrides app theme for that workspace only
+3. **Built-in defaults** fill any unspecified colors
+
+Example: If app theme sets \`accent: blue\` and workspace theme sets \`accent: green\`, that workspace uses green while others use blue.
+
+## Live Updates
+
+Theme changes are applied immediately - no restart needed. Edit theme.json and the UI updates automatically.
+
+## Creating a Theme
+
+1. Decide scope: app-wide or workspace-specific
+2. Create the appropriate theme.json file
+3. Add only the colors you want to customize
+4. Optionally add \`dark\` overrides for dark mode
+
+**Tips:**
+- Start with just \`accent\` to quickly personalize
+- Use OKLCH for predictable color behavior
+- Test in both light and dark modes
+- Keep contrast ratios accessible (foreground vs background)
+
+## Workflow
+
+### Creating an App Theme
+\`\`\`bash
+# Create or edit ~/.craft-agent/theme.json
+\`\`\`
+
+\`\`\`json
+{
+  "accent": "oklch(0.55 0.20 280)"
+}
+\`\`\`
+
+### Creating a Workspace Theme
+\`\`\`bash
+# Create theme in workspace folder
+# ~/.craft-agent/workspaces/{workspaceId}/theme.json
+\`\`\`
+
+\`\`\`json
+{
+  "accent": "oklch(0.60 0.22 120)",
+  "dark": {
+    "accent": "oklch(0.70 0.20 120)"
+  }
+}
+\`\`\`
+
+## Troubleshooting
+
+**Theme not applying:**
+- Verify JSON syntax is valid
+- Check file is in correct location
+- Ensure color values are valid CSS colors
+
+**Colors look wrong in dark mode:**
+- Add explicit \`dark\` overrides
+- OKLCH colors may need higher lightness values for dark mode
+
+**Workspace theme not overriding:**
+- Verify workspace ID in path matches your workspace
+- Workspace themes only override defined values
+
+## OKLCH Color Reference
+
+OKLCH format: \`oklch(lightness chroma hue)\`
+- **Lightness**: 0-1 (0 = black, 1 = white)
+- **Chroma**: 0-0.4 (0 = gray, higher = more saturated)
+- **Hue**: 0-360 (color wheel angle)
+
+Common hues:
+- Red: ~25
+- Orange: ~70
+- Yellow: ~100
+- Green: ~145
+- Cyan: ~195
+- Blue: ~250
+- Purple: ~293
+- Pink: ~330
+`;
+
 /**
  * Map of bundled documentation files
  */
 const BUNDLED_DOCS: Record<string, string> = {
   'sources.md': SOURCES_MD,
   'permissions.md': PERMISSIONS_MD,
+  'skills.md': SKILLS_MD,
+  'themes.md': THEMES_MD,
 };
 
 export { BUNDLED_DOCS };

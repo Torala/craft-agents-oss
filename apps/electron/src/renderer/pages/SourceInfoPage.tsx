@@ -9,21 +9,33 @@ import * as React from 'react'
 import { useEffect, useState, useMemo, useCallback } from 'react'
 import {
   AlertCircle,
+  FolderOpen,
+  Trash2,
 } from 'lucide-react'
-import { PanelHeader } from '@/components/app-shell/PanelHeader'
-import { Separator } from '@/components/ui/separator'
 import { SourceAvatar } from '@/components/ui/source-avatar'
-import { Spinner } from '@craft-agent/ui'
-import { ScrollArea } from '@/components/ui/scroll-area'
-import { Markdown } from '@/components/markdown'
+import { HeaderMenu } from '@/components/ui/HeaderMenu'
+import { StyledDropdownMenuItem, StyledDropdownMenuSeparator } from '@/components/ui/styled-dropdown'
 import { cn } from '@/lib/utils'
-import { CHAT_LAYOUT } from '@/config/layout'
+import { routes, navigate } from '@/lib/navigate'
+import { toast } from 'sonner'
+import {
+  Info_Page,
+  Info_Section,
+  Info_Table,
+  Info_DataTable,
+  Info_Alert,
+  Info_GroupedList,
+  Info_StatusBadge,
+  Info_Markdown,
+} from '@/components/info'
 import type { LoadedSource, McpToolWithPermission } from '../../shared/types'
 import type { PermissionsConfigFile } from '@craft-agent/shared/agent'
 
 interface SourceInfoPageProps {
   sourceSlug: string
   workspaceId: string
+  /** Optional callback when source is deleted */
+  onDelete?: () => void
 }
 
 /**
@@ -57,18 +69,7 @@ function getSourceUrl(source: LoadedSource): string | null {
   return null
 }
 
-/**
- * Section Header - matches Settings styling
- */
-function SectionHeader({ children }: { children: React.ReactNode }) {
-  return (
-    <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-      {children}
-    </h3>
-  )
-}
-
-export default function SourceInfoPage({ sourceSlug, workspaceId }: SourceInfoPageProps) {
+export default function SourceInfoPage({ sourceSlug, workspaceId, onDelete }: SourceInfoPageProps) {
   const [source, setSource] = useState<LoadedSource | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -86,17 +87,14 @@ export default function SourceInfoPage({ sourceSlug, workspaceId }: SourceInfoPa
 
     const loadSource = async () => {
       try {
-        // Agent-scoped sources removed - always load workspace sources
         const sources = await window.electronAPI.getSources(workspaceId)
 
         if (!isMounted) return
 
-        // Find the source by slug
         const found = sources.find((s) => s.config.slug === sourceSlug)
         if (found) {
           setSource(found)
 
-          // Load permissions config via IPC
           const config = await window.electronAPI.getSourcePermissionsConfig(workspaceId, sourceSlug)
           if (isMounted) {
             setPermissionsConfig(config)
@@ -168,19 +166,17 @@ export default function SourceInfoPage({ sourceSlug, workspaceId }: SourceInfoPa
     })
   }, [workspaceId])
 
-  // Listen for source folder changes (config.json, guide.md, permissions.json)
+  // Listen for source folder changes
   useEffect(() => {
     if (!window.electronAPI?.onSourcesChanged) return
 
     const cleanup = window.electronAPI.onSourcesChanged((sources) => {
-      // Check if the updated sources include our source
       const updated = sources.find((s) => s.config.slug === sourceSlug)
 
       if (updated) {
         console.log('[SourceInfoPage] Source changed, reloading...')
         setSource(updated)
 
-        // Reload permissions config via IPC
         const loadPermissionsConfig = async () => {
           try {
             const config = await window.electronAPI.getSourcePermissionsConfig(workspaceId, sourceSlug)
@@ -211,12 +207,9 @@ export default function SourceInfoPage({ sourceSlug, workspaceId }: SourceInfoPa
   const handleOpenUrl = useCallback(async () => {
     if (!source || !sourceUrl) return
     if (window.electronAPI) {
-      // Check if it's a URL or a file path
       if (sourceUrl.startsWith('http://') || sourceUrl.startsWith('https://')) {
-        // Open in browser
         await window.electronAPI.openUrl(sourceUrl)
       } else {
-        // Open folder
         await window.electronAPI.showInFolder(sourceUrl)
       }
     }
@@ -230,7 +223,6 @@ export default function SourceInfoPage({ sourceSlug, workspaceId }: SourceInfoPa
     }
   }, [source])
 
-
   // Handle editing guide.md in Monaco markdown editor
   const handleEditGuide = useCallback(async () => {
     if (!source) return
@@ -239,7 +231,7 @@ export default function SourceInfoPage({ sourceSlug, workspaceId }: SourceInfoPa
 
     await window.electronAPI.openPreview({
       mode: 'markdown',
-      sessionId: 'workspace',  // Use 'workspace' as session for non-session previews
+      sessionId: 'workspace',
       previewId: `source-guide:${sourceSlug}`,
       markdown: {
         mode: 'readWrite',
@@ -249,128 +241,70 @@ export default function SourceInfoPage({ sourceSlug, workspaceId }: SourceInfoPa
     })
   }, [source, sourceSlug])
 
+  // Handle deleting source
+  const handleDelete = useCallback(async () => {
+    if (!source) return
+    try {
+      await window.electronAPI.deleteSource(workspaceId, sourceSlug)
+      toast.success(`Deleted source: ${source.config.name}`)
+      navigate(routes.view.sources())
+      onDelete?.()
+    } catch (err) {
+      toast.error('Failed to delete source', {
+        description: err instanceof Error ? err.message : 'Unknown error',
+      })
+    }
+  }, [source, workspaceId, sourceSlug, onDelete])
+
   // Get source name for header
   const sourceName = source?.config.name || sourceSlug
 
-  if (loading) {
-    return (
-      <div className="h-full flex flex-col">
-        <PanelHeader title={sourceName} />
-        <Separator />
-        <div className="flex-1 flex items-center justify-center">
-          <Spinner className="text-lg text-muted-foreground" />
-        </div>
-      </div>
-    )
-  }
-
-  if (error) {
-    return (
-      <div className="h-full flex flex-col">
-        <PanelHeader title={sourceName} />
-        <Separator />
-        <div className="flex-1 flex flex-col items-center justify-center gap-3 text-muted-foreground p-4">
-          <AlertCircle className="h-10 w-10 text-destructive" />
-          <p className="text-sm font-medium">Error loading source</p>
-          <p className="text-xs text-center max-w-md">{error}</p>
-        </div>
-      </div>
-    )
-  }
-
-  if (!source) {
-    return (
-      <div className="h-full flex flex-col">
-        <PanelHeader title={sourceName} />
-        <Separator />
-        <div className="flex-1 flex items-center justify-center text-muted-foreground">
-          <p className="text-sm">Source not found</p>
-        </div>
-      </div>
-    )
-  }
-
   return (
-    <div className="h-full flex flex-col">
-      <PanelHeader title={sourceName} />
-      <Separator />
-      <ScrollArea className="flex-1">
-        <div className={cn(CHAT_LAYOUT.maxWidth, "mx-auto px-5 py-4")}>
-          <div className="space-y-6">
-            {/* Source avatar and tagline */}
-            <div className="flex items-start gap-2.5">
-              <SourceAvatar source={source} className="h-[32px] w-[32px] shrink-0 mt-[2px] rounded-[4px] ring-1 ring-border/30" />
-              <div className="flex-1 min-w-0">
-                {source.config.tagline && (
-                  <p className="text-sm text-foreground/60 mt-0 leading-snug">
-                    {source.config.tagline}
-                  </p>
-                )}
-              </div>
-            </div>
+    <Info_Page
+      loading={loading}
+      error={error ?? undefined}
+      empty={!source && !loading && !error ? 'Source not found' : undefined}
+    >
+      <Info_Page.Header
+        title={sourceName}
+        actions={
+          <HeaderMenu route={routes.view.sources({ sourceSlug })}>
+            <StyledDropdownMenuItem onClick={handleOpenSourceFolder}>
+              <FolderOpen className="h-3.5 w-3.5" />
+              <span className="flex-1">Show in Finder</span>
+            </StyledDropdownMenuItem>
+            <StyledDropdownMenuSeparator />
+            <StyledDropdownMenuItem onClick={handleDelete} variant="destructive">
+              <Trash2 className="h-3.5 w-3.5" />
+              <span className="flex-1">Delete</span>
+            </StyledDropdownMenuItem>
+          </HeaderMenu>
+        }
+      />
 
-          {/* Disabled Warning - shown when source is stdio and local MCP is disabled */}
+      {source && (
+        <Info_Page.Content>
+          {/* Hero: Avatar and tagline */}
+          <Info_Page.Hero
+            avatar={<SourceAvatar source={source} className="h-full w-full" />}
+            tagline={source.config.tagline}
+          />
+
+          {/* Disabled Warning */}
           {source.config.mcp?.transport === 'stdio' && !localMcpEnabled && (
-            <div className="bg-foreground/5 border border-border/50 rounded-[8px] px-4 py-3">
-              <div className="flex items-start gap-2 text-sm">
-                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5 text-muted-foreground" />
-                <div>
-                  <span className="font-medium">Source Disabled</span>
-                  <p className="text-foreground/60 mt-0.5">
-                    Local MCP servers are disabled in Settings &gt; Advanced.
-                    Enable them to use this source.
-                  </p>
-                </div>
-              </div>
-            </div>
+            <Info_Alert variant="warning" icon={<AlertCircle className="h-4 w-4" />}>
+              <Info_Alert.Title>Source Disabled</Info_Alert.Title>
+              <Info_Alert.Description>
+                Local MCP servers are disabled in Settings &gt; Advanced.
+                Enable them to use this source.
+              </Info_Alert.Description>
+            </Info_Alert>
           )}
 
           {/* Connection */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <SectionHeader>Connection</SectionHeader>
-            </div>
-
-            <div className="bg-background shadow-minimal rounded-[8px] overflow-hidden py-2">
-              {/* Table */}
-              <table className="w-full text-sm" style={{ tableLayout: 'fixed' }}>
-                <colgroup>
-                  <col style={{ width: '128px' }} />
-                  <col />
-                </colgroup>
-                <tbody>
-                  <tr className="border-b border-border/30">
-                    <td className="pl-[22px] pr-4 py-1.5 text-muted-foreground">Type</td>
-                    <td className="pr-4 py-1.5">
-                      {source.config.type.toUpperCase()}
-                    </td>
-                  </tr>
-
-                  {sourceUrl && (
-                    <tr className="border-b border-border/30">
-                      <td className="pl-[22px] pr-4 py-1.5 text-muted-foreground">URL</td>
-                      <td className="pr-4 py-1.5">
-                        <button
-                          onClick={handleOpenUrl}
-                          className="font-mono truncate hover:underline text-foreground focus:outline-none focus-visible:underline text-left block w-full"
-                        >
-                          {sourceUrl}
-                        </button>
-                      </td>
-                    </tr>
-                  )}
-
-                  <tr>
-                    <td className="pl-[22px] pr-4 py-1.5 text-muted-foreground">Last Tested</td>
-                    <td className="pr-4 py-1.5">
-                      {formatRelativeTime(source.config.lastTestedAt)}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-
-              {/* Error message */}
-              {source.config.connectionError && (
+          <Info_Section title="Connection">
+            <Info_Table
+              footer={source.config.connectionError && (
                 <div className="px-[22px] py-2 border-t border-border/30 bg-destructive/5">
                   <div className="flex items-start gap-2 text-sm text-destructive">
                     <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
@@ -378,230 +312,173 @@ export default function SourceInfoPage({ sourceSlug, workspaceId }: SourceInfoPa
                   </div>
                 </div>
               )}
-            </div>
-          </div>
+            >
+              <Info_Table.Row label="Type" value={source.config.type.toUpperCase()} />
+              {sourceUrl && (
+                <Info_Table.Row label="URL">
+                  <button
+                    onClick={handleOpenUrl}
+                    className="font-mono truncate hover:underline text-foreground focus:outline-none focus-visible:underline text-left block w-full"
+                  >
+                    {sourceUrl}
+                  </button>
+                </Info_Table.Row>
+              )}
+              <Info_Table.Row label="Last Tested" value={formatRelativeTime(source.config.lastTestedAt)} />
+            </Info_Table>
+          </Info_Section>
 
-          {/* Permissions - for API and local sources, show safe mode config */}
+          {/* Permissions - for API and local sources */}
           {source.config.type !== 'mcp' && permissionsConfig && (
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <SectionHeader>Permissions</SectionHeader>
-              </div>
+            <Info_Section title="Permissions">
+              <Info_DataTable>
+                <Info_DataTable.Header>
+                  <Info_DataTable.Column width={100}>Access</Info_DataTable.Column>
+                  <Info_DataTable.Column width={80}>Type</Info_DataTable.Column>
+                  <Info_DataTable.Column>Pattern</Info_DataTable.Column>
+                  <Info_DataTable.Column>Comment</Info_DataTable.Column>
+                </Info_DataTable.Header>
+                <Info_DataTable.Body>
+                  {/* Blocked Tools */}
+                  {permissionsConfig.blockedTools?.map((tool, i) => (
+                    <Info_DataTable.Row key={`blocked-${i}`}>
+                      <Info_DataTable.Cell>
+                        <Info_StatusBadge status="blocked" />
+                      </Info_DataTable.Cell>
+                      <Info_DataTable.Cell muted>Tool</Info_DataTable.Cell>
+                      <Info_DataTable.Cell>
+                        <code className="font-mono text-xs">{tool}</code>
+                      </Info_DataTable.Cell>
+                      <Info_DataTable.Cell muted>-</Info_DataTable.Cell>
+                    </Info_DataTable.Row>
+                  ))}
 
-              <div className="bg-background shadow-minimal rounded-[8px] overflow-hidden py-2">
-                <table className="w-full text-sm">
-                  <thead className="border-b border-border/30">
-                    <tr>
-                      <th className="pl-[22px] pr-4 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide w-[100px]">Access</th>
-                      <th className="px-4 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide w-[80px]">Type</th>
-                      <th className="px-4 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide">Pattern</th>
-                      <th className="pr-4 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide">Comment</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {/* Blocked Tools */}
-                    {permissionsConfig.blockedTools?.map((tool, i) => (
-                      <tr key={`blocked-${i}`} className="border-b border-border/30 last:border-0">
-                        <td className="pl-[22px] pr-4 py-2 align-top">
-                          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-destructive">
-                            Blocked
-                          </span>
-                        </td>
-                        <td className="px-4 py-2 text-muted-foreground text-xs align-top">Tool</td>
-                        <td className="px-4 py-2 align-top">
-                          <code className="font-mono text-xs">{tool}</code>
-                        </td>
-                        <td className="pr-4 py-2 text-foreground/60 text-xs align-top">-</td>
-                      </tr>
-                    ))}
+                  {/* Allowed Bash Patterns */}
+                  {permissionsConfig.allowedBashPatterns?.map((item, i) => {
+                    const pattern = typeof item === 'string' ? item : item.pattern
+                    const comment = typeof item === 'string' ? null : item.comment
+                    return (
+                      <Info_DataTable.Row key={`bash-${i}`}>
+                        <Info_DataTable.Cell>
+                          <Info_StatusBadge status="allowed" />
+                        </Info_DataTable.Cell>
+                        <Info_DataTable.Cell muted>Bash</Info_DataTable.Cell>
+                        <Info_DataTable.Cell>
+                          <code className="font-mono text-xs">{pattern}</code>
+                        </Info_DataTable.Cell>
+                        <Info_DataTable.Cell muted>{comment || '-'}</Info_DataTable.Cell>
+                      </Info_DataTable.Row>
+                    )
+                  })}
 
-                    {/* Allowed Bash Patterns */}
-                    {permissionsConfig.allowedBashPatterns?.map((item, i) => {
-                      const pattern = typeof item === 'string' ? item : item.pattern
-                      const comment = typeof item === 'string' ? null : item.comment
-                      return (
-                        <tr key={`bash-${i}`} className="border-b border-border/30 last:border-0">
-                          <td className="pl-[22px] pr-4 py-2 align-top">
-                            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-success">
-                              Allowed
-                            </span>
-                          </td>
-                          <td className="px-4 py-2 text-muted-foreground text-xs align-top">Bash</td>
-                          <td className="px-4 py-2 align-top">
-                            <code className="font-mono text-xs">{pattern}</code>
-                          </td>
-                          <td className="pr-4 py-2 text-foreground/60 text-xs align-top">{comment || '-'}</td>
-                        </tr>
-                      )
-                    })}
-
-                    {/* Allowed API Endpoints */}
-                    {permissionsConfig.allowedApiEndpoints?.map((item, i) => {
-                      const pattern = `${item.method} ${item.path}`
-                      const comment = typeof item === 'object' && 'comment' in item ? item.comment : null
-                      return (
-                        <tr key={`api-${i}`} className="border-b border-border/30 last:border-0">
-                          <td className="pl-[22px] pr-4 py-2 align-top">
-                            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-success">
-                              Allowed
-                            </span>
-                          </td>
-                          <td className="px-4 py-2 text-muted-foreground text-xs align-top">API</td>
-                          <td className="px-4 py-2 align-top">
-                            <code className="font-mono text-xs">{pattern}</code>
-                          </td>
-                          <td className="pr-4 py-2 text-foreground/60 text-xs align-top">{comment || '-'}</td>
-                        </tr>
-                      )
-                    })}
-
-                  </tbody>
-                </table>
-              </div>
-            </div>
+                  {/* Allowed API Endpoints */}
+                  {permissionsConfig.allowedApiEndpoints?.map((item, i) => {
+                    const pattern = `${item.method} ${item.path}`
+                    const comment = typeof item === 'object' && 'comment' in item ? item.comment : null
+                    return (
+                      <Info_DataTable.Row key={`api-${i}`}>
+                        <Info_DataTable.Cell>
+                          <Info_StatusBadge status="allowed" />
+                        </Info_DataTable.Cell>
+                        <Info_DataTable.Cell muted>API</Info_DataTable.Cell>
+                        <Info_DataTable.Cell>
+                          <code className="font-mono text-xs">{pattern}</code>
+                        </Info_DataTable.Cell>
+                        <Info_DataTable.Cell muted>{comment || '-'}</Info_DataTable.Cell>
+                      </Info_DataTable.Row>
+                    )
+                  })}
+                </Info_DataTable.Body>
+              </Info_DataTable>
+            </Info_Section>
           )}
 
-          {/* Tools - for MCP sources, show tools grouped by permission */}
+          {/* Tools - for MCP sources */}
           {source.config.type === 'mcp' && (
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <SectionHeader>Tools</SectionHeader>
-              </div>
-
-              <div className="bg-background shadow-minimal rounded-[8px] overflow-hidden">
-                {mcpToolsLoading ? (
-                  <div className="flex items-center justify-center py-8">
-                    <Spinner className="text-muted-foreground" />
-                  </div>
-                ) : mcpToolsError ? (
-                  <div className="px-[22px] py-4 text-sm text-muted-foreground">
-                    {mcpToolsError === 'Source requires authentication' ? (
-                      <span>Authenticate with this source to view available tools</span>
-                    ) : (
-                      <span>{mcpToolsError}</span>
-                    )}
-                  </div>
-                ) : groupedTools ? (
-                  <div>
-                    {/* Allowed tools */}
-                    {groupedTools.allowed.length > 0 && (
-                      <div>
-                        <div className="px-[22px] py-2 bg-success/5 border-b border-border/30">
-                          <span className="text-xs font-semibold text-success uppercase tracking-wide">
-                            Allowed ({groupedTools.allowed.length})
-                          </span>
-                        </div>
-                        <div className="divide-y divide-border/30">
-                          {groupedTools.allowed.map((tool) => (
-                            <div key={tool.name} className="px-[22px] py-2">
-                              <code className="font-mono text-xs">{tool.name}</code>
-                              {tool.description && (
-                                <p className="text-xs text-foreground/60 mt-0.5">{tool.description}</p>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Tools requiring permission */}
-                    {groupedTools.requiresPermission.length > 0 && (
-                      <div className={groupedTools.allowed.length > 0 ? 'border-t border-border/30' : ''}>
-                        <div className="px-[22px] py-2 bg-info/5 border-b border-border/30">
-                          <span className="text-xs font-semibold text-info uppercase tracking-wide">
-                            Requires Permission ({groupedTools.requiresPermission.length})
-                          </span>
-                        </div>
-                        <div className="divide-y divide-border/30">
-                          {groupedTools.requiresPermission.map((tool) => (
-                            <div key={tool.name} className="px-[22px] py-2">
-                              <code className="font-mono text-xs">{tool.name}</code>
-                              {tool.description && (
-                                <p className="text-xs text-foreground/60 mt-0.5">{tool.description}</p>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* No tools */}
-                    {groupedTools.allowed.length === 0 && groupedTools.requiresPermission.length === 0 && (
-                      <div className="px-[22px] py-4 text-sm text-muted-foreground">
-                        No tools available
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="px-[22px] py-4 text-sm text-muted-foreground">
-                    Connect to view available tools
-                  </div>
+            <Info_Section title="Tools">
+              <Info_GroupedList
+                loading={mcpToolsLoading}
+                error={mcpToolsError ?? undefined}
+                empty={groupedTools && groupedTools.allowed.length === 0 && groupedTools.requiresPermission.length === 0 ? 'No tools available' : undefined}
+              >
+                {groupedTools?.allowed && groupedTools.allowed.length > 0 && (
+                  <Info_GroupedList.Group label="Allowed" variant="success" count={groupedTools.allowed.length}>
+                    {groupedTools.allowed.map((tool) => (
+                      <Info_GroupedList.Item key={tool.name}>
+                        <code className="font-mono text-xs">{tool.name}</code>
+                        {tool.description && (
+                          <p className="text-xs text-foreground/60 mt-0.5">{tool.description}</p>
+                        )}
+                      </Info_GroupedList.Item>
+                    ))}
+                  </Info_GroupedList.Group>
                 )}
-              </div>
-            </div>
+
+                {groupedTools?.requiresPermission && groupedTools.requiresPermission.length > 0 && (
+                  <Info_GroupedList.Group label="Requires Permission" variant="info" count={groupedTools.requiresPermission.length}>
+                    {groupedTools.requiresPermission.map((tool) => (
+                      <Info_GroupedList.Item key={tool.name}>
+                        <code className="font-mono text-xs">{tool.name}</code>
+                        {tool.description && (
+                          <p className="text-xs text-foreground/60 mt-0.5">{tool.description}</p>
+                        )}
+                      </Info_GroupedList.Item>
+                    ))}
+                  </Info_GroupedList.Group>
+                )}
+              </Info_GroupedList>
+            </Info_Section>
           )}
 
-          {/* Permissions - for MCP sources, show safe mode config patterns */}
+          {/* Permissions - for MCP sources */}
           {source.config.type === 'mcp' && permissionsConfig && (
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <SectionHeader>Permissions</SectionHeader>
-              </div>
+            <Info_Section title="Permissions">
+              <Info_DataTable>
+                <Info_DataTable.Header>
+                  <Info_DataTable.Column width={100}>Access</Info_DataTable.Column>
+                  <Info_DataTable.Column>Pattern</Info_DataTable.Column>
+                  <Info_DataTable.Column>Comment</Info_DataTable.Column>
+                </Info_DataTable.Header>
+                <Info_DataTable.Body>
+                  {/* Blocked Tools */}
+                  {permissionsConfig.blockedTools?.map((tool, i) => (
+                    <Info_DataTable.Row key={`blocked-${i}`}>
+                      <Info_DataTable.Cell>
+                        <Info_StatusBadge status="blocked" />
+                      </Info_DataTable.Cell>
+                      <Info_DataTable.Cell>
+                        <code className="font-mono text-xs">{tool}</code>
+                      </Info_DataTable.Cell>
+                      <Info_DataTable.Cell muted>-</Info_DataTable.Cell>
+                    </Info_DataTable.Row>
+                  ))}
 
-              <div className="bg-background shadow-minimal rounded-[8px] overflow-hidden py-2">
-                <table className="w-full text-sm">
-                  <thead className="border-b border-border/30">
-                    <tr>
-                      <th className="pl-[22px] pr-4 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide w-[100px]">Access</th>
-                      <th className="px-4 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide">Pattern</th>
-                      <th className="pr-4 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide">Comment</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {/* Blocked Tools */}
-                    {permissionsConfig.blockedTools?.map((tool, i) => (
-                      <tr key={`blocked-${i}`} className="border-b border-border/30 last:border-0">
-                        <td className="pl-[22px] pr-4 py-2 align-top">
-                          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-destructive">
-                            Blocked
-                          </span>
-                        </td>
-                        <td className="px-4 py-2 align-top">
-                          <code className="font-mono text-xs">{tool}</code>
-                        </td>
-                        <td className="pr-4 py-2 text-foreground/60 text-xs align-top">-</td>
-                      </tr>
-                    ))}
-
-                    {/* Allowed MCP Patterns */}
-                    {permissionsConfig.allowedMcpPatterns?.map((item, i) => {
-                      const pattern = typeof item === 'string' ? item : item.pattern
-                      const comment = typeof item === 'string' ? null : item.comment
-                      return (
-                        <tr key={`mcp-${i}`} className="border-b border-border/30 last:border-0">
-                          <td className="pl-[22px] pr-4 py-2 align-top">
-                            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-success">
-                              Allowed
-                            </span>
-                          </td>
-                          <td className="px-4 py-2 align-top">
-                            <code className="font-mono text-xs">{pattern}</code>
-                          </td>
-                          <td className="pr-4 py-2 text-foreground/60 text-xs align-top">{comment || '-'}</td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+                  {/* Allowed MCP Patterns */}
+                  {permissionsConfig.allowedMcpPatterns?.map((item, i) => {
+                    const pattern = typeof item === 'string' ? item : item.pattern
+                    const comment = typeof item === 'string' ? null : item.comment
+                    return (
+                      <Info_DataTable.Row key={`mcp-${i}`}>
+                        <Info_DataTable.Cell>
+                          <Info_StatusBadge status="allowed" />
+                        </Info_DataTable.Cell>
+                        <Info_DataTable.Cell>
+                          <code className="font-mono text-xs">{pattern}</code>
+                        </Info_DataTable.Cell>
+                        <Info_DataTable.Cell muted>{comment || '-'}</Info_DataTable.Cell>
+                      </Info_DataTable.Row>
+                    )
+                  })}
+                </Info_DataTable.Body>
+              </Info_DataTable>
+            </Info_Section>
           )}
 
           {/* Documentation */}
           {source.guide?.raw && (
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <SectionHeader>Documentation</SectionHeader>
+            <Info_Section
+              title="Documentation"
+              actions={
                 <button
                   onClick={handleEditGuide}
                   className={cn(
@@ -612,27 +489,15 @@ export default function SourceInfoPage({ sourceSlug, workspaceId }: SourceInfoPa
                 >
                   Edit
                 </button>
-              </div>
-
-              <div className="bg-background shadow-minimal rounded-[8px] overflow-hidden">
-                {/* Content */}
-                <div
-                  className={cn(
-                    "pl-[22px] pr-4 pb-3 text-sm overflow-y-auto",
-                    source.guide.raw.trimStart().match(/^#{1,3}\s/) ? "pt-0" : "pt-1"
-                  )}
-                  style={{ maxHeight: 540 }}
-                >
-                  <Markdown mode="minimal">
-                    {source.guide.raw}
-                  </Markdown>
-                </div>
-              </div>
-            </div>
+              }
+            >
+              <Info_Markdown maxHeight={540}>
+                {source.guide.raw}
+              </Info_Markdown>
+            </Info_Section>
           )}
-          </div>
-        </div>
-      </ScrollArea>
-    </div>
+        </Info_Page.Content>
+      )}
+    </Info_Page>
   )
 }

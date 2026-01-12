@@ -13,15 +13,25 @@ interface ManagedWindow {
   workspaceId: string
 }
 
+export interface CreateWindowOptions {
+  /** The workspace to open (empty string for onboarding) */
+  workspaceId: string
+  /** Whether to open in focused mode (smaller window, no sidebars) */
+  focused?: boolean
+  /** Deep link URL to navigate to after window loads (without ?window= param) */
+  initialDeepLink?: string
+}
+
 export class WindowManager {
   private windows: Map<number, ManagedWindow> = new Map()  // webContents.id → ManagedWindow
 
   /**
    * Create a new window for a workspace
-   * @param workspaceId - The workspace to open (empty string for onboarding)
-   * @param sessionId - Optional session to open directly
+   * @param options - Window creation options
    */
-  createWindow(workspaceId: string, sessionId?: string): BrowserWindow {
+  createWindow(options: CreateWindowOptions): BrowserWindow {
+    const { workspaceId, focused = false, initialDeepLink } = options
+
     // Load platform-specific app icon
     const getIconPath = () => {
       const resourcesDir = join(__dirname, '../resources')
@@ -42,9 +52,8 @@ export class WindowManager {
     }
 
     // Use smaller window size for focused mode (single session view)
-    const isFocusedMode = !!sessionId
-    const windowWidth = isFocusedMode ? 900 : 1400
-    const windowHeight = isFocusedMode ? 700 : 900
+    const windowWidth = focused ? 900 : 1400
+    const windowHeight = focused ? 700 : 900
 
     const window = new BrowserWindow({
       width: windowWidth,
@@ -108,11 +117,10 @@ export class WindowManager {
       })
     }
 
-    // Load the renderer with workspace ID (and optional session ID) as query params
+    // Load the renderer with workspace ID as query param
     const query: Record<string, string> = { workspaceId }
-    if (sessionId) {
-      query.sessionId = sessionId
-      query.focused = 'true' // Open in focused mode (no sidebars) when opening a specific session
+    if (focused) {
+      query.focused = 'true' // Open in focused mode (no sidebars)
     }
 
     if (VITE_DEV_SERVER_URL) {
@@ -120,6 +128,28 @@ export class WindowManager {
       window.loadURL(`${VITE_DEV_SERVER_URL}?${params}`)
     } else {
       window.loadFile(join(__dirname, 'renderer/index.html'), { query })
+    }
+
+    // If an initial deep link was provided, navigate to it after the window is ready
+    if (initialDeepLink) {
+      window.once('ready-to-show', () => {
+        // Import parseDeepLink dynamically to avoid circular dependency
+        import('./deep-link').then(({ parseDeepLink }) => {
+          const target = parseDeepLink(initialDeepLink)
+          if (target && (target.view || target.action)) {
+            // Wait a bit for React to mount and register IPC listeners
+            setTimeout(() => {
+              if (!window.isDestroyed() && !window.webContents.isDestroyed()) {
+                window.webContents.send(IPC_CHANNELS.DEEP_LINK_NAVIGATE, {
+                  view: target.view,
+                  action: target.action,
+                  actionParams: target.actionParams,
+                })
+              }
+            }, 100)
+          }
+        })
+      })
     }
 
     // Store the window mapping
@@ -267,7 +297,7 @@ export class WindowManager {
       existing.focus()
       return existing
     }
-    return this.createWindow(workspaceId)
+    return this.createWindow({ workspaceId })
   }
 
   /**

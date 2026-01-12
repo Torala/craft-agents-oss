@@ -1139,10 +1139,6 @@ function FullscreenOverlayPlayground({
         variant={variant}
         onOpenUrl={(url) => console.log('[Playground] Open URL:', url)}
         onOpenFile={(path) => console.log('[Playground] Open file:', path)}
-        onSendFeedback={(feedback) => {
-          console.log('[Playground] Feedback sent:', feedback)
-          alert('Feedback sent! Check console for details.')
-        }}
       />
     </div>
   )
@@ -1154,7 +1150,7 @@ export const fullscreenOverlayComponents: ComponentEntry[] = [
     id: 'fullscreen-overlay',
     name: 'FullscreenOverlay',
     category: 'Fullscreen',
-    description: 'Fullscreen view with inline commenting support for responses and plans',
+    description: 'Fullscreen view for reading AI responses and plans',
     component: FullscreenOverlayPlayground,
     layout: 'top',
     props: [

@@ -162,6 +162,33 @@ When disabled, stdio sources show "Disabled" status in UI and are excluded from 
 
 **API Tools (`api-tools.ts`):** `createApiServer()` creates single `api_{name}` tool accepting `{ path, method, params }`. Auth types: `none`, `header`, `bearer`, `query`, `basic`.
 
+### Skills (`packages/shared/src/skills/`)
+
+**Skills** are specialized instructions extending Claude's capabilities. Stored at `~/.craft-agent/workspaces/{ws}/skills/{slug}/`:
+```
+├── SKILL.md         # Required: YAML frontmatter + instructions
+└── icon.svg         # Optional: skill icon
+```
+
+**SKILL.md format:**
+```yaml
+---
+name: "Skill Name"
+description: "Brief description"
+globs: ["*.ts"]           # Optional: file patterns
+alwaysAllow: ["Bash"]     # Optional: auto-allowed tools
+---
+
+# Skill content with instructions for Claude
+```
+
+**Key files:**
+- `types.ts` - `SkillMetadata`, `LoadedSkill` interfaces
+- `storage.ts` - `loadSkill()`, `loadWorkspaceSkills()`, `deleteSkill()`
+- Validators in `config/validators.ts` - `validateSkill()`, `SkillMetadataSchema`
+
+**SDK vs Workspace skills:** Workspace skills can extend or override SDK built-in skills. When invoked, workspace skills take precedence.
+
 ### MCP Tool Metadata
 
 Fetch interceptor injects `_displayName` and `_intent` into MCP tool schemas:
@@ -274,6 +301,7 @@ Tools available within sessions with per-session callbacks:
 | `mcp/` | client, validation |
 | `prompts/` | system prompt |
 | `sessions/` | index, storage, persistence-queue |
+| `skills/` | types, storage (SKILL.md parsing) |
 | `sources/` | types, storage, service |
 | `statuses/` | types, crud, storage, default-icons |
 | `types/` | shared type definitions |
