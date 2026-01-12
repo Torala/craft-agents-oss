@@ -315,15 +315,26 @@ export function processInputWithFiles(input: string): {
 }
 
 /**
- * Read from clipboard (macOS only)
+ * Read from clipboard (cross-platform)
  * Checks for: 1) File URLs (copied files), 2) Images
  * Returns FileAttachment[] - could be multiple files
  */
 export function readClipboard(): FileAttachment[] {
-  if (process.platform !== 'darwin') {
-    return [];
+  if (process.platform === 'darwin') {
+    return readClipboardMacOS();
+  } else if (process.platform === 'win32') {
+    return readClipboardWindows();
+  } else if (process.platform === 'linux') {
+    return readClipboardLinux();
   }
+  return [];
+}
 
+/**
+ * Read from clipboard on macOS
+ * Checks for: 1) File URLs (copied files in Finder), 2) Images
+ */
+function readClipboardMacOS(): FileAttachment[] {
   const attachments: FileAttachment[] = [];
 
   // First, check for file URLs in clipboard (when files are copied in Finder)
@@ -379,7 +390,7 @@ if (fileURLs && !fileURLs.isNil()) {
   }
 
   // Otherwise, check for image data in clipboard
-  const imageAttachment = readClipboardImageData();
+  const imageAttachment = readClipboardImageDataMacOS();
   if (imageAttachment) {
     return [imageAttachment];
   }
@@ -388,9 +399,210 @@ if (fileURLs && !fileURLs.isNil()) {
 }
 
 /**
- * Read image data directly from clipboard (for screenshots, copied images)
+ * Read from clipboard on Windows
+ * Uses PowerShell to access clipboard for files and images
  */
-function readClipboardImageData(): FileAttachment | null {
+function readClipboardWindows(): FileAttachment[] {
+  const attachments: FileAttachment[] = [];
+
+  // Check for file paths in clipboard (copied files in Explorer)
+  try {
+    const psScript = `
+      Add-Type -AssemblyName System.Windows.Forms
+      $files = [System.Windows.Forms.Clipboard]::GetFileDropList()
+      if ($files.Count -gt 0) {
+        $files | ConvertTo-Json -Compress
+      } else {
+        "no_files"
+      }
+    `;
+    const result = execSync(`powershell -NoProfile -Command "${psScript.replace(/\n/g, ' ')}"`, {
+      encoding: 'utf-8',
+      stdio: 'pipe',
+      timeout: 5000,
+    }).trim();
+
+    if (result !== 'no_files' && result.length > 0) {
+      try {
+        // PowerShell returns single item as string, array as JSON array
+        const paths = result.startsWith('[') ? JSON.parse(result) : [result.replace(/^"|"$/g, '')];
+        for (const filePath of paths) {
+          const attachment = readFileAttachment(filePath);
+          if (attachment) {
+            attachments.push(attachment);
+          }
+        }
+      } catch {
+        // JSON parse failed
+      }
+    }
+  } catch {
+    // File reading failed
+  }
+
+  // If we got files, return them
+  if (attachments.length > 0) {
+    return attachments;
+  }
+
+  // Check for image data in clipboard
+  const imageAttachment = readClipboardImageDataWindows();
+  if (imageAttachment) {
+    return [imageAttachment];
+  }
+
+  return [];
+}
+
+/**
+ * Read image data from Windows clipboard using PowerShell
+ */
+function readClipboardImageDataWindows(): FileAttachment | null {
+  const tempFile = join(tmpdir(), `craft-clipboard-${Date.now()}.png`);
+
+  try {
+    // PowerShell script to save clipboard image to file
+    const psScript = `
+      Add-Type -AssemblyName System.Windows.Forms
+      $img = [System.Windows.Forms.Clipboard]::GetImage()
+      if ($img -ne $null) {
+        $img.Save("${tempFile.replace(/\\/g, '\\\\')}", [System.Drawing.Imaging.ImageFormat]::Png)
+        "success"
+      } else {
+        "no_image"
+      }
+    `;
+    const result = execSync(`powershell -NoProfile -Command "${psScript.replace(/\n/g, ' ')}"`, {
+      encoding: 'utf-8',
+      stdio: 'pipe',
+      timeout: 5000,
+    }).trim();
+
+    if (result === 'success' && existsSync(tempFile)) {
+      return readImageFile(tempFile);
+    }
+  } catch {
+    // PowerShell clipboard image extraction failed
+  }
+
+  return null;
+}
+
+/**
+ * Read from clipboard on Linux
+ * Uses xclip or xsel for clipboard access
+ */
+function readClipboardLinux(): FileAttachment[] {
+  const attachments: FileAttachment[] = [];
+
+  // Check for file URIs in clipboard (GNOME/KDE file managers use this format)
+  try {
+    // Try xclip first (most common)
+    let result: string | null = null;
+    try {
+      result = execSync('xclip -selection clipboard -t text/uri-list -o 2>/dev/null', {
+        encoding: 'utf-8',
+        stdio: 'pipe',
+        timeout: 5000,
+      }).trim();
+    } catch {
+      // xclip not available, try xsel
+      try {
+        result = execSync('xsel --clipboard --output 2>/dev/null', {
+          encoding: 'utf-8',
+          stdio: 'pipe',
+          timeout: 5000,
+        }).trim();
+      } catch {
+        // xsel also not available
+      }
+    }
+
+    if (result && result.startsWith('file://')) {
+      // Parse file:// URIs
+      const lines = result.split('\n');
+      for (const line of lines) {
+        if (line.startsWith('file://')) {
+          // Decode URI and convert to path
+          const filePath = decodeURIComponent(line.replace('file://', ''));
+          const attachment = readFileAttachment(filePath);
+          if (attachment) {
+            attachments.push(attachment);
+          }
+        }
+      }
+    }
+  } catch {
+    // File reading failed
+  }
+
+  // If we got files, return them
+  if (attachments.length > 0) {
+    return attachments;
+  }
+
+  // Check for image data in clipboard
+  const imageAttachment = readClipboardImageDataLinux();
+  if (imageAttachment) {
+    return [imageAttachment];
+  }
+
+  return [];
+}
+
+/**
+ * Read image data from Linux clipboard using xclip
+ */
+function readClipboardImageDataLinux(): FileAttachment | null {
+  const tempFile = join(tmpdir(), `craft-clipboard-${Date.now()}.png`);
+
+  // Try xclip for image/png content
+  try {
+    execSync(`xclip -selection clipboard -t image/png -o > "${tempFile}" 2>/dev/null`, {
+      shell: '/bin/bash',
+      stdio: 'pipe',
+      timeout: 5000,
+    });
+
+    if (existsSync(tempFile)) {
+      const stats = statSync(tempFile);
+      if (stats.size > 0) {
+        return readImageFile(tempFile);
+      }
+      // Empty file, cleanup
+      try { unlinkSync(tempFile); } catch {}
+    }
+  } catch {
+    // xclip image extraction failed
+  }
+
+  // Try wl-paste for Wayland
+  try {
+    execSync(`wl-paste --type image/png > "${tempFile}" 2>/dev/null`, {
+      shell: '/bin/bash',
+      stdio: 'pipe',
+      timeout: 5000,
+    });
+
+    if (existsSync(tempFile)) {
+      const stats = statSync(tempFile);
+      if (stats.size > 0) {
+        return readImageFile(tempFile);
+      }
+      // Empty file, cleanup
+      try { unlinkSync(tempFile); } catch {}
+    }
+  } catch {
+    // wl-paste failed
+  }
+
+  return null;
+}
+
+/**
+ * Read image data directly from macOS clipboard (for screenshots, copied images)
+ */
+function readClipboardImageDataMacOS(): FileAttachment | null {
   const tempFile = join(tmpdir(), `craft-clipboard-${Date.now()}.png`);
 
   // Method 1: Try pngpaste first (most reliable if installed via: brew install pngpaste)

@@ -58,6 +58,9 @@ export class WindowManager {
     const windowWidth = focused ? 900 : 1400
     const windowHeight = focused ? 700 : 900
 
+    // Platform-specific window options
+    const isMac = process.platform === 'darwin'
+
     const window = new BrowserWindow({
       width: windowWidth,
       height: windowHeight,
@@ -66,10 +69,18 @@ export class WindowManager {
       show: false, // Don't show until ready-to-show event (faster perceived startup)
       title: '',
       icon: iconExists ? iconPath : undefined,
-      titleBarStyle: 'hiddenInset',
-      trafficLightPosition: { x: 18, y: 18 },
-      vibrancy: 'under-window',
-      visualEffectState: 'active',
+      // macOS-specific: hidden title bar with inset traffic lights
+      ...(isMac && {
+        titleBarStyle: 'hiddenInset',
+        trafficLightPosition: { x: 18, y: 18 },
+        vibrancy: 'under-window',
+        visualEffectState: 'active',
+      }),
+      // Windows/Linux: use frameless with custom title bar handling
+      ...(!isMac && {
+        frame: true, // Keep native frame for Windows/Linux for better UX
+        autoHideMenuBar: true, // Hide menu bar but accessible via Alt key
+      }),
       webPreferences: {
         preload: join(__dirname, 'preload.cjs'),
         contextIsolation: true,

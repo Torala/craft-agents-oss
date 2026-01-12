@@ -112,27 +112,36 @@ export function initBadgeIcon(iconPath: string): void {
 }
 
 /**
- * Update the app dock badge count (macOS only)
+ * Update the app badge count (cross-platform)
  *
- * Uses a canvas-based approach to draw the badge directly onto the dock icon.
- * This works in both dev and production builds, unlike app.dock.setBadge().
+ * - macOS: Uses a canvas-based approach to draw the badge directly onto the dock icon.
+ * - Windows: Uses taskbar overlay icon for badge display.
+ * - Linux: Uses app.setBadgeCount() where supported (Unity, KDE).
  *
  * @param count - Number to show on badge (0 to clear)
  */
 export function updateBadgeCount(count: number): void {
-  if (process.platform !== 'darwin') {
-    // Badge is only supported on macOS
-    return
-  }
-
   // Skip if count hasn't changed
   if (count === currentBadgeCount) {
     return
   }
 
-  try {
-    currentBadgeCount = count
+  currentBadgeCount = count
 
+  if (process.platform === 'darwin') {
+    updateBadgeCountMacOS(count)
+  } else if (process.platform === 'win32') {
+    updateBadgeCountWindows(count)
+  } else if (process.platform === 'linux') {
+    updateBadgeCountLinux(count)
+  }
+}
+
+/**
+ * Update badge count on macOS using dock icon overlay
+ */
+function updateBadgeCountMacOS(count: number): void {
+  try {
     if (count > 0) {
       // Draw badge onto icon using the renderer process
       // We'll send this to the renderer which has Canvas API
@@ -148,27 +157,74 @@ export function updateBadgeCount(count: number): void {
         app.dock?.setIcon(originalIcon)
       }
     }
-    mainLog.info('Badge count updated:', count)
+    mainLog.info('Badge count updated (macOS):', count)
   } catch (error) {
-    mainLog.error('Failed to update badge count:', error)
+    mainLog.error('Failed to update badge count (macOS):', error)
   }
 }
 
 /**
- * Set the dock icon with a pre-rendered badge image
+ * Update badge count on Windows using taskbar overlay icon
+ */
+function updateBadgeCountWindows(count: number): void {
+  try {
+    const windows = BrowserWindow.getAllWindows()
+    const window = windows[0]
+    if (!window || window.isDestroyed()) {
+      return
+    }
+
+    if (count > 0) {
+      // Create a simple overlay icon with the count
+      // We'll ask the renderer to draw it and send back via IPC
+      if (!window.webContents.isDestroyed() && baseIconDataUrl) {
+        window.webContents.send('badge:draw-windows', { count })
+      }
+    } else {
+      // Clear the overlay
+      window.setOverlayIcon(null, '')
+    }
+    mainLog.info('Badge count updated (Windows):', count)
+  } catch (error) {
+    mainLog.error('Failed to update badge count (Windows):', error)
+  }
+}
+
+/**
+ * Update badge count on Linux using app.setBadgeCount (Unity/KDE)
+ */
+function updateBadgeCountLinux(count: number): void {
+  try {
+    // Electron's setBadgeCount works on Linux with Unity launcher and KDE
+    app.setBadgeCount(count)
+    mainLog.info('Badge count updated (Linux):', count)
+  } catch (error) {
+    mainLog.error('Failed to update badge count (Linux):', error)
+  }
+}
+
+/**
+ * Set the dock/taskbar icon with a pre-rendered badge image (cross-platform)
  * Called from IPC when renderer has drawn the badge
  */
 export function setDockIconWithBadge(dataUrl: string): void {
-  if (process.platform !== 'darwin') {
-    return
-  }
-
   try {
     const icon = nativeImage.createFromDataURL(dataUrl)
-    app.dock?.setIcon(icon)
-    mainLog.info('Dock icon updated with badge')
+
+    if (process.platform === 'darwin') {
+      app.dock?.setIcon(icon)
+      mainLog.info('Dock icon updated with badge (macOS)')
+    } else if (process.platform === 'win32') {
+      // On Windows, set the taskbar overlay icon
+      const windows = BrowserWindow.getAllWindows()
+      const window = windows[0]
+      if (window && !window.isDestroyed()) {
+        window.setOverlayIcon(icon, `${currentBadgeCount} notifications`)
+        mainLog.info('Taskbar overlay updated with badge (Windows)')
+      }
+    }
   } catch (error) {
-    mainLog.error('Failed to set dock icon with badge:', error)
+    mainLog.error('Failed to set dock/taskbar icon with badge:', error)
   }
 }
 
