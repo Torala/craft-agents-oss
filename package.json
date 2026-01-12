@@ -15,6 +15,7 @@
   "scripts": {
     "start": "bun run apps/tui/src/index.tsx",
     "dev": "bun --watch run apps/tui/src/index.tsx",
+    "test": "bun test",
     "typecheck": "cd packages/shared && bun run tsc --noEmit",
     "typecheck:all": "cd packages/core && bun run tsc --noEmit && cd ../shared && bun run tsc --noEmit",
     "lint:electron": "cd apps/electron && bun run lint",
