@@ -19,6 +19,7 @@ import type {
   PermissionMode,
   TodoState,
   LoadedSource,
+  LoadedSkill,
   NewChatActionParams,
 } from '../../shared/types'
 import type { TodoState as TodoStateConfig } from '@/config/todo-states'
@@ -40,6 +41,8 @@ export interface AppShellContextType {
   getDraft: (sessionId: string) => string
   /** All enabled sources for this workspace - provided by AppShell component */
   enabledSources?: LoadedSource[]
+  /** All skills for this workspace - provided by AppShell component (for @mentions) */
+  skills?: LoadedSkill[]
   /** Enabled permission modes for Shift+Tab cycling */
   enabledModes?: PermissionMode[]
   /** Dynamic todo states from workspace config (provided by AppShell, defaults to empty) */
@@ -51,7 +54,7 @@ export interface AppShellContextType {
 
   // Session callbacks
   onCreateSession: (workspaceId: string) => Promise<Session>
-  onSendMessage: (sessionId: string, message: string, attachments?: FileAttachment[]) => void
+  onSendMessage: (sessionId: string, message: string, attachments?: FileAttachment[], skillSlugs?: string[]) => void
   onRenameSession: (sessionId: string, name: string) => void
   onFlagSession: (sessionId: string) => void
   onUnflagSession: (sessionId: string) => void

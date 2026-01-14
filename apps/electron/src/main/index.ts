@@ -1,3 +1,8 @@
+// Load user's shell environment first (before other imports that may use env)
+// This ensures tools like Homebrew, nvm, etc. are available to the agent
+import { loadShellEnv } from './shell-env'
+loadShellEnv()
+
 import { app, BrowserWindow } from 'electron'
 import { join } from 'path'
 import { existsSync } from 'fs'
@@ -13,6 +18,7 @@ import { handleDeepLink } from './deep-link'
 import log, { isDebugMode, mainLog, getLogFilePath } from './logger'
 import { setPerfEnabled, enableDebug } from '@craft-agent/shared/utils'
 import { initNotificationService, clearBadgeCount, initBadgeIcon } from './notifications'
+import { scheduleUpdateCheck, setWindowManager as setAutoUpdateWindowManager } from './auto-update'
 
 // Initialize electron-log for renderer process support
 log.initialize()
@@ -177,6 +183,10 @@ app.whenReady().then(async () => {
 
     // Initialize auth (must happen after window creation for error reporting)
     await sessionManager.initialize()
+
+    // Initialize auto-update (check for updates after startup)
+    setAutoUpdateWindowManager(windowManager)
+    scheduleUpdateCheck(5000)  // Check 5 seconds after startup
 
     // Process pending deep link from cold start
     if (pendingDeepLink) {

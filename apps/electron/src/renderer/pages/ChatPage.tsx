@@ -42,6 +42,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     getDraft,
     onInputChange,
     enabledSources,
+    skills,
     enabledModes,
     todoStates,
     onSessionSourcesChange,
@@ -308,6 +309,8 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
               inputValue={inputValue}
               onInputChange={handleInputChange}
               sources={enabledSources}
+              skills={skills}
+              workspaceId={activeWorkspaceId || undefined}
               onSourcesChange={(slugs) => onSessionSourcesChange?.(sessionId, slugs)}
               workingDirectory={sessionMeta.workingDirectory}
               onWorkingDirectoryChange={handleWorkingDirectoryChange}
@@ -338,9 +341,9 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
       <div className="flex-1 flex flex-col min-h-0">
         <ChatDisplay
           session={session}
-          onSendMessage={(message, attachments) => {
+          onSendMessage={(message, attachments, skillSlugs) => {
             if (session) {
-              onSendMessage(session.id, message, attachments)
+              onSendMessage(session.id, message, attachments, skillSlugs)
             }
           }}
           onOpenFile={handleOpenFile}
@@ -360,6 +363,8 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
           inputValue={inputValue}
           onInputChange={handleInputChange}
           sources={enabledSources}
+          skills={skills}
+          workspaceId={activeWorkspaceId || undefined}
           onSourcesChange={(slugs) => onSessionSourcesChange?.(sessionId, slugs)}
           workingDirectory={workingDirectory}
           onWorkingDirectoryChange={handleWorkingDirectoryChange}

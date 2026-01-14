@@ -12,10 +12,17 @@ interface ClaudeCredentials {
   };
 }
 
+export interface ClaudeOAuthCredential {
+  accessToken: string;
+  refreshToken?: string;
+  expiresAt?: number;
+  scopes?: string[];
+}
+
 /**
- * Read Claude OAuth token from macOS Keychain
+ * Read Claude OAuth credentials from macOS Keychain
  */
-function readFromKeychain(): string | null {
+function readFromKeychain(): ClaudeOAuthCredential | null {
   if (process.platform !== 'darwin') {
     return null;
   }
@@ -28,7 +35,14 @@ function readFromKeychain(): string | null {
 
     if (result) {
       const credentials: ClaudeCredentials = JSON.parse(result);
-      return credentials.claudeAiOauth?.accessToken || null;
+      if (credentials.claudeAiOauth) {
+        return {
+          accessToken: credentials.claudeAiOauth.accessToken,
+          refreshToken: credentials.claudeAiOauth.refreshToken,
+          expiresAt: credentials.claudeAiOauth.expiresAt,
+          scopes: credentials.claudeAiOauth.scopes,
+        };
+      }
     }
   } catch {
     // Keychain entry not found or parse error
@@ -37,16 +51,23 @@ function readFromKeychain(): string | null {
 }
 
 /**
- * Read Claude OAuth token from credentials file (Linux/fallback)
+ * Read Claude OAuth credentials from credentials file (Linux/fallback)
  */
-function readFromCredentialsFile(): string | null {
+function readFromCredentialsFile(): ClaudeOAuthCredential | null {
   const credentialsPath = join(homedir(), '.claude', '.credentials.json');
 
   try {
     if (existsSync(credentialsPath)) {
       const content = readFileSync(credentialsPath, 'utf-8');
       const credentials: ClaudeCredentials = JSON.parse(content);
-      return credentials.claudeAiOauth?.accessToken || null;
+      if (credentials.claudeAiOauth) {
+        return {
+          accessToken: credentials.claudeAiOauth.accessToken,
+          refreshToken: credentials.claudeAiOauth.refreshToken,
+          expiresAt: credentials.claudeAiOauth.expiresAt,
+          scopes: credentials.claudeAiOauth.scopes,
+        };
+      }
     }
   } catch {
     // File not found or parse error
@@ -55,17 +76,79 @@ function readFromCredentialsFile(): string | null {
 }
 
 /**
- * Get existing Claude OAuth token from keychain or credentials file
+ * Get existing Claude OAuth credentials from keychain or credentials file
  */
-export function getExistingClaudeToken(): string | null {
+export function getExistingClaudeCredentials(): ClaudeOAuthCredential | null {
   // Try keychain first (macOS)
-  const keychainToken = readFromKeychain();
-  if (keychainToken) {
-    return keychainToken;
+  const keychainCreds = readFromKeychain();
+  if (keychainCreds) {
+    return keychainCreds;
   }
 
   // Fall back to credentials file
   return readFromCredentialsFile();
+}
+
+/**
+ * Get existing Claude OAuth token from keychain or credentials file
+ * @deprecated Use getExistingClaudeCredentials() to get full credentials with refresh token
+ */
+export function getExistingClaudeToken(): string | null {
+  const creds = getExistingClaudeCredentials();
+  return creds?.accessToken || null;
+}
+
+/**
+ * Refresh Claude OAuth token using refresh token
+ * Uses the Anthropic API token endpoint
+ */
+export async function refreshClaudeToken(refreshToken: string): Promise<{
+  accessToken: string;
+  refreshToken?: string;
+  expiresAt?: number;
+}> {
+  const params = new URLSearchParams({
+    grant_type: 'refresh_token',
+    refresh_token: refreshToken,
+    client_id: 'claude-desktop',
+  });
+
+  const response = await fetch('https://api.anthropic.com/v1/oauth/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: params.toString(),
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Failed to refresh Claude token: ${error}`);
+  }
+
+  const data = await response.json() as {
+    access_token: string;
+    refresh_token?: string;
+    expires_in?: number;
+    token_type?: string;
+  };
+
+  return {
+    accessToken: data.access_token,
+    refreshToken: data.refresh_token || refreshToken,
+    expiresAt: data.expires_in ? Date.now() + data.expires_in * 1000 : undefined,
+  };
+}
+
+/**
+ * Check if a token is expired or will expire soon (within 5 minutes)
+ */
+export function isTokenExpired(expiresAt?: number): boolean {
+  if (!expiresAt) {
+    // If no expiry, assume token is still valid
+    return false;
+  }
+  // Consider expired if less than 5 minutes remaining
+  const bufferMs = 5 * 60 * 1000;
+  return Date.now() + bufferMs >= expiresAt;
 }
 
 /**

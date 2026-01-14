@@ -18,7 +18,7 @@ import { Markdown, CollapsibleMarkdownProvider, StreamingMarkdown, type RenderMo
 import { AnimatedCollapsibleContent } from "@/components/ui/collapsible"
 import { Spinner, parseReadResult, parseBashResult, parseGrepResult, parseGlobResult } from "@craft-agent/ui"
 import { useFocusZone } from "@/hooks/keyboard"
-import type { Session, Message, FileAttachment, StoredAttachment, PermissionRequest, CredentialRequest, CredentialResponse, LoadedSource, FileChange } from "../../../shared/types"
+import type { Session, Message, FileAttachment, StoredAttachment, PermissionRequest, CredentialRequest, CredentialResponse, LoadedSource, LoadedSkill, FileChange } from "../../../shared/types"
 import type { PermissionMode } from "@craft-agent/shared/agent/modes"
 import { TurnCard, UserMessageBubble, groupMessagesByTurn, formatTurnAsMarkdown, formatActivityAsMarkdown, type Turn, type AssistantTurn, type UserTurn, type SystemTurn, type OnboardingTurn, type AuthRequestTurn } from "@craft-agent/ui"
 import { MemoizedOnboardingBubble } from "@/components/chat/OnboardingBubble"
@@ -70,7 +70,7 @@ function BackgroundImage({ url }: { url: string }) {
 
 interface ChatDisplayProps {
   session: Session | null
-  onSendMessage: (message: string, attachments?: FileAttachment[]) => void
+  onSendMessage: (message: string, attachments?: FileAttachment[], skillSlugs?: string[]) => void
   onOpenFile: (path: string) => void
   onOpenUrl: (url: string) => void
   // Model selection
@@ -107,6 +107,11 @@ interface ChatDisplayProps {
   sources?: LoadedSource[]
   /** Callback when source selection changes */
   onSourcesChange?: (slugs: string[]) => void
+  // Skill selection (for @mentions)
+  /** Available skills for @mention autocomplete */
+  skills?: LoadedSkill[]
+  /** Workspace ID for loading skill icons */
+  workspaceId?: string
   // Working directory (per session)
   /** Current working directory for this session */
   workingDirectory?: string
@@ -304,6 +309,9 @@ export function ChatDisplay({
   // Sources
   sources,
   onSourcesChange,
+  // Skills (for @mentions)
+  skills,
+  workspaceId,
   // Working directory
   workingDirectory,
   onWorkingDirectoryChange,
@@ -506,10 +514,10 @@ export function ChatDisplay({
 
   // Handle message submission from InputContainer
   // Backend handles interruption and queueing if currently processing
-  const handleSubmit = (message: string, attachments?: FileAttachment[]) => {
+  const handleSubmit = (message: string, attachments?: FileAttachment[], skillSlugs?: string[]) => {
     // Force stick-to-bottom when user sends a message
     isStickToBottomRef.current = true
-    onSendMessage(message, attachments)
+    onSendMessage(message, attachments, skillSlugs)
 
     // Immediately scroll to bottom after sending - use requestAnimationFrame
     // to ensure the DOM has updated with the new message
@@ -982,6 +990,8 @@ export function ChatDisplay({
               sources={sources}
               enabledSourceSlugs={session.enabledSourceSlugs}
               onSourcesChange={onSourcesChange}
+              skills={skills}
+              workspaceId={workspaceId}
               workingDirectory={workingDirectory}
               onWorkingDirectoryChange={onWorkingDirectoryChange}
               sessionFolderPath={sessionFolderPath}

@@ -572,6 +572,23 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
     return !app.isPackaged
   })
 
+  // Auto-update handlers
+  // Manual check from UI - don't auto-download (user might be on metered connection)
+  ipcMain.handle(IPC_CHANNELS.UPDATE_CHECK, async () => {
+    const { checkForUpdates } = await import('./auto-update')
+    return checkForUpdates({ autoDownload: false })
+  })
+
+  ipcMain.handle(IPC_CHANNELS.UPDATE_GET_INFO, async () => {
+    const { getUpdateInfo } = await import('./auto-update')
+    return getUpdateInfo()
+  })
+
+  ipcMain.handle(IPC_CHANNELS.UPDATE_INSTALL, async () => {
+    const { installUpdate } = await import('./auto-update')
+    return installUpdate()
+  })
+
   // Shell operations - open URL in external browser (or handle craftagents:// internally)
   ipcMain.handle(IPC_CHANNELS.OPEN_URL, async (_event, url: string) => {
     ipcLog.info('[OPEN_URL] Received request:', url)
@@ -748,7 +765,21 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
       if (authType === 'api_key') {
         await manager.setApiKey(credential)
       } else if (authType === 'oauth_token') {
-        await manager.setClaudeOAuth(credential)
+        // Import full credentials including refresh token and expiry from Claude CLI
+        const { getExistingClaudeCredentials } = await import('@craft-agent/shared/auth')
+        const cliCreds = getExistingClaudeCredentials()
+        if (cliCreds) {
+          await manager.setClaudeOAuthCredentials({
+            accessToken: cliCreds.accessToken,
+            refreshToken: cliCreds.refreshToken,
+            expiresAt: cliCreds.expiresAt,
+          })
+          ipcLog.info('Saved Claude OAuth credentials with refresh token')
+        } else {
+          // Fallback to just saving the access token
+          await manager.setClaudeOAuth(credential)
+          ipcLog.info('Saved Claude OAuth access token only')
+        }
       }
     }
 
@@ -1239,13 +1270,16 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
 
   // Get all skills for a workspace
   ipcMain.handle(IPC_CHANNELS.SKILLS_GET, async (_event, workspaceId: string) => {
+    ipcLog.info(`SKILLS_GET: Loading skills for workspace: ${workspaceId}`)
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) {
       ipcLog.error(`SKILLS_GET: Workspace not found: ${workspaceId}`)
       return []
     }
     const { loadWorkspaceSkills } = await import('@craft-agent/shared/skills')
-    return loadWorkspaceSkills(workspace.rootPath)
+    const skills = loadWorkspaceSkills(workspace.rootPath)
+    ipcLog.info(`SKILLS_GET: Loaded ${skills.length} skills from ${workspace.rootPath}`)
+    return skills
   })
 
   // Get files in a skill directory

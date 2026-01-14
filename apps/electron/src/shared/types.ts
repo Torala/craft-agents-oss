@@ -348,6 +348,8 @@ export type SessionEvent =
 export interface SendMessageOptions {
   /** Enable ultrathink mode for extended reasoning */
   ultrathinkEnabled?: boolean
+  /** Skill slugs to activate for this message (from @mentions) */
+  skillSlugs?: string[]
 }
 
 // =============================================================================
@@ -437,6 +439,13 @@ export const IPC_CHANNELS = {
   GET_VERSIONS: 'system:versions',
   GET_HOME_DIR: 'system:homeDir',
   IS_DEBUG_MODE: 'system:isDebugMode',
+
+  // Auto-update
+  UPDATE_CHECK: 'update:check',
+  UPDATE_GET_INFO: 'update:getInfo',
+  UPDATE_INSTALL: 'update:install',
+  UPDATE_AVAILABLE: 'update:available',  // main → renderer broadcast
+  UPDATE_DOWNLOAD_PROGRESS: 'update:downloadProgress',  // main → renderer broadcast
 
   // Shell operations (open external URLs/files)
   OPEN_URL: 'shell:openUrl',
@@ -777,6 +786,13 @@ export interface ElectronAPI {
   getHomeDir(): Promise<string>
   isDebugMode(): Promise<boolean>
 
+  // Auto-update
+  checkForUpdates(): Promise<UpdateInfo>
+  getUpdateInfo(): Promise<UpdateInfo>
+  installUpdate(): Promise<void>
+  onUpdateAvailable(callback: (info: UpdateInfo) => void): () => void
+  onUpdateDownloadProgress(callback: (progress: number) => void): () => void
+
   // Shell operations
   openUrl(url: string): Promise<void>
   openFile(path: string): Promise<void>
@@ -935,6 +951,26 @@ export interface ClaudeOAuthResult {
 export interface BillingMethodInfo {
   authType: AuthType
   hasCredential: boolean
+}
+
+/**
+ * Auto-update information
+ */
+export interface UpdateInfo {
+  /** Whether an update is available */
+  available: boolean
+  /** Current installed version */
+  currentVersion: string
+  /** Latest available version (null if check failed) */
+  latestVersion: string | null
+  /** Download URL for the update DMG */
+  downloadUrl: string | null
+  /** Download state */
+  downloadState: 'idle' | 'downloading' | 'ready' | 'installing' | 'error'
+  /** Download progress (0-100) */
+  downloadProgress: number
+  /** Error message if download/install failed */
+  error?: string
 }
 
 /**

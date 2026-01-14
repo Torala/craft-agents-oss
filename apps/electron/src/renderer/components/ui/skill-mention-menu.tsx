@@ -1,0 +1,278 @@
+import * as React from 'react'
+import { cn } from '@/lib/utils'
+import { SkillAvatar } from '@/components/ui/skill-avatar'
+import type { LoadedSkill } from '../../../../shared/types'
+
+// ============================================================================
+// Types
+// ============================================================================
+
+export interface InlineSkillMentionProps {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  skills: LoadedSkill[]
+  onSelect: (slug: string) => void
+  filter?: string
+  position: { x: number; y: number }
+  workspaceId?: string
+  className?: string
+}
+
+// ============================================================================
+// Shared Styles (matching slash-command-menu)
+// ============================================================================
+
+const MENU_CONTAINER_STYLE = 'min-w-[240px] overflow-hidden rounded-[8px] bg-background text-foreground shadow-modal-small'
+const MENU_LIST_STYLE = 'max-h-[240px] overflow-y-auto p-1'
+const MENU_ITEM_STYLE = 'flex cursor-pointer select-none items-center gap-3 rounded-[6px] px-3 py-2 text-[13px]'
+const MENU_ITEM_SELECTED = 'bg-foreground/5'
+
+// ============================================================================
+// Filter skills utility
+// ============================================================================
+
+function filterSkills(skills: LoadedSkill[], filter: string): LoadedSkill[] {
+  if (!filter) return skills
+  const lowerFilter = filter.toLowerCase()
+  return skills.filter(
+    skill =>
+      skill.slug.toLowerCase().includes(lowerFilter) ||
+      skill.metadata.name.toLowerCase().includes(lowerFilter)
+  )
+}
+
+// ============================================================================
+// InlineSkillMention - Autocomplete that follows cursor
+// ============================================================================
+
+export function InlineSkillMention({
+  open,
+  onOpenChange,
+  skills,
+  onSelect,
+  filter = '',
+  position,
+  workspaceId,
+  className,
+}: InlineSkillMentionProps) {
+  const menuRef = React.useRef<HTMLDivElement>(null)
+  const [selectedIndex, setSelectedIndex] = React.useState(0)
+  const filteredSkills = filterSkills(skills, filter)
+
+  // Reset selection when filter changes
+  React.useEffect(() => {
+    setSelectedIndex(0)
+  }, [filter])
+
+  // Keyboard navigation
+  React.useEffect(() => {
+    if (!open) return
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      switch (e.key) {
+        case 'ArrowDown':
+          e.preventDefault()
+          setSelectedIndex(prev => (prev < filteredSkills.length - 1 ? prev + 1 : 0))
+          break
+        case 'ArrowUp':
+          e.preventDefault()
+          setSelectedIndex(prev => (prev > 0 ? prev - 1 : filteredSkills.length - 1))
+          break
+        case 'Enter':
+        case 'Tab':
+          e.preventDefault()
+          if (filteredSkills[selectedIndex]) {
+            onSelect(filteredSkills[selectedIndex].slug)
+            onOpenChange(false)
+          }
+          break
+        case 'Escape':
+          e.preventDefault()
+          onOpenChange(false)
+          break
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [open, filteredSkills, selectedIndex, onSelect, onOpenChange])
+
+  // Close on click outside
+  React.useEffect(() => {
+    if (!open) return
+
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        onOpenChange(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [open, onOpenChange])
+
+  // Hide if no results or not open
+  if (!open || filteredSkills.length === 0) return null
+
+  // Calculate bottom position from window height (menu appears above cursor)
+  const bottomPosition = typeof window !== 'undefined'
+    ? window.innerHeight - Math.round(position.y) + 8
+    : 0
+
+  return (
+    <div
+      ref={menuRef}
+      className={cn('fixed z-50', MENU_CONTAINER_STYLE, className)}
+      style={{ left: Math.round(position.x) - 10, bottom: bottomPosition }}
+    >
+      <div className={MENU_LIST_STYLE}>
+        {filteredSkills.map((skill, index) => {
+          const isSelected = index === selectedIndex
+          return (
+            <div
+              key={skill.slug}
+              onClick={() => {
+                onSelect(skill.slug)
+                onOpenChange(false)
+              }}
+              onMouseEnter={() => setSelectedIndex(index)}
+              className={cn(
+                MENU_ITEM_STYLE,
+                isSelected && MENU_ITEM_SELECTED
+              )}
+            >
+              <div className="shrink-0">
+                <SkillAvatar skill={skill} size="sm" workspaceId={workspaceId} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="font-medium truncate">{skill.metadata.name}</div>
+                {skill.metadata.description && (
+                  <div className="text-[11px] text-foreground/50 truncate">
+                    {skill.metadata.description}
+                  </div>
+                )}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// ============================================================================
+// Hook for managing inline skill mention state
+// ============================================================================
+
+export interface UseInlineSkillMentionOptions {
+  textareaRef: React.RefObject<HTMLTextAreaElement>
+  skills: LoadedSkill[]
+  onSelect: (slug: string) => void
+}
+
+export interface UseInlineSkillMentionReturn {
+  isOpen: boolean
+  filter: string
+  position: { x: number; y: number }
+  handleInputChange: (value: string, cursorPosition: number) => void
+  close: () => void
+  handleSelect: (slug: string) => string
+}
+
+export function useInlineSkillMention({
+  textareaRef,
+  skills,
+  onSelect,
+}: UseInlineSkillMentionOptions): UseInlineSkillMentionReturn {
+  const [isOpen, setIsOpen] = React.useState(false)
+  const [filter, setFilter] = React.useState('')
+  const [position, setPosition] = React.useState({ x: 0, y: 0 })
+  const [atStart, setAtStart] = React.useState(-1)
+
+  const handleInputChange = React.useCallback((value: string, cursorPosition: number) => {
+    const textBeforeCursor = value.slice(0, cursorPosition)
+    // Match @ at start of text or after whitespace, followed by optional word chars and hyphens
+    const atMatch = textBeforeCursor.match(/(?:^|\s)@([\w-]*)$/)
+
+    if (atMatch && skills.length > 0) {
+      const matchStart = textBeforeCursor.lastIndexOf('@')
+      setAtStart(matchStart)
+      setFilter(atMatch[1] || '')
+
+      if (textareaRef.current) {
+        const textarea = textareaRef.current
+        const rect = textarea.getBoundingClientRect()
+        const style = window.getComputedStyle(textarea)
+
+        // Mirror element to measure cursor position
+        const mirror = document.createElement('div')
+        mirror.style.cssText = `
+          position: absolute;
+          visibility: hidden;
+          white-space: pre-wrap;
+          word-wrap: break-word;
+          font-family: ${style.fontFamily};
+          font-size: ${style.fontSize};
+          line-height: ${style.lineHeight};
+          padding: ${style.padding};
+          width: ${textarea.clientWidth}px;
+          box-sizing: border-box;
+        `
+        mirror.textContent = textBeforeCursor
+        const caret = document.createElement('span')
+        caret.textContent = '|'
+        mirror.appendChild(caret)
+
+        document.body.appendChild(mirror)
+        const caretRect = caret.getBoundingClientRect()
+        const mirrorRect = mirror.getBoundingClientRect()
+        document.body.removeChild(mirror)
+
+        // Position above the current line (menu appears above cursor)
+        setPosition({
+          x: rect.left + (caretRect.left - mirrorRect.left),
+          y: rect.top + (caretRect.top - mirrorRect.top),
+        })
+      }
+
+      setIsOpen(true)
+    } else {
+      setIsOpen(false)
+      setFilter('')
+      setAtStart(-1)
+    }
+  }, [textareaRef, skills.length])
+
+  const handleSelect = React.useCallback((slug: string): string => {
+    // Insert @slug at the @ position, replacing the partial text
+    let result = ''
+    if (textareaRef.current && atStart >= 0) {
+      const currentValue = textareaRef.current.value
+      const before = currentValue.slice(0, atStart)
+      const cursorPos = textareaRef.current.selectionStart
+      const after = currentValue.slice(cursorPos)
+      // Insert @slug with trailing space
+      result = before + '@' + slug + ' ' + after
+    }
+
+    onSelect(slug)
+    setIsOpen(false)
+
+    return result
+  }, [onSelect, textareaRef, atStart])
+
+  const close = React.useCallback(() => {
+    setIsOpen(false)
+    setFilter('')
+    setAtStart(-1)
+  }, [])
+
+  return {
+    isOpen,
+    filter,
+    position,
+    handleInputChange,
+    close,
+    handleSelect,
+  }
+}

@@ -201,6 +201,35 @@ export class CredentialManager {
     await this.set({ type: 'claude_oauth' }, { value: token });
   }
 
+  /** Get Claude OAuth credentials (with refresh token and expiry) */
+  async getClaudeOAuthCredentials(): Promise<{
+    accessToken: string;
+    refreshToken?: string;
+    expiresAt?: number;
+  } | null> {
+    const cred = await this.get({ type: 'claude_oauth' });
+    if (!cred) return null;
+
+    return {
+      accessToken: cred.value,
+      refreshToken: cred.refreshToken,
+      expiresAt: cred.expiresAt,
+    };
+  }
+
+  /** Set Claude OAuth credentials (with refresh token and expiry) */
+  async setClaudeOAuthCredentials(credentials: {
+    accessToken: string;
+    refreshToken?: string;
+    expiresAt?: number;
+  }): Promise<void> {
+    await this.set({ type: 'claude_oauth' }, {
+      value: credentials.accessToken,
+      refreshToken: credentials.refreshToken,
+      expiresAt: credentials.expiresAt,
+    });
+  }
+
   /** Get Craft OAuth token */
   async getCraftOAuth(): Promise<string | null> {
     const cred = await this.get({ type: 'craft_oauth' });
