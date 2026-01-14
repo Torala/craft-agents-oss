@@ -578,15 +578,16 @@ export function AppShell({
     return onDeleteSession(sessionId, skipConfirmation)
   }, [session.selected, setSession, onDeleteSession])
 
-  // Extend context value with local overrides (textareaRef, wrapped onDeleteSession, sources, enabledModes)
+  // Extend context value with local overrides (textareaRef, wrapped onDeleteSession, sources, skills, enabledModes)
   const appShellContextValue = React.useMemo<AppShellContextType>(() => ({
     ...contextValue,
     onDeleteSession: handleDeleteSession,
     textareaRef: chatInputRef,
     enabledSources: sources,
+    skills,
     enabledModes,
     onSessionSourcesChange: handleSessionSourcesChange,
-  }), [contextValue, handleDeleteSession, sources, enabledModes, handleSessionSourcesChange])
+  }), [contextValue, handleDeleteSession, sources, skills, enabledModes, handleSessionSourcesChange])
 
   // Persist expanded folders to localStorage
   React.useEffect(() => {

@@ -1833,6 +1833,18 @@ export class SessionManager {
         }
       }
 
+      // Inject skill context if skills are mentioned via @mentions
+      if (options?.skillSlugs?.length) {
+        const skillContext = await this.buildSkillContext(
+          managed.workspace.rootPath,
+          options.skillSlugs
+        )
+        if (skillContext) {
+          messageToSend = `${skillContext}\n\n${messageToSend}`
+          sessionLog.info(`Injected ${options.skillSlugs.length} skill(s) context: ${options.skillSlugs.join(', ')}`)
+        }
+      }
+
       sendSpan.mark('chat.starting')
       const chatIterator = agent.chat(messageToSend, attachments)
       sessionLog.info('Got chat iterator, starting iteration...')
@@ -2626,6 +2638,38 @@ To view this task's output:
 
       // Note: working_directory_changed is user-initiated only (via updateWorkingDirectory),
       // the agent no longer has a change_working_directory tool
+    }
+  }
+
+  /**
+   * Build skill context from @mentioned skill slugs
+   * Returns XML-formatted skill instructions to prepend to the message
+   */
+  private async buildSkillContext(workspaceRoot: string, skillSlugs: string[]): Promise<string | null> {
+    try {
+      const { loadWorkspaceSkills } = await import('@craft-agent/shared/skills')
+      const allSkills = loadWorkspaceSkills(workspaceRoot)
+      const activated = allSkills.filter(s => skillSlugs.includes(s.slug))
+
+      if (activated.length === 0) {
+        sessionLog.warn(`No skills found for slugs: ${skillSlugs.join(', ')}`)
+        return null
+      }
+
+      const skillBlocks = activated.map(skill => {
+        return `<skill name="${skill.metadata.name}" slug="${skill.slug}">
+${skill.content}
+</skill>`
+      })
+
+      return `<activated-skills>
+The user has activated the following skills for this request. Follow their instructions:
+
+${skillBlocks.join('\n\n')}
+</activated-skills>`
+    } catch (error) {
+      sessionLog.error('Failed to build skill context:', error)
+      return null
     }
   }
 
