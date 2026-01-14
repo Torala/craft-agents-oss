@@ -48,6 +48,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     onRenameSession,
     onFlagSession,
     onDeleteSession,
+    rightSidebarButton,
   } = useAppShellContext()
 
   // Use the unified session options hook for clean access
@@ -236,7 +237,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
 
       return (
         <div className="h-full flex flex-col">
-          <PanelHeader title={displayTitle} actions={headerMenu} className="bg-surface-below" />
+          <PanelHeader title={displayTitle} actions={headerMenu} rightSidebarButton={rightSidebarButton} className="bg-surface-below" />
           <div className="flex-1 flex flex-col min-h-0">
             <ChatDisplay
               session={skeletonSession}
@@ -274,7 +275,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     // Session truly doesn't exist
     return (
       <div className="h-full flex flex-col">
-        <PanelHeader title="Chat" className="bg-surface-below" />
+        <PanelHeader title="Chat" rightSidebarButton={rightSidebarButton} className="bg-surface-below" />
         <div className="flex-1 flex flex-col items-center justify-center gap-3 text-muted-foreground">
           <AlertCircle className="h-10 w-10" />
           <p className="text-sm">This session no longer exists</p>
@@ -285,7 +286,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
 
   return (
     <div className="h-full flex flex-col">
-      <PanelHeader title={displayTitle} actions={headerMenu} className="bg-surface-below" />
+      <PanelHeader title={displayTitle} actions={headerMenu} rightSidebarButton={rightSidebarButton} className="bg-surface-below" />
       <div className="flex-1 flex flex-col min-h-0">
         <ChatDisplay
           session={session}

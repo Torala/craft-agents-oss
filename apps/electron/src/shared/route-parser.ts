@@ -14,6 +14,7 @@ import type {
   ChatFilter,
   SettingsSubpage,
   SourceCategory,
+  RightSidebarPanel,
 } from './types'
 
 // =============================================================================
@@ -367,15 +368,25 @@ function convertCompoundToViewRoute(compound: ParsedCompoundRoute): ParsedRoute 
  *
  * Supports:
  * - Compound routes: allChats, allChats/chat/abc, sources, sources/source/github, settings/shortcuts
+ * - Right sidebar param: ?sidebar=sessionMetadata
  *
  * Returns null for action routes (they don't map to a navigation state) and invalid routes.
  */
-export function parseRouteToNavigationState(route: string): NavigationState | null {
+export function parseRouteToNavigationState(
+  route: string,
+  sidebarParam?: string
+): NavigationState | null {
   // Parse compound routes
   if (isCompoundRoute(route)) {
     const compound = parseCompoundRoute(route)
     if (compound) {
-      return convertCompoundToNavigationState(compound)
+      const state = convertCompoundToNavigationState(compound)
+      // Add rightSidebar if param provided
+      const rightSidebar = parseRightSidebarParam(sidebarParam)
+      if (rightSidebar) {
+        return { ...state, rightSidebar }
+      }
+      return state
     }
   }
 
@@ -387,7 +398,15 @@ export function parseRouteToNavigationState(route: string): NavigationState | nu
   if (parsed.type === 'action') return null
 
   // Convert view routes to NavigationState
-  return convertParsedRouteToNavigationState(parsed)
+  const state = convertParsedRouteToNavigationState(parsed)
+  if (state) {
+    // Add rightSidebar if param provided
+    const rightSidebar = parseRightSidebarParam(sidebarParam)
+    if (rightSidebar) {
+      return { ...state, rightSidebar }
+    }
+  }
+  return state
 }
 
 /**
@@ -590,4 +609,74 @@ export function buildRouteFromNavigationState(state: NavigationState): string {
     return `${base}/chat/${state.details.sessionId}`
   }
   return base
+}
+
+// =============================================================================
+// Right Sidebar Param Parsing
+// =============================================================================
+
+/**
+ * Parse right sidebar param from URL query string
+ *
+ * Examples:
+ *   'sessionMetadata' -> { type: 'sessionMetadata' }
+ *   'history' -> { type: 'history' }
+ *   'files' -> { type: 'files' }
+ *   'files/src/main.ts' -> { type: 'files', path: 'src/main.ts' }
+ *   'none' -> { type: 'none' }
+ */
+export function parseRightSidebarParam(sidebarStr?: string): RightSidebarPanel | undefined {
+  if (!sidebarStr) return undefined
+
+  if (sidebarStr === 'sessionMetadata') {
+    return { type: 'sessionMetadata' }
+  }
+  if (sidebarStr === 'history') {
+    return { type: 'history' }
+  }
+  if (sidebarStr.startsWith('files')) {
+    const path = sidebarStr.substring(6) // Remove 'files/' prefix
+    return { type: 'files', path: path || undefined }
+  }
+  if (sidebarStr === 'none') {
+    return { type: 'none' }
+  }
+
+  return undefined
+}
+
+/**
+ * Build right sidebar param for URL query string
+ *
+ * Returns undefined for 'none' type (omit from URL to keep URLs clean)
+ */
+export function buildRightSidebarParam(panel?: RightSidebarPanel): string | undefined {
+  if (!panel || panel.type === 'none') return undefined
+
+  switch (panel.type) {
+    case 'sessionMetadata':
+      return 'sessionMetadata'
+    case 'history':
+      return 'history'
+    case 'files':
+      return panel.path ? `files/${panel.path}` : 'files'
+    default:
+      return undefined
+  }
+}
+
+/**
+ * Build full URL with navigation state and sidebar param
+ */
+export function buildUrlWithState(navState: NavigationState): string {
+  const route = buildRouteFromNavigationState(navState)
+  const params = new URLSearchParams()
+  params.set('route', route)
+
+  const sidebarParam = buildRightSidebarParam(navState.rightSidebar)
+  if (sidebarParam) {
+    params.set('sidebar', sidebarParam)
+  }
+
+  return `?${params.toString()}`
 }

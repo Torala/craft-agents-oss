@@ -83,7 +83,7 @@ export function ThemeProvider({
   children,
   defaultMode = 'system',
   defaultColorTheme = 'default',
-  defaultFont = 'inter'
+  defaultFont = 'system'
 }: ThemeProviderProps) {
   const stored = loadStoredTheme()
 

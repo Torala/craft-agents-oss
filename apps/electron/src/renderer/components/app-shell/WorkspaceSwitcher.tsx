@@ -1,9 +1,12 @@
 import * as React from "react"
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect } from "react"
 import { Check, FolderPlus, ExternalLink } from "lucide-react"
+import { AnimatePresence } from "motion/react"
+import { useSetAtom } from "jotai"
 import { toast } from "sonner"
 
 import { cn } from "@/lib/utils"
+import { fullscreenOverlayOpenAtom } from "@/atoms/overlay"
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -13,6 +16,7 @@ import {
 } from "@/components/ui/styled-dropdown"
 import { CrossfadeAvatar } from "@/components/ui/avatar"
 import { FadingText } from "@/components/ui/fading-text"
+import { WorkspaceCreationScreen } from "@/components/workspace"
 import type { Workspace } from "../../../shared/types"
 
 interface WorkspaceSwitcherProps {
@@ -41,7 +45,8 @@ export function WorkspaceSwitcher({
   onSelect,
   onWorkspaceCreated,
 }: WorkspaceSwitcherProps) {
-  const [isCreating, setIsCreating] = useState(false)
+  const [showCreationScreen, setShowCreationScreen] = useState(false)
+  const setFullscreenOverlayOpen = useSetAtom(fullscreenOverlayOpenAtom)
   // Cache stores { dataUrl, sourceUrl } to detect when icon file changes
   const [iconCache, setIconCache] = useState<Record<string, { dataUrl: string; sourceUrl: string }>>({})
   const selectedWorkspace = workspaces.find(w => w.id === activeWorkspaceId)
@@ -95,41 +100,40 @@ export function WorkspaceSwitcher({
     return undefined
   }
 
-  const handleNewWorkspace = async () => {
-    if (isCreating) return
-    setIsCreating(true)
+  const handleNewWorkspace = () => {
+    setShowCreationScreen(true)
+    setFullscreenOverlayOpen(true)
+  }
 
-    try {
-      // Open folder picker
-      const folderPath = await window.electronAPI.openFolderDialog()
-      if (!folderPath) {
-        setIsCreating(false)
-        return
-      }
+  const handleWorkspaceCreated = (workspace: Workspace) => {
+    setShowCreationScreen(false)
+    setFullscreenOverlayOpen(false)
+    toast.success(`Created workspace "${workspace.name}"`)
+    onWorkspaceCreated?.(workspace)
+    onSelect(workspace.id)
+  }
 
-      // Use folder name as workspace name (browser-compatible basename)
-      const name = folderPath.split(/[\\/]/).pop() || folderPath
-
-      // Create workspace
-      const workspace = await window.electronAPI.createWorkspace(folderPath, name)
-      toast.success(`Created workspace "${name}"`)
-
-      // Notify parent
-      onWorkspaceCreated?.(workspace)
-      onSelect(workspace.id)
-    } catch (error) {
-      console.error('Failed to create workspace:', error)
-      toast.error('Failed to create workspace')
-    } finally {
-      setIsCreating(false)
-    }
+  const handleCloseCreationScreen = () => {
+    setShowCreationScreen(false)
+    setFullscreenOverlayOpen(false)
   }
 
   return (
-    <DropdownMenu>
-      {/* Trigger Button: Shows current workspace
-          Hover effect: subtle background tint */}
-      <DropdownMenuTrigger asChild>
+    <>
+      {/* Full-screen workspace creation overlay */}
+      <AnimatePresence>
+        {showCreationScreen && (
+          <WorkspaceCreationScreen
+            onWorkspaceCreated={handleWorkspaceCreated}
+            onClose={handleCloseCreationScreen}
+          />
+        )}
+      </AnimatePresence>
+
+      <DropdownMenu>
+        {/* Trigger Button: Shows current workspace
+            Hover effect: subtle background tint */}
+        <DropdownMenuTrigger asChild>
         <button
           className={cn(
             "flex items-center gap-1 w-full min-w-0 justify-start px-2 py-1.5 rounded-md",
@@ -205,13 +209,13 @@ export function WorkspaceSwitcher({
         <StyledDropdownMenuSeparator />
         <StyledDropdownMenuItem
           onClick={handleNewWorkspace}
-          disabled={isCreating}
           className="font-sans"
         >
-          <FolderPlus className="h-4 w-4 mr-3" />
-          {isCreating ? 'Creating...' : 'New Workspace...'}
+          <FolderPlus className="h-4 w-4" />
+          Add Workspace...
         </StyledDropdownMenuItem>
       </StyledDropdownMenuContent>
     </DropdownMenu>
+    </>
   )
 }

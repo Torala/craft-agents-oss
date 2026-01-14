@@ -106,6 +106,9 @@ export interface AppShellContextType {
 
   // Open a new chat with optional agent, name, and pre-filled input
   openNewChat?: (params?: NewChatActionParams) => Promise<void>
+
+  // Right sidebar button (for page headers)
+  rightSidebarButton?: React.ReactNode
 }
 
 const AppShellContext = createContext<AppShellContextType | null>(null)

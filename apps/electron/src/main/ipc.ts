@@ -145,6 +145,14 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
     return workspace
   })
 
+  // Check if a workspace slug already exists (for validation before creation)
+  ipcMain.handle(IPC_CHANNELS.CHECK_WORKSPACE_SLUG, async (_event, slug: string) => {
+    const defaultWorkspacesDir = join(homedir(), '.craft-agent', 'workspaces')
+    const workspacePath = join(defaultWorkspacesDir, slug)
+    const exists = existsSync(workspacePath)
+    return { exists, path: workspacePath }
+  })
+
   // ============================================================
   // Window Management
   // ============================================================
@@ -564,6 +572,23 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
     return !app.isPackaged
   })
 
+  // Auto-update handlers
+  // Manual check from UI - don't auto-download (user might be on metered connection)
+  ipcMain.handle(IPC_CHANNELS.UPDATE_CHECK, async () => {
+    const { checkForUpdates } = await import('./auto-update')
+    return checkForUpdates({ autoDownload: false })
+  })
+
+  ipcMain.handle(IPC_CHANNELS.UPDATE_GET_INFO, async () => {
+    const { getUpdateInfo } = await import('./auto-update')
+    return getUpdateInfo()
+  })
+
+  ipcMain.handle(IPC_CHANNELS.UPDATE_INSTALL, async () => {
+    const { installUpdate } = await import('./auto-update')
+    return installUpdate()
+  })
+
   // Shell operations - open URL in external browser (or handle craftagents:// internally)
   ipcMain.handle(IPC_CHANNELS.OPEN_URL, async (_event, url: string) => {
     ipcLog.info('[OPEN_URL] Received request:', url)
@@ -774,7 +799,7 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
   // Open native folder dialog for selecting working directory
   ipcMain.handle(IPC_CHANNELS.OPEN_FOLDER_DIALOG, async () => {
     const result = await dialog.showOpenDialog({
-      properties: ['openDirectory'],
+      properties: ['openDirectory', 'createDirectory'],
       title: 'Select Working Directory',
     })
     return result.canceled ? null : result.filePaths[0]
@@ -892,6 +917,73 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
   // Get all drafts (for loading on app start)
   ipcMain.handle(IPC_CHANNELS.DRAFTS_GET_ALL, async () => {
     return getAllSessionDrafts()
+  })
+
+  // ============================================================
+  // Session Info Panel (files, notes)
+  // ============================================================
+
+  // Get files in session directory
+  ipcMain.handle(IPC_CHANNELS.GET_SESSION_FILES, async (_event, sessionId: string) => {
+    const sessionPath = sessionManager.getSessionPath(sessionId)
+    if (!sessionPath) return []
+
+    try {
+      const { readdir, stat } = await import('fs/promises')
+      const entries = await readdir(sessionPath, { withFileTypes: true })
+      const files: import('../shared/types').SessionFile[] = []
+
+      for (const entry of entries) {
+        // Skip session.jsonl as it's the internal session storage
+        if (entry.name === 'session.jsonl') continue
+
+        const fullPath = join(sessionPath, entry.name)
+        const stats = entry.isFile() ? await stat(fullPath) : null
+
+        files.push({
+          name: entry.name,
+          path: fullPath,
+          type: entry.isDirectory() ? 'directory' : 'file',
+          size: stats?.size,
+        })
+      }
+
+      return files
+    } catch (error) {
+      ipcLog.error('Failed to get session files:', error)
+      return []
+    }
+  })
+
+  // Get session notes (reads notes.md from session directory)
+  ipcMain.handle(IPC_CHANNELS.GET_SESSION_NOTES, async (_event, sessionId: string) => {
+    const sessionPath = sessionManager.getSessionPath(sessionId)
+    if (!sessionPath) return ''
+
+    try {
+      const notesPath = join(sessionPath, 'notes.md')
+      const content = await readFile(notesPath, 'utf-8')
+      return content
+    } catch {
+      // File doesn't exist yet - return empty string
+      return ''
+    }
+  })
+
+  // Set session notes (writes to notes.md in session directory)
+  ipcMain.handle(IPC_CHANNELS.SET_SESSION_NOTES, async (_event, sessionId: string, content: string) => {
+    const sessionPath = sessionManager.getSessionPath(sessionId)
+    if (!sessionPath) {
+      throw new Error(`Session not found: ${sessionId}`)
+    }
+
+    try {
+      const notesPath = join(sessionPath, 'notes.md')
+      await writeFile(notesPath, content, 'utf-8')
+    } catch (error) {
+      ipcLog.error('Failed to save session notes:', error)
+      throw error
+    }
   })
 
   // ============================================================

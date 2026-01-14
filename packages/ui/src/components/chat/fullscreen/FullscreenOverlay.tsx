@@ -62,9 +62,9 @@ export function FullscreenOverlay({
   if (!isOpen) return null
 
   return ReactDOM.createPortal(
-    <div className="fixed inset-0 z-50 flex flex-col">
+    <div className="fixed inset-0 z-[70] flex flex-col">
       {/* Fixed header buttons */}
-      <div className="fixed top-4 right-4 z-[60] flex items-center gap-2 [-webkit-app-region:no-drag]">
+      <div className="fixed top-4 right-4 z-[80] flex items-center gap-2 [-webkit-app-region:no-drag]">
         {/* Copy button */}
         <button
           onClick={handleCopy}

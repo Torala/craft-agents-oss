@@ -19,6 +19,10 @@ export const KEYS = {
   expandedFolders: 'expanded-folders',
   collapsedSidebarItems: 'collapsed-sidebar-items',
 
+  // Right sidebar (chat page)
+  rightSidebarVisible: 'right-sidebar-visible',
+  rightSidebarWidth: 'right-sidebar-width',
+
   // Theme
   theme: 'theme',
 

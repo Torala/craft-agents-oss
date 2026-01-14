@@ -39,6 +39,8 @@ export interface PanelHeaderProps {
   badge?: React.ReactNode
   /** Optional action buttons rendered on the right */
   actions?: React.ReactNode
+  /** Optional right sidebar button (rendered after actions) */
+  rightSidebarButton?: React.ReactNode
   /** When true, animates left margin to avoid macOS traffic lights (use when this is the first panel on screen) */
   compensateForStoplight?: boolean
   /** Left padding override (e.g., for focused mode with traffic lights) */
@@ -54,6 +56,7 @@ export function PanelHeader({
   title,
   badge,
   actions,
+  rightSidebarButton,
   compensateForStoplight,
   paddingLeft,
   className,
@@ -80,6 +83,11 @@ export function PanelHeader({
           {actions}
         </div>
       )}
+      {rightSidebarButton && (
+        <div className="titlebar-no-drag shrink-0">
+          {rightSidebarButton}
+        </div>
+      )}
     </>
   )
 
@@ -87,7 +95,7 @@ export function PanelHeader({
   const basePadding = 16
 
   const baseClassName = cn(
-    'flex shrink-0 items-center pr-2 min-w-0 gap-3 relative z-50',
+    'flex shrink-0 items-center pr-2 min-w-0 gap-1 relative z-50',
     // Slightly shorter header in focused mode to align with traffic lights
     shouldCompensate ? 'h-[38px]' : 'h-[40px]',
     // Only use static paddingLeft class when not animating

@@ -38,6 +38,7 @@ import {
   parseRoute,
   parseRouteToNavigationState,
   buildRouteFromNavigationState,
+  buildUrlWithState,
   type ParsedRoute,
 } from '../../shared/route-parser'
 import { routes, type Route } from '../../shared/routes'
@@ -49,6 +50,7 @@ import type {
   ChatFilter,
   SourceCategory,
   LoadedSource,
+  RightSidebarPanel,
 } from '../../shared/types'
 import {
   isChatsNavigation,
@@ -93,6 +95,10 @@ interface NavigationContextValue {
   goBack: () => void
   /** Go forward in history */
   goForward: () => void
+  /** Update right sidebar panel */
+  updateRightSidebar: (panel: RightSidebarPanel | undefined) => void
+  /** Toggle right sidebar (with optional panel) */
+  toggleRightSidebar: (panel?: RightSidebarPanel) => void
 }
 
 const NavigationContext = createContext<NavigationContextValue | null>(null)
@@ -388,8 +394,10 @@ export function NavigationProvider({
         return // Actions handle their own state updates
       }
 
-      // Parse route to unified NavigationState
-      const newNavState = parseRouteToNavigationState(route)
+      // Parse route to unified NavigationState (with sidebar param from current URL)
+      const urlParams = new URLSearchParams(window.location.search)
+      const sidebarParam = urlParams.get('sidebar') || undefined
+      const newNavState = parseRouteToNavigationState(route, sidebarParam)
       let finalRoute = route
 
       if (newNavState) {
@@ -401,9 +409,15 @@ export function NavigationProvider({
         finalRoute = buildRouteFromNavigationState(finalState) as Route
       }
 
-      // Persist route in URL for reload restoration (using final route with auto-selection)
+      // Persist route and sidebar in URL for reload restoration
       const url = new URL(window.location.href)
-      url.searchParams.set('route', finalRoute)
+      if (navigationState.rightSidebar) {
+        const fullUrl = buildUrlWithState(navigationState)
+        url.search = fullUrl
+      } else {
+        url.searchParams.set('route', finalRoute)
+        url.searchParams.delete('sidebar')
+      }
       history.replaceState({ route: finalRoute }, '', url.toString())
 
       // Update our custom history stack (unless we're navigating via back/forward)
@@ -615,11 +629,20 @@ export function NavigationProvider({
 
     const params = new URLSearchParams(window.location.search)
     const initialRoute = params.get('route')
+    const sidebarParam = params.get('sidebar') || undefined
+
     if (initialRoute) {
-      console.log('[Navigation] Restoring route from URL:', initialRoute)
-      navigate(initialRoute as Route)
+      console.log('[Navigation] Restoring route from URL:', initialRoute, 'sidebar:', sidebarParam)
+
+      // Parse with sidebar param
+      const navState = parseRouteToNavigationState(initialRoute, sidebarParam)
+      if (navState) {
+        applyNavigationState(navState)
+      } else {
+        navigate(initialRoute as Route)
+      }
     }
-  }, [isReady, workspaceId, navigate])
+  }, [isReady, workspaceId, navigate, applyNavigationState])
 
   // Listen for deep link navigation events from main process
   useEffect(() => {
@@ -678,8 +701,50 @@ export function NavigationProvider({
     }
   }, [navigate])
 
+  // Right sidebar navigation helpers
+  const updateRightSidebar = useCallback((panel: RightSidebarPanel | undefined) => {
+    if (!navigationState) return
+
+    const newState = {
+      ...navigationState,
+      rightSidebar: panel,
+    }
+
+    setNavigationState(newState)
+
+    // Update URL with sidebar param
+    const url = buildUrlWithState(newState)
+    const fullUrl = new URL(window.location.href)
+    fullUrl.search = url
+    history.replaceState({ route: buildRouteFromNavigationState(newState) }, '', fullUrl.toString())
+  }, [navigationState])
+
+  const toggleRightSidebar = useCallback((panel?: RightSidebarPanel) => {
+    if (!navigationState) return
+
+    // If panel specified, open to that panel
+    // If no panel, toggle between closed and default panel (sessionMetadata)
+    const newPanel = panel || (navigationState.rightSidebar && navigationState.rightSidebar.type !== 'none'
+      ? { type: 'none' as const }
+      : { type: 'sessionMetadata' as const })
+
+    updateRightSidebar(newPanel)
+  }, [navigationState, updateRightSidebar])
+
   return (
-    <NavigationContext.Provider value={{ navigate, isReady, navigationState, canGoBack, canGoForward, goBack, goForward }}>
+    <NavigationContext.Provider
+      value={{
+        navigate,
+        isReady,
+        navigationState,
+        canGoBack,
+        canGoForward,
+        goBack,
+        goForward,
+        updateRightSidebar,
+        toggleRightSidebar,
+      }}
+    >
       {children}
     </NavigationContext.Provider>
   )
