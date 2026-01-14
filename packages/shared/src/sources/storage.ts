@@ -509,36 +509,8 @@ export function sourceExists(workspaceRootPath: string, sourceSlug: string): boo
 // Source Loading/Saving Helpers
 // ============================================================
 
-/**
- * Result of loading a source with context
- */
-export interface SourceWithContext {
-  config: FolderSourceConfig;
-}
-
-/**
- * Load source config from workspace with context wrapper.
- */
-export function loadSourceConfigWithFallback(
-  workspaceRootPath: string,
-  sourceSlug: string
-): SourceWithContext | null {
-  const config = loadSourceConfig(workspaceRootPath, sourceSlug);
-  if (config) {
-    return { config };
-  }
-  return null;
-}
-
-/**
- * Save source config back to workspace with context wrapper.
- */
-export function saveSourceConfigWithContext(
-  workspaceRootPath: string,
-  config: FolderSourceConfig
-): void {
-  saveSourceConfig(workspaceRootPath, config);
-}
+// Note: SourceWithContext and wrapper functions were removed in this PR.
+// Use loadSourceConfig and saveSourceConfig directly instead.
 
 // ============================================================
 // Re-export parseGuideMarkdown for use in other modules

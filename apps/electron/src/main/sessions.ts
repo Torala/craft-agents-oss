@@ -35,7 +35,7 @@ import {
   type SessionMetadata,
   type TodoState,
 } from '@craft-agent/shared/sessions'
-import { loadWorkspaceSources, getSourcesBySlugs, type LoadedSource, type McpServerConfig, getSourcesNeedingAuth, getSourceCredentialManager, getSourceServerBuilder, type SourceWithCredential, isApiOAuthProvider } from '@craft-agent/shared/sources'
+import { loadWorkspaceSources, getSourcesBySlugs, type LoadedSource, type McpServerConfig, getSourcesNeedingAuth, getSourceCredentialManager, getSourceServerBuilder, type SourceWithCredential, isApiOAuthProvider, SERVER_BUILD_ERRORS } from '@craft-agent/shared/sources'
 import { ConfigWatcher, type ConfigWatcherCallbacks } from '@craft-agent/shared/config'
 import { getAuthState } from '@craft-agent/shared/auth'
 import { setAnthropicOptionsEnv, setPathToClaudeCodeExecutable, setInterceptorPath, setExecutable } from '@craft-agent/shared/agent'
@@ -94,7 +94,7 @@ async function buildServersFromSources(sources: LoadedSource[]) {
 
   // Update source configs for auth errors so UI reflects actual state
   for (const error of result.errors) {
-    if (error.error === 'Authentication required') {
+    if (error.error === SERVER_BUILD_ERRORS.AUTH_REQUIRED) {
       const source = sources.find(s => s.config.slug === error.sourceSlug)
       if (source) {
         credManager.markSourceNeedsReauth(source, 'Token missing or expired')
@@ -1299,12 +1299,14 @@ export class SessionManager {
           return false
         }
 
+        // Track whether we added this slug (for rollback on failure)
+        const slugSet = new Set(managed.enabledSourceSlugs || [])
+        const wasAlreadyEnabled = slugSet.has(sourceSlug)
+
         // Add to enabled sources if not already there
-        if (!managed.enabledSourceSlugs) {
-          managed.enabledSourceSlugs = []
-        }
-        if (!managed.enabledSourceSlugs.includes(sourceSlug)) {
-          managed.enabledSourceSlugs.push(sourceSlug)
+        if (!wasAlreadyEnabled) {
+          slugSet.add(sourceSlug)
+          managed.enabledSourceSlugs = Array.from(slugSet)
           sessionLog.info(`Added source ${sourceSlug} to session enabled sources`)
         }
 
@@ -1320,8 +1322,11 @@ export class SessionManager {
         const sourceBuilt = sourceSlug in mcpServers || sourceSlug in apiServers
         if (!sourceBuilt) {
           sessionLog.warn(`Source ${sourceSlug} failed to build`)
-          // Remove from enabled sources since it failed
-          managed.enabledSourceSlugs = managed.enabledSourceSlugs.filter(s => s !== sourceSlug)
+          // Only remove if WE added it (not if it was already there)
+          if (!wasAlreadyEnabled) {
+            slugSet.delete(sourceSlug)
+            managed.enabledSourceSlugs = Array.from(slugSet)
+          }
           return false
         }
 

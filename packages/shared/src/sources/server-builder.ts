@@ -18,6 +18,15 @@ import { createSdkMcpServer } from '@anthropic-ai/claude-agent-sdk';
 import { debug } from '../utils/debug.ts';
 
 /**
+ * Standard error messages for server build failures.
+ * Use these constants instead of string literals to ensure consistent matching.
+ */
+export const SERVER_BUILD_ERRORS = {
+  AUTH_REQUIRED: 'Authentication required',
+  CREDENTIALS_NEEDED: 'Credentials needed',
+} as const;
+
+/**
  * MCP server configuration compatible with Claude Agent SDK
  * Supports HTTP/SSE (remote) and stdio (local subprocess) transports.
  */
@@ -249,7 +258,7 @@ export class SourceServerBuilder {
             debug(`[SourceServerBuilder] MCP server ${source.config.slug} needs auth`);
             errors.push({
               sourceSlug: source.config.slug,
-              error: 'Authentication required',
+              error: SERVER_BUILD_ERRORS.AUTH_REQUIRED,
             });
           }
         } else if (source.config.type === 'api') {

@@ -49,15 +49,6 @@ export function useGlobalShortcuts({ shortcuts, disabled = false }: UseGlobalSho
       const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0
       const cmdKey = isMac ? e.metaKey : e.ctrlKey
 
-      // Debug: Log Escape key presses
-      if (e.key === 'Escape') {
-        console.log('[useGlobalShortcuts] Escape pressed', {
-          isInput,
-          targetTag: target.tagName,
-          hasDialog: !!document.querySelector('[role="dialog"]'),
-        })
-      }
-
       for (const shortcut of shortcutsRef.current) {
         // Check modifiers
         const cmdMatch = shortcut.cmd ? cmdKey : !cmdKey
@@ -68,26 +59,14 @@ export function useGlobalShortcuts({ shortcuts, disabled = false }: UseGlobalSho
         const keyMatch = e.key.toLowerCase() === shortcut.key.toLowerCase()
 
         if (cmdMatch && shiftMatch && altMatch && keyMatch) {
-          // Skip non-meta shortcuts in inputs, EXCEPT Tab which is for zone navigation
+          // Skip non-meta shortcuts in inputs, EXCEPT Tab (zone navigation) and Escape (cancel)
           const isTabKey = e.key.toLowerCase() === 'tab'
-          if (isInput && !shortcut.cmd && !isTabKey) {
-            if (e.key === 'Escape') {
-              console.log('[useGlobalShortcuts] Escape skipped - in input without cmd modifier')
-            }
-            continue
-          }
+          const isEscapeKey = e.key.toLowerCase() === 'escape'
+          if (isInput && !shortcut.cmd && !isTabKey && !isEscapeKey) continue
 
           // Check condition
-          if (shortcut.when && !shortcut.when()) {
-            if (e.key === 'Escape') {
-              console.log('[useGlobalShortcuts] Escape skipped - when() returned false')
-            }
-            continue
-          }
+          if (shortcut.when && !shortcut.when()) continue
 
-          if (e.key === 'Escape') {
-            console.log('[useGlobalShortcuts] Escape action triggered!')
-          }
           e.preventDefault()
           e.stopPropagation()
           shortcut.action()

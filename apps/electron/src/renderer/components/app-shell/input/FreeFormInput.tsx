@@ -602,12 +602,8 @@ export function FreeFormInput({
       }
     }
 
+    // Submit on Enter (without Shift). CMD/Ctrl+Enter also works since it's Enter without Shift.
     if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      // Submit message - backend handles interruption if processing
-      submitMessage()
-    }
-    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
       e.preventDefault()
       // Submit message - backend handles interruption if processing
       submitMessage()

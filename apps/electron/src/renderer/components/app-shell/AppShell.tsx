@@ -453,10 +453,8 @@ export function AppShell({
       { key: ']', cmd: true, action: goForward },
       // ESC to stop processing (like clicking Stop button)
       { key: 'Escape', action: () => {
-        console.log('[AppShell] Escape action executing', { sessionId: session.selected })
         if (session.selected) {
           const meta = sessionMetaMap.get(session.selected)
-          console.log('[AppShell] Session meta for cancel:', { isProcessing: meta?.isProcessing })
           if (meta?.isProcessing) {
             window.electronAPI.cancelProcessing(session.selected, false).catch(err => {
               console.error('[AppShell] Failed to cancel processing:', err)
@@ -465,21 +463,10 @@ export function AppShell({
         }
       }, when: () => {
         // Only active when no dialog is open and session is processing
-        const hasDialog = !!document.querySelector('[role="dialog"]')
-        const selectedSession = session.selected
-        const meta = selectedSession ? sessionMetaMap.get(selectedSession) : null
-        const isProcessing = meta?.isProcessing ?? false
-
-        console.log('[AppShell] Escape when() check:', {
-          hasDialog,
-          selectedSession,
-          isProcessing,
-          metaExists: !!meta,
-        })
-
-        if (hasDialog) return false
-        if (!selectedSession) return false
-        return isProcessing
+        if (document.querySelector('[role="dialog"]')) return false
+        if (!session.selected) return false
+        const meta = sessionMetaMap.get(session.selected)
+        return meta?.isProcessing ?? false
       }},
     ],
   })

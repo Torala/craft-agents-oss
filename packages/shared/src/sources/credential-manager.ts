@@ -277,13 +277,17 @@ export class SourceCredentialManager {
    * Updates config.json so the UI shows "needs auth" and the agent gets proper context.
    */
   markSourceNeedsReauth(source: LoadedSource, errorMessage: string): void {
-    const config = loadSourceConfig(source.workspaceRootPath, source.config.slug);
-    if (config) {
-      config.isAuthenticated = false;
-      config.connectionStatus = 'needs_auth';
-      config.connectionError = errorMessage;
-      saveSourceConfig(source.workspaceRootPath, config);
-      debug(`[SourceCredentialManager] Marked ${source.config.slug} as needing re-auth: ${errorMessage}`);
+    try {
+      const config = loadSourceConfig(source.workspaceRootPath, source.config.slug);
+      if (config) {
+        config.isAuthenticated = false;
+        config.connectionStatus = 'needs_auth';
+        config.connectionError = errorMessage;
+        saveSourceConfig(source.workspaceRootPath, config);
+        debug(`[SourceCredentialManager] Marked ${source.config.slug} as needing re-auth: ${errorMessage}`);
+      }
+    } catch (error) {
+      debug(`[SourceCredentialManager] Failed to mark ${source.config.slug} as needing re-auth:`, error);
     }
   }
 
@@ -709,13 +713,15 @@ export class SourceCredentialManager {
   ): Promise<string | null> {
     if (!cred.clientId) {
       debug(`[SourceCredentialManager] No clientId for MCP token refresh`);
+      this.markSourceNeedsReauth(source, 'Missing clientId for token refresh');
       return null;
     }
 
     try {
       // Only HTTP/SSE transport can refresh tokens - stdio doesn't use OAuth
       if (!source.config.mcp?.url) {
-        debug(`[SourceCredentialManager] No URL for MCP token refresh (stdio transport?)`);
+        // This is expected for stdio transport - not an error
+        debug(`[SourceCredentialManager] No URL for MCP token refresh (stdio transport)`);
         return null;
       }
 
