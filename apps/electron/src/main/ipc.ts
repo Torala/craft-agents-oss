@@ -765,7 +765,21 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
       if (authType === 'api_key') {
         await manager.setApiKey(credential)
       } else if (authType === 'oauth_token') {
-        await manager.setClaudeOAuth(credential)
+        // Import full credentials including refresh token and expiry from Claude CLI
+        const { getExistingClaudeCredentials } = await import('@craft-agent/shared/auth')
+        const cliCreds = getExistingClaudeCredentials()
+        if (cliCreds) {
+          await manager.setClaudeOAuthCredentials({
+            accessToken: cliCreds.accessToken,
+            refreshToken: cliCreds.refreshToken,
+            expiresAt: cliCreds.expiresAt,
+          })
+          ipcLog.info('Saved Claude OAuth credentials with refresh token')
+        } else {
+          // Fallback to just saving the access token
+          await manager.setClaudeOAuth(credential)
+          ipcLog.info('Saved Claude OAuth access token only')
+        }
       }
     }
 
