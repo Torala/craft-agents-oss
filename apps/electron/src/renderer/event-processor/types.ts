@@ -301,6 +301,17 @@ export interface AuthCompletedEvent {
 }
 
 /**
+ * Source activated event - a source was auto-activated mid-turn
+ * Caller should re-send the original message to retry with the now-active source
+ */
+export interface SourceActivatedEvent {
+  type: 'source_activated'
+  sessionId: string
+  sourceSlug: string
+  originalMessage: string
+}
+
+/**
  * Union of all agent events
  */
 export type AgentEvent =
@@ -330,6 +341,7 @@ export type AgentEvent =
   | SessionUnsharedEvent
   | AuthRequestEvent
   | AuthCompletedEvent
+  | SourceActivatedEvent
 
 /**
  * Side effects that need to be handled outside the pure processor
@@ -339,6 +351,7 @@ export type Effect =
   | { type: 'credential_request'; request: CredentialRequest }
   | { type: 'generate_title'; sessionId: string; userMessage: string }
   | { type: 'permission_mode_changed'; sessionId: string; permissionMode: PermissionMode }
+  | { type: 'auto_retry'; sessionId: string; originalMessage: string; sourceSlug: string }
 
 /**
  * Result of processing an event

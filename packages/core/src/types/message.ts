@@ -332,7 +332,8 @@ export type AgentEvent =
   | { type: 'task_backgrounded'; toolUseId: string; taskId: string; intent?: string; turnId?: string }
   | { type: 'shell_backgrounded'; toolUseId: string; shellId: string; intent?: string; command?: string; turnId?: string }
   | { type: 'task_progress'; toolUseId: string; elapsedSeconds: number; turnId?: string }
-  | { type: 'shell_killed'; shellId: string; turnId?: string };
+  | { type: 'shell_killed'; shellId: string; turnId?: string }
+  | { type: 'source_activated'; sourceSlug: string; originalMessage: string };
 
 /**
  * Generate a unique message ID

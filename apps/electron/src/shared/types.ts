@@ -339,6 +339,8 @@ export type SessionEvent =
   // Auth request events (unified auth flow)
   | { type: 'auth_request'; sessionId: string; message: CoreMessage; request: SharedAuthRequest }
   | { type: 'auth_completed'; sessionId: string; requestId: string; success: boolean; cancelled?: boolean; error?: string }
+  // Source activation events (for auto-retry on mid-turn activation)
+  | { type: 'source_activated'; sessionId: string; sourceSlug: string; originalMessage: string }
 
 // Options for sendMessage
 export interface SendMessageOptions {

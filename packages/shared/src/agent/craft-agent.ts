@@ -83,6 +83,8 @@ export enum AbortReason {
   AuthRequest = 'auth_request',
   /** New message sent while processing (silent redirect) */
   Redirect = 'redirect',
+  /** Source was auto-activated mid-turn (silent, auto-retry follows) */
+  SourceActivated = 'source_activated',
 }
 
 export interface CraftAgentConfig {
@@ -945,9 +947,15 @@ export class CraftAgent {
                         try {
                           const activated = await this.onSourceActivationRequest(serverName);
                           if (activated) {
-                            this.onDebug?.(`Source "${serverName}" auto-enabled successfully`);
-                            // Source is now active, allow the tool call to proceed
-                            // (continue to other checks below)
+                            this.onDebug?.(`Source "${serverName}" auto-enabled successfully, tools available next turn`);
+                            // Source was activated but the SDK was started with old server list.
+                            // The tools will only be available on the NEXT chat() call.
+                            // Return an imperative message to make the model stop and respond.
+                            return {
+                              continue: false,
+                              decision: 'block' as const,
+                              reason: `STOP. Source "${serverName}" has been activated successfully. The tools will be available on the next turn. Do NOT try other tool names or approaches. Respond to the user now: tell them the source is now active and ask them to send their request again.`,
+                            };
                           } else {
                             // Activation failed (e.g., needs auth)
                             this.onDebug?.(`Source "${serverName}" auto-enable failed (may need authentication)`);
@@ -1564,6 +1572,52 @@ export class CraftAgent {
             (id) => { currentTurnId = id; }
           );
           for (const event of events) {
+            // Check for tool-not-found errors on inactive sources and attempt auto-activation
+            const inactiveSourceError = this.detectInactiveSourceToolError(event, pendingToolUses);
+
+            if (inactiveSourceError && this.onSourceActivationRequest) {
+              const { sourceSlug, toolName } = inactiveSourceError;
+
+              this.onDebug?.(`Detected tool call to inactive source "${sourceSlug}", attempting activation...`);
+
+              try {
+                const activated = await this.onSourceActivationRequest(sourceSlug);
+
+                if (activated) {
+                  this.onDebug?.(`Source "${sourceSlug}" activated successfully, interrupting turn for auto-retry`);
+
+                  // Yield source_activated event immediately for auto-retry
+                  yield {
+                    type: 'source_activated' as const,
+                    sourceSlug,
+                    originalMessage: userMessage,
+                  };
+
+                  // Interrupt the turn - no point letting the model continue without the tools
+                  // The abort will cause the loop to exit and emit 'complete'
+                  this.forceAbort(AbortReason.SourceActivated);
+                  return; // Exit the generator
+                } else {
+                  this.onDebug?.(`Source "${sourceSlug}" activation failed (may need auth)`);
+                  // Let the original error through, but with more context
+                  const toolResultEvent = event as Extract<AgentEvent, { type: 'tool_result' }>;
+                  yield {
+                    type: 'tool_result' as const,
+                    toolUseId: toolResultEvent.toolUseId,
+                    result: `Source "${sourceSlug}" could not be activated. It may require authentication. Please check the source status in the sources panel.`,
+                    isError: true,
+                    input: toolResultEvent.input,
+                    turnId: toolResultEvent.turnId,
+                    parentToolUseId: toolResultEvent.parentToolUseId,
+                  };
+                  continue;
+                }
+              } catch (error) {
+                this.onDebug?.(`Source "${sourceSlug}" activation error: ${error}`);
+                // Let original error through
+              }
+            }
+
             if (event.type === 'complete') {
               receivedComplete = true;
             }
@@ -2774,6 +2828,73 @@ export class CraftAgent {
     }
 
     return false;
+  }
+
+  /**
+   * Check if a tool result error indicates a "tool not found" for an inactive source.
+   * This is used to detect when Claude tries to call a tool from a source that exists
+   * but isn't currently active, so we can auto-activate and retry.
+   *
+   * @returns The source slug, tool name, and input if this is an inactive source error, null otherwise
+   */
+  private detectInactiveSourceToolError(
+    event: AgentEvent,
+    pendingToolUses: Map<string, { name: string; input: unknown }>
+  ): { sourceSlug: string; toolName: string; input: unknown } | null {
+    if (event.type !== 'tool_result' || !event.isError) return null;
+
+    const resultStr = typeof event.result === 'string' ? event.result : '';
+
+    // Try to extract tool name from error message patterns:
+    // - "No such tool available: mcp__slack__api_slack"
+    // - "Error: Tool 'mcp__slack__api_slack' not found"
+    let toolName: string | null = null;
+
+    // Pattern 1: "No such tool available: {toolName}" or "No tool available: {toolName}"
+    // Note: SDK wraps in XML tags like "</tool_use_error>", so we stop at '<' to avoid capturing the tag
+    const noSuchToolMatch = resultStr.match(/No (?:such )?tool available:\s*([^\s<]+)/i);
+    if (noSuchToolMatch?.[1]) {
+      toolName = noSuchToolMatch[1];
+    }
+
+    // Pattern 2: "Tool '{toolName}' not found" or "Tool `{toolName}` not found"
+    if (!toolName) {
+      const toolNotFoundMatch = resultStr.match(/Tool\s+['"`]([^'"`]+)['"`]\s+not found/i);
+      if (toolNotFoundMatch?.[1]) {
+        toolName = toolNotFoundMatch[1];
+      }
+    }
+
+    // Fallback: try pendingToolUses if we couldn't extract from error
+    if (!toolName) {
+      const toolUse = pendingToolUses.get(event.toolUseId);
+      if (toolUse) {
+        toolName = toolUse.name;
+      }
+    }
+
+    if (!toolName) return null;
+
+    // Check if it's an MCP tool (mcp__{slug}__{toolname})
+    if (!toolName.startsWith('mcp__')) return null;
+
+    const parts = toolName.split('__');
+    if (parts.length < 3) return null;
+
+    // parts[1] is guaranteed to exist since we checked parts.length >= 3
+    const sourceSlug = parts[1]!;
+
+    // Check if source exists but is inactive
+    const sourceExists = this.allSources.some((s) => s.config.slug === sourceSlug);
+    const isActive = this.activeSourceServerNames.has(sourceSlug);
+
+    if (sourceExists && !isActive) {
+      // Get input from pendingToolUses
+      const toolUse = pendingToolUses.get(event.toolUseId);
+      return { sourceSlug, toolName, input: toolUse?.input ?? {} };
+    }
+
+    return null;
   }
 
   clearHistory(): void {

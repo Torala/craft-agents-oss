@@ -462,6 +462,17 @@ export default function App() {
             })
             break
           }
+          case 'auto_retry': {
+            // A source was auto-activated, automatically re-send the original message
+            console.log('[App] auto_retry: Source', effect.sourceSlug, 'activated, re-sending message')
+            // Add suffix to indicate the source was activated
+            const messageWithSuffix = `${effect.originalMessage}\n\n[${effect.sourceSlug} activated]`
+            // Use setTimeout to ensure the previous turn has fully completed
+            setTimeout(() => {
+              window.electronAPI.sendMessage(effect.sessionId, messageWithSuffix)
+            }, 100)
+            break
+          }
         }
       }
 

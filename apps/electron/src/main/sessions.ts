@@ -2703,6 +2703,17 @@ To view this task's output:
         }, workspaceId)
         break
 
+      case 'source_activated':
+        // A source was auto-activated mid-turn, forward to renderer for auto-retry
+        sessionLog.info(`Source "${event.sourceSlug}" activated, notifying renderer for auto-retry`)
+        this.sendEvent({
+          type: 'source_activated',
+          sessionId,
+          sourceSlug: event.sourceSlug,
+          originalMessage: event.originalMessage,
+        }, workspaceId)
+        break
+
       case 'complete':
         // Complete event from CraftAgent - actual 'complete' sent to renderer
         // comes from the finally block in sendMessage, not here
