@@ -110,10 +110,10 @@ export async function resolveStatusIcon(
 }
 
 /**
- * Synchronous version that returns a placeholder while loading
- * Use this in components that can't handle async rendering
+ * Hook to resolve status icon with loading state
+ * Use this in components that need synchronous rendering with async icon loading
  */
-export function resolveStatusIconSync(
+export function useStatusIcon(
   icon: StatusIcon,
   workspaceId: string,
   className: string = ICON_SIZE

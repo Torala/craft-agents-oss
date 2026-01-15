@@ -1,5 +1,8 @@
 # Craft Agent
 
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+[![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.1-4baaaa.svg)](CODE_OF_CONDUCT.md)
+
 A Claude Code-like agent for Craft documents using the Anthropic Claude Agent SDK and Craft MCP servers.
 
 ## Features
@@ -218,4 +221,20 @@ The TUI (Terminal User Interface) at `apps/tui/` is deprecated. The Electron des
 
 ## License
 
-MIT
+This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
+
+### Third-Party Licenses
+
+This project uses the [Claude Agent SDK](https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk), which is subject to [Anthropic's Commercial Terms of Service](https://www.anthropic.com/legal/commercial-terms).
+
+### Trademark
+
+"Craft" and "Craft Agents" are trademarks of Luki Labs Kft. See [TRADEMARK.md](TRADEMARK.md) for usage guidelines.
+
+## Contributing
+
+We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+## Security
+
+To report security vulnerabilities, please see [SECURITY.md](SECURITY.md).

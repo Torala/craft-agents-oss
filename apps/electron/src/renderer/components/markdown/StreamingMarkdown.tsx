@@ -143,6 +143,13 @@ export function StreamingMarkdown({
   onUrlClick,
   onFileClick,
 }: StreamingMarkdownProps) {
+  // Split into blocks - memoized to avoid recomputation
+  // Must be called unconditionally to satisfy Rules of Hooks
+  const blocks = React.useMemo(
+    () => (isStreaming ? splitIntoBlocks(content) : []),
+    [content, isStreaming]
+  )
+
   // Not streaming - use simple Markdown (no block splitting needed)
   if (!isStreaming) {
     return (
@@ -151,9 +158,6 @@ export function StreamingMarkdown({
       </Markdown>
     )
   }
-
-  // Split into blocks - this is fast O(n) string scanning
-  const blocks = React.useMemo(() => splitIntoBlocks(content), [content])
 
   return (
     <>
