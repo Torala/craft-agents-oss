@@ -145,7 +145,7 @@ export function CredentialsStep({
       } else if (hasCliOption) {
         description = 'This will open Claude CLI to authenticate with your Claude subscription.'
       } else if (hasNoOptions) {
-        description = 'Claude CLI is not installed. Please install it first: npm install -g @anthropic-ai/claude-code'
+        description = 'Claude Code is not installed. Install it with: curl -fsSL https://claude.ai/install.sh | bash'
       }
     }
 
