@@ -1,7 +1,3 @@
-import { appendFileSync } from 'fs';
-
-const LOG_FILE = '/tmp/craft-debug.log';
-
 // Check CRAFT_DEBUG env var at module load (for SDK subprocess)
 let debugEnabled = process.env.CRAFT_DEBUG === '1';
 
@@ -73,33 +69,18 @@ function formatMessage(scope: string | undefined, message: string, args: unknown
 /**
  * Output log based on environment.
  *
- * | Environment       | Console | File |
- * |-------------------|---------|------|
- * | electron-main     | ✓       | ✓    |
- * | electron-renderer | ✓       | -    |
- * | cli (CRAFT_DEBUG) | ✓       | ✓    |
- * | cli (no debug)    | ✓       | -    |
+ * All environments output to console.error (or console.log for renderer).
+ * In Electron main process, logs also go to electron-log via the main process logger.
  */
 function output(formatted: string): void {
   const env = detectEnvironment();
 
-  // Console output
   if (env === 'electron-renderer') {
     // Use console.log in renderer for DevTools
     console.log(formatted.trim());
   } else {
     // Use stderr in main/cli to avoid stdout interference
     process.stderr.write(formatted);
-  }
-
-  // File output (Electron main, and CLI with CRAFT_DEBUG)
-  // CLI includes SDK subprocess - needs file output to aggregate logs with parent process
-  if (env === 'electron-main' || (env === 'cli' && debugEnabled)) {
-    try {
-      appendFileSync(LOG_FILE, formatted);
-    } catch {
-      // Silently ignore file write errors
-    }
   }
 }
 

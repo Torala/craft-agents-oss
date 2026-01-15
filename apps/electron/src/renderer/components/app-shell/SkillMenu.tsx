@@ -1,13 +1,14 @@
 /**
- * SkillMenu - Shared dropdown menu content for skill actions
+ * SkillMenu - Shared menu content for skill actions
  *
  * Used by:
- * - SkillsListPanel (item context menu)
+ * - SkillsListPanel (dropdown via "..." button, context menu via right-click)
  * - SkillInfoPage (title dropdown menu)
  *
+ * Uses MenuComponents context to render with either DropdownMenu or ContextMenu
+ * primitives, allowing the same component to work in both scenarios.
+ *
  * Provides consistent skill actions:
- * - View Details (list only)
- * - Edit SKILL.md
  * - Open in New Window
  * - Show in Finder
  * - Delete
@@ -17,25 +18,16 @@ import * as React from 'react'
 import {
   Trash2,
   FolderOpen,
-  ExternalLink,
   AppWindow,
-  Pencil,
 } from 'lucide-react'
-import {
-  StyledDropdownMenuItem,
-  StyledDropdownMenuSeparator,
-} from '@/components/ui/styled-dropdown'
+import { useMenuComponents } from '@/components/ui/menu-context'
 
 export interface SkillMenuProps {
   /** Skill slug */
   skillSlug: string
   /** Skill name for display */
   skillName: string
-  /** Whether to show "View Details" option (for list context, not detail page) */
-  showViewDetails?: boolean
   /** Callbacks */
-  onViewDetails?: () => void
-  onEdit: () => void
   onOpenInNewWindow: () => void
   onShowInFinder: () => void
   onDelete: () => void
@@ -43,58 +35,39 @@ export interface SkillMenuProps {
 
 /**
  * SkillMenu - Renders the menu items for skill actions
- * This is the content only, not wrapped in a DropdownMenu
+ * This is the content only, not wrapped in a DropdownMenu or ContextMenu
  */
 export function SkillMenu({
   skillSlug,
   skillName,
-  showViewDetails = false,
-  onViewDetails,
-  onEdit,
   onOpenInNewWindow,
   onShowInFinder,
   onDelete,
 }: SkillMenuProps) {
+  // Get menu components from context (works with both DropdownMenu and ContextMenu)
+  const { MenuItem, Separator } = useMenuComponents()
+
   return (
     <>
-      {/* View Details - only shown in list context */}
-      {showViewDetails && onViewDetails && (
-        <>
-          <StyledDropdownMenuItem onClick={onViewDetails}>
-            <ExternalLink className="h-3.5 w-3.5" />
-            <span className="flex-1">View Details</span>
-          </StyledDropdownMenuItem>
-          <StyledDropdownMenuSeparator />
-        </>
-      )}
-
-      {/* Edit SKILL.md */}
-      <StyledDropdownMenuItem onClick={onEdit}>
-        <Pencil className="h-3.5 w-3.5" />
-        <span className="flex-1">Edit SKILL.md</span>
-      </StyledDropdownMenuItem>
-
       {/* Open in New Window */}
-      <StyledDropdownMenuItem onClick={onOpenInNewWindow}>
+      <MenuItem onClick={onOpenInNewWindow}>
         <AppWindow className="h-3.5 w-3.5" />
         <span className="flex-1">Open in New Window</span>
-      </StyledDropdownMenuItem>
-
-      <StyledDropdownMenuSeparator />
+      </MenuItem>
 
       {/* Show in Finder */}
-      <StyledDropdownMenuItem onClick={onShowInFinder}>
+      <MenuItem onClick={onShowInFinder}>
         <FolderOpen className="h-3.5 w-3.5" />
         <span className="flex-1">Show in Finder</span>
-      </StyledDropdownMenuItem>
+      </MenuItem>
 
-      <StyledDropdownMenuSeparator />
+      <Separator />
 
       {/* Delete */}
-      <StyledDropdownMenuItem onClick={onDelete} variant="destructive">
+      <MenuItem onClick={onDelete} variant="destructive">
         <Trash2 className="h-3.5 w-3.5" />
         <span className="flex-1">Delete Skill</span>
-      </StyledDropdownMenuItem>
+      </MenuItem>
     </>
   )
 }

@@ -1,9 +1,12 @@
 /**
- * SessionMenu - Shared dropdown menu content for session actions
+ * SessionMenu - Shared menu content for session actions
  *
  * Used by:
- * - SessionList (item context menu)
+ * - SessionList (dropdown via "..." button, context menu via right-click)
  * - ChatPage (title dropdown menu)
+ *
+ * Uses MenuComponents context to render with either DropdownMenu or ContextMenu
+ * primitives, allowing the same component to work in both scenarios.
  *
  * Provides consistent session actions:
  * - Share / Shared submenu
@@ -33,16 +36,9 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn, isHexColor } from '@/lib/utils'
-import {
-  DropdownMenuSub,
-  StyledDropdownMenuItem,
-  StyledDropdownMenuSeparator,
-  StyledDropdownMenuSubTrigger,
-  StyledDropdownMenuSubContent,
-} from '@/components/ui/styled-dropdown'
+import { useMenuComponents } from '@/components/ui/menu-context'
 import { getStateColor, getStateIcon, type TodoStateId } from '@/config/todo-states'
 import type { TodoState } from '@/config/todo-states'
-import { routes } from '@/contexts/NavigationContext'
 
 export interface SessionMenuProps {
   /** Session ID */
@@ -94,7 +90,7 @@ export function SessionMenu({
 }: SessionMenuProps) {
   // Share handlers
   const handleShare = async () => {
-    const result = await window.electronAPI.sessionCommand(sessionId, { type: 'shareToViewer' })
+    const result = await window.electronAPI.sessionCommand(sessionId, { type: 'shareToViewer' }) as { success: boolean; url?: string; error?: string } | undefined
     if (result?.success && result.url) {
       await navigator.clipboard.writeText(result.url)
       toast.success('Link copied to clipboard', {
@@ -142,45 +138,57 @@ export function SessionMenu({
     window.electronAPI.sessionCommand(sessionId, { type: 'showInFinder' })
   }
 
+  const handleRefreshTitle = async () => {
+    const result = await window.electronAPI.sessionCommand(sessionId, { type: 'refreshTitle' }) as { success: boolean; title?: string; error?: string } | undefined
+    if (result?.success) {
+      toast.success('Title refreshed', { description: result.title })
+    } else {
+      toast.error('Failed to refresh title', { description: result?.error || 'Unknown error' })
+    }
+  }
+
+  // Get menu components from context (works with both DropdownMenu and ContextMenu)
+  const { MenuItem, Separator, Sub, SubTrigger, SubContent } = useMenuComponents()
+
   return (
     <>
       {/* Share/Shared based on shared state */}
       {!sharedUrl ? (
-        <StyledDropdownMenuItem onClick={handleShare}>
+        <MenuItem onClick={handleShare}>
           <CloudUpload className="h-3.5 w-3.5" />
           <span className="flex-1">Share</span>
-        </StyledDropdownMenuItem>
+        </MenuItem>
       ) : (
-        <DropdownMenuSub>
-          <StyledDropdownMenuSubTrigger>
+        <Sub>
+          <SubTrigger>
             <CloudUpload className="h-3.5 w-3.5" />
             <span className="flex-1">Shared</span>
-          </StyledDropdownMenuSubTrigger>
-          <StyledDropdownMenuSubContent>
-            <StyledDropdownMenuItem onClick={handleOpenInBrowser}>
+          </SubTrigger>
+          <SubContent>
+            <MenuItem onClick={handleOpenInBrowser}>
               <Globe className="h-3.5 w-3.5" />
               <span className="flex-1">Open in Browser</span>
-            </StyledDropdownMenuItem>
-            <StyledDropdownMenuItem onClick={handleCopyLink}>
+            </MenuItem>
+            <MenuItem onClick={handleCopyLink}>
               <Copy className="h-3.5 w-3.5" />
               <span className="flex-1">Copy Link</span>
-            </StyledDropdownMenuItem>
-            <StyledDropdownMenuItem onClick={handleUpdateShare}>
+            </MenuItem>
+            <MenuItem onClick={handleUpdateShare}>
               <RefreshCw className="h-3.5 w-3.5" />
               <span className="flex-1">Update Share</span>
-            </StyledDropdownMenuItem>
-            <StyledDropdownMenuItem onClick={handleRevokeShare} variant="destructive">
+            </MenuItem>
+            <MenuItem onClick={handleRevokeShare} variant="destructive">
               <Link2Off className="h-3.5 w-3.5" />
               <span className="flex-1">Stop Sharing</span>
-            </StyledDropdownMenuItem>
-          </StyledDropdownMenuSubContent>
-        </DropdownMenuSub>
+            </MenuItem>
+          </SubContent>
+        </Sub>
       )}
-      <StyledDropdownMenuSeparator />
+      <Separator />
 
       {/* Status submenu */}
-      <DropdownMenuSub>
-        <StyledDropdownMenuSubTrigger>
+      <Sub>
+        <SubTrigger>
           <span
             className={cn(
               'shrink-0 flex items-center justify-center -mt-px h-3.5 w-3.5',
@@ -197,10 +205,10 @@ export function SessionMenu({
             {getStateIcon(currentTodoState, todoStates)}
           </span>
           <span className="flex-1">Status</span>
-        </StyledDropdownMenuSubTrigger>
-        <StyledDropdownMenuSubContent>
+        </SubTrigger>
+        <SubContent>
           {todoStates.map((state) => (
-            <StyledDropdownMenuItem
+            <MenuItem
               key={state.id}
               onClick={() => onTodoStateChange(state.id)}
               className={currentTodoState === state.id ? 'bg-foreground/5' : ''}
@@ -216,61 +224,67 @@ export function SessionMenu({
                 {state.icon}
               </span>
               <span className="flex-1">{state.label}</span>
-            </StyledDropdownMenuItem>
+            </MenuItem>
           ))}
-        </StyledDropdownMenuSubContent>
-      </DropdownMenuSub>
+        </SubContent>
+      </Sub>
 
       {/* Flag/Unflag */}
       {!isFlagged ? (
-        <StyledDropdownMenuItem onClick={onFlag}>
+        <MenuItem onClick={onFlag}>
           <Flag className="h-3.5 w-3.5" />
           <span className="flex-1">Flag</span>
-        </StyledDropdownMenuItem>
+        </MenuItem>
       ) : (
-        <StyledDropdownMenuItem onClick={onUnflag}>
+        <MenuItem onClick={onUnflag}>
           <FlagOff className="h-3.5 w-3.5" />
           <span className="flex-1">Unflag</span>
-        </StyledDropdownMenuItem>
+        </MenuItem>
       )}
 
       {/* Mark as Unread - only show if session has been read */}
       {!hasUnreadMessages && hasMessages && (
-        <StyledDropdownMenuItem onClick={onMarkUnread}>
+        <MenuItem onClick={onMarkUnread}>
           <MailOpen className="h-3.5 w-3.5" />
           <span className="flex-1">Mark as Unread</span>
-        </StyledDropdownMenuItem>
+        </MenuItem>
       )}
 
-      <StyledDropdownMenuSeparator />
+      <Separator />
 
       {/* Rename */}
-      <StyledDropdownMenuItem onClick={onRename}>
+      <MenuItem onClick={onRename}>
         <Pencil className="h-3.5 w-3.5" />
         <span className="flex-1">Rename</span>
-      </StyledDropdownMenuItem>
+      </MenuItem>
+
+      {/* Regenerate Title - AI-generate based on recent messages */}
+      <MenuItem onClick={handleRefreshTitle}>
+        <RefreshCw className="h-3.5 w-3.5" />
+        <span className="flex-1">Regenerate Title</span>
+      </MenuItem>
+
+      <Separator />
 
       {/* Open in New Window */}
-      <StyledDropdownMenuItem onClick={onOpenInNewWindow}>
+      <MenuItem onClick={onOpenInNewWindow}>
         <AppWindow className="h-3.5 w-3.5" />
         <span className="flex-1">Open in New Window</span>
-      </StyledDropdownMenuItem>
-
-      <StyledDropdownMenuSeparator />
+      </MenuItem>
 
       {/* View in Finder */}
-      <StyledDropdownMenuItem onClick={handleShowInFinder}>
+      <MenuItem onClick={handleShowInFinder}>
         <FolderOpen className="h-3.5 w-3.5" />
         <span className="flex-1">View in Finder</span>
-      </StyledDropdownMenuItem>
+      </MenuItem>
 
-      <StyledDropdownMenuSeparator />
+      <Separator />
 
       {/* Delete */}
-      <StyledDropdownMenuItem onClick={onDelete} variant="destructive">
+      <MenuItem onClick={onDelete} variant="destructive">
         <Trash2 className="h-3.5 w-3.5" />
         <span className="flex-1">Delete</span>
-      </StyledDropdownMenuItem>
+      </MenuItem>
     </>
   )
 }

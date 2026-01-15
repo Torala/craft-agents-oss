@@ -50,7 +50,3 @@ jobs:
               --debug
           fi
 
-      - name: Show craft debug log
-        if: always()
-        run: cat /tmp/craft-debug.log || echo "No craft debug log found"
-

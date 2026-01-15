@@ -474,7 +474,7 @@ export default function SourceInfoPage({ sourceSlug, workspaceId, onDelete }: So
                 </button>
               }
             >
-              <Info_Markdown maxHeight={540}>
+              <Info_Markdown maxHeight={540} fullscreen>
                 {source.guide.raw}
               </Info_Markdown>
             </Info_Section>

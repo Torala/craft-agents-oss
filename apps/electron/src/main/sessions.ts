@@ -43,7 +43,7 @@ import { getCraftToken } from '@craft-agent/shared/auth'
 import { getCredentialManager } from '@craft-agent/shared/credentials'
 import { CraftMcpClient } from '@craft-agent/shared/mcp'
 import { type Session, type Message, type SessionEvent, type FileAttachment, type StoredAttachment, type SendMessageOptions, IPC_CHANNELS, generateMessageId } from '../shared/types'
-import { generateSessionTitle, formatPathsToRelative, formatToolInputPaths, perf } from '@craft-agent/shared/utils'
+import { generateSessionTitle, regenerateSessionTitle, formatPathsToRelative, formatToolInputPaths, perf } from '@craft-agent/shared/utils'
 import { DEFAULT_MODEL } from '@craft-agent/shared/config'
 
 /**
@@ -510,7 +510,6 @@ export class SessionManager {
       sessionLog.error(error)
       throw new Error(error)
     }
-    sessionLog.info('Setting interceptorPath:', interceptorPath)
     setInterceptorPath(interceptorPath)
 
     // In packaged app: use bundled Bun binary
@@ -1691,6 +1690,57 @@ export class SessionManager {
   }
 
   /**
+   * Regenerate the session title based on recent messages.
+   * Uses the last few user messages to capture what the session has evolved into.
+   */
+  async refreshTitle(sessionId: string): Promise<{ success: boolean; title?: string; error?: string }> {
+    sessionLog.info(`refreshTitle called for session ${sessionId}`)
+    const managed = this.sessions.get(sessionId)
+    if (!managed) {
+      sessionLog.warn(`refreshTitle: Session ${sessionId} not found`)
+      return { success: false, error: 'Session not found' }
+    }
+
+    // Get recent user messages (last 3) for context
+    const userMessages = managed.messages
+      .filter((m) => m.role === 'user')
+      .slice(-3)
+      .map((m) => m.content)
+
+    sessionLog.info(`refreshTitle: Found ${userMessages.length} user messages`)
+
+    if (userMessages.length === 0) {
+      sessionLog.warn(`refreshTitle: No user messages found`)
+      return { success: false, error: 'No user messages to generate title from' }
+    }
+
+    // Get the most recent assistant response
+    const lastAssistantMsg = managed.messages
+      .filter((m) => m.role === 'assistant' && !m.isIntermediate)
+      .slice(-1)[0]
+
+    const assistantResponse = lastAssistantMsg?.content ?? ''
+    sessionLog.info(`refreshTitle: Calling regenerateSessionTitle...`)
+
+    try {
+      const title = await regenerateSessionTitle(userMessages, assistantResponse)
+      sessionLog.info(`refreshTitle: regenerateSessionTitle returned: ${title ? `"${title}"` : 'null'}`)
+      if (title) {
+        managed.name = title
+        this.persistSession(managed)
+        this.sendEvent({ type: 'title_generated', sessionId, title }, managed.workspace.id)
+        sessionLog.info(`Refreshed title for session ${sessionId}: "${title}"`)
+        return { success: true, title }
+      }
+      return { success: false, error: 'Failed to generate title' }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error'
+      sessionLog.error(`Failed to refresh title for session ${sessionId}:`, error)
+      return { success: false, error: message }
+    }
+  }
+
+  /**
    * Update the working directory for a session
    */
   updateWorkingDirectory(sessionId: string, path: string): void {
@@ -1825,6 +1875,7 @@ export class SessionManager {
         content: message,
         timestamp: Date.now(),
         attachments: storedAttachments,
+        badges: options?.badges,
       }
 
       // Add to messages immediately so it's persisted
@@ -1866,6 +1917,7 @@ export class SessionManager {
         content: message,
         timestamp: Date.now(),
         attachments: storedAttachments, // Include for persistence (has thumbnailBase64)
+        badges: options?.badges,  // Include content badges (sources, skills with embedded icons)
       }
       managed.messages.push(userMessage)
 
@@ -1880,24 +1932,23 @@ export class SessionManager {
         status: 'accepted'
       }, managed.workspace.id)
 
-      // If this is the first user message, compute and store preview for sidebar fallback
+      // If this is the first user message and no title exists, set one immediately
+      // AI generation will enhance it later, but we always have a title from the start
       const isFirstUserMessage = managed.messages.filter(m => m.role === 'user').length === 1
-      if (isFirstUserMessage) {
-        // Compute preview (first 150 chars, newlines replaced with spaces)
-        const preview = message.replace(/\n/g, ' ').substring(0, 150)
-        managed.preview = preview
+      if (isFirstUserMessage && !managed.name) {
+        const initialTitle = message.slice(0, 50) + (message.length > 50 ? '…' : '')
+        managed.name = initialTitle
+        this.persistSession(managed)
+        // Flush immediately so disk is authoritative before notifying renderer
+        await this.flushSession(managed.id)
+        this.sendEvent({
+          type: 'title_generated',
+          sessionId,
+          title: initialTitle,
+        }, managed.workspace.id)
 
-        // If no name exists, send preview as temporary title
-        // The AI-generated title will replace this when it arrives
-        if (!managed.name) {
-          const previewTitle = message.slice(0, 50) + (message.length > 50 ? '…' : '')
-          this.sendEvent({
-            type: 'title_generated',
-            sessionId,
-            title: previewTitle,
-            preview,  // Include preview for fallback
-          }, managed.workspace.id)
-        }
+        // Generate AI title asynchronously (will update the initial title)
+        this.generateTitle(managed, message)
       }
     }
 
@@ -2406,18 +2457,25 @@ To view this task's output:
   }
 
   /**
-   * Generate an AI title for a session based on the first exchange
-   * Called asynchronously after the first assistant response
+   * Generate an AI title for a session from the user's first message.
+   * Called asynchronously when the first user message is received.
    */
-  private async generateTitle(managed: ManagedSession, userMessage: string, assistantResponse: string): Promise<void> {
+  private async generateTitle(managed: ManagedSession, userMessage: string): Promise<void> {
+    sessionLog.info(`Starting title generation for session ${managed.id}`)
     try {
-      const title = await generateSessionTitle(userMessage, assistantResponse)
+      const title = await generateSessionTitle(userMessage)
       if (title) {
         managed.name = title
         this.persistSession(managed)
-        // Notify renderer of the generated title
+        // Flush immediately to ensure disk is up-to-date before notifying renderer.
+        // This prevents race condition where lazy loading reads stale disk data
+        // (the persistence queue has a 500ms debounce).
+        await this.flushSession(managed.id)
+        // Now safe to notify renderer - disk is authoritative
         this.sendEvent({ type: 'title_generated', sessionId: managed.id, title }, managed.workspace.id)
         sessionLog.info(`Generated title for session ${managed.id}: "${title}"`)
+      } else {
+        sessionLog.warn(`Title generation returned null for session ${managed.id}`)
       }
     } catch (error) {
       sessionLog.error(`Failed to generate title for session ${managed.id}:`, error)
@@ -2446,12 +2504,6 @@ To view this task's output:
         // Flush any pending deltas before sending complete (ensures renderer has all content)
         this.flushDelta(sessionId, workspaceId)
 
-        // Check if this is the first assistant message and no name exists yet
-        // Only generate title on non-intermediate (final) messages to ensure we have
-        // substantive content for the Haiku title generator, not brief tool-use commentary
-        const existingAssistantCount = managed.messages.filter(m => m.role === 'assistant').length
-        const shouldGenerateTitle = existingAssistantCount === 0 && !managed.name && !event.isIntermediate
-
         // Use the parent that was active when text STARTED streaming (captured in text_delta)
         // This prevents text from being nested under tools that started after the text began
         const textParentToolUseId = event.isIntermediate ? managed.pendingTextParent : undefined
@@ -2475,14 +2527,6 @@ To view this task's output:
         }
 
         this.sendEvent({ type: 'text_complete', sessionId, text: event.text, isIntermediate: event.isIntermediate, turnId: event.turnId, parentToolUseId: textParentToolUseId }, workspaceId)
-
-        // Generate title asynchronously after first assistant response
-        if (shouldGenerateTitle) {
-          const firstUserMsg = managed.messages.find(m => m.role === 'user')
-          if (firstUserMsg) {
-            this.generateTitle(managed, firstUserMsg.content, event.text)
-          }
-        }
 
         // Persist session after complete message to prevent data loss on quit
         this.persistSession(managed)
@@ -2714,14 +2758,30 @@ To view this task's output:
         }, workspaceId)
         break
 
-      case 'info':
+      case 'info': {
+        const isCompactionComplete = event.message.startsWith('Compacted')
+
+        // Persist compaction messages so they survive reload
+        // Other info messages are transient (just sent to renderer)
+        if (isCompactionComplete) {
+          const compactionMessage: Message = {
+            id: generateMessageId(),
+            role: 'info',
+            content: event.message,
+            timestamp: Date.now(),
+            statusType: 'compaction_complete',
+          }
+          managed.messages.push(compactionMessage)
+        }
+
         this.sendEvent({
           type: 'info',
           sessionId,
           message: event.message,
-          statusType: event.message.startsWith('Compacted') ? 'compaction_complete' : undefined
+          statusType: isCompactionComplete ? 'compaction_complete' : undefined
         }, workspaceId)
         break
+      }
 
       case 'error':
         // Skip abort errors - these are expected when force-aborting via AbortController
@@ -2833,6 +2893,37 @@ To view this task's output:
           if (event.usage.contextWindow) {
             managed.tokenUsage.contextWindow = event.usage.contextWindow
           }
+        }
+        break
+
+      case 'usage_update':
+        // Real-time usage update for context display during processing
+        // Update managed session's tokenUsage with latest context size
+        if (event.usage) {
+          if (!managed.tokenUsage) {
+            managed.tokenUsage = {
+              inputTokens: 0,
+              outputTokens: 0,
+              totalTokens: 0,
+              contextTokens: 0,
+              costUsd: 0,
+            }
+          }
+          // Update only inputTokens (current context size) - other fields accumulate on complete
+          managed.tokenUsage.inputTokens = event.usage.inputTokens
+          if (event.usage.contextWindow) {
+            managed.tokenUsage.contextWindow = event.usage.contextWindow
+          }
+
+          // Send to renderer for immediate UI update
+          this.sendEvent({
+            type: 'usage_update',
+            sessionId: managed.id,
+            tokenUsage: {
+              inputTokens: event.usage.inputTokens,
+              contextWindow: event.usage.contextWindow,
+            },
+          }, workspaceId)
         }
         break
 

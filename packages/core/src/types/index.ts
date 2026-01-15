@@ -28,6 +28,7 @@ export type {
   AttachmentType,
   MessageAttachment,
   StoredAttachment,
+  ContentBadge,
   Message,
   StoredMessage,
   TokenUsage,

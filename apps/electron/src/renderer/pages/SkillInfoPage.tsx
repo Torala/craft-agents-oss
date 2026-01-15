@@ -184,7 +184,6 @@ export default function SkillInfoPage({ skillSlug, workspaceId }: SkillInfoPageP
           <SkillMenu
             skillSlug={skillSlug}
             skillName={skillName}
-            onEdit={handleEdit}
             onOpenInNewWindow={handleOpenInNewWindow}
             onShowInFinder={handleOpenInFinder}
             onDelete={handleDelete}
@@ -343,7 +342,7 @@ export default function SkillInfoPage({ skillSlug, workspaceId }: SkillInfoPageP
               </button>
             }
           >
-            <Info_Markdown maxHeight={540}>
+            <Info_Markdown maxHeight={540} fullscreen>
               {skill.content || '*No instructions provided.*'}
             </Info_Markdown>
           </Info_Section>

@@ -55,7 +55,6 @@ export function getDefaultOptions(): Partial<Options> {
         // Add interceptor preload if path is set (needed for Craft gateway redirect)
         if (customInterceptorPath) {
             options.executableArgs = ['--preload', customInterceptorPath];
-            console.error('[Options] Using interceptor preload:', customInterceptorPath);
         }
         return options;
     }

@@ -64,8 +64,6 @@ export interface RichTextInputHandle {
 // ============================================================================
 
 // SVG icons as HTML strings (avoiding react-dom/server which doesn't work in browser)
-const FOLDER_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg>`
-
 const SKILL_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>`
 
 const SOURCE_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>`
@@ -96,8 +94,6 @@ function renderBadgeHTML(
       iconHtml = `<span class="h-[12px] w-[12px] rounded-[2px] bg-foreground/5 flex items-center justify-center text-foreground/50 shrink-0">${SKILL_ICON_SVG}</span>`
     } else if (type === 'source') {
       iconHtml = `<span class="h-[12px] w-[12px] rounded-[2px] bg-foreground/5 flex items-center justify-center text-foreground/50 shrink-0">${SOURCE_ICON_SVG}</span>`
-    } else if (type === 'folder') {
-      iconHtml = `<span class="h-[12px] w-[12px] rounded-[2px] bg-foreground/5 flex items-center justify-center text-foreground/50 shrink-0">${FOLDER_ICON_SVG}</span>`
     }
   }
 
@@ -340,8 +336,6 @@ function textToHTML(
     } else if (match.type === 'source') {
       source = sources.find(s => s.config.slug === match.id)
       label = source?.config.name || match.id
-    } else if (match.type === 'folder') {
-      label = match.id.split('/').pop() || match.id
     }
 
     // Render badge with data-mention-text storing the original text
@@ -580,12 +574,14 @@ export const RichTextInput = React.forwardRef<RichTextInputHandle, RichTextInput
       const html = textToHTML(value, skills, sources, workspaceId)
       divRef.current.innerHTML = html || '<br>'
 
-      // If focused, restore cursor - use pending position if set, otherwise end
-      if (document.activeElement === divRef.current) {
-        const cursorPos = pendingCursorRef.current ?? value.length
-        setCursorPosition(divRef.current, cursorPos)
-        pendingCursorRef.current = null // Clear after use
-      }
+      // Restore cursor position after innerHTML update.
+      // Always restore if we have a pending position (from setSelectionRange call).
+      // Otherwise restore to end of value.
+      // Note: We restore even if not focused because focus can momentarily shift
+      // during React re-renders, and we don't want cursor to reset to 0.
+      const cursorPos = pendingCursorRef.current ?? value.length
+      setCursorPosition(divRef.current, cursorPos)
+      pendingCursorRef.current = null // Clear after use
     }, [value, skills, sources, skillSlugs, sourceSlugs, workspaceId])
 
     // Initialize content on mount
@@ -646,7 +642,7 @@ export const RichTextInput = React.forwardRef<RichTextInputHandle, RichTextInput
     // Check if value contains any mentions (badges) to adjust line height
     const hasMentions = React.useMemo(() => {
       const mentions = parseMentions(value, skillSlugs, sourceSlugs)
-      return mentions.skills.length > 0 || mentions.sources.length > 0 || mentions.folders.length > 0
+      return mentions.skills.length > 0 || mentions.sources.length > 0
     }, [value, skillSlugs, sourceSlugs])
 
     return (

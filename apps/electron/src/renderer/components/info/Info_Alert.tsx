@@ -17,7 +17,7 @@ const alertVariants = cva('rounded-[8px] border', {
       success: 'bg-success/5 border-success/30',
     },
     inline: {
-      true: 'px-[22px] py-2',
+      true: 'px-4 py-2',
       false: 'px-4 py-3',
     },
   },

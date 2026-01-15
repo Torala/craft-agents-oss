@@ -38,6 +38,8 @@ export interface SessionMeta {
   todoState?: string
   /** Role/type of the last message (for badge display without loading messages) */
   lastMessageRole?: 'user' | 'assistant' | 'plan' | 'tool' | 'error'
+  /** Whether title is currently being regenerated (for shimmer effect) */
+  isRegeneratingTitle?: boolean
 }
 
 /**
@@ -76,6 +78,7 @@ export function extractSessionMeta(session: Session): SessionMeta {
     lastFinalMessageId,
     todoState: session.todoState,
     lastMessageRole: session.lastMessageRole,
+    isRegeneratingTitle: session.isRegeneratingTitle,
   }
 }
 
@@ -457,3 +460,14 @@ export const backgroundTasksAtomFamily = atomFamily(
   (_sessionId: string) => atom<BackgroundTask[]>([]),
   (a, b) => a === b
 )
+
+// HMR: Force full page refresh when this file changes.
+// Jotai atoms are module-level objects - when HMR reloads this file, new atom
+// instances are created but the store still holds data in the old atoms.
+// This causes messages to disappear because components subscribe to new (empty)
+// atoms while data lives in old (orphaned) atoms. Full refresh avoids this.
+if (import.meta.hot) {
+  import.meta.hot.accept(() => {
+    import.meta.hot?.invalidate()
+  })
+}

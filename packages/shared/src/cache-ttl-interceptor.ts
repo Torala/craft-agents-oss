@@ -9,7 +9,7 @@
  * - Adds _intent and _displayName metadata to MCP tool schemas
  */
 
-import { appendFileSync, existsSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -18,7 +18,6 @@ import { join } from 'node:path';
 type HeadersInitType = Headers | Record<string, string> | string[][];
 
 const DEBUG = process.argv.includes('--debug') || process.env.CRAFT_DEBUG === '1';
-const LOG_FILE = '/tmp/craft-debug.log';
 
 /**
  * Store the last API error for the error handler to access.
@@ -106,12 +105,9 @@ function debugLog(...args: unknown[]) {
       }
     }
     return String(a);
-  }).join(' ')}\n`;
-  try {
-    appendFileSync(LOG_FILE, message);
-  } catch {
-    // ignore
-  }
+  }).join(' ')}`;
+  // Output to stderr to avoid interfering with stdout
+  process.stderr.write(message + '\n');
 }
 
 

@@ -511,6 +511,14 @@ export function ChatDisplay({
           <div className="flex flex-1 flex-col min-h-0 min-w-0 relative z-10 bg-surface-below">
           {/* === MESSAGES AREA: Scrollable list of message bubbles === */}
           <div className="relative flex-1 min-h-0">
+            {/* Mask wrapper - fades content at top and bottom over transparent/image backgrounds */}
+            <div
+              className="h-full"
+              style={{
+                maskImage: 'linear-gradient(to bottom, transparent 0%, black 32px, black calc(100% - 32px), transparent 100%)',
+                WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, black 32px, black calc(100% - 32px), transparent 100%)'
+              }}
+            >
               <ScrollArea className="h-full min-w-0" viewportRef={scrollViewportRef}>
               <div className={cn(CHAT_LAYOUT.maxWidth, "mx-auto", CHAT_LAYOUT.containerPadding, CHAT_LAYOUT.messageSpacing, "min-w-0")}>
                 {/* Session-level AnimatePresence: Prevents layout jump when switching sessions */}
@@ -891,9 +899,8 @@ export function ChatDisplay({
                 {/* Scroll Anchor: For auto-scroll to bottom */}
                 <div ref={messagesEndRef} />
               </div>
-            </ScrollArea>
-            {/* Bottom fade gradient - absolutely positioned overlay */}
-            <div className="absolute bottom-0 left-0 right-2 h-8 z-10 bg-gradient-to-t from-surface-below to-transparent pointer-events-none" />
+              </ScrollArea>
+            </div>
           </div>
 
           {/* === INPUT CONTAINER: FreeForm or Structured Input === */}
@@ -1044,6 +1051,7 @@ function MessageBubble({
       <UserMessageBubble
         content={message.content}
         attachments={message.attachments}
+        badges={message.badges}
         isPending={message.isPending}
         isQueued={message.isQueued}
         onUrlClick={onOpenUrl}
@@ -1115,6 +1123,20 @@ function MessageBubble({
 
   // === INFO MESSAGE: Icon and color based on level ===
   if (message.role === 'info') {
+    // Compaction complete message - render as horizontal rule with centered label
+    // This persists after reload to show where context was compacted
+    if (message.statusType === 'compaction_complete') {
+      return (
+        <div className="flex items-center gap-3 my-12 px-3">
+          <div className="flex-1 h-px bg-border" />
+          <span className="text-sm text-muted-foreground/70 select-none">
+            Conversation Compacted
+          </span>
+          <div className="flex-1 h-px bg-border" />
+        </div>
+      )
+    }
+
     const level = message.infoLevel || 'info'
     const config = {
       info: { icon: Info, className: 'text-muted-foreground' },

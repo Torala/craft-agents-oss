@@ -17,9 +17,15 @@ import {
   DropdownMenuTrigger,
   StyledDropdownMenuContent,
 } from '@/components/ui/styled-dropdown'
+import {
+  ContextMenu,
+  ContextMenuTrigger,
+  StyledContextMenuContent,
+} from '@/components/ui/styled-context-menu'
+import { DropdownMenuProvider, ContextMenuProvider } from '@/components/ui/menu-context'
 import { SourceMenu } from './SourceMenu'
 import { cn } from '@/lib/utils'
-import type { LoadedSource, SourceConnectionStatus, SourceCategory } from '../../../shared/types'
+import type { LoadedSource, SourceConnectionStatus } from '../../../shared/types'
 
 export interface SourcesListPanelProps {
   sources: LoadedSource[]
@@ -29,29 +35,7 @@ export interface SourcesListPanelProps {
   selectedSourceSlug?: string | null
   /** Whether local MCP servers are enabled (affects stdio source status) */
   localMcpEnabled?: boolean
-  /** Filter sources by category */
-  category?: SourceCategory
   className?: string
-}
-
-/**
- * Filter sources based on category
- */
-function filterSourcesByCategory(sources: LoadedSource[], category?: SourceCategory): LoadedSource[] {
-  if (!category) return sources
-  return sources.filter(s => {
-    if (category === 'local-files') {
-      return s.config.type === 'local'
-    }
-    if (category === 'online-sources') {
-      return s.config.type === 'api' ||
-        (s.config.type === 'mcp' && s.config.mcp?.transport !== 'stdio')
-    }
-    if (category === 'local-mcp') {
-      return s.config.type === 'mcp' && s.config.mcp?.transport === 'stdio'
-    }
-    return true
-  })
 }
 
 export function SourcesListPanel({
@@ -61,34 +45,26 @@ export function SourcesListPanel({
   onSourceClick,
   selectedSourceSlug,
   localMcpEnabled = true,
-  category,
   className,
 }: SourcesListPanelProps) {
-  const filteredSources = React.useMemo(
-    () => filterSourcesByCategory(sources, category),
-    [sources, category]
-  )
-
   return (
     <ScrollArea className={cn('flex-1', className)}>
       <div className="pb-2">
-        {filteredSources.length === 0 ? (
+        {sources.length === 0 ? (
           <div className="px-4 py-8 text-center">
             <p className="text-sm text-muted-foreground">
-              {category ? 'No sources in this category.' : 'No sources configured.'}
+              No sources configured.
             </p>
-            {!category && (
-              <button
-                onClick={onAddSource}
-                className="mt-2 text-sm text-foreground hover:underline"
-              >
-                Add your first source
-              </button>
-            )}
+            <button
+              onClick={onAddSource}
+              className="mt-2 text-sm text-foreground hover:underline"
+            >
+              Add your first source
+            </button>
           </div>
         ) : (
           <div className="pt-2">
-            {filteredSources.map((source, index) => (
+            {sources.map((source, index) => (
               <SourceItem
                 key={`${source.config.slug}-${source.config.connectionStatus}-${source.config.isAuthenticated}-${localMcpEnabled}`}
                 source={source}
@@ -170,6 +146,7 @@ function getStatusBadge(status: SourceConnectionStatus): { label: string; classe
 
 function SourceItem({ source, isSelected, isFirst, localMcpEnabled, onClick, onDelete }: SourceItemProps) {
   const [menuOpen, setMenuOpen] = useState(false)
+  const [contextMenuOpen, setContextMenuOpen] = useState(false)
   const { config } = source
 
   // Build subtitle text: provider or tagline
@@ -187,8 +164,10 @@ function SourceItem({ source, isSelected, isFirst, localMcpEnabled, onClick, onD
           <Separator />
         </div>
       )}
-      {/* Wrapper for button + dropdown, group for hover state */}
-      <div className="source-content relative group select-none pl-2 mr-2">
+      {/* Wrapper for button + dropdown + context menu, group for hover state */}
+      <ContextMenu modal={true} onOpenChange={setContextMenuOpen}>
+        <ContextMenuTrigger asChild>
+          <div className="source-content relative group select-none pl-2 mr-2">
         {/* Source Avatar - positioned absolutely, like todo icon */}
         <div className="absolute left-4 top-3.5 z-10 flex items-center justify-center">
           <SourceAvatar source={source} size="sm" />
@@ -244,7 +223,7 @@ function SourceItem({ source, isSelected, isFirst, localMcpEnabled, onClick, onD
         <div
           className={cn(
             "absolute right-2 top-2 transition-opacity z-10",
-            menuOpen ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+            menuOpen || contextMenuOpen ? "opacity-100" : "opacity-0 group-hover:opacity-100"
           )}
         >
           {/* More menu */}
@@ -256,24 +235,42 @@ function SourceItem({ source, isSelected, isFirst, localMcpEnabled, onClick, onD
                 </div>
               </DropdownMenuTrigger>
               <StyledDropdownMenuContent align="end">
-                <SourceMenu
-                  sourceSlug={config.slug}
-                  sourceName={config.name}
-                  showViewDetails
-                  onViewDetails={onClick}
-                  onOpenInNewWindow={() => {
-                    window.electronAPI.openUrl(`craftagents://sources/source/${config.slug}?window=focused`)
-                  }}
-                  onShowInFinder={() => {
-                    window.electronAPI.showInFolder(source.folderPath)
-                  }}
-                  onDelete={onDelete}
-                />
+                <DropdownMenuProvider>
+                  <SourceMenu
+                    sourceSlug={config.slug}
+                    sourceName={config.name}
+                    onOpenInNewWindow={() => {
+                      window.electronAPI.openUrl(`craftagents://sources/source/${config.slug}?window=focused`)
+                    }}
+                    onShowInFinder={() => {
+                      window.electronAPI.showInFolder(source.folderPath)
+                    }}
+                    onDelete={onDelete}
+                  />
+                </DropdownMenuProvider>
               </StyledDropdownMenuContent>
             </DropdownMenu>
           </div>
         </div>
-      </div>
+          </div>
+        </ContextMenuTrigger>
+        {/* Context menu - same content as dropdown */}
+        <StyledContextMenuContent>
+          <ContextMenuProvider>
+            <SourceMenu
+              sourceSlug={config.slug}
+              sourceName={config.name}
+              onOpenInNewWindow={() => {
+                window.electronAPI.openUrl(`craftagents://sources/source/${config.slug}?window=focused`)
+              }}
+              onShowInFinder={() => {
+                window.electronAPI.showInFolder(source.folderPath)
+              }}
+              onDelete={onDelete}
+            />
+          </ContextMenuProvider>
+        </StyledContextMenuContent>
+      </ContextMenu>
     </div>
   )
 }

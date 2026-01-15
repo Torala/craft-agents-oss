@@ -97,14 +97,11 @@ export const routes = {
         : `state/${stateId}` as const,
 
     /** Sources view (sources navigator) */
-    sources: (params?: { category?: 'local-files' | 'online-sources' | 'local-mcp'; sourceSlug?: string }) => {
-      const { category, sourceSlug } = params ?? {}
+    sources: (params?: { sourceSlug?: string }) => {
+      const { sourceSlug } = params ?? {}
       if (sourceSlug) {
-        // Include category in URL if present: sources/{category}/source/{slug}
-        if (category) return `sources/${category}/source/${sourceSlug}` as const
         return `sources/source/${sourceSlug}` as const
       }
-      if (category) return `sources/${category}` as const
       return 'sources' as const
     },
 

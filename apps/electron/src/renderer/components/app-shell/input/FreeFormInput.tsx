@@ -44,6 +44,8 @@ import { FreeFormInputContextBadge } from './FreeFormInputContextBadge'
 import type { FileAttachment, LoadedSource, LoadedSkill } from '../../../../shared/types'
 import type { PermissionMode } from '@craft-agent/shared/agent/modes'
 import { PERMISSION_MODE_ORDER } from '@craft-agent/shared/agent/modes'
+import { useEscapeInterrupt } from '@/context/EscapeInterruptContext'
+import { EscapeInterruptOverlay } from './EscapeInterruptOverlay'
 
 /**
  * Format token count for display (e.g., 1500 -> "1.5k", 200000 -> "200k")
@@ -238,6 +240,9 @@ export function FreeFormInput({
   const [isFocused, setIsFocused] = React.useState(false)
   const [inputMaxHeight, setInputMaxHeight] = React.useState(540)
 
+  // Double-Esc interrupt: show warning overlay on first Esc, interrupt on second
+  const { showEscapeOverlay } = useEscapeInterrupt()
+
   // Calculate max height: min(66% of window height, 540px)
   React.useEffect(() => {
     const updateMaxHeight = () => {
@@ -430,13 +435,11 @@ export function FreeFormInput({
     // Skills don't need special handling - just the text insertion
   }, [optimisticSourceSlugs, onSourcesChange])
 
-  // Inline mention hook (for skills and sources - folders moved to slash menu)
+  // Inline mention hook (for skills and sources only)
   const inlineMention = useInlineMention({
     inputRef: richInputRef,
     skills,
     sources,
-    recentFolders: [], // No folders in mention menu anymore
-    homeDir,
     onSelect: handleMentionSelect,
   })
 
@@ -694,19 +697,6 @@ export function FreeFormInput({
       }
     }
 
-    // Change working directory if a folder was mentioned (use the last one)
-    if (mentions.folders.length > 0 && onWorkingDirectoryChange) {
-      const lastFolder = mentions.folders[mentions.folders.length - 1]
-      // Expand ~ to home directory if needed
-      const expandedPath = lastFolder.startsWith('~/')
-        ? (homeDir || '') + lastFolder.slice(1)
-        : lastFolder
-      if (expandedPath) {
-        addRecentDir(expandedPath)
-        onWorkingDirectoryChange(expandedPath)
-      }
-    }
-
     onSubmit(
       input.trim(),
       attachments.length > 0 ? attachments : undefined,
@@ -800,8 +790,8 @@ export function FreeFormInput({
     setInput(value)
     syncToParent(value) // Debounced sync to parent for draft persistence
 
-    // Sync source/folder selection when mentions are removed from input
-    if (onSourcesChange || onWorkingDirectoryChange) {
+    // Sync source selection when mentions are removed from input
+    if (onSourcesChange) {
       const sourceSlugs = sources.map(s => s.config.slug)
 
       // Parse mentions from previous and current input
@@ -809,33 +799,14 @@ export function FreeFormInput({
       const currMentions = parseMentions(value, [], sourceSlugs)
 
       // Remove sources that were mentioned before but not anymore
-      if (onSourcesChange) {
-        const removedSources = prevMentions.sources.filter(slug => !currMentions.sources.includes(slug))
-        if (removedSources.length > 0) {
-          const newSlugs = optimisticSourceSlugs.filter(slug => !removedSources.includes(slug))
-          setOptimisticSourceSlugs(newSlugs)
-          onSourcesChange(newSlugs)
-        }
-      }
-
-      // Reset working directory if folder mention was removed
-      // Only reset if the removed folder matches the current working directory
-      if (onWorkingDirectoryChange && workingDirectory) {
-        const removedFolders = prevMentions.folders.filter(path => !currMentions.folders.includes(path))
-        const expandedWorkingDir = workingDirectory
-        for (const folder of removedFolders) {
-          const expandedFolder = folder.startsWith('~/')
-            ? (homeDir || '') + folder.slice(1)
-            : folder
-          if (expandedFolder === expandedWorkingDir && sessionFolderPath) {
-            // Reset to session root when the folder mention is deleted
-            onWorkingDirectoryChange(sessionFolderPath)
-            break
-          }
-        }
+      const removedSources = prevMentions.sources.filter(slug => !currMentions.sources.includes(slug))
+      if (removedSources.length > 0) {
+        const newSlugs = optimisticSourceSlugs.filter(slug => !removedSources.includes(slug))
+        setOptimisticSourceSlugs(newSlugs)
+        onSourcesChange(newSlugs)
       }
     }
-  }, [syncToParent, sources, optimisticSourceSlugs, onSourcesChange, onWorkingDirectoryChange, workingDirectory, homeDir, sessionFolderPath])
+  }, [syncToParent, sources, optimisticSourceSlugs, onSourcesChange])
 
   // Handle input with cursor position (for menu detection)
   const handleRichInput = React.useCallback((value: string, cursorPosition: number) => {
@@ -974,8 +945,12 @@ export function FreeFormInput({
           data-tutorial="chat-input"
         />
 
-        {/* Bottom Row: Controls */}
-        <div className="flex items-center gap-1 px-2 py-2 border-t border-border/50">
+        {/* Bottom Row: Controls - wrapped in relative container for escape overlay */}
+        <div className="relative">
+          {/* Escape interrupt overlay - shown on first Esc press during processing */}
+          <EscapeInterruptOverlay isVisible={isProcessing && showEscapeOverlay} />
+
+          <div className="flex items-center gap-1 px-2 py-2 border-t border-border/50">
           {/* Context Badges - Files, Sources, Folder */}
           {/* 1. Attach Files Badge */}
           <FreeFormInputContextBadge
@@ -1267,6 +1242,38 @@ export function FreeFormInput({
             )}
           </div>
 
+          {/* 5.5 Context Usage Warning Badge - shows when approaching auto-compaction threshold */}
+          {(() => {
+            // Calculate usage percentage, capped at 99% to avoid showing 100%+
+            // (compaction should kick in before 100%, but cap just in case)
+            const usagePercent = contextStatus?.inputTokens && contextStatus?.contextWindow
+              ? Math.min(99, Math.round((contextStatus.inputTokens / contextStatus.contextWindow) * 100))
+              : null
+            // Show badge when >= 80% used AND not currently compacting
+            const showWarning = usagePercent !== null && usagePercent >= 80 && !contextStatus?.isCompacting
+
+            if (!showWarning) return null
+
+            return (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div
+                    className="inline-flex items-center h-6 px-2 text-[12px] font-medium bg-info/10 rounded-[6px] shadow-tinted select-none"
+                    style={{
+                      '--shadow-color': 'var(--info-rgb)',
+                      color: 'color-mix(in oklab, var(--info) 30%, var(--foreground))',
+                    } as React.CSSProperties}
+                  >
+                    {usagePercent}%
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent side="top">
+                  {usagePercent}% context used — auto-compaction soon
+                </TooltipContent>
+              </Tooltip>
+            )
+          })()}
+
           {/* 6. Send/Stop Button - Always show stop when processing */}
           {isProcessing ? (
             <Button
@@ -1289,6 +1296,7 @@ export function FreeFormInput({
               <ArrowUp className="h-4 w-4" />
             </Button>
           )}
+          </div>
         </div>
       </div>
     </form>

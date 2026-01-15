@@ -124,7 +124,8 @@
      dropdown           100     Dropdowns, popovers, select menus
      tooltip            150     Tooltips (above dropdowns)
      modal              200     Dialogs, drawers
-     overlay            300     Full-screen overlays (settings)
+     overlay            300     Full-screen overlays (settings, app chrome)
+     fullscreen         350     Fullscreen content viewers (above app chrome)
      floating-backdrop  390     Backdrop for floating menus
      floating-menu      400     Floating menus above modals
      splash             600     Splash screen, workspace creation
@@ -138,6 +139,7 @@
   --z-tooltip: 150;
   --z-modal: 200;
   --z-overlay: 300;
+  --z-fullscreen: 350;
   --z-floating-backdrop: 390;
   --z-floating-menu: 400;
   --z-splash: 600;
@@ -292,6 +294,7 @@ html[data-font="inter"] {
   --z-index-tooltip: var(--z-tooltip);
   --z-index-modal: var(--z-modal);
   --z-index-overlay: var(--z-overlay);
+  --z-index-fullscreen: var(--z-fullscreen);
   --z-index-floating-backdrop: var(--z-floating-backdrop);
   --z-index-floating-menu: var(--z-floating-menu);
   --z-index-splash: var(--z-splash);

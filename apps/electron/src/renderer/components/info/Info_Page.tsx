@@ -138,15 +138,20 @@ function Info_PageHero({ avatar, title, tagline, className }: Info_PageHeroProps
 function Info_PageContent({ children, className }: Info_PageContentProps) {
   return (
     <div className="relative flex-1 min-h-0">
-      {/* Top fade gradient */}
-      <div className="absolute top-0 left-0 right-2 h-8 z-10 bg-gradient-to-b from-surface-below to-transparent pointer-events-none" />
-      <ScrollArea className="h-full">
-        <div className={cn(CHAT_LAYOUT.maxWidth, 'mx-auto px-5 pt-6 pb-10')}>
-          <div className={cn('space-y-6', className)}>{children}</div>
-        </div>
-      </ScrollArea>
-      {/* Bottom fade gradient */}
-      <div className="absolute bottom-0 left-0 right-2 h-8 z-10 bg-gradient-to-t from-surface-below to-transparent pointer-events-none" />
+      {/* Mask wrapper - fades content at top and bottom over transparent/image backgrounds */}
+      <div
+        className="h-full"
+        style={{
+          maskImage: 'linear-gradient(to bottom, transparent 0%, black 32px, black calc(100% - 32px), transparent 100%)',
+          WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, black 32px, black calc(100% - 32px), transparent 100%)'
+        }}
+      >
+        <ScrollArea className="h-full">
+          <div className={cn(CHAT_LAYOUT.maxWidth, 'mx-auto px-5 pt-6 pb-10')}>
+            <div className={cn('space-y-6', className)}>{children}</div>
+          </div>
+        </ScrollArea>
+      </div>
     </div>
   )
 }

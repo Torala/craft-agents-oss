@@ -64,6 +64,25 @@ export interface MessageAttachment {
 }
 
 /**
+ * Content badge for inline display in user messages
+ * Badges are self-contained with all display data (label, icon)
+ */
+export interface ContentBadge {
+  /** Badge type - used for fallback icon if iconBase64 not available */
+  type: 'source' | 'skill';
+  /** Display label (e.g., "Linear", "Commit") */
+  label: string;
+  /** Original text pattern (e.g., "@linear", "@commit") */
+  rawText: string;
+  /** Icon as data URL (e.g., "data:image/png;base64,...") - preserves mime type */
+  iconDataUrl?: string;
+  /** Start position in content string */
+  start: number;
+  /** End position in content string */
+  end: number;
+}
+
+/**
  * Stored attachment metadata (persisted to disk, no base64)
  * Created when user sends a message with attachments
  */
@@ -108,6 +127,8 @@ export interface Message {
   isBackground?: boolean;   // Flag for UI differentiation
   // Stored attachments for user messages (persistent, no base64)
   attachments?: StoredAttachment[];
+  // Content badges for inline display (sources, skills)
+  badges?: ContentBadge[];
   isError?: boolean;
   isStreaming?: boolean;
   // Pending: streaming text where we don't yet know if it's intermediate
@@ -187,9 +208,13 @@ export interface StoredMessage {
   isError?: boolean;
   /** Stored attachments for user messages (persisted to disk) */
   attachments?: StoredAttachment[];
+  /** Content badges for inline display (sources, skills) */
+  badges?: ContentBadge[];
   // Turn grouping - critical for TurnCard rendering after reload
   isIntermediate?: boolean;
   turnId?: string;
+  // Status type for compaction messages (persisted for reload)
+  statusType?: 'compacting' | 'compaction_complete';
   // Error display fields
   errorCode?: string;
   errorTitle?: string;
@@ -338,7 +363,8 @@ export type AgentEvent =
   | { type: 'shell_backgrounded'; toolUseId: string; shellId: string; intent?: string; command?: string; turnId?: string }
   | { type: 'task_progress'; toolUseId: string; elapsedSeconds: number; turnId?: string }
   | { type: 'shell_killed'; shellId: string; turnId?: string }
-  | { type: 'source_activated'; sourceSlug: string; originalMessage: string };
+  | { type: 'source_activated'; sourceSlug: string; originalMessage: string }
+  | { type: 'usage_update'; usage: Pick<AgentEventUsage, 'inputTokens' | 'contextWindow'> };
 
 /**
  * Generate a unique message ID

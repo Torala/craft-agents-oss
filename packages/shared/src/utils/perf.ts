@@ -2,7 +2,7 @@
  * Performance Instrumentation
  *
  * Lightweight performance tracking for identifying bottlenecks.
- * Logs to /tmp/craft-perf.log with aggregated statistics.
+ * Logs to stderr with aggregated statistics.
  *
  * IMPORTANT: Disabled by default. Only active when:
  * - CLI: --debug flag is passed (calls enableDebug())
@@ -25,7 +25,6 @@
  *   span.end() // logs total + breakdown
  */
 
-import { appendFileSync } from 'fs';
 import { isDebugEnabled } from './debug.ts';
 
 // Performance metrics storage
@@ -48,8 +47,8 @@ interface PerfConfig {
 
 const config: PerfConfig = {
   enabled: false, // Disabled by default, use setPerfEnabled(true) or relies on isDebugEnabled()
-  logToFile: true,
-  logFilePath: '/tmp/craft-perf.log',
+  logToFile: false, // File logging disabled, use stderr instead
+  logFilePath: '', // Not used
   minDurationMs: 0, // Log everything by default
 };
 
@@ -141,14 +140,10 @@ function logMetric(metric: PerfMetric): void {
     config.onMetric(metric);
   }
 
-  // Log to file
-  if (config.logToFile && metric.duration !== undefined) {
-    try {
-      const line = formatMetric(metric);
-      appendFileSync(config.logFilePath, line + '\n');
-    } catch {
-      // Silently ignore file write errors
-    }
+  // Log to stderr (avoids interfering with stdout)
+  if (metric.duration !== undefined) {
+    const line = formatMetric(metric);
+    process.stderr.write(line + '\n');
   }
 }
 

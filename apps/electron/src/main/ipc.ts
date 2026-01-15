@@ -344,6 +344,9 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
         return sessionManager.revokeShare(sessionId)
       case 'startOAuth':
         return sessionManager.startSessionOAuth(sessionId, command.requestId)
+      case 'refreshTitle':
+        ipcLog.info(`IPC: refreshTitle received for session ${sessionId}`)
+        return sessionManager.refreshTitle(sessionId)
       default: {
         const _exhaustive: never = command
         throw new Error(`Unknown session command: ${JSON.stringify(command)}`)
@@ -478,7 +481,8 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
       // 1. Save the file (with image validation and resizing)
       if (attachment.base64) {
         // Images, PDFs, Office files - decode from base64
-        let decoded = Buffer.from(attachment.base64, 'base64')
+        // Type as Buffer (generic) to allow reassignment from nativeImage.toJPEG/toPNG
+        let decoded: Buffer = Buffer.from(attachment.base64, 'base64')
         // Validate decoded size matches expected (allow small variance for encoding overhead)
         if (Math.abs(decoded.length - attachment.size) > 100) {
           throw new Error(`Attachment corrupted: size mismatch (expected ${attachment.size}, got ${decoded.length})`)

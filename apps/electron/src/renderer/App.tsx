@@ -45,6 +45,8 @@ import {
   type SessionMeta,
 } from '@/atoms/sessions'
 import { sourcesAtom } from '@/atoms/sources'
+import { skillsAtom } from '@/atoms/skills'
+import { extractBadges } from '@/lib/mentions'
 import { getDefaultStore } from 'jotai'
 
 // Register tutorials at module load
@@ -206,8 +208,9 @@ export default function App() {
   // Notifications enabled state (from app settings)
   const [notificationsEnabled, setNotificationsEnabled] = useState(true)
 
-  // Sources for tutorial trigger condition
+  // Sources and skills for tutorial trigger condition and badge extraction
   const sources = useAtomValue(sourcesAtom)
+  const skills = useAtomValue(skillsAtom)
 
   // Compute if app is fully ready (all data loaded)
   const isFullyReady = appState === 'ready' && sessionsLoaded
@@ -634,8 +637,8 @@ export default function App() {
       // (closures would retain the full sessions array with all messages)
       const metaMap = store.get(sessionMetaMapAtom)
       const meta = metaMap.get(sessionId)
-      // Session is empty if it has no lastFinalMessageId (no assistant responses) and no preview (no user messages)
-      const isEmpty = !meta || (!meta.lastFinalMessageId && !meta.preview)
+      // Session is empty if it has no lastFinalMessageId (no assistant responses) and no name (set on first user message)
+      const isEmpty = !meta || (!meta.lastFinalMessageId && !meta.name)
 
       if (!isEmpty) {
         const confirmed = await window.electronAPI.showDeleteSessionConfirmation(meta?.name || 'Untitled')
@@ -758,7 +761,13 @@ export default function App() {
       // Step 3: Check if ultrathink is enabled for this session
       const isUltrathink = sessionOptions.get(sessionId)?.ultrathinkEnabled ?? false
 
-      // Step 4: Create user message with StoredAttachments (for UI display)
+      // Step 4: Extract badges from mentions (sources/skills) with embedded icons
+      // Badges are self-contained for display in UserMessageBubble and viewer
+      const badges = windowWorkspaceId
+        ? extractBadges(message, skills, sources, windowWorkspaceId)
+        : []
+
+      // Step 5: Create user message with StoredAttachments (for UI display)
       // Mark as isPending for optimistic UI - will be confirmed by user_message event
       const userMessage: Message = {
         id: generateMessageId(),
@@ -766,6 +775,7 @@ export default function App() {
         content: message,
         timestamp: Date.now(),
         attachments: storedAttachments,
+        badges: badges.length > 0 ? badges : undefined,
         ultrathink: isUltrathink || undefined,  // Only set if true
         isPending: true,  // Optimistic - will be confirmed by backend
       }
@@ -777,10 +787,11 @@ export default function App() {
         lastMessageAt: Date.now()
       }))
 
-      // Step 5: Send to Claude with processed attachments + stored attachments for persistence
+      // Step 6: Send to Claude with processed attachments + stored attachments for persistence
       await window.electronAPI.sendMessage(sessionId, message, processedAttachments, storedAttachments, {
         ultrathinkEnabled: isUltrathink,
         skillSlugs,
+        badges: badges.length > 0 ? badges : undefined,
       })
 
       // Auto-disable ultrathink after sending (single-shot activation)
@@ -802,7 +813,7 @@ export default function App() {
         ]
       }))
     }
-  }, [sessionOptions, updateSessionById])
+  }, [sessionOptions, updateSessionById, skills, sources, windowWorkspaceId])
 
   const handleModelChange = useCallback((model: string) => {
     setCurrentModel(model)

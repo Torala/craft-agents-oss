@@ -6,15 +6,15 @@
  */
 
 // Import shared types - single source of truth
-import type { ChatFilter, SettingsSubpage, SourceCategory } from '../../../shared/types'
-export type { ChatFilter, SettingsSubpage, SourceCategory }
+import type { ChatFilter, SettingsSubpage } from '../../../shared/types'
+export type { ChatFilter, SettingsSubpage }
 
 /**
  * Sidebar mode - determines what content is shown in the 2nd sidebar
  */
 export type SidebarMode =
   | { type: 'chats'; filter: ChatFilter }
-  | { type: 'sources'; category?: SourceCategory }
+  | { type: 'sources' }
   | { type: 'settings'; subpage: SettingsSubpage }
 
 /**
@@ -29,7 +29,7 @@ export const isChatsMode = (
  */
 export const isSourcesMode = (
   mode: SidebarMode
-): mode is { type: 'sources'; category?: SourceCategory } => mode.type === 'sources'
+): mode is { type: 'sources' } => mode.type === 'sources'
 
 /**
  * Type guard to check if mode is settings mode
@@ -43,9 +43,7 @@ export const isSettingsMode = (
  * Used to save/restore the last selected sidebar mode
  */
 export const getSidebarModeKey = (mode: SidebarMode): string => {
-  if (mode.type === 'sources') {
-    return mode.category ? `sources:${mode.category}` : 'sources'
-  }
+  if (mode.type === 'sources') return 'sources'
   if (mode.type === 'settings') return `settings:${mode.subpage}`
   const f = mode.filter
   if (f.kind === 'state') return `state:${f.stateId}`
@@ -58,12 +56,6 @@ export const getSidebarModeKey = (mode: SidebarMode): string => {
  */
 export const parseSidebarModeKey = (key: string): SidebarMode | null => {
   if (key === 'sources') return { type: 'sources' }
-  if (key.startsWith('sources:')) {
-    const category = key.slice(8) as SourceCategory
-    if (['local-files', 'online-sources', 'local-mcp'].includes(category)) {
-      return { type: 'sources', category }
-    }
-  }
   if (key === 'allChats') return { type: 'chats', filter: { kind: 'allChats' } }
   if (key === 'flagged') return { type: 'chats', filter: { kind: 'flagged' } }
   if (key.startsWith('state:')) {

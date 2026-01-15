@@ -1,10 +1,15 @@
 import * as React from "react"
+import * as ContextMenuPrimitive from "@radix-ui/react-context-menu"
 import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
   ContextMenuTrigger,
+  ContextMenuSub,
+  ContextMenuSubTrigger,
+  ContextMenuSubContent,
+  ContextMenuPortal,
 } from "./context-menu"
 import { cn } from "@/lib/utils"
 
@@ -77,3 +82,50 @@ export const StyledContextMenuSeparator = React.forwardRef<
   />
 ))
 StyledContextMenuSeparator.displayName = "StyledContextMenuSeparator"
+
+// Re-export Sub for submenus
+export { ContextMenuSub as StyledContextMenuSub }
+
+// Styled sub-menu trigger - matches StyledDropdownMenuSubTrigger
+export const StyledContextMenuSubTrigger = React.forwardRef<
+  React.ComponentRef<typeof ContextMenuSubTrigger>,
+  React.ComponentPropsWithoutRef<typeof ContextMenuSubTrigger>
+>(({ className, ...props }, ref) => (
+  <ContextMenuSubTrigger
+    ref={ref}
+    className={cn(
+      "gap-3 pr-4 rounded-[4px] hover:bg-foreground/10 focus:bg-foreground/10 data-[state=open]:bg-foreground/10",
+      "[&>svg]:h-3.5 [&>svg]:w-3.5 [&>svg]:shrink-0",
+      className
+    )}
+    {...props}
+  />
+))
+StyledContextMenuSubTrigger.displayName = "StyledContextMenuSubTrigger"
+
+// Styled sub-menu content - matches StyledDropdownMenuSubContent
+interface StyledContextMenuSubContentProps
+  extends React.ComponentPropsWithoutRef<typeof ContextMenuPrimitive.SubContent> {
+  /** Minimum width - defaults to min-w-36 */
+  minWidth?: string
+}
+
+export const StyledContextMenuSubContent = React.forwardRef<
+  React.ComponentRef<typeof ContextMenuPrimitive.SubContent>,
+  StyledContextMenuSubContentProps
+>(({ className, minWidth = "min-w-36", sideOffset = -4, ...props }, ref) => (
+  <ContextMenuPortal>
+    <ContextMenuPrimitive.SubContent
+      ref={ref}
+      sideOffset={sideOffset}
+      className={cn(
+        "popover-styled w-fit font-sans whitespace-nowrap text-xs flex flex-col gap-0.5 z-dropdown overflow-hidden p-1",
+        "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
+        minWidth,
+        className
+      )}
+      {...props}
+    />
+  </ContextMenuPortal>
+))
+StyledContextMenuSubContent.displayName = "StyledContextMenuSubContent"

@@ -11,7 +11,7 @@ import { Spinner } from '@craft-agent/ui'
 import { cn } from '@/lib/utils'
 
 const groupHeaderVariants = cva(
-  'px-[22px] py-2 border-b border-border/30 text-xs font-semibold uppercase tracking-wide',
+  'px-4 py-2 border-b border-border/30 text-xs font-semibold uppercase tracking-wide',
   {
     variants: {
       variant: {
@@ -71,7 +71,7 @@ function Info_GroupedListRoot({
 
   if (error) {
     return (
-      <div className={cn('px-[22px] py-4 text-sm text-muted-foreground', className)}>
+      <div className={cn('px-4 py-4 text-sm text-muted-foreground', className)}>
         {error === 'Source requires authentication' ? (
           <span>Authenticate with this source to view available tools</span>
         ) : (
@@ -91,7 +91,7 @@ function Info_GroupedListRoot({
 
   if (!hasItems && empty) {
     return (
-      <div className={cn('px-[22px] py-4 text-sm text-muted-foreground', className)}>
+      <div className={cn('px-4 py-4 text-sm text-muted-foreground', className)}>
         {empty}
       </div>
     )
@@ -123,7 +123,7 @@ function Info_GroupedListGroup({
 }
 
 function Info_GroupedListItem({ children, className }: Info_GroupedListItemProps) {
-  return <div className={cn('px-[22px] py-2', className)}>{children}</div>
+  return <div className={cn('px-4 py-2', className)}>{children}</div>
 }
 
 export const Info_GroupedList = Object.assign(Info_GroupedListRoot, {

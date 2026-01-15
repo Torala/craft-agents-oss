@@ -16,6 +16,12 @@ import {
   DropdownMenuTrigger,
   StyledDropdownMenuContent,
 } from '@/components/ui/styled-dropdown'
+import {
+  ContextMenu,
+  ContextMenuTrigger,
+  StyledContextMenuContent,
+} from '@/components/ui/styled-context-menu'
+import { DropdownMenuProvider, ContextMenuProvider } from '@/components/ui/menu-context'
 import { SkillMenu } from './SkillMenu'
 import { cn } from '@/lib/utils'
 import type { LoadedSkill } from '../../../shared/types'
@@ -80,6 +86,7 @@ interface SkillItemProps {
 
 function SkillItem({ skill, isSelected, isFirst, workspaceId, onClick, onDelete }: SkillItemProps) {
   const [menuOpen, setMenuOpen] = useState(false)
+  const [contextMenuOpen, setContextMenuOpen] = useState(false)
 
   return (
     <div className="skill-item" data-selected={isSelected || undefined}>
@@ -89,8 +96,10 @@ function SkillItem({ skill, isSelected, isFirst, workspaceId, onClick, onDelete 
           <Separator />
         </div>
       )}
-      {/* Wrapper for button + dropdown, group for hover state */}
-      <div className="skill-content relative group select-none pl-2 mr-2">
+      {/* Wrapper for button + dropdown + context menu, group for hover state */}
+      <ContextMenu modal={true} onOpenChange={setContextMenuOpen}>
+        <ContextMenuTrigger asChild>
+          <div className="skill-content relative group select-none pl-2 mr-2">
         {/* Skill Avatar - positioned absolutely */}
         <div className="absolute left-4 top-3.5 z-10 flex items-center justify-center">
           <SkillAvatar skill={skill} size="sm" workspaceId={workspaceId} />
@@ -127,7 +136,7 @@ function SkillItem({ skill, isSelected, isFirst, workspaceId, onClick, onDelete 
         <div
           className={cn(
             "absolute right-2 top-2 transition-opacity z-10",
-            menuOpen ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+            menuOpen || contextMenuOpen ? "opacity-100" : "opacity-0 group-hover:opacity-100"
           )}
         >
           {/* More menu */}
@@ -139,31 +148,46 @@ function SkillItem({ skill, isSelected, isFirst, workspaceId, onClick, onDelete 
                 </div>
               </DropdownMenuTrigger>
               <StyledDropdownMenuContent align="end">
-                <SkillMenu
-                  skillSlug={skill.slug}
-                  skillName={skill.metadata.name}
-                  showViewDetails
-                  onViewDetails={onClick}
-                  onEdit={() => {
-                    if (workspaceId) {
-                      window.electronAPI.openSkillInEditor(workspaceId, skill.slug)
-                    }
-                  }}
-                  onOpenInNewWindow={() => {
-                    window.electronAPI.openUrl(`craftagents://skills/skill/${skill.slug}?window=focused`)
-                  }}
-                  onShowInFinder={() => {
-                    if (workspaceId) {
-                      window.electronAPI.openSkillInFinder(workspaceId, skill.slug)
-                    }
-                  }}
-                  onDelete={onDelete}
-                />
+                <DropdownMenuProvider>
+                  <SkillMenu
+                    skillSlug={skill.slug}
+                    skillName={skill.metadata.name}
+                    onOpenInNewWindow={() => {
+                      window.electronAPI.openUrl(`craftagents://skills/skill/${skill.slug}?window=focused`)
+                    }}
+                    onShowInFinder={() => {
+                      if (workspaceId) {
+                        window.electronAPI.openSkillInFinder(workspaceId, skill.slug)
+                      }
+                    }}
+                    onDelete={onDelete}
+                  />
+                </DropdownMenuProvider>
               </StyledDropdownMenuContent>
             </DropdownMenu>
           </div>
         </div>
-      </div>
+          </div>
+        </ContextMenuTrigger>
+        {/* Context menu - same content as dropdown */}
+        <StyledContextMenuContent>
+          <ContextMenuProvider>
+            <SkillMenu
+              skillSlug={skill.slug}
+              skillName={skill.metadata.name}
+              onOpenInNewWindow={() => {
+                window.electronAPI.openUrl(`craftagents://skills/skill/${skill.slug}?window=focused`)
+              }}
+              onShowInFinder={() => {
+                if (workspaceId) {
+                  window.electronAPI.openSkillInFinder(workspaceId, skill.slug)
+                }
+              }}
+              onDelete={onDelete}
+            />
+          </ContextMenuProvider>
+        </StyledContextMenuContent>
+      </ContextMenu>
     </div>
   )
 }

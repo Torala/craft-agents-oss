@@ -15,7 +15,7 @@ import { cn } from '../../lib/utils'
 
 export interface SimpleDropdownItemProps {
   /** Click handler */
-  onClick: () => void
+  onClick: (e?: React.MouseEvent) => void
   /** Item content */
   children: React.ReactNode
   /** Optional icon (rendered before label) */
@@ -160,15 +160,18 @@ export function SimpleDropdown({
     }
   }, [isOpen, handleClose])
 
-  // Wrap item clicks to close menu
+  // Wrap item clicks to close menu and prevent event bubbling
+  // This ensures dropdown item clicks don't propagate to parent elements
+  // (e.g., clicking "View Turn Details" shouldn't expand the turn card)
   const wrappedChildren = React.Children.map(children, child => {
     if (React.isValidElement<SimpleDropdownItemProps>(child) && child.type === SimpleDropdownItem) {
       return React.cloneElement(child, {
-        onClick: () => {
+        onClick: (e?: React.MouseEvent) => {
+          e?.stopPropagation()
           child.props.onClick()
           handleClose()
         },
-      })
+      } as Partial<SimpleDropdownItemProps>)
     }
     return child
   })

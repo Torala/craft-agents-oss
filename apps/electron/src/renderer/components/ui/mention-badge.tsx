@@ -1,6 +1,5 @@
 import * as React from 'react'
 import { X } from 'lucide-react'
-import { Icon_Folder } from '@craft-agent/ui'
 import { cn } from '@/lib/utils'
 import { SkillAvatar } from '@/components/ui/skill-avatar'
 import { SourceAvatar } from '@/components/ui/source-avatar'
@@ -18,8 +17,6 @@ export interface MentionBadgeProps {
   skill?: LoadedSkill
   /** Source data for source mentions */
   source?: LoadedSource
-  /** Folder path for folder mentions */
-  path?: string
   /** Workspace ID for skill avatar */
   workspaceId?: string
   /** Called when the remove button is clicked */
@@ -36,14 +33,13 @@ export interface MentionBadgeProps {
  * MentionBadge - Inline badge for displaying active @mentions
  *
  * Used in the ActiveMentionBadges row above the input field to show
- * skills, sources, and folders that have been mentioned via @.
+ * skills and sources that have been mentioned via @.
  */
 export function MentionBadge({
   type,
   label,
   skill,
   source,
-  path,
   workspaceId,
   onRemove,
   className,
@@ -63,11 +59,6 @@ export function MentionBadge({
       )}
       {type === 'source' && source && (
         <SourceAvatar source={source} size="xs" />
-      )}
-      {type === 'folder' && (
-        <div className="h-4 w-4 rounded-[3px] bg-foreground/5 flex items-center justify-center">
-          <Icon_Folder className="h-3 w-3 text-muted-foreground" strokeWidth={1.75} />
-        </div>
       )}
 
       {/* Label */}
@@ -100,7 +91,6 @@ export interface ParsedMention {
   label: string
   skill?: LoadedSkill
   source?: LoadedSource
-  path?: string
 }
 
 export interface ActiveMentionBadgesProps {
@@ -117,7 +107,7 @@ export interface ActiveMentionBadgesProps {
 /**
  * ActiveMentionBadges - Row of mention badges shown above the input
  *
- * Displays all active @mentions (skills, sources, folders) as removable badges.
+ * Displays all active @mentions (skills and sources) as removable badges.
  * Hidden when there are no mentions.
  */
 export function ActiveMentionBadges({
@@ -137,7 +127,6 @@ export function ActiveMentionBadges({
           label={mention.label}
           skill={mention.skill}
           source={mention.source}
-          path={mention.path}
           workspaceId={workspaceId}
           onRemove={onRemove ? () => onRemove(mention.id, mention.type) : undefined}
         />

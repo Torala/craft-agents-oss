@@ -6,7 +6,7 @@
  *
  * UNIFIED NAVIGATION STATE:
  * This context now maintains a single NavigationState that determines all 3 panels:
- * - LeftSidebar: highlighted item (derived from navigator + filter/category/subpage)
+ * - LeftSidebar: highlighted item (derived from navigator + filter/subpage)
  * - NavigatorPanel: which list to show (derived from navigator)
  * - MainContentPanel: what details to display (derived from details or subpage)
  *
@@ -48,8 +48,6 @@ import type {
   Session,
   NavigationState,
   ChatFilter,
-  SourceCategory,
-  LoadedSource,
   RightSidebarPanel,
 } from '../../shared/types'
 import {
@@ -63,21 +61,12 @@ import { sessionMetaMapAtom, type SessionMeta } from '@/atoms/sessions'
 import { sourcesAtom } from '@/atoms/sources'
 import { skillsAtom } from '@/atoms/skills'
 
-/**
- * Get the category of a source
- */
-function getSourceCategory(source: LoadedSource): SourceCategory {
-  if (source.config.type === 'local') return 'local-files'
-  if (source.config.type === 'mcp' && source.config.mcp?.transport === 'stdio') return 'local-mcp'
-  return 'online-sources'
-}
-
 // Re-export routes for convenience
 export { routes }
 export type { Route }
 
 // Re-export navigation state types for consumers
-export type { NavigationState, ChatFilter, SourceCategory }
+export type { NavigationState, ChatFilter }
 export { isChatsNavigation, isSourcesNavigation, isSettingsNavigation, isSkillsNavigation }
 
 interface NavigationContextValue {
@@ -187,13 +176,10 @@ export function NavigationProvider({
     [filterSessionsByFilter]
   )
 
-  // Helper: Get first source slug (optionally filtered by category)
+  // Helper: Get first source slug
   const getFirstSourceSlug = useCallback(
-    (category?: SourceCategory): string | null => {
-      const filtered = category
-        ? sources.filter(s => getSourceCategory(s) === category)
-        : sources
-      return filtered[0]?.config.slug ?? null
+    (): string | null => {
+      return sources[0]?.config.slug ?? null
     },
     [sources]
   )
@@ -301,7 +287,7 @@ export function NavigationProvider({
   /**
    * Apply navigation state with auto-selection logic
    *
-   * When navigating to a filter/category without explicit details,
+   * When navigating to a filter without explicit details,
    * auto-select the first available item. This ensures the main content
    * panel always shows meaningful content when possible.
    *
@@ -330,7 +316,7 @@ export function NavigationProvider({
 
       // For sources: auto-select first source if no details provided
       if (isSourcesNavigation(newState) && !newState.details) {
-        const firstSourceSlug = getFirstSourceSlug(newState.category)
+        const firstSourceSlug = getFirstSourceSlug()
         if (firstSourceSlug) {
           const stateWithSelection: NavigationState = {
             ...newState,

@@ -20,6 +20,12 @@ import {
   StyledDropdownMenuItem,
   StyledDropdownMenuSeparator,
 } from "@/components/ui/styled-dropdown"
+import {
+  ContextMenu,
+  ContextMenuTrigger,
+  StyledContextMenuContent,
+} from "@/components/ui/styled-context-menu"
+import { DropdownMenuProvider, ContextMenuProvider } from "@/components/ui/menu-context"
 import { SessionMenu } from "./SessionMenu"
 import {
   Dialog,
@@ -188,6 +194,7 @@ function SessionItem({
   todoStates,
 }: SessionItemProps) {
   const [menuOpen, setMenuOpen] = useState(false)
+  const [contextMenuOpen, setContextMenuOpen] = useState(false)
   const [todoMenuOpen, setTodoMenuOpen] = useState(false)
 
   // Get current todo state from session properties
@@ -215,8 +222,10 @@ function SessionItem({
           <Separator />
         </div>
       )}
-      {/* Wrapper for button + dropdown, group for hover state */}
-      <div className="session-content relative group select-none pl-2 mr-2">
+      {/* Wrapper for button + dropdown + context menu, group for hover state */}
+      <ContextMenu modal={true} onOpenChange={setContextMenuOpen}>
+        <ContextMenuTrigger asChild>
+          <div className="session-content relative group select-none pl-2 mr-2">
         {/* Todo State Icon - positioned absolutely, outside the button */}
         <Popover modal={true} open={todoMenuOpen} onOpenChange={setTodoMenuOpen}>
           <PopoverTrigger asChild>
@@ -371,7 +380,7 @@ function SessionItem({
         <div
           className={cn(
             "absolute right-2 top-2 transition-opacity z-10",
-            menuOpen ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+            menuOpen || contextMenuOpen ? "opacity-100" : "opacity-0 group-hover:opacity-100"
           )}
         >
           {/* More menu */}
@@ -383,28 +392,54 @@ function SessionItem({
                 </div>
               </DropdownMenuTrigger>
               <StyledDropdownMenuContent align="end">
-                <SessionMenu
-                  sessionId={item.id}
-                  sessionName={getSessionTitle(item)}
-                  isFlagged={item.isFlagged ?? false}
-                  sharedUrl={item.sharedUrl}
-                  hasMessages={hasMessages(item)}
-                  hasUnreadMessages={hasUnreadMessages(item)}
-                  currentTodoState={currentTodoState}
-                  todoStates={todoStates}
-                  onRename={() => onRenameClick(item.id, getSessionTitle(item))}
-                  onFlag={() => onFlag?.(item.id)}
-                  onUnflag={() => onUnflag?.(item.id)}
-                  onMarkUnread={() => onMarkUnread(item.id)}
-                  onTodoStateChange={(state) => onTodoStateChange(item.id, state)}
-                  onOpenInNewWindow={onOpenInNewWindow}
-                  onDelete={() => onDelete(item.id)}
-                />
+                <DropdownMenuProvider>
+                  <SessionMenu
+                    sessionId={item.id}
+                    sessionName={getSessionTitle(item)}
+                    isFlagged={item.isFlagged ?? false}
+                    sharedUrl={item.sharedUrl}
+                    hasMessages={hasMessages(item)}
+                    hasUnreadMessages={hasUnreadMessages(item)}
+                    currentTodoState={currentTodoState}
+                    todoStates={todoStates}
+                    onRename={() => onRenameClick(item.id, getSessionTitle(item))}
+                    onFlag={() => onFlag?.(item.id)}
+                    onUnflag={() => onUnflag?.(item.id)}
+                    onMarkUnread={() => onMarkUnread(item.id)}
+                    onTodoStateChange={(state) => onTodoStateChange(item.id, state)}
+                    onOpenInNewWindow={onOpenInNewWindow}
+                    onDelete={() => onDelete(item.id)}
+                  />
+                </DropdownMenuProvider>
               </StyledDropdownMenuContent>
             </DropdownMenu>
           </div>
         </div>
-      </div>
+          </div>
+        </ContextMenuTrigger>
+        {/* Context menu - same content as dropdown */}
+        <StyledContextMenuContent>
+          <ContextMenuProvider>
+            <SessionMenu
+              sessionId={item.id}
+              sessionName={getSessionTitle(item)}
+              isFlagged={item.isFlagged ?? false}
+              sharedUrl={item.sharedUrl}
+              hasMessages={hasMessages(item)}
+              hasUnreadMessages={hasUnreadMessages(item)}
+              currentTodoState={currentTodoState}
+              todoStates={todoStates}
+              onRename={() => onRenameClick(item.id, getSessionTitle(item))}
+              onFlag={() => onFlag?.(item.id)}
+              onUnflag={() => onUnflag?.(item.id)}
+              onMarkUnread={() => onMarkUnread(item.id)}
+              onTodoStateChange={(state) => onTodoStateChange(item.id, state)}
+              onOpenInNewWindow={onOpenInNewWindow}
+              onDelete={() => onDelete(item.id)}
+            />
+          </ContextMenuProvider>
+        </StyledContextMenuContent>
+      </ContextMenu>
     </div>
   )
 }

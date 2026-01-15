@@ -13,7 +13,6 @@ import type {
   NavigationState,
   ChatFilter,
   SettingsSubpage,
-  SourceCategory,
   RightSidebarPanel,
 } from './types'
 
@@ -41,8 +40,6 @@ export interface ParsedCompoundRoute {
   navigator: NavigatorType
   /** Chat filter (only for chats navigator) */
   chatFilter?: ChatFilter
-  /** Source category (only for sources navigator) */
-  sourceCategory?: 'local-files' | 'online-sources' | 'local-mcp'
   /** Details page info (null for empty state) */
   details: {
     type: string
@@ -104,36 +101,8 @@ export function parseCompoundRoute(route: string): ParsedCompoundRoute | null {
       return { navigator: 'sources', details: null }
     }
 
-    const validCategories = ['local-files', 'online-sources', 'local-mcp']
-    const second = segments[1]
-
-    // Check if second segment is a category
-    if (validCategories.includes(second)) {
-      const category = second as 'local-files' | 'online-sources' | 'local-mcp'
-
-      // Category only: sources/{category}
-      if (segments.length === 2) {
-        return {
-          navigator: 'sources',
-          sourceCategory: category,
-          details: { type: 'category', id: category },
-        }
-      }
-
-      // Category with source: sources/{category}/source/{sourceSlug}
-      if (segments.length >= 4 && segments[2] === 'source' && segments[3]) {
-        return {
-          navigator: 'sources',
-          sourceCategory: category,
-          details: { type: 'source', id: segments[3] },
-        }
-      }
-
-      return null
-    }
-
-    // No category, direct source: sources/source/{sourceSlug}
-    if (second === 'source' && segments[2]) {
+    // sources/source/{sourceSlug}
+    if (segments[1] === 'source' && segments[2]) {
       return {
         navigator: 'sources',
         details: { type: 'source', id: segments[2] },
@@ -317,9 +286,6 @@ function convertCompoundToViewRoute(compound: ParsedCompoundRoute): ParsedRoute 
     if (!compound.details) {
       return { type: 'view', name: 'sources', params: {} }
     }
-    if (compound.details.type === 'category') {
-      return { type: 'view', name: 'sources', params: { category: compound.details.id } }
-    }
     return { type: 'view', name: 'source-info', id: compound.details.id, params: {} }
   }
 
@@ -421,23 +387,11 @@ function convertCompoundToNavigationState(compound: ParsedCompoundRoute): Naviga
 
   // Sources
   if (compound.navigator === 'sources') {
-    const category = compound.sourceCategory
-
     if (!compound.details) {
-      return { navigator: 'sources', category, details: null }
+      return { navigator: 'sources', details: null }
     }
-    // Handle category filter (no source selected)
-    if (compound.details.type === 'category') {
-      return {
-        navigator: 'sources',
-        category: compound.details.id as SourceCategory,
-        details: null,
-      }
-    }
-    // Source selected - preserve category if present
     return {
       navigator: 'sources',
-      category,
       details: { type: 'source', sourceSlug: compound.details.id },
     }
   }
@@ -488,13 +442,6 @@ function convertParsedRouteToNavigationState(parsed: ParsedRoute): NavigationSta
     case 'preferences':
       return { navigator: 'settings', subpage: 'preferences' }
     case 'sources':
-      if (parsed.params.category) {
-        return {
-          navigator: 'sources',
-          category: parsed.params.category as SourceCategory,
-          details: null,
-        }
-      }
       return { navigator: 'sources', details: null }
     case 'source-info':
       if (parsed.id) {
@@ -572,15 +519,10 @@ export function buildRouteFromNavigationState(state: NavigationState): string {
   }
 
   if (state.navigator === 'sources') {
-    const base = state.category ? `sources/${state.category}` : 'sources'
     if (state.details) {
-      // Include category in URL if present: sources/{category}/source/{slug}
-      if (state.category) {
-        return `sources/${state.category}/source/${state.details.sourceSlug}`
-      }
       return `sources/source/${state.details.sourceSlug}`
     }
-    return base
+    return 'sources'
   }
 
   if (state.navigator === 'skills') {

@@ -8,8 +8,7 @@ import type { LoadedSkill, LoadedSource } from '../../../shared/types'
 // Types
 // ============================================================================
 
-// Note: 'folder' type kept for compatibility with mentions.ts parsing but folders are now in slash menu
-export type MentionItemType = 'skill' | 'source' | 'folder'
+export type MentionItemType = 'skill' | 'source'
 
 export interface MentionItem {
   id: string
@@ -19,7 +18,6 @@ export interface MentionItem {
   // Type-specific data
   skill?: LoadedSkill
   source?: LoadedSource
-  path?: string
 }
 
 export interface MentionSection {
@@ -54,19 +52,57 @@ const MENU_SECTION_HEADER = 'px-3 py-1.5 text-[10px] font-medium text-muted-fore
 // Filter utilities
 // ============================================================================
 
+/**
+ * Get match priority score for filtering (higher = better match)
+ * 3 = starts with filter (first word)
+ * 2 = word boundary match (2nd+ word after space/hyphen/underscore)
+ * 1 = contains filter (mid-word)
+ * 0 = no match
+ */
+function getMatchScore(text: string, filter: string): number {
+  const lowerText = text.toLowerCase()
+  // Best: starts with filter (first word)
+  if (lowerText.startsWith(filter)) return 3
+  // Good: word boundary match (after space/hyphen/underscore)
+  const escapedFilter = filter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const wordBoundaryPattern = new RegExp(`[\\s\\-_]${escapedFilter}`)
+  if (wordBoundaryPattern.test(lowerText)) return 2
+  // OK: contains filter anywhere
+  if (lowerText.includes(filter)) return 1
+  return 0
+}
+
 function filterSections(sections: MentionSection[], filter: string): MentionSection[] {
   if (!filter) return sections
   const lowerFilter = filter.toLowerCase()
-  return sections
-    .map(section => ({
-      ...section,
-      items: section.items.filter(item =>
-        item.label.toLowerCase().includes(lowerFilter) ||
-        item.id.toLowerCase().includes(lowerFilter) ||
-        item.description?.toLowerCase().includes(lowerFilter)
-      ),
-    }))
-    .filter(section => section.items.length > 0)
+
+  // Collect all matching items across sections
+  const allItems = sections.flatMap(section => section.items)
+  const matchingItems = allItems.filter(item =>
+    item.label.toLowerCase().includes(lowerFilter) ||
+    item.id.toLowerCase().includes(lowerFilter) ||
+    item.description?.toLowerCase().includes(lowerFilter)
+  )
+
+  // Sort by match priority: first word > later word > contains
+  matchingItems.sort((a, b) => {
+    const aLabelScore = getMatchScore(a.label, lowerFilter)
+    const bLabelScore = getMatchScore(b.label, lowerFilter)
+    const aIdScore = getMatchScore(a.id, lowerFilter)
+    const bIdScore = getMatchScore(b.id, lowerFilter)
+
+    // Compare by best score (label or id)
+    const aScore = Math.max(aLabelScore, aIdScore)
+    const bScore = Math.max(bLabelScore, bIdScore)
+    if (aScore !== bScore) return bScore - aScore
+
+    // Same score tier: alphabetical by label
+    return a.label.localeCompare(b.label)
+  })
+
+  // Return as flat list in a single virtual section (headers hidden when filtering)
+  if (matchingItems.length === 0) return []
+  return [{ id: 'results', label: 'Results', items: matchingItems }]
 }
 
 function flattenItems(sections: MentionSection[]): MentionItem[] {
@@ -89,6 +125,7 @@ export function InlineMentionMenu({
   className,
 }: InlineMentionMenuProps) {
   const menuRef = React.useRef<HTMLDivElement>(null)
+  const listRef = React.useRef<HTMLDivElement>(null)
   const [selectedIndex, setSelectedIndex] = React.useState(0)
   const filteredSections = filterSections(sections, filter)
   const flatItems = flattenItems(filteredSections)
@@ -145,6 +182,15 @@ export function InlineMentionMenu({
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [open, onOpenChange])
 
+  // Scroll selected item into view when navigating with keyboard
+  React.useEffect(() => {
+    if (!listRef.current) return
+    const selectedEl = listRef.current.querySelector('[data-selected="true"]')
+    if (selectedEl) {
+      selectedEl.scrollIntoView({ block: 'nearest' })
+    }
+  }, [selectedIndex])
+
   // Hide if no results or not open
   if (!open || flatItems.length === 0) return null
 
@@ -167,13 +213,15 @@ export function InlineMentionMenu({
         maxWidth,
       }}
     >
-      <div className={MENU_LIST_STYLE}>
+      <div ref={listRef} className={MENU_LIST_STYLE}>
         {filteredSections.map((section, sectionIndex) => (
           <React.Fragment key={section.id}>
-            {/* Section header */}
-            <div className={MENU_SECTION_HEADER}>
-              {section.label}
-            </div>
+            {/* Section header - hide when filtering for better prefix match relevance */}
+            {!filter && (
+              <div className={MENU_SECTION_HEADER}>
+                {section.label}
+              </div>
+            )}
 
             {/* Section items */}
             {section.items.map((item) => {
@@ -183,6 +231,7 @@ export function InlineMentionMenu({
               return (
                 <div
                   key={`${section.id}-${item.id}`}
+                  data-selected={isSelected}
                   onClick={() => {
                     onSelect(item)
                     onOpenChange(false)
@@ -204,10 +253,10 @@ export function InlineMentionMenu({
                   </div>
 
                   {/* Label and description */}
-                  <div className="flex-1 min-w-0">
+                  <div className="flex-1 min-w-0 leading-tight">
                     <div className="font-medium truncate">{item.label}</div>
                     {item.description && (
-                      <div className="text-[11px] text-foreground/50 truncate">
+                      <div className="text-[11px] text-foreground/50 truncate mt-px">
                         {item.description}
                       </div>
                     )}
@@ -216,8 +265,8 @@ export function InlineMentionMenu({
               )
             })}
 
-            {/* Separator between sections (not after last) */}
-            {sectionIndex < filteredSections.length - 1 && (
+            {/* Separator between sections (not after last, hide when filtering) */}
+            {!filter && sectionIndex < filteredSections.length - 1 && (
               <div className="h-px bg-border/50 my-1 mx-2" />
             )}
           </React.Fragment>
@@ -244,10 +293,6 @@ export interface UseInlineMentionOptions {
   inputRef: React.RefObject<MentionInputElement | null>
   skills: LoadedSkill[]
   sources: LoadedSource[]
-  /** @deprecated Folders moved to slash menu - pass empty array for compatibility */
-  recentFolders?: string[]
-  /** @deprecated Folders moved to slash menu - kept for compatibility */
-  homeDir?: string
   onSelect: (item: MentionItem) => void
 }
 
@@ -374,8 +419,6 @@ export function useInlineMention({
         mentionText = `[skill:${item.id}] `
       } else if (item.type === 'source') {
         mentionText = `[source:${item.id}] `
-      } else if (item.type === 'folder') {
-        mentionText = `[dir:${item.path}] `
       } else {
         mentionText = `[skill:${item.id}] `
       }

@@ -188,6 +188,16 @@ export interface TitleGeneratedEvent {
 }
 
 /**
+ * Title regenerating event - indicates title regeneration has started/finished
+ * Used to show shimmer effect on title during regeneration
+ */
+export interface TitleRegeneratingEvent {
+  type: 'title_regenerating'
+  sessionId: string
+  isRegenerating: boolean
+}
+
+/**
  * Working directory changed event (user-initiated via UI)
  */
 export interface WorkingDirectoryChangedEvent {
@@ -323,6 +333,19 @@ export interface SourceActivatedEvent {
 }
 
 /**
+ * Usage update event - real-time context usage during processing
+ * Allows UI to show growing context as agent processes, not just on complete
+ */
+export interface UsageUpdateEvent {
+  type: 'usage_update'
+  sessionId: string
+  tokenUsage: {
+    inputTokens: number
+    contextWindow?: number
+  }
+}
+
+/**
  * Union of all agent events
  */
 export type AgentEvent =
@@ -342,6 +365,7 @@ export type AgentEvent =
   | InfoEvent
   | InterruptedEvent
   | TitleGeneratedEvent
+  | TitleRegeneratingEvent
   | WorkingDirectoryChangedEvent
   | PermissionModeChangedEvent
   | SessionModelChangedEvent
@@ -354,6 +378,7 @@ export type AgentEvent =
   | AuthRequestEvent
   | AuthCompletedEvent
   | SourceActivatedEvent
+  | UsageUpdateEvent
 
 /**
  * Side effects that need to be handled outside the pure processor

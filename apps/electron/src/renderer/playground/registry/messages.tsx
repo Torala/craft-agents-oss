@@ -159,6 +159,19 @@ function WarningMessage({ content }: { content: string }) {
   )
 }
 
+/** Compaction divider - horizontal rule with centered label shown after context compaction */
+function CompactionDivider({ label = 'Conversation Compacted' }: { label?: string }) {
+  return (
+    <div className="flex items-center gap-3 my-12 px-3">
+      <div className="flex-1 h-px bg-border" />
+      <span className="text-sm text-muted-foreground/70 select-none">
+        {label}
+      </span>
+      <div className="flex-1 h-px bg-border" />
+    </div>
+  )
+}
+
 /** Processing indicator with cycling messages and elapsed time */
 const PROCESSING_MESSAGES = [
   'Thinking…',
@@ -360,7 +373,7 @@ function MessageGallery() {
         <h2 className="text-lg font-semibold mb-4 text-foreground/80">System Messages</h2>
         <div className="bg-muted/20 rounded-lg">
           <StatusMessage content="Compacting conversation..." />
-          <InfoMessage content="Compacted conversation (was 180000 tokens)" />
+          <CompactionDivider />
           <InfoMessage content="Session restored from 5 minutes ago" />
           <InfoMessage content="Agent activated successfully" level="success" />
           <InfoMessage content="Rate limit approaching" level="warning" />
@@ -821,6 +834,26 @@ export const messagesComponents: ComponentEntry[] = [
         }
       },
       { name: 'Network Error', props: { content: 'Network request failed. Please check your internet connection.', errorTitle: 'Network Error' } },
+    ],
+    mockData: () => ({}),
+  },
+  {
+    id: 'compaction-divider',
+    name: 'CompactionDivider',
+    category: 'Chat Messages',
+    description: 'Horizontal rule with centered label shown after context compaction',
+    component: CompactionDivider,
+    props: [
+      {
+        name: 'label',
+        description: 'Label text shown in the center',
+        control: { type: 'string', placeholder: 'Label...' },
+        defaultValue: 'Conversation Compacted',
+      },
+    ],
+    variants: [
+      { name: 'Default', props: { label: 'Conversation Compacted' } },
+      { name: 'Custom Label', props: { label: 'Context Reset' } },
     ],
     mockData: () => ({}),
   },
