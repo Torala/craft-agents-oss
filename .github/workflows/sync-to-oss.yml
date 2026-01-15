@@ -1,0 +1,45 @@
+name: Sync to OSS
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (show what would be synced without pushing)'
+        required: false
+        type: boolean
+        default: false
+      branch:
+        description: 'Target branch in OSS repo'
+        required: false
+        type: string
+        default: 'main'
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Run sync (dry run)
+        if: ${{ inputs.dry_run }}
+        run: bash scripts/sync-to-oss.sh --dry-run --branch "${{ inputs.branch }}"
+
+      - name: Run sync
+        if: ${{ !inputs.dry_run }}
+        run: |
+          # Use HTTPS with GITHUB_TOKEN for authentication
+          TARGET_REPO="https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/lukilabs/craft-agents-oss.git"
+
+          # Run sync in non-interactive mode
+          bash scripts/sync-to-oss.sh --target "$TARGET_REPO" --branch "${{ inputs.branch }}" --yes

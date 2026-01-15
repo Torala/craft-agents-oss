@@ -18,6 +18,7 @@ NC='\033[0m' # No Color
 TARGET_REPO="$DEFAULT_TARGET"
 DRY_RUN=false
 BRANCH="main"
+AUTO_CONFIRM=false
 
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -33,8 +34,12 @@ while [[ $# -gt 0 ]]; do
       DRY_RUN=true
       shift
       ;;
+    --yes|-y)
+      AUTO_CONFIRM=true
+      shift
+      ;;
     --help)
-      echo "Usage: $0 [--target <repo-url>] [--branch <branch>] [--dry-run]"
+      echo "Usage: $0 [--target <repo-url>] [--branch <branch>] [--dry-run] [--yes]"
       exit 0
       ;;
     *)
@@ -186,13 +191,21 @@ main() {
 
   # Confirm push
   echo ""
-  read -p "Push these changes to $TARGET_REPO? [y/N] " -n 1 -r
-  echo
+  if $AUTO_CONFIRM; then
+    REPLY="y"
+  else
+    read -p "Push these changes to $TARGET_REPO? [y/N] " -n 1 -r
+    echo
+  fi
+
   if [[ $REPLY =~ ^[Yy]$ ]]; then
     git add -A
     git commit -m "Sync from internal repository
 
-Synced $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+Synced $(date -u +%Y-%m-%dT%H:%M:%SZ)" || {
+      echo -e "${YELLOW}Nothing to commit - already in sync${NC}"
+      exit 0
+    }
     git push origin "$BRANCH"
     echo -e "${GREEN}Sync complete!${NC}"
   else
