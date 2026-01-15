@@ -80,6 +80,8 @@ const api: ElectronAPI = {
   checkForUpdates: () => ipcRenderer.invoke(IPC_CHANNELS.UPDATE_CHECK),
   getUpdateInfo: () => ipcRenderer.invoke(IPC_CHANNELS.UPDATE_GET_INFO),
   installUpdate: () => ipcRenderer.invoke(IPC_CHANNELS.UPDATE_INSTALL),
+  dismissUpdate: (version: string) => ipcRenderer.invoke(IPC_CHANNELS.UPDATE_DISMISS, version),
+  getDismissedUpdateVersion: () => ipcRenderer.invoke(IPC_CHANNELS.UPDATE_GET_DISMISSED),
   onUpdateAvailable: (callback: (info: import('../shared/types').UpdateInfo) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, info: import('../shared/types').UpdateInfo) => {
       callback(info)

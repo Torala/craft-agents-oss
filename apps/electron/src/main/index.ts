@@ -18,7 +18,7 @@ import { handleDeepLink } from './deep-link'
 import log, { isDebugMode, mainLog, getLogFilePath } from './logger'
 import { setPerfEnabled, enableDebug } from '@craft-agent/shared/utils'
 import { initNotificationService, clearBadgeCount, initBadgeIcon } from './notifications'
-import { scheduleUpdateCheck, setWindowManager as setAutoUpdateWindowManager } from './auto-update'
+import { checkForUpdatesOnLaunch, checkPendingUpdateAndInstall, setWindowManager as setAutoUpdateWindowManager } from './auto-update'
 
 // Initialize electron-log for renderer process support
 log.initialize()
@@ -145,6 +145,14 @@ app.whenReady().then(async () => {
   // Initialize bundled docs
   initializeDocs()
 
+  // Check for pending update and auto-install if available
+  // This must happen early, before creating windows
+  const isAutoInstalling = await checkPendingUpdateAndInstall()
+  if (isAutoInstalling) {
+    // App will quit and install update - don't proceed with startup
+    return
+  }
+
   // Application menu is created after windowManager initialization (see below)
 
   // Set dock icon on macOS (required for dev mode, bundled apps use Info.plist)
@@ -184,9 +192,11 @@ app.whenReady().then(async () => {
     // Initialize auth (must happen after window creation for error reporting)
     await sessionManager.initialize()
 
-    // Initialize auto-update (check for updates after startup)
+    // Initialize auto-update (check immediately on launch)
     setAutoUpdateWindowManager(windowManager)
-    scheduleUpdateCheck(5000)  // Check 5 seconds after startup
+    checkForUpdatesOnLaunch().catch(err => {
+      mainLog.error('[auto-update] Launch check failed:', err)
+    })
 
     // Process pending deep link from cold start
     if (pendingDeepLink) {

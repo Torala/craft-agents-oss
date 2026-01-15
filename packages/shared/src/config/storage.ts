@@ -30,6 +30,15 @@ export type {
 // Import for local use
 import type { Workspace, AuthType, TokenDisplayMode, CumulativeUsage } from '@craft-agent/core/types';
 
+/**
+ * Pending update info for auto-install on next launch
+ */
+export interface PendingUpdate {
+  version: string;
+  installerPath: string;
+  sha256: string;
+}
+
 // Config stored in JSON file (credentials stored in encrypted file, not here)
 export interface StoredConfig {
   authType?: AuthType;
@@ -51,6 +60,9 @@ export interface StoredConfig {
   enabledPermissionModes?: PermissionMode[];  // Modes to include in SHIFT+TAB cycling (min 2, default: all 3)
   // Appearance
   colorTheme?: string;  // ID of selected preset theme (e.g., 'dracula', 'nord'). Default: 'default'
+  // Auto-update
+  dismissedUpdateVersion?: string;  // Version that user dismissed (skip notifications for this version)
+  pendingUpdate?: PendingUpdate;  // Update ready for auto-install on next launch
 }
 
 const CONFIG_DIR = join(homedir(), '.craft-agent');
@@ -1043,5 +1055,70 @@ export function setColorTheme(themeId: string): void {
   const config = loadStoredConfig();
   if (!config) return;
   config.colorTheme = themeId;
+  saveConfig(config);
+}
+
+// ============================================
+// Auto-Update Dismissed Version
+// ============================================
+
+/**
+ * Get the dismissed update version.
+ * Returns null if no version is dismissed.
+ */
+export function getDismissedUpdateVersion(): string | null {
+  const config = loadStoredConfig();
+  return config?.dismissedUpdateVersion ?? null;
+}
+
+/**
+ * Set the dismissed update version.
+ * Pass the version string to dismiss notifications for that version.
+ */
+export function setDismissedUpdateVersion(version: string): void {
+  const config = loadStoredConfig();
+  if (!config) return;
+  config.dismissedUpdateVersion = version;
+  saveConfig(config);
+}
+
+/**
+ * Clear the dismissed update version.
+ * Call this when a new version is released (or on successful update).
+ */
+export function clearDismissedUpdateVersion(): void {
+  const config = loadStoredConfig();
+  if (!config) return;
+  delete config.dismissedUpdateVersion;
+  saveConfig(config);
+}
+
+/**
+ * Get the pending update info for auto-install on next launch.
+ * Returns null if no pending update.
+ */
+export function getPendingUpdate(): PendingUpdate | null {
+  const config = loadStoredConfig();
+  return config?.pendingUpdate ?? null;
+}
+
+/**
+ * Set the pending update info for auto-install on next launch.
+ */
+export function setPendingUpdate(update: PendingUpdate): void {
+  const config = loadStoredConfig();
+  if (!config) return;
+  config.pendingUpdate = update;
+  saveConfig(config);
+}
+
+/**
+ * Clear the pending update info.
+ * Call this after successful install or if installer file is invalid.
+ */
+export function clearPendingUpdate(): void {
+  const config = loadStoredConfig();
+  if (!config) return;
+  delete config.pendingUpdate;
   saveConfig(config);
 }

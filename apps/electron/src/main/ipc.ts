@@ -589,6 +589,18 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
     return installUpdate()
   })
 
+  // Dismiss update for this version (persists across restarts)
+  ipcMain.handle(IPC_CHANNELS.UPDATE_DISMISS, async (_event, version: string) => {
+    const { setDismissedUpdateVersion } = await import('@craft-agent/shared/config')
+    setDismissedUpdateVersion(version)
+  })
+
+  // Get dismissed version
+  ipcMain.handle(IPC_CHANNELS.UPDATE_GET_DISMISSED, async () => {
+    const { getDismissedUpdateVersion } = await import('@craft-agent/shared/config')
+    return getDismissedUpdateVersion()
+  })
+
   // Shell operations - open URL in external browser (or handle craftagents:// internally)
   ipcMain.handle(IPC_CHANNELS.OPEN_URL, async (_event, url: string) => {
     ipcLog.info('[OPEN_URL] Received request:', url)

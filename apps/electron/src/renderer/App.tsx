@@ -20,7 +20,6 @@ import { useOnboarding } from '@/hooks/useOnboarding'
 import { useNotifications } from '@/hooks/useNotifications'
 import { useSession } from '@/hooks/useSession'
 import { useUpdateChecker } from '@/hooks/useUpdateChecker'
-import { UpdateBanner } from '@/components/update/UpdateBanner'
 import { NavigationProvider } from '@/contexts/NavigationContext'
 import { navigate, routes } from './lib/navigate'
 import {
@@ -1205,15 +1204,6 @@ export default function App() {
 
             {/* Main UI - always rendered, splash fades away to reveal it */}
             <div className="h-full flex flex-col text-foreground">
-              {/* Auto-update banner */}
-              <UpdateBanner
-                updateAvailable={updateChecker.updateAvailable}
-                latestVersion={updateChecker.updateInfo?.latestVersion ?? null}
-                isReadyToInstall={updateChecker.isReadyToInstall}
-                onInstall={updateChecker.installUpdate}
-                onDismiss={updateChecker.dismissUpdate}
-                isDismissed={updateChecker.isDismissed}
-              />
               <div className="flex-1 min-h-0">
                 <AppShell
                   contextValue={appShellContextValue}

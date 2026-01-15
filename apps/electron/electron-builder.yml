@@ -32,8 +32,15 @@ extraMetadata:
 
 # Extra resources to bundle with the app (outside the app code)
 extraResources:
+  # macOS self-update script
   - from: scripts/self-update.sh
     to: self-update.sh
+  # Windows self-update script
+  - from: scripts/self-update.ps1
+    to: self-update.ps1
+  # Linux AppImage self-update script
+  - from: scripts/self-update-linux.sh
+    to: self-update-linux.sh
 
 # Disable ASAR to avoid decompression overhead and click delays
 asar: false

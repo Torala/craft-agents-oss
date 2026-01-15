@@ -446,6 +446,8 @@ export const IPC_CHANNELS = {
   UPDATE_CHECK: 'update:check',
   UPDATE_GET_INFO: 'update:getInfo',
   UPDATE_INSTALL: 'update:install',
+  UPDATE_DISMISS: 'update:dismiss',  // Dismiss update for this version (persists across restarts)
+  UPDATE_GET_DISMISSED: 'update:getDismissed',  // Get dismissed version
   UPDATE_AVAILABLE: 'update:available',  // main → renderer broadcast
   UPDATE_DOWNLOAD_PROGRESS: 'update:downloadProgress',  // main → renderer broadcast
 
@@ -792,6 +794,8 @@ export interface ElectronAPI {
   checkForUpdates(): Promise<UpdateInfo>
   getUpdateInfo(): Promise<UpdateInfo>
   installUpdate(): Promise<void>
+  dismissUpdate(version: string): Promise<void>
+  getDismissedUpdateVersion(): Promise<string | null>
   onUpdateAvailable(callback: (info: UpdateInfo) => void): () => void
   onUpdateDownloadProgress(callback: (progress: number) => void): () => void
 
