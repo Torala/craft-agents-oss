@@ -1,158 +1,249 @@
 /**
- * Unified @ Mention System
+ * Utilities for parsing @mentions from chat messages
  *
- * Utilities for parsing and managing @mentions that can reference
- * both skills and sources in a unified menu.
+ * Mention types:
+ * - Skills:  @skill-slug
+ * - Sources: @src:source-slug
+ * - Folders: @dir:/path/to/folder
  */
 
-import type { LoadedSkill, LoadedSource } from '../../shared/types'
+import type { MentionItemType } from '@/components/ui/mention-menu'
 
 // ============================================================================
 // Types
 // ============================================================================
 
-/**
- * A mentionable item (skill or source) for the unified @ menu
- */
-export interface MentionableItem {
-  type: 'skill' | 'source'
-  slug: string
-  name: string
-  description?: string
-  /** Original item for avatar rendering */
-  item: LoadedSkill | LoadedSource
-}
-
-/**
- * Parsed mentions from message text
- */
 export interface ParsedMentions {
-  skillSlugs: string[]
-  sourceSlugs: string[]
+  /** Skill slugs mentioned via @skill-slug */
+  skills: string[]
+  /** Source slugs mentioned via @src:slug */
+  sources: string[]
+  /** Folder paths mentioned via @dir:/path */
+  folders: string[]
+}
+
+export interface MentionMatch {
+  type: MentionItemType
+  id: string
+  /** Full match text including @ prefix */
+  fullMatch: string
+  /** Start index in the original text */
+  startIndex: number
 }
 
 // ============================================================================
-// Building Mentionable Items
+// Parsing Functions
 // ============================================================================
 
 /**
- * Build a unified list of mentionable items from skills and sources
- * Skills are listed first, then sources
- */
-export function buildMentionableItems(
-  skills: LoadedSkill[],
-  sources: LoadedSource[]
-): MentionableItem[] {
-  const items: MentionableItem[] = []
-
-  // Add skills first
-  for (const skill of skills) {
-    items.push({
-      type: 'skill',
-      slug: skill.slug,
-      name: skill.metadata.name,
-      description: skill.metadata.description,
-      item: skill,
-    })
-  }
-
-  // Then add sources
-  for (const source of sources) {
-    items.push({
-      type: 'source',
-      slug: source.config.slug,
-      name: source.config.name || source.config.slug,
-      description: source.config.tagline,
-      item: source,
-    })
-  }
-
-  return items
-}
-
-// ============================================================================
-// Filtering
-// ============================================================================
-
-/**
- * Filter mentionable items by search string
- * Matches against slug and name (case-insensitive)
- */
-export function filterMentionableItems(
-  items: MentionableItem[],
-  filter: string
-): MentionableItem[] {
-  if (!filter) return items
-
-  const lowerFilter = filter.toLowerCase()
-  return items.filter(
-    item =>
-      item.slug.toLowerCase().includes(lowerFilter) ||
-      item.name.toLowerCase().includes(lowerFilter)
-  )
-}
-
-// ============================================================================
-// Parsing Mentions from Text
-// ============================================================================
-
-/**
- * Parse @mentions from message text and resolve against available skills/sources
+ * Parse all mentions from message text
  *
  * @param text - The message text to parse
- * @param skills - Available skills to match against
- * @param sources - Available sources to match against
- * @returns Parsed mentions with separate skill and source slug arrays
+ * @param availableSkillSlugs - Valid skill slugs to match against
+ * @param availableSourceSlugs - Valid source slugs to match against
+ * @returns Parsed mentions by type
  *
  * @example
- * parseMentions('@github help me', skills, sources)
- * // If 'github' is both a skill and source, returns:
- * // { skillSlugs: ['github'], sourceSlugs: ['github'] }
+ * parseMentions('@commit @src:linear @dir:~/Projects/app', ['commit'], ['linear'])
+ * // Returns: { skills: ['commit'], sources: ['linear'], folders: ['~/Projects/app'] }
  */
 export function parseMentions(
   text: string,
-  skills: LoadedSkill[],
-  sources: LoadedSource[]
+  availableSkillSlugs: string[],
+  availableSourceSlugs: string[]
 ): ParsedMentions {
-  // Match @word patterns (allowing hyphens and underscores)
-  // Must be at start of string or after whitespace
-  const mentionPattern = /(?:^|\s)@([\w-]+)/g
-  const skillSlugs = new Set<string>()
-  const sourceSlugs = new Set<string>()
+  const result: ParsedMentions = {
+    skills: [],
+    sources: [],
+    folders: [],
+  }
 
-  const skillSlugSet = new Set(skills.map(s => s.slug))
-  const sourceSlugSet = new Set(sources.map(s => s.config.slug))
-
+  // Match source mentions: @src:slug
+  const sourcePattern = /(?:^|\s)@src:([\w-]+)/g
   let match
-  while ((match = mentionPattern.exec(text)) !== null) {
+  while ((match = sourcePattern.exec(text)) !== null) {
     const slug = match[1]
-
-    // Check if slug matches a skill
-    if (skillSlugSet.has(slug)) {
-      skillSlugs.add(slug)
-    }
-
-    // Check if slug matches a source (can match both!)
-    if (sourceSlugSet.has(slug)) {
-      sourceSlugs.add(slug)
+    if (availableSourceSlugs.includes(slug) && !result.sources.includes(slug)) {
+      result.sources.push(slug)
     }
   }
 
-  return {
-    skillSlugs: Array.from(skillSlugs),
-    sourceSlugs: Array.from(sourceSlugs),
+  // Match folder mentions: @dir:/path or @dir:~/path
+  const folderPattern = /(?:^|\s)@dir:(~?\/[^\s]+)/g
+  while ((match = folderPattern.exec(text)) !== null) {
+    const path = match[1]
+    if (!result.folders.includes(path)) {
+      result.folders.push(path)
+    }
   }
+
+  // Match skill mentions: @slug (must be after source/folder to avoid conflicts)
+  // Skill mentions are bare @slug that don't have src: or dir: prefix
+  const skillPattern = /(?:^|\s)@([\w-]+)(?!\s*:)/g
+  while ((match = skillPattern.exec(text)) !== null) {
+    const slug = match[1]
+    // Skip if it's "src" or "dir" (prefixes)
+    if (slug === 'src' || slug === 'dir') continue
+    if (availableSkillSlugs.includes(slug) && !result.skills.includes(slug)) {
+      result.skills.push(slug)
+    }
+  }
+
+  return result
 }
 
 /**
- * Strip @mentions from message text
+ * Find all mention matches in text with their positions
+ *
+ * @param text - The message text to search
+ * @param availableSkillSlugs - Valid skill slugs
+ * @param availableSourceSlugs - Valid source slugs
+ * @returns Array of mention matches with positions
+ */
+export function findMentionMatches(
+  text: string,
+  availableSkillSlugs: string[],
+  availableSourceSlugs: string[]
+): MentionMatch[] {
+  const matches: MentionMatch[] = []
+
+  // Match source mentions: @src:slug
+  const sourcePattern = /(?:^|\s)(@src:([\w-]+))/g
+  let match
+  while ((match = sourcePattern.exec(text)) !== null) {
+    const slug = match[2]
+    if (availableSourceSlugs.includes(slug)) {
+      matches.push({
+        type: 'source',
+        id: slug,
+        fullMatch: match[1],
+        startIndex: match.index + (match[0].length - match[1].length),
+      })
+    }
+  }
+
+  // Match folder mentions: @dir:/path
+  const folderPattern = /(?:^|\s)(@dir:(~?\/[^\s]+))/g
+  while ((match = folderPattern.exec(text)) !== null) {
+    const path = match[2]
+    matches.push({
+      type: 'folder',
+      id: path,
+      fullMatch: match[1],
+      startIndex: match.index + (match[0].length - match[1].length),
+    })
+  }
+
+  // Match skill mentions: @slug
+  const skillPattern = /(?:^|\s)(@([\w-]+))(?!\s*:)/g
+  while ((match = skillPattern.exec(text)) !== null) {
+    const slug = match[2]
+    if (slug === 'src' || slug === 'dir') continue
+    if (availableSkillSlugs.includes(slug)) {
+      matches.push({
+        type: 'skill',
+        id: slug,
+        fullMatch: match[1],
+        startIndex: match.index + (match[0].length - match[1].length),
+      })
+    }
+  }
+
+  // Sort by position
+  return matches.sort((a, b) => a.startIndex - b.startIndex)
+}
+
+/**
+ * Remove a specific mention from text
+ *
+ * @param text - The message text
+ * @param type - Type of mention to remove
+ * @param id - ID of the mention (slug or path)
+ * @returns Text with the mention removed
+ */
+export function removeMention(text: string, type: MentionItemType, id: string): string {
+  let pattern: RegExp
+
+  switch (type) {
+    case 'source':
+      pattern = new RegExp(`(^|\\s)@src:${escapeRegExp(id)}(?=\\s|$)`, 'g')
+      break
+    case 'folder':
+      pattern = new RegExp(`(^|\\s)@dir:${escapeRegExp(id)}(?=\\s|$)`, 'g')
+      break
+    case 'skill':
+    default:
+      pattern = new RegExp(`(^|\\s)@${escapeRegExp(id)}(?=\\s|$)`, 'g')
+      break
+  }
+
+  return text
+    .replace(pattern, '$1')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/**
+ * Strip all mentions from text
  *
  * @param text - The message text with mentions
- * @returns Text with @mentions removed, preserving other content
+ * @returns Text with all @mentions removed
  */
-export function stripMentions(text: string): string {
+export function stripAllMentions(text: string): string {
+  return text
+    // Remove @src:slug
+    .replace(/(?:^|\s)@src:[\w-]+/g, ' ')
+    // Remove @dir:/path
+    .replace(/(?:^|\s)@dir:~?\/[^\s]+/g, ' ')
+    // Remove @slug (but not email-like patterns)
+    .replace(/(?:^|\s)@[\w-]+(?=\s|$)/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/**
+ * Check if text contains any valid mentions
+ */
+export function hasMentions(
+  text: string,
+  availableSkillSlugs: string[],
+  availableSourceSlugs: string[]
+): boolean {
+  const mentions = parseMentions(text, availableSkillSlugs, availableSourceSlugs)
+  return mentions.skills.length > 0 ||
+         mentions.sources.length > 0 ||
+         mentions.folders.length > 0
+}
+
+// ============================================================================
+// Legacy compatibility - parseSkillMentions
+// ============================================================================
+
+/**
+ * Extract valid @skill mentions from message text (legacy API)
+ *
+ * @deprecated Use parseMentions() instead
+ */
+export function parseSkillMentions(text: string, availableSlugs: string[]): string[] {
+  return parseMentions(text, availableSlugs, []).skills
+}
+
+/**
+ * Remove @mentions from message text (legacy API)
+ *
+ * @deprecated Use stripAllMentions() instead
+ */
+export function stripSkillMentions(text: string): string {
   return text
     .replace(/(?:^|\s)@[\w-]+/g, '')
     .replace(/\s+/g, ' ')
     .trim()
+}
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+function escapeRegExp(string: string): string {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }

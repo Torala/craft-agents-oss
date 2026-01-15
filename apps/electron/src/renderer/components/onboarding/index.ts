@@ -20,7 +20,7 @@ export { CompletionStep } from './CompletionStep'
 export { ReauthScreen } from './ReauthScreen'
 
 // Main wizard container
-export { OnboardingWizard, type OnboardingState } from './OnboardingWizard'
+export { OnboardingWizard, type OnboardingState, type LoginStatus } from './OnboardingWizard'
 
 // Re-export all types for convenient import
 export type {

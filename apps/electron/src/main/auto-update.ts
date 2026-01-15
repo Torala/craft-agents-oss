@@ -446,11 +446,19 @@ async function installMacOS(): Promise<void> {
 /**
  * Schedule update check after app startup
  * Delays check by a few seconds to not slow down startup
+ *
+ * Skipped in debug mode (dev builds) to allow manual testing via Debug menu
  */
 export function scheduleUpdateCheck(delayMs = 5000): void {
   // Only schedule on macOS
   if (process.platform !== 'darwin') {
     mainLog.info('[auto-update] Skipping update check - not on macOS')
+    return
+  }
+
+  // Skip auto-update in debug mode - use Debug menu to test manually
+  if (!app.isPackaged) {
+    mainLog.info('[auto-update] Skipping auto-update check in debug mode (use Debug menu to test)')
     return
   }
 

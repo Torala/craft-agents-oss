@@ -15,14 +15,26 @@ import {
 // ============================================================================
 
 function SlashCommandDemo() {
+  const inputRef = React.useRef<{ getBoundingClientRect: () => DOMRect; value: string; selectionStart: number }>(null)
   const textareaRef = React.useRef<HTMLTextAreaElement>(null)
   const [inputValue, setInputValue] = React.useState('')
   const [activeCommands, setActiveCommands] = React.useState<SlashCommandId[]>([])
   const [buttonMenuOpen, setButtonMenuOpen] = React.useState(false)
 
+  // Sync inputRef with textarea values for the hook
+  React.useEffect(() => {
+    if (textareaRef.current) {
+      (inputRef as React.MutableRefObject<{ getBoundingClientRect: () => DOMRect; value: string; selectionStart: number }>).current = {
+        getBoundingClientRect: () => textareaRef.current!.getBoundingClientRect(),
+        get value() { return textareaRef.current?.value ?? '' },
+        get selectionStart() { return textareaRef.current?.selectionStart ?? 0 },
+      }
+    }
+  }, [])
+
   // Inline slash command hook
   const inlineSlash = useInlineSlashCommand({
-    textareaRef,
+    inputRef,
     activeCommands,
     onSelect: (commandId) => {
       setActiveCommands(prev =>

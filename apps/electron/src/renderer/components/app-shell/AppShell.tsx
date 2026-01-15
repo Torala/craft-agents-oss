@@ -87,6 +87,7 @@ import { SkillsListPanel } from "./SkillsListPanel"
 import { PanelHeader } from "./PanelHeader"
 import SettingsNavigator from "@/pages/settings/SettingsNavigator"
 import { RightSidebar } from "./RightSidebar"
+import type { RichTextInputHandle } from "@/components/ui/rich-text-input"
 
 /**
  * AppShellProps - Minimal props interface for AppShell component
@@ -416,7 +417,7 @@ export function AppShell({
   const { zoneRef: sidebarRef, isFocused: sidebarFocused } = useFocusZone({ zoneId: 'sidebar' })
 
   // Ref for focusing chat input (passed to ChatDisplay)
-  const chatInputRef = useRef<HTMLTextAreaElement>(null)
+  const chatInputRef = useRef<RichTextInputHandle>(null)
   const focusChatInput = useCallback(() => {
     chatInputRef.current?.focus()
   }, [])

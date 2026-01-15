@@ -26,47 +26,9 @@ import { MemoizedAuthRequestCard } from "@/components/chat/AuthRequestCard"
 import type { SourceNeedingAuth } from "@craft-agent/shared/sessions"
 import { ActiveOptionBadges } from "./ActiveOptionBadges"
 import { InputContainer, type StructuredInputState, type StructuredResponse, type PermissionResponse } from "./input"
+import type { RichTextInputHandle } from "@/components/ui/rich-text-input"
 import { useBackgroundTasks } from "@/hooks/useBackgroundTasks"
 import { CHAT_LAYOUT } from "@/config/layout"
-import { FEATURE_FLAGS } from "../../../shared/feature-flags"
-
-/**
- * Background image with fade-in animation on load
- * Uses a hidden img element to detect when the image has loaded,
- * then fades in the CSS background
- */
-function BackgroundImage({ url }: { url: string }) {
-  const [loaded, setLoaded] = useState(false)
-  const imgRef = React.useRef<HTMLImageElement>(null)
-
-  // Check if image is already cached on mount (e.g., after CMD+R)
-  useEffect(() => {
-    if (imgRef.current?.complete && imgRef.current?.naturalHeight > 0) {
-      setLoaded(true)
-    }
-  }, [url])
-
-  return (
-    <>
-      {/* Hidden image for load detection - CSS backgrounds don't fire load events */}
-      <img
-        ref={imgRef}
-        src={url}
-        onLoad={() => setLoaded(true)}
-        className="hidden"
-        alt=""
-      />
-      {/* Actual background with fade-in */}
-      <div
-        className={cn(
-          "absolute inset-0 bg-cover bg-center bg-fixed transition-opacity duration-500 ease-out",
-          loaded ? "opacity-100" : "opacity-0"
-        )}
-        style={{ backgroundImage: `url(${url})` }}
-      />
-    </>
-  )
-}
 
 interface ChatDisplayProps {
   session: Session | null
@@ -76,8 +38,8 @@ interface ChatDisplayProps {
   // Model selection
   currentModel: string
   onModelChange: (model: string) => void
-  /** Ref for the textarea, used for external focus control */
-  textareaRef?: React.RefObject<HTMLTextAreaElement>
+  /** Ref for the input, used for external focus control */
+  textareaRef?: React.RefObject<RichTextInputHandle>
   /** When true, disables input (e.g., when agent needs activation) */
   disabled?: boolean
   /** Pending permission request for this session */
@@ -125,9 +87,6 @@ interface ChatDisplayProps {
   // Tutorial
   /** Disable send action (for tutorial guidance) */
   disableSend?: boolean
-  // Background image
-  /** Background image URL (from Pexels) */
-  backgroundImageUrl?: string
 }
 
 /**
@@ -320,8 +279,6 @@ export function ChatDisplay({
   messagesLoading = false,
   // Tutorial
   disableSend = false,
-  // Background image
-  backgroundImageUrl,
 }: ChatDisplayProps) {
   // Input is only disabled when explicitly disabled (e.g., agent needs activation)
   // User can type during streaming - submitting will stop the stream and send
@@ -342,7 +299,7 @@ export function ChatDisplay({
   const skipSmoothScrollUntilRef = React.useRef(0)
   // Track pending scroll for session switches that happen while messages are still loading
   const pendingScrollSessionRef = React.useRef<string | null>(null)
-  const internalTextareaRef = React.useRef<HTMLTextAreaElement>(null)
+  const internalTextareaRef = React.useRef<RichTextInputHandle>(null)
   const textareaRef = externalTextareaRef || internalTextareaRef
 
   // Register as focus zone - when zone gains focus, focus the textarea
@@ -584,15 +541,8 @@ export function ChatDisplay({
     <div ref={zoneRef} className="flex h-full flex-col min-w-0" data-focus-zone="chat">
       {session ? (
         <div className="flex flex-1 flex-col min-h-0 min-w-0 relative">
-          {/* Background image with fade-in animation (feature flagged) */}
-          {FEATURE_FLAGS.PEXELS_BACKGROUNDS && backgroundImageUrl && (
-            <BackgroundImage url={backgroundImageUrl} />
-          )}
           {/* Content layer */}
-          <div className={cn(
-            "flex flex-1 flex-col min-h-0 min-w-0 relative z-10",
-            !(FEATURE_FLAGS.PEXELS_BACKGROUNDS && backgroundImageUrl) && "bg-surface-below"
-          )}>
+          <div className="flex flex-1 flex-col min-h-0 min-w-0 relative z-10 bg-surface-below">
           {/* === MESSAGES AREA: Scrollable list of message bubbles === */}
           <div className="relative flex-1 min-h-0">
               <ScrollArea className="h-full min-w-0" viewportRef={scrollViewportRef}>

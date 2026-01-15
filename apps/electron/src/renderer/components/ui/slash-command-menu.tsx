@@ -379,8 +379,16 @@ export function InlineSlashCommand({
 // Hook for managing inline slash command state
 // ============================================================================
 
+/** Interface for elements that can be used with useInlineSlashCommand */
+export interface SlashCommandInputElement {
+  getBoundingClientRect: () => DOMRect
+  value: string
+  selectionStart: number
+}
+
 export interface UseInlineSlashCommandOptions {
-  textareaRef: React.RefObject<HTMLTextAreaElement>
+  /** Ref to input element (textarea or RichTextInput handle) */
+  inputRef: React.RefObject<SlashCommandInputElement | null>
   onSelect: (commandId: SlashCommandId) => void
   activeCommands?: SlashCommandId[]
 }
@@ -396,7 +404,7 @@ export interface UseInlineSlashCommandReturn {
 }
 
 export function useInlineSlashCommand({
-  textareaRef,
+  inputRef,
   onSelect,
   activeCommands = [],
 }: UseInlineSlashCommandOptions): UseInlineSlashCommandReturn {
@@ -404,8 +412,13 @@ export function useInlineSlashCommand({
   const [filter, setFilter] = React.useState('')
   const [position, setPosition] = React.useState({ x: 0, y: 0 })
   const [slashStart, setSlashStart] = React.useState(-1)
+  // Store current input state for handleSelect
+  const currentInputRef = React.useRef({ value: '', cursorPosition: 0 })
 
   const handleInputChange = React.useCallback((value: string, cursorPosition: number) => {
+    // Store current state for handleSelect
+    currentInputRef.current = { value, cursorPosition }
+
     const textBeforeCursor = value.slice(0, cursorPosition)
     const slashMatch = textBeforeCursor.match(/(?:^|\s)\/(\w*)$/)
 
@@ -414,40 +427,19 @@ export function useInlineSlashCommand({
       setSlashStart(matchStart)
       setFilter(slashMatch[1] || '')
 
-      if (textareaRef.current) {
-        const textarea = textareaRef.current
-        const rect = textarea.getBoundingClientRect()
-        const style = window.getComputedStyle(textarea)
-        const lineHeight = parseInt(style.lineHeight) || 20
+      if (inputRef.current) {
+        const rect = inputRef.current.getBoundingClientRect()
 
-        // Mirror element to measure cursor position
-        const mirror = document.createElement('div')
-        mirror.style.cssText = `
-          position: absolute;
-          visibility: hidden;
-          white-space: pre-wrap;
-          word-wrap: break-word;
-          font-family: ${style.fontFamily};
-          font-size: ${style.fontSize};
-          line-height: ${style.lineHeight};
-          padding: ${style.padding};
-          width: ${textarea.clientWidth}px;
-          box-sizing: border-box;
-        `
-        mirror.textContent = textBeforeCursor
-        const caret = document.createElement('span')
-        caret.textContent = '|'
-        mirror.appendChild(caret)
-
-        document.body.appendChild(mirror)
-        const caretRect = caret.getBoundingClientRect()
-        const mirrorRect = mirror.getBoundingClientRect()
-        document.body.removeChild(mirror)
+        // For position calculation, use a simplified approach
+        const lineHeight = 20 // Approximate line height
+        const charWidth = 8 // Approximate character width
+        const linesBeforeCursor = textBeforeCursor.split('\n').length - 1
+        const charsOnCurrentLine = textBeforeCursor.split('\n').pop()?.length || 0
 
         // Position above the current line (menu appears above cursor)
         setPosition({
-          x: rect.left + (caretRect.left - mirrorRect.left),
-          y: rect.top + (caretRect.top - mirrorRect.top),
+          x: rect.left + Math.min(charsOnCurrentLine * charWidth, rect.width - 100),
+          y: rect.top + (linesBeforeCursor + 1) * lineHeight,
         })
       }
 
@@ -457,16 +449,15 @@ export function useInlineSlashCommand({
       setFilter('')
       setSlashStart(-1)
     }
-  }, [textareaRef])
+  }, [inputRef])
 
   const handleSelect = React.useCallback((commandId: SlashCommandId): string => {
     // Capture values BEFORE any state changes to avoid race conditions
     let result = ''
-    if (textareaRef.current && slashStart >= 0) {
-      const currentValue = textareaRef.current.value
+    if (slashStart >= 0) {
+      const { value: currentValue, cursorPosition } = currentInputRef.current
       const before = currentValue.slice(0, slashStart)
-      const cursorPos = textareaRef.current.selectionStart
-      const after = currentValue.slice(cursorPos)
+      const after = currentValue.slice(cursorPosition)
       result = (before + after).trim()
     }
 
@@ -475,7 +466,7 @@ export function useInlineSlashCommand({
     setIsOpen(false)
 
     return result
-  }, [onSelect, textareaRef, slashStart])
+  }, [onSelect, slashStart])
 
   const close = React.useCallback(() => {
     setIsOpen(false)

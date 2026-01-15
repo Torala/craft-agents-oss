@@ -12,6 +12,7 @@ import { AppShell } from '@/components/app-shell/AppShell'
 import type { AppShellContextType } from '@/context/AppShellContext'
 import { OnboardingWizard, ReauthScreen } from '@/components/onboarding'
 import { ResetConfirmationDialog } from '@/components/ResetConfirmationDialog'
+import { ImportClaudeCodeDialog } from '@/components/import/ImportClaudeCodeDialog'
 import { SplashScreen } from '@/components/SplashScreen'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { FocusProvider } from '@/context/FocusContext'
@@ -194,6 +195,8 @@ export default function App() {
   const [workspaceTheme, setWorkspaceTheme] = useState<ThemeOverrides | null>(null)
   // Reset confirmation dialog
   const [showResetDialog, setShowResetDialog] = useState(false)
+  // Claude Code import dialog
+  const [showImportDialog, setShowImportDialog] = useState(false)
 
   // Auto-update state
   const updateChecker = useUpdateChecker()
@@ -594,12 +597,16 @@ export default function App() {
       // Open help documentation URL
       window.electronAPI.openUrl('https://craft.do/help')
     })
+    const unsubImport = window.electronAPI.onMenuImportClaudeCode(() => {
+      setShowImportDialog(true)
+    })
 
     return () => {
       unsubNewChat()
       unsubSettings()
       unsubShortcuts()
       unsubHelp()
+      unsubImport()
     }
   }, [])
 
@@ -995,6 +1002,20 @@ export default function App() {
     setShowResetDialog(true)
   }, [])
 
+  // Handle Claude Code import completion - refresh sessions and navigate to first imported
+  const handleImportComplete = useCallback(async (sessionIds: string[]) => {
+    if (sessionIds.length === 0) return
+
+    // Reload sessions to get the imported ones
+    const loadedSessions = await window.electronAPI.getSessions()
+    initializeSessions(loadedSessions)
+
+    // Navigate to the first imported session
+    if (sessionIds[0]) {
+      navigate(routes.view.allChats(sessionIds[0]))
+    }
+  }, [initializeSessions])
+
   // Execute reset after user confirms in dialog
   const executeReset = useCallback(async () => {
     try {
@@ -1167,9 +1188,6 @@ export default function App() {
         onCancel={handleOnboardingCancel}
         onContinue={onboarding.handleContinue}
         onBack={onboarding.handleBack}
-        onLogin={onboarding.handleLogin}
-        onOpenLoginManually={onboarding.handleOpenLoginManually}
-        onRetryLogin={onboarding.handleRetryLogin}
         onSelectBillingMethod={onboarding.handleSelectBillingMethod}
         onSubmitCredential={onboarding.handleSubmitCredential}
         onStartOAuth={onboarding.handleStartOAuth}
@@ -1226,6 +1244,11 @@ export default function App() {
                 open={showResetDialog}
                 onConfirm={executeReset}
                 onCancel={() => setShowResetDialog(false)}
+              />
+              <ImportClaudeCodeDialog
+                open={showImportDialog}
+                onOpenChange={setShowImportDialog}
+                onImportComplete={handleImportComplete}
               />
             </div>
 

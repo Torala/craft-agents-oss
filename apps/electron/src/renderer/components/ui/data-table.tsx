@@ -4,6 +4,7 @@ import type {
   ColumnFiltersState,
   ColumnSizingState,
   SortingState,
+  PaginationState,
   Column,
   Table as TableInstance,
 } from '@tanstack/react-table'
@@ -12,6 +13,7 @@ import {
   getCoreRowModel,
   getFilteredRowModel,
   getSortedRowModel,
+  getPaginationRowModel,
   useReactTable,
 } from '@tanstack/react-table'
 import { Button } from '@/components/ui/button'
@@ -44,6 +46,10 @@ interface DataTableProps<TData, TValue> {
   noBorder?: boolean
   /** Skip the table overflow wrapper (required for sticky headers) */
   noWrapper?: boolean
+  /** Enable pagination */
+  pagination?: boolean
+  /** Page size when pagination is enabled (default: 50) */
+  pageSize?: number
 }
 
 export function DataTable<TData, TValue>({
@@ -57,18 +63,28 @@ export function DataTable<TData, TValue>({
   onTableReady,
   noBorder = false,
   noWrapper = false,
+  pagination: paginationEnabled = false,
+  pageSize = 50,
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = React.useState<SortingState>([])
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([])
   const [columnSizing, setColumnSizing] = React.useState<ColumnSizingState>({})
   const [internalGlobalFilter, setInternalGlobalFilter] = React.useState('')
+  const [pagination, setPagination] = React.useState<PaginationState>({
+    pageIndex: 0,
+    pageSize,
+  })
 
-  // Sync external global filter
+  // Sync external global filter and reset pagination
   React.useEffect(() => {
     if (globalFilter !== undefined) {
       setInternalGlobalFilter(globalFilter)
+      // Reset to first page when filter changes
+      if (paginationEnabled) {
+        setPagination(prev => ({ ...prev, pageIndex: 0 }))
+      }
     }
-  }, [globalFilter])
+  }, [globalFilter, paginationEnabled])
 
   // Update column filter when filterValue changes
   React.useEffect(() => {
@@ -85,10 +101,12 @@ export function DataTable<TData, TValue>({
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
+    ...(paginationEnabled && { getPaginationRowModel: getPaginationRowModel() }),
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
     onColumnSizingChange: setColumnSizing,
     onGlobalFilterChange: setInternalGlobalFilter,
+    ...(paginationEnabled && { onPaginationChange: setPagination }),
     globalFilterFn: 'includesString',
     enableColumnResizing: true,
     columnResizeMode: 'onChange',
@@ -97,6 +115,7 @@ export function DataTable<TData, TValue>({
       columnFilters,
       columnSizing,
       globalFilter: internalGlobalFilter,
+      ...(paginationEnabled && { pagination }),
     },
   })
 
@@ -201,13 +220,50 @@ export function DataTable<TData, TValue>({
     </Table>
   )
 
+  const paginationControls = paginationEnabled && table.getPageCount() > 1 && (
+    <div className="flex items-center justify-between px-2 py-3 border-t border-border">
+      <div className="text-sm text-muted-foreground">
+        {table.getFilteredRowModel().rows.length} total
+      </div>
+      <div className="flex items-center gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => table.previousPage()}
+          disabled={!table.getCanPreviousPage()}
+        >
+          Previous
+        </Button>
+        <span className="text-sm text-muted-foreground">
+          Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount()}
+        </span>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => table.nextPage()}
+          disabled={!table.getCanNextPage()}
+        >
+          Next
+        </Button>
+      </div>
+    </div>
+  )
+
   if (noBorder) {
-    return <div className={cn('w-full', className)}>{tableContent}</div>
+    return (
+      <div className={cn('w-full', className)}>
+        {tableContent}
+        {paginationControls}
+      </div>
+    )
   }
 
   return (
     <div className={cn('w-full', className)}>
-      <div className="rounded-md border">{tableContent}</div>
+      <div className="rounded-md border">
+        {tableContent}
+        {paginationControls}
+      </div>
     </div>
   )
 }

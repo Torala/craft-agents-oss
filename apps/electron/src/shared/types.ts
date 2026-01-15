@@ -41,6 +41,19 @@ export type { LoadedSource, FolderSourceConfig, SourceConnectionStatus };
 import type { LoadedSkill, SkillMetadata } from '@craft-agent/shared/skills/types';
 export type { LoadedSkill, SkillMetadata };
 
+// Import Claude Code import types
+import type { ClaudeCodeSessionInfo, ImportResult } from '@craft-agent/shared/sessions';
+export type { ClaudeCodeSessionInfo };
+
+/**
+ * Result of importing Claude Code sessions
+ */
+export interface ClaudeCodeImportResult {
+  results: ImportResult[]
+  successCount: number
+  failCount: number
+}
+
 /**
  * File/directory entry in a skill folder
  */
@@ -291,8 +304,6 @@ export interface Session {
     message: string
     statusType?: string
   }
-  // Background image URL (from Pexels)
-  backgroundImageUrl?: string
 }
 
 /**
@@ -460,6 +471,12 @@ export const IPC_CHANNELS = {
   MENU_OPEN_SETTINGS: 'menu:openSettings',
   MENU_KEYBOARD_SHORTCUTS: 'menu:keyboardShortcuts',
   MENU_OPEN_HELP: 'menu:openHelp',
+  MENU_IMPORT_CLAUDE_CODE: 'menu:importClaudeCode',
+
+  // Claude Code import
+  IMPORT_DISCOVER_SESSIONS: 'import:discoverSessions',
+  IMPORT_SESSIONS: 'import:sessions',
+  FIND_SESSION_BY_SDK_ID: 'import:findSessionBySdkId',
 
   // Deep link navigation (main → renderer, for external craftagents:// URLs)
   DEEP_LINK_NAVIGATE: 'deeplink:navigate',
@@ -805,6 +822,13 @@ export interface ElectronAPI {
   onMenuOpenSettings(callback: () => void): () => void
   onMenuKeyboardShortcuts(callback: () => void): () => void
   onMenuOpenHelp(callback: () => void): () => void
+  onMenuImportClaudeCode(callback: () => void): () => void
+
+  // Claude Code import
+  discoverClaudeCodeSessions(): Promise<ClaudeCodeSessionInfo[]>
+  importClaudeCodeSessions(filePaths: string[]): Promise<ClaudeCodeImportResult>
+  /** Find a Craft Agent session ID by its SDK session ID (for Claude Code resume) */
+  findSessionBySdkId(sdkSessionId: string): Promise<string | null>
 
   // Deep link navigation listener (for external craftagents:// URLs)
   onDeepLinkNavigate(callback: (nav: DeepLinkNavigation) => void): () => void

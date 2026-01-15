@@ -77,8 +77,6 @@ export interface SessionConfig {
   sharedUrl?: string;
   /** Shared session ID in viewer (for revoke) */
   sharedId?: string;
-  /** Background image URL (from Pexels) */
-  backgroundImageUrl?: string;
 }
 
 /**
@@ -123,8 +121,6 @@ export interface SessionHeader {
   sharedUrl?: string;
   /** Shared session ID in viewer (for revoke) */
   sharedId?: string;
-  /** Background image URL (from Pexels) */
-  backgroundImageUrl?: string;
   // Pre-computed fields for fast list loading
   /** Number of messages in session */
   messageCount: number;
@@ -167,6 +163,4 @@ export interface SessionMetadata {
   sdkCwd?: string;
   /** Role/type of the last message (for badge display without loading messages) */
   lastMessageRole?: 'user' | 'assistant' | 'plan' | 'tool' | 'error';
-  /** Background image URL (from Pexels) */
-  backgroundImageUrl?: string;
 }

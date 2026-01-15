@@ -22,11 +22,13 @@ import {
   type SlashCommandId,
 } from '@/components/ui/slash-command-menu'
 import {
-  MentionMenu,
-  useMentionMenu,
-  type MentionableItem,
+  InlineMentionMenu,
+  useInlineMention,
+  type MentionItem,
+  type MentionItemType,
 } from '@/components/ui/mention-menu'
 import { parseMentions } from '@/lib/mentions'
+import { RichTextInput, type RichTextInputHandle } from '@/components/ui/rich-text-input'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   DropdownMenu,
@@ -55,8 +57,8 @@ export interface FreeFormInputProps {
   onSubmit: (message: string, attachments?: FileAttachment[], skillSlugs?: string[]) => void
   /** Callback to stop processing. Pass silent=true to skip "Response interrupted" message */
   onStop?: (silent?: boolean) => void
-  /** External ref for the textarea */
-  textareaRef?: React.RefObject<HTMLTextAreaElement>
+  /** External ref for the input */
+  inputRef?: React.RefObject<RichTextInputHandle>
   /** Current model ID */
   currentModel: string
   /** Callback when model changes */
@@ -121,7 +123,7 @@ export function FreeFormInput({
   isProcessing = false,
   onSubmit,
   onStop,
-  textareaRef: externalTextareaRef,
+  inputRef: externalInputRef,
   currentModel,
   onModelChange,
   ultrathinkEnabled = false,
@@ -222,9 +224,9 @@ export function FreeFormInput({
   const sourceFilterInputRef = React.useRef<HTMLInputElement>(null)
   const [sourceDropdownPosition, setSourceDropdownPosition] = React.useState<{ top: number; left: number } | null>(null)
 
-  // Merge refs
-  const internalRef = React.useRef<HTMLTextAreaElement>(null)
-  const textareaRef = externalTextareaRef || internalRef
+  // Merge refs for RichTextInput
+  const internalInputRef = React.useRef<RichTextInputHandle>(null)
+  const richInputRef = externalInputRef || internalInputRef
 
   // Listen for craft:insert-text events (generic mechanism for inserting text into input)
   // Used by components that want to pre-fill the input with text
@@ -233,20 +235,17 @@ export function FreeFormInput({
       const { text } = e.detail
       setInput(text)
       syncToParent(text)
-      // Focus the textarea after inserting
+      // Focus the input after inserting
       setTimeout(() => {
-        textareaRef.current?.focus()
+        richInputRef.current?.focus()
         // Move cursor to end
-        if (textareaRef.current) {
-          textareaRef.current.selectionStart = text.length
-          textareaRef.current.selectionEnd = text.length
-        }
+        richInputRef.current?.setSelectionRange(text.length, text.length)
       }, 0)
     }
 
     window.addEventListener('craft:insert-text', handleInsertText as EventListener)
     return () => window.removeEventListener('craft:insert-text', handleInsertText as EventListener)
-  }, [syncToParent, textareaRef])
+  }, [syncToParent, richInputRef])
 
   // Listen for craft:approve-plan events (used by ResponseCard's Accept Plan button)
   // This disables safe mode AND submits the message in one action
@@ -304,13 +303,13 @@ export function FreeFormInput({
         setLoadingCount(prev => prev - 1)
       }
 
-      // Focus the textarea after adding attachments
-      textareaRef.current?.focus()
+      // Focus the input after adding attachments
+      richInputRef.current?.focus()
     }
 
     window.addEventListener('craft:paste-files', handlePasteFiles as unknown as EventListener)
     return () => window.removeEventListener('craft:paste-files', handlePasteFiles as unknown as EventListener)
-  }, [disabled, textareaRef])
+  }, [disabled, richInputRef])
 
   // Build active commands list for slash command menu
   const activeCommands = React.useMemo(() => {
@@ -333,18 +332,55 @@ export function FreeFormInput({
 
   // Inline slash command hook
   const inlineSlash = useInlineSlashCommand({
-    textareaRef: textareaRef as React.RefObject<HTMLTextAreaElement>,
+    inputRef: richInputRef,
     onSelect: handleSlashCommand,
     activeCommands,
   })
 
-  // Unified @ mention hook (skills + sources)
-  const mentionMenu = useMentionMenu({
-    textareaRef: textareaRef as React.RefObject<HTMLTextAreaElement>,
+  // Get recent folders and home directory for mention menu
+  const [recentFolders, setRecentFolders] = React.useState<string[]>([])
+  const [homeDir, setHomeDir] = React.useState<string>('')
+
+  React.useEffect(() => {
+    setRecentFolders(getRecentDirs())
+    window.electronAPI?.getHomeDir?.().then((dir: string) => {
+      if (dir) setHomeDir(dir)
+    })
+  }, [])
+
+  // Handle mention selection (sources, folders, skills)
+  const handleMentionSelect = React.useCallback((item: MentionItem) => {
+    // For sources: enable the source immediately
+    if (item.type === 'source' && item.source && onSourcesChange) {
+      const slug = item.source.config.slug
+      if (!optimisticSourceSlugs.includes(slug)) {
+        const newSlugs = [...optimisticSourceSlugs, slug]
+        setOptimisticSourceSlugs(newSlugs)
+        onSourcesChange(newSlugs)
+      }
+    }
+
+    // For folders: change working directory
+    if (item.type === 'folder' && item.path && onWorkingDirectoryChange) {
+      addRecentDir(item.path)
+      setRecentFolders(getRecentDirs())
+      onWorkingDirectoryChange(item.path)
+    }
+
+    // Skills don't need special handling - just the text insertion
+  }, [optimisticSourceSlugs, onSourcesChange, onWorkingDirectoryChange])
+
+  // Inline mention hook (unified for skills, sources, and folders)
+  const inlineMention = useInlineMention({
+    inputRef: richInputRef,
     skills,
-    sources: sources || [],
-    onSelect: () => {}, // Selection handled in handleMentionSelect
+    sources,
+    recentFolders,
+    homeDir,
+    onSelect: handleMentionSelect,
   })
+
+  // NOTE: Mentions are now rendered inline in RichTextInput, no separate badge row needed
 
   // Report height changes to parent (for external animation sync)
   React.useLayoutEffect(() => {
@@ -567,20 +603,37 @@ export function FreeFormInput({
     // Tutorial may disable sending to guide user through specific steps
     if (disableSend) return false
 
-    // Parse @mentions to get both skill and source slugs
-    const { skillSlugs, sourceSlugs } = parseMentions(input, skills, sources || [])
+    // Parse all @mentions (skills, sources, folders)
+    const skillSlugs = skills.map(s => s.slug)
+    const sourceSlugs = sources.map(s => s.config.slug)
+    const mentions = parseMentions(input, skillSlugs, sourceSlugs)
 
-    // Auto-enable mentioned sources for this session
-    if (sourceSlugs.length > 0 && onSourcesChange) {
-      const currentSlugs = enabledSourceSlugs || []
-      const newSlugs = [...new Set([...currentSlugs, ...sourceSlugs])]
-      onSourcesChange(newSlugs)
+    // Enable any mentioned sources that aren't already enabled
+    if (mentions.sources.length > 0 && onSourcesChange) {
+      const newSlugs = [...new Set([...optimisticSourceSlugs, ...mentions.sources])]
+      if (newSlugs.length > optimisticSourceSlugs.length) {
+        setOptimisticSourceSlugs(newSlugs)
+        onSourcesChange(newSlugs)
+      }
+    }
+
+    // Change working directory if a folder was mentioned (use the last one)
+    if (mentions.folders.length > 0 && onWorkingDirectoryChange) {
+      const lastFolder = mentions.folders[mentions.folders.length - 1]
+      // Expand ~ to home directory if needed
+      const expandedPath = lastFolder.startsWith('~/')
+        ? (homeDir || '') + lastFolder.slice(1)
+        : lastFolder
+      if (expandedPath) {
+        addRecentDir(expandedPath)
+        onWorkingDirectoryChange(expandedPath)
+      }
     }
 
     onSubmit(
       input.trim(),
       attachments.length > 0 ? attachments : undefined,
-      skillSlugs.length > 0 ? skillSlugs : undefined
+      mentions.skills.length > 0 ? mentions.skills : undefined
     )
     setInput('')
     setAttachments([])
@@ -591,11 +644,11 @@ export function FreeFormInput({
 
     // Restore focus after state updates
     requestAnimationFrame(() => {
-      textareaRef.current?.focus()
+      richInputRef.current?.focus()
     })
 
     return true
-  }, [input, attachments, disabled, disableSend, onInputChange, onSubmit, skills, sources, enabledSourceSlugs, onSourcesChange])
+  }, [input, attachments, disabled, disableSend, onInputChange, onSubmit, skills, sources, optimisticSourceSlugs, onSourcesChange, onWorkingDirectoryChange, homeDir])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -622,14 +675,14 @@ export function FreeFormInput({
     }
 
     // Don't submit when mention menu is open - let it handle the Enter key
-    if (mentionMenu.isOpen) {
+    if (inlineMention.isOpen) {
       if (e.key === 'Enter' || e.key === 'Tab' || e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-        // These keys are handled by the MentionMenu component
+        // These keys are handled by the InlineMentionMenu component
         return
       }
       if (e.key === 'Escape') {
         e.preventDefault()
-        mentionMenu.close()
+        inlineMention.close()
         return
       }
     }
@@ -647,71 +700,78 @@ export function FreeFormInput({
       }
     }
 
-    // Submit on Enter (without Shift). CMD/Ctrl+Enter also works since it's Enter without Shift.
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       // Submit message - backend handles interruption if processing
       submitMessage()
     }
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault()
+      // Submit message - backend handles interruption if processing
+      submitMessage()
+    }
     if (e.key === 'Escape') {
-      textareaRef.current?.blur()
+      richInputRef.current?.blur()
     }
   }
 
-  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    let value = e.target.value
-    let cursorPosition = e.target.selectionStart
+  // Handle input changes from RichTextInput
+  const handleInputChange = React.useCallback((value: string) => {
+    setInput(value)
+    syncToParent(value) // Debounced sync to parent for draft persistence
+  }, [syncToParent])
 
+  // Handle input with cursor position (for menu detection)
+  const handleRichInput = React.useCallback((value: string, cursorPosition: number) => {
     // Update inline slash command state
     inlineSlash.handleInputChange(value, cursorPosition)
 
-    // Update unified mention menu state (for @mentions - skills + sources)
-    mentionMenu.handleInputChange(value, cursorPosition)
+    // Update inline mention state (for @mentions - skills, sources, folders)
+    inlineMention.handleInputChange(value, cursorPosition)
 
     // Auto-capitalize first letter (but not for slash commands or @mentions)
+    let newValue = value
     if (value.length > 0 && value.charAt(0) !== '/' && value.charAt(0) !== '@') {
-      value = value.charAt(0).toUpperCase() + value.slice(1)
+      const capitalizedFirst = value.charAt(0).toUpperCase()
+      if (capitalizedFirst !== value.charAt(0)) {
+        newValue = capitalizedFirst + value.slice(1)
+        setInput(newValue)
+        syncToParent(newValue)
+        return
+      }
     }
 
     // Apply smart typography (-> to →, etc.)
     const typography = applySmartTypography(value, cursorPosition)
-    value = typography.text
-    cursorPosition = typography.cursor
-
-    setInput(value)
-    syncToParent(value) // Debounced sync to parent for draft persistence
-
-    // Restore cursor position after React re-render (if typography changed it)
     if (typography.replaced) {
+      newValue = typography.text
+      setInput(newValue)
+      syncToParent(newValue)
+      // Restore cursor position after React re-render
       requestAnimationFrame(() => {
-        textareaRef.current?.setSelectionRange(cursorPosition, cursorPosition)
+        richInputRef.current?.setSelectionRange(typography.cursor, typography.cursor)
       })
     }
-  }
+  }, [inlineSlash, inlineMention, syncToParent])
 
   // Handle inline slash command selection (removes the /command text)
   const handleInlineSlashSelect = React.useCallback((commandId: SlashCommandId) => {
     const newValue = inlineSlash.handleSelect(commandId)
     setInput(newValue)
     syncToParent(newValue)
-    textareaRef.current?.focus()
-  }, [inlineSlash, syncToParent, textareaRef])
+    richInputRef.current?.focus()
+  }, [inlineSlash, syncToParent])
 
-  // Handle mention selection (inserts @slug for both skills and sources)
-  const handleMentionSelect = React.useCallback((item: MentionableItem) => {
-    const newValue = mentionMenu.handleSelect(item)
+  // Handle inline mention selection (inserts appropriate mention text)
+  const handleInlineMentionSelect = React.useCallback((item: MentionItem) => {
+    const newValue = inlineMention.handleSelect(item)
     setInput(newValue)
     syncToParent(newValue)
-    // Move cursor after the inserted @slug
+    // Focus input
     setTimeout(() => {
-      if (textareaRef.current) {
-        const cursorPos = newValue.indexOf('@' + item.slug) + item.slug.length + 2 // +2 for @ and space
-        textareaRef.current.selectionStart = cursorPos
-        textareaRef.current.selectionEnd = cursorPos
-        textareaRef.current.focus()
-      }
+      richInputRef.current?.focus()
     }, 0)
-  }, [mentionMenu, syncToParent, textareaRef])
+  }, [inlineMention, syncToParent])
 
   const hasContent = input.trim() || attachments.length > 0
 
@@ -742,15 +802,16 @@ export function FreeFormInput({
           position={inlineSlash.position}
         />
 
-        {/* Unified @ Mention Menu (Skills + Sources) */}
-        <MentionMenu
-          open={mentionMenu.isOpen}
-          onOpenChange={(open) => !open && mentionMenu.close()}
-          items={mentionMenu.items}
-          onSelect={handleMentionSelect}
-          filter={mentionMenu.filter}
-          position={mentionMenu.position}
+        {/* Inline Mention Autocomplete (skills, sources, folders) */}
+        <InlineMentionMenu
+          open={inlineMention.isOpen}
+          onOpenChange={(open) => !open && inlineMention.close()}
+          sections={inlineMention.sections}
+          onSelect={handleInlineMentionSelect}
+          filter={inlineMention.filter}
+          position={inlineMention.position}
           workspaceId={workspaceId}
+          maxWidth={280}
         />
 
         {/* Attachment Preview */}
@@ -761,35 +822,24 @@ export function FreeFormInput({
           loadingCount={loadingCount}
         />
 
-        {/* Textarea with auto-grow via hidden sizer */}
-        <div className="relative min-h-[72px]">
-          {/* Hidden sizer - mirrors content to determine height */}
-          <div
-            className="invisible whitespace-pre-wrap break-words pl-5 pr-4 pt-4 pb-3 text-sm"
-            aria-hidden="true"
-          >
-            {input || placeholder}
-            {/* Extra space for cursor on new line */}
-            {'\n'}
-          </div>
-          {/* Textarea positioned over sizer */}
-          <textarea
-            ref={textareaRef}
-            data-tutorial="chat-input"
-            className="absolute inset-0 w-full h-full pl-5 pr-4 pt-4 pb-3 bg-transparent outline-none text-sm placeholder:text-muted-foreground resize-none focus-visible:ring-0"
-            placeholder={placeholder}
-            value={input}
-            onChange={handleChange}
-            onKeyDown={handleKeyDown}
-            onPaste={handlePaste}
-            onFocus={() => { setIsFocused(true); onFocusChange?.(true) }}
-            onBlur={() => { setIsFocused(false); onFocusChange?.(false) }}
-            onDragOver={handleDragOver}
-            onDrop={handleDrop}
-            disabled={disabled}
-            rows={1}
-          />
-        </div>
+        {/* Rich Text Input with inline mention badges */}
+        <RichTextInput
+          ref={richInputRef}
+          value={input}
+          onChange={handleInputChange}
+          onInput={handleRichInput}
+          onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
+          onFocus={() => { setIsFocused(true); onFocusChange?.(true) }}
+          onBlur={() => { setIsFocused(false); onFocusChange?.(false) }}
+          placeholder={placeholder}
+          disabled={disabled}
+          skills={skills}
+          sources={sources}
+          workspaceId={workspaceId}
+          className="min-h-[72px] pl-5 pr-4 pt-4 pb-3"
+          data-tutorial="chat-input"
+        />
 
         {/* Bottom Row: Controls */}
         <div className="flex items-center gap-1 px-2 py-2 border-t border-border/50">

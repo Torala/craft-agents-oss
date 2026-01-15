@@ -91,3 +91,14 @@ export {
   type QuickAction,
   type SourceNeedingAuth,
 } from './onboarding.ts';
+
+// Claude Code import
+export {
+  discoverClaudeCodeSessions,
+  convertClaudeCodeSession,
+  importClaudeCodeSession,
+  importClaudeCodeSessions,
+  getClaudeProjectsPath,
+  type ClaudeCodeSessionInfo,
+  type ImportResult,
+} from './claude-code-import.ts';

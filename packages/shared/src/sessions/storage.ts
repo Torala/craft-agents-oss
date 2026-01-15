@@ -142,7 +142,6 @@ export function createSession(
     workingDirectory?: string;
     permissionMode?: SessionConfig['permissionMode'];
     enabledSourceSlugs?: string[];
-    backgroundImageUrl?: string;
   }
 ): SessionConfig {
   ensureSessionsDir(workspaceRootPath);
@@ -168,7 +167,6 @@ export function createSession(
     sdkCwd,
     permissionMode: options?.permissionMode,
     enabledSourceSlugs: options?.enabledSourceSlugs,
-    backgroundImageUrl: options?.backgroundImageUrl,
   };
 
   // Save empty session
@@ -366,7 +364,6 @@ function headerToMetadata(header: SessionHeader, workspaceRootPath: string): Ses
       permissionMode: header.permissionMode,
       planCount: planCount > 0 ? planCount : undefined,
       lastMessageRole: header.lastMessageRole,
-      backgroundImageUrl: header.backgroundImageUrl,
       workingDirectory: workingDir,
       sdkCwd,
     };
@@ -470,7 +467,6 @@ export function updateSessionMetadata(
     | 'permissionMode'
     | 'sharedUrl'
     | 'sharedId'
-    | 'backgroundImageUrl'
   >>
 ): void {
   const session = loadSession(workspaceRootPath, sessionId);
@@ -485,7 +481,6 @@ export function updateSessionMetadata(
   if ('lastReadMessageId' in updates) session.lastReadMessageId = updates.lastReadMessageId;
   if ('sharedUrl' in updates) session.sharedUrl = updates.sharedUrl;
   if ('sharedId' in updates) session.sharedId = updates.sharedId;
-  if ('backgroundImageUrl' in updates) session.backgroundImageUrl = updates.backgroundImageUrl;
 
   saveSession(session);
 }

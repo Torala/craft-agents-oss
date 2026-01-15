@@ -16,12 +16,20 @@
  *   craftagents://action/{actionName}[/{id}][?params]
  *   craftagents://workspace/{workspaceId}/action/{actionName}[?params]
  *
+ * Actions:
+ *   new-chat                  - Create new chat, optional ?input=text&name=name
+ *   resume-sdk-session/{id}   - Resume Claude Code session by SDK session ID
+ *   delete-session/{id}       - Delete session
+ *   flag-session/{id}         - Flag session
+ *   unflag-session/{id}       - Unflag session
+ *
  * Examples:
  *   craftagents://allChats                               (all chats view)
  *   craftagents://allChats/chat/abc123                   (specific chat)
  *   craftagents://settings/shortcuts                     (shortcuts page)
  *   craftagents://sources/source/github                  (github source info)
  *   craftagents://action/new-chat                        (uses active window)
+ *   craftagents://action/resume-sdk-session/{sdkId}      (resume Claude Code session)
  *   craftagents://workspace/ws123/allChats/chat/abc123   (targets specific workspace)
  */
 

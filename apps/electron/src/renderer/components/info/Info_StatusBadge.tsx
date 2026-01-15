@@ -7,7 +7,9 @@
 import * as React from 'react'
 import { Info_Badge, type BadgeColor } from './Info_Badge'
 
-const statusConfig: Record<string, { label: string; color: BadgeColor }> = {
+type PermissionStatus = 'allowed' | 'blocked' | 'requires-permission'
+
+const statusConfig: Record<PermissionStatus, { label: string; color: BadgeColor }> = {
   allowed: { label: 'Allowed', color: 'success' },
   blocked: { label: 'Blocked', color: 'destructive' },
   'requires-permission': { label: 'Ask', color: 'warning' },
@@ -16,7 +18,7 @@ const statusConfig: Record<string, { label: string; color: BadgeColor }> = {
 export interface Info_StatusBadgeProps
   extends Omit<React.HTMLAttributes<HTMLSpanElement>, 'children'> {
   /** Status type */
-  status?: 'allowed' | 'blocked' | 'requires-permission' | null
+  status?: PermissionStatus | null
   /** Override the default label */
   label?: string
 }
@@ -26,11 +28,12 @@ export function Info_StatusBadge({
   label,
   ...props
 }: Info_StatusBadgeProps) {
-  const config = statusConfig[status ?? 'allowed'] ?? statusConfig.allowed
+  const key: PermissionStatus = status ?? 'allowed'
+  const config: { label: string; color: BadgeColor } = statusConfig[key]
   const displayLabel = label ?? config.label
 
   return (
-    <Info_Badge color={config.color} {...props}>
+    <Info_Badge {...props} color={config.color}>
       {displayLabel}
     </Info_Badge>
   )

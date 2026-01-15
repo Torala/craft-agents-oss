@@ -316,7 +316,6 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
               onWorkingDirectoryChange={handleWorkingDirectoryChange}
               messagesLoading={true}
               disableSend={tutorialDisablesSend}
-              backgroundImageUrl={sessionMeta.backgroundImageUrl}
             />
           </div>
         </div>
@@ -371,7 +370,6 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
           sessionFolderPath={session?.sessionFolderPath}
           messagesLoading={!messagesLoaded}
           disableSend={tutorialDisablesSend}
-          backgroundImageUrl={session?.backgroundImageUrl}
         />
       </div>
     </div>

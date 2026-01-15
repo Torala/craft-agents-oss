@@ -169,8 +169,15 @@ export function InlineSkillMention({
 // Hook for managing inline skill mention state
 // ============================================================================
 
+/** Interface for elements that can be used with useInlineSkillMention */
+export interface SkillMentionInputElement {
+  getBoundingClientRect: () => DOMRect
+  value: string
+  selectionStart: number
+}
+
 export interface UseInlineSkillMentionOptions {
-  textareaRef: React.RefObject<HTMLTextAreaElement>
+  inputRef: React.RefObject<SkillMentionInputElement | null>
   skills: LoadedSkill[]
   onSelect: (slug: string) => void
 }
@@ -185,7 +192,7 @@ export interface UseInlineSkillMentionReturn {
 }
 
 export function useInlineSkillMention({
-  textareaRef,
+  inputRef,
   skills,
   onSelect,
 }: UseInlineSkillMentionOptions): UseInlineSkillMentionReturn {
@@ -193,8 +200,13 @@ export function useInlineSkillMention({
   const [filter, setFilter] = React.useState('')
   const [position, setPosition] = React.useState({ x: 0, y: 0 })
   const [atStart, setAtStart] = React.useState(-1)
+  // Store current input state for handleSelect
+  const currentInputRef = React.useRef({ value: '', cursorPosition: 0 })
 
   const handleInputChange = React.useCallback((value: string, cursorPosition: number) => {
+    // Store current state for handleSelect
+    currentInputRef.current = { value, cursorPosition }
+
     const textBeforeCursor = value.slice(0, cursorPosition)
     // Match @ at start of text or after whitespace, followed by optional word chars and hyphens
     const atMatch = textBeforeCursor.match(/(?:^|\s)@([\w-]*)$/)
@@ -204,39 +216,19 @@ export function useInlineSkillMention({
       setAtStart(matchStart)
       setFilter(atMatch[1] || '')
 
-      if (textareaRef.current) {
-        const textarea = textareaRef.current
-        const rect = textarea.getBoundingClientRect()
-        const style = window.getComputedStyle(textarea)
+      if (inputRef.current) {
+        const rect = inputRef.current.getBoundingClientRect()
 
-        // Mirror element to measure cursor position
-        const mirror = document.createElement('div')
-        mirror.style.cssText = `
-          position: absolute;
-          visibility: hidden;
-          white-space: pre-wrap;
-          word-wrap: break-word;
-          font-family: ${style.fontFamily};
-          font-size: ${style.fontSize};
-          line-height: ${style.lineHeight};
-          padding: ${style.padding};
-          width: ${textarea.clientWidth}px;
-          box-sizing: border-box;
-        `
-        mirror.textContent = textBeforeCursor
-        const caret = document.createElement('span')
-        caret.textContent = '|'
-        mirror.appendChild(caret)
-
-        document.body.appendChild(mirror)
-        const caretRect = caret.getBoundingClientRect()
-        const mirrorRect = mirror.getBoundingClientRect()
-        document.body.removeChild(mirror)
+        // Simplified position calculation
+        const lineHeight = 20
+        const charWidth = 8
+        const linesBeforeCursor = textBeforeCursor.split('\n').length - 1
+        const charsOnCurrentLine = textBeforeCursor.split('\n').pop()?.length || 0
 
         // Position above the current line (menu appears above cursor)
         setPosition({
-          x: rect.left + (caretRect.left - mirrorRect.left),
-          y: rect.top + (caretRect.top - mirrorRect.top),
+          x: rect.left + Math.min(charsOnCurrentLine * charWidth, rect.width - 100),
+          y: rect.top + (linesBeforeCursor + 1) * lineHeight,
         })
       }
 
@@ -246,16 +238,15 @@ export function useInlineSkillMention({
       setFilter('')
       setAtStart(-1)
     }
-  }, [textareaRef, skills.length])
+  }, [inputRef, skills.length])
 
   const handleSelect = React.useCallback((slug: string): string => {
     // Insert @slug at the @ position, replacing the partial text
     let result = ''
-    if (textareaRef.current && atStart >= 0) {
-      const currentValue = textareaRef.current.value
+    if (atStart >= 0) {
+      const { value: currentValue, cursorPosition } = currentInputRef.current
       const before = currentValue.slice(0, atStart)
-      const cursorPos = textareaRef.current.selectionStart
-      const after = currentValue.slice(cursorPos)
+      const after = currentValue.slice(cursorPosition)
       // Insert @slug with trailing space
       result = before + '@' + slug + ' ' + after
     }
@@ -264,7 +255,7 @@ export function useInlineSkillMention({
     setIsOpen(false)
 
     return result
-  }, [onSelect, textareaRef, atStart])
+  }, [onSelect, atStart])
 
   const close = React.useCallback(() => {
     setIsOpen(false)

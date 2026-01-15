@@ -4,15 +4,16 @@ import { cn } from '@/lib/utils'
 import { FreeFormInput, type FreeFormInputProps } from './FreeFormInput'
 import { StructuredInput } from './StructuredInput'
 import { UltrathinkGlow } from '@/components/ui/ultrathink-glow'
+import type { RichTextInputHandle } from '@/components/ui/rich-text-input'
 import type { StructuredInputState, StructuredResponse, InputMode } from './structured/types'
 
-interface InputContainerProps extends Omit<FreeFormInputProps, 'textareaRef'> {
+interface InputContainerProps extends Omit<FreeFormInputProps, 'inputRef'> {
   /** Structured input state - when present, shows structured UI instead of freeform */
   structuredInput?: StructuredInputState
   /** Callback when user responds to structured input */
   onStructuredResponse?: (response: StructuredResponse) => void
-  /** External ref for the textarea (for focus control) */
-  textareaRef?: React.RefObject<HTMLTextAreaElement>
+  /** External ref for the input (for focus control) */
+  textareaRef?: React.RefObject<RichTextInputHandle>
 }
 
 // Animation timing - synced across height and opacity
@@ -146,7 +147,7 @@ export function InputContainer({
       return (
         <FreeFormInput
           {...freeFormProps}
-          textareaRef={forMeasuring ? undefined : textareaRef}
+          inputRef={forMeasuring ? undefined : textareaRef}
           onHeightChange={forMeasuring ? undefined : handleFreeformHeightChange}
           onFocusChange={forMeasuring ? undefined : handleFocusChange}
           unstyled

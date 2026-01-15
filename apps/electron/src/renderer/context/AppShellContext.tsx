@@ -9,6 +9,7 @@
 import * as React from 'react'
 import { createContext, useContext, useCallback } from 'react'
 import { useAtomValue } from 'jotai'
+import type { RichTextInputHandle } from '@/components/ui/rich-text-input'
 import type {
   Session,
   Workspace,
@@ -105,7 +106,7 @@ export interface AppShellContextType {
   onSessionSourcesChange?: (sessionId: string, sourceSlugs: string[]) => void
 
   // Chat input ref (for focusing)
-  textareaRef?: React.RefObject<HTMLTextAreaElement>
+  textareaRef?: React.RefObject<RichTextInputHandle>
 
   // Open a new chat with optional agent, name, and pre-filled input
   openNewChat?: (params?: NewChatActionParams) => Promise<void>

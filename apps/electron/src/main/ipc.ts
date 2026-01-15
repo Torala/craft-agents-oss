@@ -130,6 +130,43 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
     return session
   })
 
+  // ============================================================
+  // Claude Code Import
+  // ============================================================
+
+  // Discover Claude Code sessions
+  ipcMain.handle(IPC_CHANNELS.IMPORT_DISCOVER_SESSIONS, async () => {
+    const { discoverClaudeCodeSessions } = await import('@craft-agent/shared/sessions')
+    return discoverClaudeCodeSessions()
+  })
+
+  // Import Claude Code sessions
+  ipcMain.handle(IPC_CHANNELS.IMPORT_SESSIONS, async (event, filePaths: string[]) => {
+    const workspaceId = windowManager.getWorkspaceForWindow(event.sender.id)
+    if (!workspaceId) {
+      throw new Error('No workspace for window')
+    }
+    const workspace = getWorkspaceOrThrow(workspaceId)
+    const existingIds = sessionManager.getSessions().map(s => s.id)
+
+    const { importClaudeCodeSessions } = await import('@craft-agent/shared/sessions')
+    const result = importClaudeCodeSessions(filePaths, workspace.rootPath, existingIds)
+
+    // Refresh session list if any imports succeeded
+    if (result.successCount > 0) {
+      sessionManager.reloadSessions()
+    }
+
+    ipcLog.info(`Imported ${result.successCount}/${filePaths.length} Claude Code sessions`)
+    return result
+  })
+
+  // Find a session by its SDK session ID (for Claude Code resume via deep link)
+  ipcMain.handle(IPC_CHANNELS.FIND_SESSION_BY_SDK_ID, async (_event, sdkSessionId: string) => {
+    const sessionId = sessionManager.findSessionBySdkId(sdkSessionId)
+    return sessionId
+  })
+
   // Get workspaces
   ipcMain.handle(IPC_CHANNELS.GET_WORKSPACES, async () => {
     return sessionManager.getWorkspaces()
