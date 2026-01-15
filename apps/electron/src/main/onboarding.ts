@@ -1,14 +1,10 @@
 /**
  * Onboarding IPC handlers for Electron main process
  *
- * Handles Craft OAuth, workspace setup, and configuration persistence.
+ * Handles workspace setup and configuration persistence.
  */
 import { ipcMain } from 'electron'
 import { mainLog } from './logger'
-import crypto from 'crypto'
-import open from 'open'
-import { createCallbackServer } from '@craft-agent/shared/auth'
-import { CraftApi, type ProfileResponse } from '@craft-agent/shared/clients'
 import { getAuthState, getSetupNeeds } from '@craft-agent/shared/auth'
 import { getCredentialManager } from '@craft-agent/shared/credentials'
 import { saveConfig, loadStoredConfig, generateWorkspaceId, type AuthType, type StoredConfig } from '@craft-agent/shared/config'
@@ -18,27 +14,9 @@ import { validateMcpConnection } from '@craft-agent/shared/mcp'
 import { getExistingClaudeToken, getExistingClaudeCredentials, isClaudeCliInstalled, runClaudeSetupToken } from '@craft-agent/shared/auth'
 import {
   IPC_CHANNELS,
-  type CraftOAuthResult,
   type OnboardingSaveResult,
 } from '../shared/types'
 import type { SessionManager } from './sessions'
-
-// ============================================
-// PKCE Generation
-// ============================================
-
-function generatePKCE(): { codeVerifier: string; codeChallenge: string } {
-  const codeVerifier = crypto.randomBytes(32).toString('base64url')
-  const codeChallenge = crypto
-    .createHash('sha256')
-    .update(codeVerifier)
-    .digest('base64url')
-  return { codeVerifier, codeChallenge }
-}
-
-function generateState(): string {
-  return crypto.randomBytes(16).toString('base64url')
-}
 
 // ============================================
 // IPC Handlers
@@ -50,126 +28,6 @@ export function registerOnboardingHandlers(sessionManager: SessionManager): void
     const authState = await getAuthState()
     const setupNeeds = getSetupNeeds(authState)
     return { authState, setupNeeds }
-  })
-
-  // Start Craft OAuth flow
-  ipcMain.handle(IPC_CHANNELS.ONBOARDING_START_CRAFT_OAUTH, async (): Promise<CraftOAuthResult> => {
-    try {
-      // Create callback server with Electron-specific labels and deeplink
-      const callbackServer = await createCallbackServer({
-        appType: 'electron',
-        deeplinkUrl: 'craftagents://auth-complete',
-      })
-      const { codeVerifier, codeChallenge } = generatePKCE()
-      const callbackUrl = `${callbackServer.url}/callback`
-      const state = generateState()
-
-      // Build login URL
-      const platform = 'chaps'
-      const domain = 'docs.craft.do'
-      const loginUrl = `http://${domain}/login?platform=${encodeURIComponent(platform)}&code_challenge=${encodeURIComponent(codeChallenge)}&state=${encodeURIComponent(state)}&redirect_uri=${encodeURIComponent(callbackUrl)}`
-
-      // Open browser
-      await open(loginUrl)
-
-      // Wait for callback
-      const payload = await callbackServer.promise
-
-      // Validate state
-      if (payload.query.state !== state) {
-        return { success: false, error: 'State mismatch - possible security issue' }
-      }
-
-      const code = payload.query.code
-      if (!code) {
-        return { success: false, error: 'No authorization code received' }
-      }
-
-      // Exchange code for token
-      const craftApi = new CraftApi()
-      const token = await craftApi.exchangeCodeForToken({
-        code,
-        redirectUri: callbackUrl,
-        codeVerifier,
-      })
-
-      // Fetch profile
-      const profile = await craftApi.getProfile(token)
-
-      // Save token
-      const manager = getCredentialManager()
-      await manager.setCraftOAuth(token)
-
-      return {
-        success: true,
-        token,
-        profile: {
-          userId: profile.userId,
-          firstName: profile.firstName,
-          lastName: profile.lastName,
-          spaces: profile.spaces.map(s => ({
-            id: s.id,
-            name: s.name,
-            teamId: s.teamId,
-            iconUrl: s.logoUrl,  // API returns logoUrl, UI uses iconUrl
-          })),
-          teams: profile.teams.map(t => ({
-            id: t.id,
-            name: t.name,
-            isPrivate: t.isPrivate,
-            role: t.role,
-            tier: t.tier,
-          })),
-        },
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error'
-      mainLog.error('[Onboarding] Craft OAuth error:', message)
-      return { success: false, error: message }
-    }
-  })
-
-  // Get Craft profile using existing stored token (for add workspace flow)
-  ipcMain.handle(IPC_CHANNELS.ONBOARDING_GET_CRAFT_PROFILE, async (): Promise<CraftOAuthResult> => {
-    try {
-      const manager = getCredentialManager()
-      const token = await manager.getCraftOAuth()
-
-      if (!token) {
-        return { success: false, error: 'No Craft token stored' }
-      }
-
-      // Fetch profile using existing token
-      const craftApi = new CraftApi()
-      const profile = await craftApi.getProfile(token)
-
-      return {
-        success: true,
-        token,
-        profile: {
-          userId: profile.userId,
-          firstName: profile.firstName,
-          lastName: profile.lastName,
-          spaces: profile.spaces.map(s => ({
-            id: s.id,
-            name: s.name,
-            teamId: s.teamId,
-            iconUrl: s.logoUrl,  // API returns logoUrl, UI uses iconUrl
-          })),
-          teams: profile.teams.map(t => ({
-            id: t.id,
-            name: t.name,
-            isPrivate: t.isPrivate,
-            role: t.role,
-            tier: t.tier,
-          })),
-        },
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error'
-      mainLog.error('[Onboarding] Get Craft profile error:', message)
-      return { success: false, error: message }
-    }
   })
 
   // Validate MCP connection

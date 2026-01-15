@@ -266,21 +266,15 @@ export default function App() {
     initialSetupNeeds: setupNeeds || undefined,
   })
 
-  // Reauth login handler - re-authenticate with Craft when session expired
+  // Reauth login handler - placeholder (reauth is not currently used)
   const handleReauthLogin = useCallback(async () => {
-    const result = await window.electronAPI.startCraftOAuth()
-    if (result.success) {
-      // Re-check setup needs after successful login
-      const needs = await window.electronAPI.getSetupNeeds()
-      if (needs.isFullyConfigured) {
-        setAppState('ready')
-      } else {
-        // Still needs more setup (shouldn't happen normally, but handle gracefully)
-        setSetupNeeds(needs)
-        setAppState('onboarding')
-      }
+    // Re-check setup needs
+    const needs = await window.electronAPI.getSetupNeeds()
+    if (needs.isFullyConfigured) {
+      setAppState('ready')
     } else {
-      throw new Error(result.error || 'Login failed')
+      setSetupNeeds(needs)
+      setAppState('onboarding')
     }
   }, [])
 

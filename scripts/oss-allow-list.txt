@@ -43,9 +43,6 @@ apps/electron/resources/**/*
 # Electron ESLint rules
 apps/electron/eslint-rules/**/*
 
-# Electron build config (public parts)
-apps/electron/build/entitlements.mac.plist
-
 # Electron scripts (public only)
 apps/electron/scripts/self-update.sh
 
