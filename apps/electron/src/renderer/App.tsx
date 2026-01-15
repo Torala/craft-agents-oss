@@ -1188,9 +1188,6 @@ export default function App() {
         onCancel={handleOnboardingCancel}
         onContinue={onboarding.handleContinue}
         onBack={onboarding.handleBack}
-        onLogin={onboarding.handleLogin}
-        onOpenLoginManually={onboarding.handleOpenLoginManually}
-        onRetryLogin={onboarding.handleRetryLogin}
         onSelectBillingMethod={onboarding.handleSelectBillingMethod}
         onSubmitCredential={onboarding.handleSubmitCredential}
         onStartOAuth={onboarding.handleStartOAuth}

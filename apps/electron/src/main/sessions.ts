@@ -1330,7 +1330,7 @@ export class SessionManager {
         }
 
         // Build server configs for all enabled sources
-        const allEnabledSources = getSourcesBySlugs(workspaceRootPath, managed.enabledSourceSlugs)
+        const allEnabledSources = getSourcesBySlugs(workspaceRootPath, managed.enabledSourceSlugs || [])
         const { mcpServers, apiServers, errors } = await buildServersFromSources(allEnabledSources)
 
         if (errors.length > 0) {
@@ -1364,7 +1364,7 @@ export class SessionManager {
         this.sendEvent({
           type: 'sources_changed',
           sessionId: managed.id,
-          enabledSourceSlugs: managed.enabledSourceSlugs,
+          enabledSourceSlugs: managed.enabledSourceSlugs || [],
         }, managed.workspace.id)
 
         return true
