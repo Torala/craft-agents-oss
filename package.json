@@ -1,6 +1,6 @@
 {
   "name": "craft-tui-agent",
-  "version": "0.2.11",
+  "version": "0.2.12",
   "description": "Claude Code-like agent for Craft documents",
   "module": "apps/tui/src/index.tsx",
   "type": "module",
@@ -76,7 +76,7 @@
     "vite": "^6.2.4"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.2.6",
+    "@anthropic-ai/claude-agent-sdk": "^0.2.7",
     "@anthropic-ai/sdk": "^0.71.1",
     "@modelcontextprotocol/sdk": "^1.24.3",
     "@radix-ui/react-avatar": "^1.1.11",

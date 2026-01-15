@@ -811,9 +811,13 @@ export class CraftAgent {
             this.lastStderrOutput.shift();
           }
         },
-        // Enable extended prompt cache TTL (1 hour instead of 5 minutes) when configured
-        // The actual TTL injection happens in src/cache-ttl-interceptor.ts
-        ...(useExtendedCache ? { betas: ['extended-cache-ttl-2025-04-11'] as any } : {}),
+        // Beta features:
+        // - advanced-tool-use-2025-11-20: Enhanced tool use capabilities
+        // - extended-cache-ttl-2025-04-11: Extended prompt cache TTL (1 hour instead of 5 minutes)
+        betas: [
+          'advanced-tool-use-2025-11-20',
+          ...(useExtendedCache ? ['extended-cache-ttl-2025-04-11'] : []),
+        ] as any,
         // Extended thinking: set tokens based on model when ultrathink mode is active, otherwise 0
         maxThinkingTokens: this.ultrathinkMode ? getUltrathinkTokens(model) : 0,
         // Option A: Append to Claude Code's system prompt (recommended by docs)

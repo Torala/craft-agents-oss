@@ -1,6 +1,6 @@
 {
   "name": "@craft-agent/tui",
-  "version": "0.2.11",
+  "version": "0.2.12",
   "description": "Terminal UI for Craft Agent",
   "type": "module",
   "main": "src/index.tsx",
