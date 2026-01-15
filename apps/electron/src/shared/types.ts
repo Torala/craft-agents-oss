@@ -326,7 +326,7 @@ export type SessionEvent =
   | { type: 'parent_update'; sessionId: string; toolUseId: string; parentToolUseId: string }
   | { type: 'error'; sessionId: string; error: string }
   | { type: 'typed_error'; sessionId: string; error: TypedError }
-  | { type: 'complete'; sessionId: string }
+  | { type: 'complete'; sessionId: string; tokenUsage?: Session['tokenUsage'] }
   | { type: 'interrupted'; sessionId: string; message?: Message }
   | { type: 'status'; sessionId: string; message: string; statusType?: 'compacting' }
   | { type: 'info'; sessionId: string; message: string; statusType?: 'compaction_complete'; level?: 'info' | 'warning' | 'error' | 'success' }

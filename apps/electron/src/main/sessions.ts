@@ -1223,8 +1223,8 @@ export class SessionManager {
             managed.toolToParentMap.clear()
             managed.pendingTextParent = undefined
 
-            // Send complete event so renderer knows processing stopped
-            this.sendEvent({ type: 'complete', sessionId: managed.id }, managed.workspace.id)
+            // Send complete event so renderer knows processing stopped (include tokenUsage for real-time updates)
+            this.sendEvent({ type: 'complete', sessionId: managed.id, tokenUsage: managed.tokenUsage }, managed.workspace.id)
 
             // Persist session state
             this.persistSession(managed)
@@ -1278,8 +1278,8 @@ export class SessionManager {
           managed.toolToParentMap.clear()
           managed.pendingTextParent = undefined
 
-          // Send complete event so renderer knows processing stopped
-          this.sendEvent({ type: 'complete', sessionId: managed.id }, managed.workspace.id)
+          // Send complete event so renderer knows processing stopped (include tokenUsage for real-time updates)
+          this.sendEvent({ type: 'complete', sessionId: managed.id, tokenUsage: managed.tokenUsage }, managed.workspace.id)
         }
 
         // Emit auth_request event to renderer
@@ -2147,8 +2147,8 @@ export class SessionManager {
       this.sendEvent({ type: 'interrupted', sessionId }, managed.workspace.id)
     }
 
-    // Emit complete since we're stopping and queue is cleared
-    this.sendEvent({ type: 'complete', sessionId }, managed.workspace.id)
+    // Emit complete since we're stopping and queue is cleared (include tokenUsage for real-time updates)
+    this.sendEvent({ type: 'complete', sessionId, tokenUsage: managed.tokenUsage }, managed.workspace.id)
 
     // Persist session
     this.persistSession(managed)
@@ -2182,8 +2182,8 @@ export class SessionManager {
       // Has queued messages - process next
       this.processNextQueuedMessage(sessionId)
     } else {
-      // No queue - emit complete to UI
-      this.sendEvent({ type: 'complete', sessionId }, managed.workspace.id)
+      // No queue - emit complete to UI (include tokenUsage for real-time updates)
+      this.sendEvent({ type: 'complete', sessionId, tokenUsage: managed.tokenUsage }, managed.workspace.id)
     }
 
     // 3. Always persist
