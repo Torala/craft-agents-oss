@@ -1,0 +1,86 @@
+# OSS Sync Allow-List
+# Only files/folders matching these patterns will be synced
+# Lines starting with # are comments
+# Use glob patterns (same as .gitignore syntax)
+
+# =============================================================================
+# ROOT FILES
+# =============================================================================
+.gitignore
+.env.example
+bunfig.toml
+package.json
+bun.lock
+tsconfig.json
+LICENSE
+NOTICE
+TRADEMARK.md
+README.md
+CLAUDE.md
+CODE_OF_CONDUCT.md
+CONTRIBUTING.md
+SECURITY.md
+
+# =============================================================================
+# APPS - ELECTRON (Desktop GUI)
+# =============================================================================
+apps/electron/package.json
+apps/electron/tsconfig.json
+apps/electron/vite.config.ts
+apps/electron/eslint.config.mjs
+apps/electron/components.json
+apps/electron/electron-builder.yml
+apps/electron/README.md
+apps/electron/CLAUDE.md
+apps/electron/.gitignore
+
+# Electron source code
+apps/electron/src/**/*
+
+# Electron resources (icons, themes, backgrounds)
+apps/electron/resources/**/*
+
+# Electron ESLint rules
+apps/electron/eslint-rules/**/*
+
+# Electron build config (public parts)
+apps/electron/build/entitlements.mac.plist
+
+# Electron scripts (public only)
+apps/electron/scripts/self-update.sh
+
+# =============================================================================
+# APPS - VIEWER (Session Viewer Web App)
+# NOTE: Excludes Cloudflare infrastructure (wrangler.toml, functions/)
+# =============================================================================
+apps/viewer/package.json
+apps/viewer/tsconfig.json
+apps/viewer/tsconfig.node.json
+apps/viewer/vite.config.ts
+apps/viewer/index.html
+apps/viewer/public/**/*
+apps/viewer/src/**/*
+
+# =============================================================================
+# PACKAGES - CORE (Type Definitions)
+# =============================================================================
+packages/core/**/*
+
+# =============================================================================
+# PACKAGES - SHARED (Business Logic)
+# =============================================================================
+packages/shared/**/*
+
+# =============================================================================
+# PACKAGES - UI (React Components)
+# =============================================================================
+packages/ui/**/*
+
+# =============================================================================
+# SCRIPTS (Public Only)
+# =============================================================================
+scripts/install-app.sh
+scripts/uninstall-app.sh
+scripts/tail-electron-logs.sh
+scripts/electron-dev.sh
+scripts/sync-version.ts
