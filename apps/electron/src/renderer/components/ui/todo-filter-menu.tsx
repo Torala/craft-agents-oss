@@ -15,10 +15,9 @@ export { type TodoStateId, type TodoState, getStateIcon, getStateColor }
 // Shared Styles (matching slash-command-menu)
 // ============================================================================
 
-const MENU_CONTAINER_STYLE = 'min-w-[140px] overflow-hidden rounded-[8px] bg-background text-foreground shadow-modal-small'
+const MENU_CONTAINER_STYLE = 'min-w-[180px] overflow-hidden rounded-[8px] bg-background text-foreground shadow-modal-small'
 const MENU_LIST_STYLE = 'max-h-[240px] overflow-y-auto p-1 [&_[cmdk-list-sizer]]:space-y-px'
 const MENU_ITEM_STYLE = 'flex cursor-pointer select-none items-center gap-3 rounded-[6px] px-3 py-1.5 text-[13px]'
-const MENU_ITEM_SELECTED = 'bg-accent text-accent-foreground'
 
 // ============================================================================
 // StateItemContent - Shared item rendering
@@ -34,11 +33,6 @@ function StateItemContent({ state }: { state: TodoState }) {
         {state.icon}
       </span>
       <div className="flex-1 min-w-0">{state.label}</div>
-      {state.shortcut && (
-        <kbd className="ml-auto text-[11px] text-muted-foreground/60 uppercase">
-          {state.shortcut}
-        </kbd>
-      )}
     </>
   )
 }
@@ -60,43 +54,44 @@ export function TodoStateMenu({
   onSelect,
   className,
 }: TodoStateMenuProps) {
-  // Build shortcut map for keyboard handling
-  const shortcutMap = React.useMemo(() => {
-    const map = new Map<string, TodoStateId>()
-    for (const state of states) {
-      if (state.shortcut) {
-        map.set(state.shortcut.toLowerCase(), state.id)
-      }
-    }
-    return map
-  }, [states])
+  const [filter, setFilter] = React.useState('')
+  const inputRef = React.useRef<HTMLInputElement>(null)
 
-  const handleKeyDown = React.useCallback((e: React.KeyboardEvent) => {
-    // Only handle single letter keys without modifiers
-    if (e.metaKey || e.ctrlKey || e.altKey) return
+  // Focus input when menu opens
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      inputRef.current?.focus()
+    }, 0)
+    return () => clearTimeout(timer)
+  }, [])
 
-    const key = e.key.toLowerCase()
-    const stateId = shortcutMap.get(key)
-    if (stateId) {
-      e.preventDefault()
-      e.stopPropagation()
-      onSelect(stateId)
-    }
-  }, [shortcutMap, onSelect])
+  // Find default value - prefer active state, otherwise first item
+  const defaultValue = activeState || states[0]?.id
 
   return (
     <CommandPrimitive
       className={cn(MENU_CONTAINER_STYLE, className)}
-      shouldFilter={false}
-      onKeyDown={handleKeyDown}
+      defaultValue={defaultValue}
     >
+      <div className="border-b border-border/50 px-3 py-2">
+        <CommandPrimitive.Input
+          ref={inputRef}
+          value={filter}
+          onValueChange={setFilter}
+          placeholder="Filter statuses..."
+          className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground/50"
+        />
+      </div>
       <CommandPrimitive.List className={MENU_LIST_STYLE}>
+        <CommandPrimitive.Empty className="py-3 text-center text-sm text-muted-foreground">
+          No status found
+        </CommandPrimitive.Empty>
         {states.map((state) => {
           const isActive = activeState === state.id
           return (
             <CommandPrimitive.Item
               key={state.id}
-              value={state.id}
+              value={state.label}
               onSelect={() => onSelect(state.id)}
               className={cn(
                 MENU_ITEM_STYLE,
@@ -112,4 +107,3 @@ export function TodoStateMenu({
     </CommandPrimitive>
   )
 }
-

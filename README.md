@@ -28,19 +28,13 @@ Download from releases or build from source:
 ```bash
 # Clone the repository
 git clone https://github.com/lukilabs/craft-terminal-agent.git
-cd craft-tui-agent
+cd craft-agent
 
 # Install dependencies
 bun install
 
 # Build and run the Electron app
 bun run electron:start
-```
-
-### Quick Install (CLI)
-
-```bash
-curl -fsSL https://agents.craft.do/install.sh | bash
 ```
 
 ## Quick Start
@@ -95,14 +89,13 @@ Use **SHIFT+TAB** to cycle through modes in the chat interface.
 ## Architecture
 
 ```
-craft-tui-agent/
+craft-agent/
 ├── apps/
-│   ├── electron/              # Desktop GUI (primary)
-│   │   └── src/
-│   │       ├── main/          # Electron main process
-│   │       ├── preload/       # Context bridge
-│   │       └── renderer/      # React UI (Vite + shadcn)
-│   └── tui/                   # Terminal CLI (deprecated)
+│   └── electron/              # Desktop GUI (primary)
+│       └── src/
+│           ├── main/          # Electron main process
+│           ├── preload/       # Context bridge
+│           └── renderer/      # React UI (Vite + shadcn)
 └── packages/
     ├── core/                  # Shared types
     └── shared/                # Business logic
@@ -201,8 +194,8 @@ craftagents://action/new-chat             # Create new chat
 Via [GitHub Actions](https://github.com/lukilabs/craft-terminal-agent/actions/workflows/build-and-upload.yml):
 
 1. Go to Actions → "Build and Upload" → Run workflow
-2. Enter version, check "upload to /latest"
-3. Builds for: darwin-arm64, darwin-x64, linux-x64, linux-arm64
+2. Check "upload to /latest" if desired
+3. Builds macOS DMG for both arm64 and x64 architectures
 
 ## Tech Stack
 
@@ -214,10 +207,6 @@ Via [GitHub Actions](https://github.com/lukilabs/craft-terminal-agent/actions/wo
 | UI | [shadcn/ui](https://ui.shadcn.com/) + Tailwind CSS v4 |
 | Build | esbuild (main) + Vite (renderer) |
 | Credentials | AES-256-GCM encrypted file storage |
-
-## Deprecated: Terminal CLI
-
-The TUI (Terminal User Interface) at `apps/tui/` is deprecated. The Electron desktop app is now the primary interface. The TUI code remains for reference but is no longer actively maintained.
 
 ## License
 

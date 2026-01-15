@@ -824,7 +824,14 @@ import { dirname } from 'path';
 import { fileURLToPath } from 'url';
 
 const APP_THEME_FILE = join(CONFIG_DIR, 'theme.json');
-const PRESET_THEMES_DIR = join(CONFIG_DIR, 'themes');
+
+/**
+ * Get the preset themes directory for a workspace.
+ * Themes are now workspace-scoped at ~/.craft-agent/workspaces/{id}/themes/
+ */
+function getWorkspaceThemesDir(workspaceRootPath: string): string {
+  return join(workspaceRootPath, 'themes');
+}
 
 // Get the directory where bundled themes are stored (in the package)
 // Returns null if running in bundled CJS environment where import.meta.url is unavailable
@@ -891,19 +898,22 @@ export function saveWorkspaceTheme(workspaceRootPath: string, theme: ThemeOverri
 }
 
 // ============================================
-// Preset Themes
+// Preset Themes (workspace-scoped)
 // ============================================
 
 /**
  * Ensure preset themes directory exists and has bundled themes.
- * Copies bundled themes from package to ~/.craft-agent/themes/ on first run.
+ * Copies bundled themes from package to workspace themes dir on first run.
  * Only copies if theme doesn't exist (preserves user edits).
+ * @param workspaceRootPath - Path to workspace root directory
  * @param externalBundledDir - Optional path to bundled themes (for Electron)
  */
-export function ensurePresetThemes(externalBundledDir?: string): void {
+export function ensurePresetThemes(workspaceRootPath: string, externalBundledDir?: string): void {
+  const themesDir = getWorkspaceThemesDir(workspaceRootPath);
+
   // Create themes directory if it doesn't exist
-  if (!existsSync(PRESET_THEMES_DIR)) {
-    mkdirSync(PRESET_THEMES_DIR, { recursive: true });
+  if (!existsSync(themesDir)) {
+    mkdirSync(themesDir, { recursive: true });
   }
 
   // Get bundled themes directory - prefer external path (from Electron) over ESM path
@@ -912,11 +922,11 @@ export function ensurePresetThemes(externalBundledDir?: string): void {
     return; // No bundled themes available
   }
 
-  // Copy each bundled theme if it doesn't exist in user's themes dir
+  // Copy each bundled theme if it doesn't exist in workspace themes dir
   try {
     const bundledFiles = readdirSync(bundledDir).filter(f => f.endsWith('.json'));
     for (const file of bundledFiles) {
-      const destPath = join(PRESET_THEMES_DIR, file);
+      const destPath = join(themesDir, file);
       if (!existsSync(destPath)) {
         const srcPath = join(bundledDir, file);
         const content = readFileSync(srcPath, 'utf-8');
@@ -929,24 +939,26 @@ export function ensurePresetThemes(externalBundledDir?: string): void {
 }
 
 /**
- * Load all preset themes from ~/.craft-agent/themes/
+ * Load all preset themes from workspace themes directory.
  * Returns array of PresetTheme objects sorted by name.
+ * @param workspaceRootPath - Path to workspace root directory
  * @param bundledThemesDir - Optional path to bundled themes (for Electron)
  */
-export function loadPresetThemes(bundledThemesDir?: string): PresetTheme[] {
-  ensurePresetThemes(bundledThemesDir);
+export function loadPresetThemes(workspaceRootPath: string, bundledThemesDir?: string): PresetTheme[] {
+  ensurePresetThemes(workspaceRootPath, bundledThemesDir);
 
-  if (!existsSync(PRESET_THEMES_DIR)) {
+  const themesDir = getWorkspaceThemesDir(workspaceRootPath);
+  if (!existsSync(themesDir)) {
     return [];
   }
 
   const themes: PresetTheme[] = [];
 
   try {
-    const files = readdirSync(PRESET_THEMES_DIR).filter(f => f.endsWith('.json'));
+    const files = readdirSync(themesDir).filter(f => f.endsWith('.json'));
     for (const file of files) {
       const id = file.replace('.json', '');
-      const path = join(PRESET_THEMES_DIR, file);
+      const path = join(themesDir, file);
       try {
         const content = readFileSync(path, 'utf-8');
         const theme = JSON.parse(content) as ThemeFile;
@@ -969,12 +981,13 @@ export function loadPresetThemes(bundledThemesDir?: string): PresetTheme[] {
 
 /**
  * Load a specific preset theme by ID.
- * @param id Theme ID (filename without .json)
+ * @param workspaceRootPath - Path to workspace root directory
+ * @param id - Theme ID (filename without .json)
  */
-export function loadPresetTheme(id: string): PresetTheme | null {
-  ensurePresetThemes();
+export function loadPresetTheme(workspaceRootPath: string, id: string): PresetTheme | null {
+  const themesDir = getWorkspaceThemesDir(workspaceRootPath);
+  const path = join(themesDir, `${id}.json`);
 
-  const path = join(PRESET_THEMES_DIR, `${id}.json`);
   if (!existsSync(path)) {
     return null;
   }
@@ -989,23 +1002,29 @@ export function loadPresetTheme(id: string): PresetTheme | null {
 }
 
 /**
- * Get the path to the preset themes directory
+ * Get the path to the preset themes directory for a workspace.
+ * @param workspaceRootPath - Path to workspace root directory
  */
-export function getPresetThemesDir(): string {
-  return PRESET_THEMES_DIR;
+export function getPresetThemesDir(workspaceRootPath: string): string {
+  return getWorkspaceThemesDir(workspaceRootPath);
 }
 
 /**
  * Reset a preset theme to its bundled default.
  * Copies the bundled version over the user's version.
+ * @param workspaceRootPath - Path to workspace root directory
+ * @param id - Theme ID to reset
+ * @param externalBundledDir - Optional path to bundled themes (for Electron)
  */
-export function resetPresetTheme(id: string): boolean {
-  const bundledDir = getBundledThemesDir();
+export function resetPresetTheme(workspaceRootPath: string, id: string, externalBundledDir?: string): boolean {
+  const bundledDir = externalBundledDir ?? getBundledThemesDir();
   if (!bundledDir) {
     return false; // Bundled themes not available in this environment
   }
+
   const bundledPath = join(bundledDir, `${id}.json`);
-  const destPath = join(PRESET_THEMES_DIR, `${id}.json`);
+  const themesDir = getWorkspaceThemesDir(workspaceRootPath);
+  const destPath = join(themesDir, `${id}.json`);
 
   if (!existsSync(bundledPath)) {
     return false;
@@ -1013,8 +1032,8 @@ export function resetPresetTheme(id: string): boolean {
 
   try {
     const content = readFileSync(bundledPath, 'utf-8');
-    if (!existsSync(PRESET_THEMES_DIR)) {
-      mkdirSync(PRESET_THEMES_DIR, { recursive: true });
+    if (!existsSync(themesDir)) {
+      mkdirSync(themesDir, { recursive: true });
     }
     writeFileSync(destPath, content, 'utf-8');
     return true;

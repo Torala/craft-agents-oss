@@ -142,6 +142,7 @@ export function createSession(
     workingDirectory?: string;
     permissionMode?: SessionConfig['permissionMode'];
     enabledSourceSlugs?: string[];
+    model?: string;
   }
 ): SessionConfig {
   ensureSessionsDir(workspaceRootPath);
@@ -167,6 +168,7 @@ export function createSession(
     sdkCwd,
     permissionMode: options?.permissionMode,
     enabledSourceSlugs: options?.enabledSourceSlugs,
+    model: options?.model,
   };
 
   // Save empty session
@@ -366,6 +368,7 @@ function headerToMetadata(header: SessionHeader, workspaceRootPath: string): Ses
       lastMessageRole: header.lastMessageRole,
       workingDirectory: workingDir,
       sdkCwd,
+      model: header.model,
     };
   } catch {
     return null;
@@ -467,6 +470,7 @@ export function updateSessionMetadata(
     | 'permissionMode'
     | 'sharedUrl'
     | 'sharedId'
+    | 'model'
   >>
 ): void {
   const session = loadSession(workspaceRootPath, sessionId);
@@ -481,6 +485,7 @@ export function updateSessionMetadata(
   if ('lastReadMessageId' in updates) session.lastReadMessageId = updates.lastReadMessageId;
   if ('sharedUrl' in updates) session.sharedUrl = updates.sharedUrl;
   if ('sharedId' in updates) session.sharedId = updates.sharedId;
+  if (updates.model !== undefined) session.model = updates.model;
 
   saveSession(session);
 }

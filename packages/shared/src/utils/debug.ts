@@ -8,7 +8,7 @@ let debugEnabled = process.env.CRAFT_DEBUG === '1';
 /**
  * Runtime environment detection
  */
-type Environment = 'electron-main' | 'electron-renderer' | 'tui' | 'cli';
+type Environment = 'electron-main' | 'electron-renderer' | 'cli';
 
 function detectEnvironment(): Environment {
   // Electron main process
@@ -18,10 +18,6 @@ function detectEnvironment(): Environment {
   // Electron renderer process
   if (typeof process !== 'undefined' && (process as any).type === 'renderer') {
     return 'electron-renderer';
-  }
-  // TUI (Ink-based) - set by TUI entry point
-  if (typeof process !== 'undefined' && process.env.CRAFT_TUI === '1') {
-    return 'tui';
   }
   // Default: CLI/scripts
   return 'cli';
@@ -81,27 +77,24 @@ function formatMessage(scope: string | undefined, message: string, args: unknown
  * |-------------------|---------|------|
  * | electron-main     | ✓       | ✓    |
  * | electron-renderer | ✓       | -    |
- * | tui               | -       | ✓    |
  * | cli (CRAFT_DEBUG) | ✓       | ✓    |
  * | cli (no debug)    | ✓       | -    |
  */
 function output(formatted: string): void {
   const env = detectEnvironment();
 
-  // Console output (except TUI which uses stdout for Ink)
-  if (env !== 'tui') {
-    if (env === 'electron-renderer') {
-      // Use console.log in renderer for DevTools
-      console.log(formatted.trim());
-    } else {
-      // Use stderr in main/cli to avoid stdout interference
-      process.stderr.write(formatted);
-    }
+  // Console output
+  if (env === 'electron-renderer') {
+    // Use console.log in renderer for DevTools
+    console.log(formatted.trim());
+  } else {
+    // Use stderr in main/cli to avoid stdout interference
+    process.stderr.write(formatted);
   }
 
-  // File output (TUI, Electron main, and CLI with CRAFT_DEBUG)
+  // File output (Electron main, and CLI with CRAFT_DEBUG)
   // CLI includes SDK subprocess - needs file output to aggregate logs with parent process
-  if (env === 'tui' || env === 'electron-main' || (env === 'cli' && debugEnabled)) {
+  if (env === 'electron-main' || (env === 'cli' && debugEnabled)) {
     try {
       appendFileSync(LOG_FILE, formatted);
     } catch {
@@ -117,7 +110,6 @@ function output(formatted: string): void {
  * Output routing:
  * - Electron main: console + file
  * - Electron renderer: console (DevTools)
- * - TUI: file only (avoids stdout/stderr interference with Ink)
  * - CLI/scripts: console only
  *
  * @example

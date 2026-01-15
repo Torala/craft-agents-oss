@@ -38,6 +38,8 @@ export interface SessionTokenUsage {
   costUsd: number;
   cacheReadTokens?: number;
   cacheCreationTokens?: number;
+  /** Model's context window size in tokens (from SDK modelUsage) */
+  contextWindow?: number;
 }
 
 /**
@@ -77,6 +79,8 @@ export interface SessionConfig {
   sharedUrl?: string;
   /** Shared session ID in viewer (for revoke) */
   sharedId?: string;
+  /** Model to use for this session (overrides global config if set) */
+  model?: string;
 }
 
 /**
@@ -121,6 +125,8 @@ export interface SessionHeader {
   sharedUrl?: string;
   /** Shared session ID in viewer (for revoke) */
   sharedId?: string;
+  /** Model to use for this session (overrides global config if set) */
+  model?: string;
   // Pre-computed fields for fast list loading
   /** Number of messages in session */
   messageCount: number;
@@ -163,4 +169,6 @@ export interface SessionMetadata {
   sdkCwd?: string;
   /** Role/type of the last message (for badge display without loading messages) */
   lastMessageRole?: 'user' | 'assistant' | 'plan' | 'tool' | 'error';
+  /** Model to use for this session (overrides global config if set) */
+  model?: string;
 }

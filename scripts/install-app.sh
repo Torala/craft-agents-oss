@@ -22,7 +22,7 @@ error() { printf "%b\n" "${RED}x${NC} $1"; exit 1; }
 
 # Check for macOS
 if [ "$(uname -s)" != "Darwin" ]; then
-    error "This installer is for macOS only. For Linux, use the TUI version: curl -fsSL https://agents.craft.do/install.sh | bash"
+    error "This installer is for macOS only. Linux is not currently supported."
 fi
 
 # Check for required dependencies

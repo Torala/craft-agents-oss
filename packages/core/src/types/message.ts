@@ -72,11 +72,13 @@ export interface StoredAttachment {
   type: AttachmentType;
   name: string;                  // Original filename
   mimeType: string;
-  size: number;
+  size: number;                  // Final size (after any resize)
+  originalSize?: number;         // Original size before resize (if applicable)
   storedPath: string;            // Full path to copied file on disk
   thumbnailPath?: string;        // Path to OS-generated thumbnail (images/PDFs/Office)
   thumbnailBase64?: string;      // Base64-encoded thumbnail PNG (for renderer display)
   markdownPath?: string;         // For Office files: converted markdown for Claude
+  wasResized?: boolean;          // True if image was auto-resized for Claude API limits
 }
 
 /**
@@ -310,6 +312,8 @@ export interface AgentEventUsage {
   cacheReadTokens?: number;
   cacheCreationTokens?: number;
   costUsd?: number;
+  /** Model's context window size in tokens (from SDK modelUsage) */
+  contextWindow?: number;
 }
 
 /**

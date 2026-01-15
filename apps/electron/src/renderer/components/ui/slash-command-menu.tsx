@@ -1,6 +1,7 @@
 import * as React from 'react'
 import { Command as CommandPrimitive } from 'cmdk'
 import { Brain, Check } from 'lucide-react'
+import { Icon_Folder } from '@craft-agent/ui'
 import { cn } from '@/lib/utils'
 import { PERMISSION_MODE_CONFIG, PERMISSION_MODE_ORDER, type PermissionMode } from '@craft-agent/shared/agent/modes'
 
@@ -10,6 +11,9 @@ import { PERMISSION_MODE_CONFIG, PERMISSION_MODE_ORDER, type PermissionMode } fr
 
 export type SlashCommandId = 'safe' | 'ask' | 'allow-all' | 'ultrathink'
 
+/** Union type for all item types in the slash menu */
+export type SlashItemType = 'command' | 'folder'
+
 export interface SlashCommand {
   id: SlashCommandId
   label: string
@@ -18,6 +22,22 @@ export interface SlashCommand {
   shortcut?: string
   /** Hex color for active state (derived from config) */
   color?: string
+}
+
+/** Folder item for the slash menu */
+export interface SlashFolderItem {
+  id: string
+  type: 'folder'
+  label: string
+  description: string
+  path: string
+}
+
+/** Section with header for the inline slash menu */
+export interface SlashSection {
+  id: string
+  label: string
+  items: (SlashCommand | SlashFolderItem)[]
 }
 
 export interface CommandGroup {
@@ -93,12 +113,13 @@ export const DEFAULT_SLASH_COMMAND_GROUPS: CommandGroup[] = [
 // ============================================================================
 
 const MENU_CONTAINER_STYLE = 'min-w-[200px] overflow-hidden rounded-[8px] bg-background text-foreground shadow-modal-small'
-const MENU_LIST_STYLE = 'max-h-[240px] overflow-y-auto p-1'
-const MENU_ITEM_STYLE = 'flex cursor-pointer select-none items-center gap-3 rounded-[6px] px-3 py-2 text-[13px]'
+const MENU_LIST_STYLE = 'max-h-[260px] overflow-y-auto py-1'
+const MENU_ITEM_STYLE = 'flex cursor-pointer select-none items-center gap-3 rounded-[6px] mx-1 px-2 py-1.5 text-[13px]'
 const MENU_ITEM_SELECTED = 'bg-foreground/5'
+const MENU_SECTION_HEADER = 'px-3 py-1.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider'
 
 // ============================================================================
-// Shared: Filter commands utility
+// Shared: Filter utilities
 // ============================================================================
 
 function filterCommands(commands: SlashCommand[], filter: string): SlashCommand[] {
@@ -109,6 +130,32 @@ function filterCommands(commands: SlashCommand[], filter: string): SlashCommand[
       cmd.label.toLowerCase().includes(lowerFilter) ||
       cmd.id.toLowerCase().includes(lowerFilter)
   )
+}
+
+/** Check if an item is a folder */
+function isFolder(item: SlashCommand | SlashFolderItem): item is SlashFolderItem {
+  return 'type' in item && item.type === 'folder'
+}
+
+/** Filter sections by label/id */
+function filterSections(sections: SlashSection[], filter: string): SlashSection[] {
+  if (!filter) return sections
+  const lowerFilter = filter.toLowerCase()
+  return sections
+    .map(section => ({
+      ...section,
+      items: section.items.filter(item =>
+        item.label.toLowerCase().includes(lowerFilter) ||
+        item.id.toLowerCase().includes(lowerFilter) ||
+        item.description?.toLowerCase().includes(lowerFilter)
+      ),
+    }))
+    .filter(section => section.items.length > 0)
+}
+
+/** Flatten sections into a single array of items */
+function flattenSections(sections: SlashSection[]): (SlashCommand | SlashFolderItem)[] {
+  return sections.flatMap(section => section.items)
 }
 
 // ============================================================================
@@ -260,9 +307,10 @@ export function SlashCommandMenu({
 export interface InlineSlashCommandProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  commands: SlashCommand[]
+  sections: SlashSection[]
   activeCommands?: SlashCommandId[]
-  onSelect: (commandId: SlashCommandId) => void
+  onSelectCommand: (commandId: SlashCommandId) => void
+  onSelectFolder: (path: string) => void
   filter?: string
   position: { x: number; y: number }
   className?: string
@@ -271,21 +319,43 @@ export interface InlineSlashCommandProps {
 export function InlineSlashCommand({
   open,
   onOpenChange,
-  commands,
+  sections,
   activeCommands = [],
-  onSelect,
+  onSelectCommand,
+  onSelectFolder,
   filter = '',
   position,
   className,
 }: InlineSlashCommandProps) {
   const menuRef = React.useRef<HTMLDivElement>(null)
+  const listRef = React.useRef<HTMLDivElement>(null)
   const [selectedIndex, setSelectedIndex] = React.useState(0)
-  const filteredCommands = filterCommands(commands, filter)
+  const filteredSections = filterSections(sections, filter)
+  const flatItems = flattenSections(filteredSections)
 
   // Reset selection when filter changes
   React.useEffect(() => {
     setSelectedIndex(0)
   }, [filter])
+
+  // Scroll selected item into view
+  React.useEffect(() => {
+    if (!listRef.current) return
+    const selectedEl = listRef.current.querySelector('[data-selected="true"]')
+    if (selectedEl) {
+      selectedEl.scrollIntoView({ block: 'nearest' })
+    }
+  }, [selectedIndex])
+
+  // Handle item selection
+  const handleSelect = React.useCallback((item: SlashCommand | SlashFolderItem) => {
+    if (isFolder(item)) {
+      onSelectFolder(item.path)
+    } else {
+      onSelectCommand(item.id)
+    }
+    onOpenChange(false)
+  }, [onSelectCommand, onSelectFolder, onOpenChange])
 
   // Keyboard navigation
   React.useEffect(() => {
@@ -295,18 +365,17 @@ export function InlineSlashCommand({
       switch (e.key) {
         case 'ArrowDown':
           e.preventDefault()
-          setSelectedIndex(prev => (prev < filteredCommands.length - 1 ? prev + 1 : 0))
+          setSelectedIndex(prev => (prev < flatItems.length - 1 ? prev + 1 : 0))
           break
         case 'ArrowUp':
           e.preventDefault()
-          setSelectedIndex(prev => (prev > 0 ? prev - 1 : filteredCommands.length - 1))
+          setSelectedIndex(prev => (prev > 0 ? prev - 1 : flatItems.length - 1))
           break
         case 'Enter':
         case 'Tab':
           e.preventDefault()
-          if (filteredCommands[selectedIndex]) {
-            onSelect(filteredCommands[selectedIndex].id)
-            onOpenChange(false)
+          if (flatItems[selectedIndex]) {
+            handleSelect(flatItems[selectedIndex])
           }
           break
         case 'Escape':
@@ -318,7 +387,7 @@ export function InlineSlashCommand({
 
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [open, filteredCommands, selectedIndex, onSelect, onOpenChange])
+  }, [open, flatItems, selectedIndex, handleSelect, onOpenChange])
 
   // Close on click outside
   React.useEffect(() => {
@@ -335,41 +404,85 @@ export function InlineSlashCommand({
   }, [open, onOpenChange])
 
   // Hide if no results or not open
-  if (!open || filteredCommands.length === 0) return null
+  if (!open || flatItems.length === 0) return null
 
   // Calculate bottom position from window height (menu appears above cursor)
   const bottomPosition = typeof window !== 'undefined'
     ? window.innerHeight - Math.round(position.y) + 8
     : 0
 
+  // Track current item index across all sections
+  let currentItemIndex = 0
+
   return (
     <div
       ref={menuRef}
       className={cn('fixed z-50', MENU_CONTAINER_STYLE, className)}
-      style={{ left: Math.round(position.x) - 10, bottom: bottomPosition }}
+      style={{ left: Math.round(position.x) - 10, bottom: bottomPosition, minWidth: 220, maxWidth: 260 }}
     >
-      <div className={MENU_LIST_STYLE}>
-        {filteredCommands.map((cmd, index) => {
-          const isActive = activeCommands.includes(cmd.id)
-          const isSelected = index === selectedIndex
-          return (
-            <div
-              key={cmd.id}
-              onClick={() => {
-                onSelect(cmd.id)
-                onOpenChange(false)
-              }}
-              onMouseEnter={() => setSelectedIndex(index)}
-              className={cn(
-                MENU_ITEM_STYLE,
-                // Hover/selection state
-                isSelected && MENU_ITEM_SELECTED
-              )}
-            >
-              <CommandItemContent command={cmd} isActive={isActive} />
+      <div ref={listRef} className={MENU_LIST_STYLE}>
+        {filteredSections.map((section, sectionIndex) => (
+          <React.Fragment key={section.id}>
+            {/* Section header */}
+            <div className={MENU_SECTION_HEADER}>
+              {section.label}
             </div>
-          )
-        })}
+
+            {/* Section items */}
+            {section.items.map((item) => {
+              const itemIndex = currentItemIndex++
+              const isSelected = itemIndex === selectedIndex
+
+              if (isFolder(item)) {
+                // Folder item - single line with path
+                return (
+                  <div
+                    key={`${section.id}-${item.id}`}
+                    data-selected={isSelected}
+                    onClick={() => handleSelect(item)}
+                    onMouseEnter={() => setSelectedIndex(itemIndex)}
+                    className={cn(
+                      MENU_ITEM_STYLE,
+                      isSelected && MENU_ITEM_SELECTED
+                    )}
+                  >
+                    <div className="shrink-0">
+                      <div className="h-5 w-5 rounded-[4px] bg-foreground/5 flex items-center justify-center">
+                        <Icon_Folder className="h-3.5 w-3.5 text-muted-foreground" strokeWidth={1.75} />
+                      </div>
+                    </div>
+                    <div className="flex-1 min-w-0 truncate">
+                      <span className="font-medium">{item.label}</span>
+                      <span className="text-[11px] text-foreground/50 ml-1.5">{item.description}</span>
+                    </div>
+                  </div>
+                )
+              } else {
+                // Command item
+                const isActive = activeCommands.includes(item.id)
+                return (
+                  <div
+                    key={item.id}
+                    data-selected={isSelected}
+                    onClick={() => handleSelect(item)}
+                    onMouseEnter={() => setSelectedIndex(itemIndex)}
+                    className={cn(
+                      MENU_ITEM_STYLE,
+                      isSelected && MENU_ITEM_SELECTED
+                    )}
+                  >
+                    <CommandItemContent command={item} isActive={isActive} />
+                  </div>
+                )
+              }
+            })}
+
+            {/* Separator between sections (not after last) */}
+            {sectionIndex < filteredSections.length - 1 && (
+              <div className="h-px bg-border/50 my-1 mx-2" />
+            )}
+          </React.Fragment>
+        ))}
       </div>
     </div>
   )
@@ -382,31 +495,57 @@ export function InlineSlashCommand({
 /** Interface for elements that can be used with useInlineSlashCommand */
 export interface SlashCommandInputElement {
   getBoundingClientRect: () => DOMRect
+  getCaretRect?: () => DOMRect | null
   value: string
   selectionStart: number
+}
+
+/**
+ * Format path for display, shortening home directory
+ */
+function formatPathForDisplay(path: string, homeDir?: string): string {
+  if (homeDir && path.startsWith(homeDir)) {
+    return '~' + path.slice(homeDir.length)
+  }
+  return path
+}
+
+/**
+ * Get folder name from path
+ */
+function getFolderName(path: string): string {
+  return path.split('/').pop() || path
 }
 
 export interface UseInlineSlashCommandOptions {
   /** Ref to input element (textarea or RichTextInput handle) */
   inputRef: React.RefObject<SlashCommandInputElement | null>
-  onSelect: (commandId: SlashCommandId) => void
+  onSelectCommand: (commandId: SlashCommandId) => void
+  onSelectFolder: (path: string) => void
   activeCommands?: SlashCommandId[]
+  recentFolders?: string[]
+  homeDir?: string
 }
 
 export interface UseInlineSlashCommandReturn {
   isOpen: boolean
   filter: string
   position: { x: number; y: number }
+  sections: SlashSection[]
   handleInputChange: (value: string, cursorPosition: number) => void
   close: () => void
   activeCommands: SlashCommandId[]
-  handleSelect: (commandId: SlashCommandId) => string
+  handleSelectCommand: (commandId: SlashCommandId) => string
+  handleSelectFolder: (path: string) => string
 }
 
 export function useInlineSlashCommand({
   inputRef,
-  onSelect,
+  onSelectCommand,
+  onSelectFolder,
   activeCommands = [],
+  recentFolders = [],
+  homeDir,
 }: UseInlineSlashCommandOptions): UseInlineSlashCommandReturn {
   const [isOpen, setIsOpen] = React.useState(false)
   const [filter, setFilter] = React.useState('')
@@ -415,6 +554,42 @@ export function useInlineSlashCommand({
   // Store current input state for handleSelect
   const currentInputRef = React.useRef({ value: '', cursorPosition: 0 })
 
+  // Build sections from commands and folders
+  const sections = React.useMemo((): SlashSection[] => {
+    const result: SlashSection[] = []
+
+    // Modes section
+    result.push({
+      id: 'modes',
+      label: 'Modes',
+      items: permissionModeCommands,
+    })
+
+    // Features section
+    result.push({
+      id: 'features',
+      label: 'Features',
+      items: [ultrathinkCommand],
+    })
+
+    // Recent folders section
+    if (recentFolders.length > 0) {
+      result.push({
+        id: 'folders',
+        label: 'Recent Folders',
+        items: recentFolders.slice(0, 4).map(path => ({
+          id: path,
+          type: 'folder' as const,
+          label: getFolderName(path),
+          description: formatPathForDisplay(path, homeDir),
+          path,
+        })),
+      })
+    }
+
+    return result
+  }, [recentFolders, homeDir])
+
   const handleInputChange = React.useCallback((value: string, cursorPosition: number) => {
     // Store current state for handleSelect
     currentInputRef.current = { value, cursorPosition }
@@ -422,25 +597,34 @@ export function useInlineSlashCommand({
     const textBeforeCursor = value.slice(0, cursorPosition)
     const slashMatch = textBeforeCursor.match(/(?:^|\s)\/(\w*)$/)
 
-    if (slashMatch) {
+    // Only show menu if we have sections with items
+    const hasItems = sections.some(s => s.items.length > 0)
+
+    if (slashMatch && hasItems) {
       const matchStart = textBeforeCursor.lastIndexOf('/')
       setSlashStart(matchStart)
       setFilter(slashMatch[1] || '')
 
       if (inputRef.current) {
-        const rect = inputRef.current.getBoundingClientRect()
+        // Try to get actual caret position from the input element
+        const caretRect = inputRef.current.getCaretRect?.()
 
-        // For position calculation, use a simplified approach
-        const lineHeight = 20 // Approximate line height
-        const charWidth = 8 // Approximate character width
-        const linesBeforeCursor = textBeforeCursor.split('\n').length - 1
-        const charsOnCurrentLine = textBeforeCursor.split('\n').pop()?.length || 0
-
-        // Position above the current line (menu appears above cursor)
-        setPosition({
-          x: rect.left + Math.min(charsOnCurrentLine * charWidth, rect.width - 100),
-          y: rect.top + (linesBeforeCursor + 1) * lineHeight,
-        })
+        if (caretRect && caretRect.x > 0) {
+          // Use actual caret position
+          setPosition({
+            x: caretRect.x,
+            y: caretRect.y,
+          })
+        } else {
+          // Fallback: position at input element's left edge
+          const rect = inputRef.current.getBoundingClientRect()
+          const lineHeight = 20
+          const linesBeforeCursor = textBeforeCursor.split('\n').length - 1
+          setPosition({
+            x: rect.left,
+            y: rect.top + (linesBeforeCursor + 1) * lineHeight,
+          })
+        }
       }
 
       setIsOpen(true)
@@ -449,9 +633,9 @@ export function useInlineSlashCommand({
       setFilter('')
       setSlashStart(-1)
     }
-  }, [inputRef])
+  }, [inputRef, sections])
 
-  const handleSelect = React.useCallback((commandId: SlashCommandId): string => {
+  const handleSelectCommand = React.useCallback((commandId: SlashCommandId): string => {
     // Capture values BEFORE any state changes to avoid race conditions
     let result = ''
     if (slashStart >= 0) {
@@ -462,11 +646,30 @@ export function useInlineSlashCommand({
     }
 
     // Now safe to trigger state changes
-    onSelect(commandId)
+    onSelectCommand(commandId)
     setIsOpen(false)
 
     return result
-  }, [onSelect, slashStart])
+  }, [onSelectCommand, slashStart])
+
+  const handleSelectFolder = React.useCallback((path: string): string => {
+    // Capture values BEFORE any state changes to avoid race conditions
+    let result = ''
+    if (slashStart >= 0) {
+      const { value: currentValue, cursorPosition } = currentInputRef.current
+      const before = currentValue.slice(0, slashStart)
+      const after = currentValue.slice(cursorPosition)
+      // Insert [dir:/path] badge instead of just removing the /
+      const mentionText = `[dir:${path}] `
+      result = before + mentionText + after
+    }
+
+    // Now safe to trigger state changes
+    onSelectFolder(path)
+    setIsOpen(false)
+
+    return result
+  }, [onSelectFolder, slashStart])
 
   const close = React.useCallback(() => {
     setIsOpen(false)
@@ -478,9 +681,11 @@ export function useInlineSlashCommand({
     isOpen,
     filter,
     position,
+    sections,
     handleInputChange,
     close,
     activeCommands,
-    handleSelect,
+    handleSelectCommand,
+    handleSelectFolder,
   }
 }

@@ -11,36 +11,21 @@ if (!process.env.S3_VERSIONS_BUCKET_ENDPOINT || !process.env.S3_VERSIONS_BUCKET_
 
 const isLatest = process.argv.includes('--latest');
 const uploadScript = process.argv.includes('--script');
-const uploadElectron = process.argv.includes('--electron');
 const scriptDir = import.meta.dir;
 const repoRoot = dirname(scriptDir);
-const buildDir = join(repoRoot, '.build');
-const manifestPath = join(buildDir, "upload", 'manifest.json');
-const installScriptPath = join(repoRoot, 'scripts', 'install.sh');
 const installAppScriptPath = join(repoRoot, 'scripts', 'install-app.sh');
 const electronReleaseDir = join(repoRoot, 'apps', 'electron', 'release');
-console.log(`Manifest path: ${buildDir}`);
 
-// Read manifest to get version
-let manifest: { version: string };
-try {
-  manifest = JSON.parse(readFileSync(manifestPath, 'utf-8'));
-} catch (error) {
-  console.error('Failed to read manifest.json from .build directory');
-  console.error('Run the build script first: bun run scripts/build.ts <version>');
-  process.exit(1);
-}
+// Get version from package.json
+const packageJson = JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf-8'));
+const version = packageJson.version;
 
-const version = manifest.version;
-console.log(`Uploading version ${version}...`);
+console.log(`Uploading Electron version ${version}...`);
 if (isLatest) {
-  console.log('Will also update /latest folder');
+  console.log('Will also update electron/latest');
 }
 if (uploadScript) {
-  console.log('Will also upload install.sh');
-}
-if (uploadElectron) {
-  console.log('Will upload Electron DMG files');
+  console.log('Will also upload install-app.sh');
 }
 console.log('');
 
@@ -76,34 +61,6 @@ async function deleteFolder(prefix: string) {
   }));
 
   console.log(`  Deleted ${deleteResponse.Deleted?.length || 0} files`);
-}
-
-async function uploadFolder(prefix: string) {
-  console.log(`Uploading to ${prefix}...`);
-
-  const files = readdirSync(join(buildDir, "upload"));
-
-  for (const file of files) {
-    const filePath = join(buildDir, "upload", file);
-    const content = readFileSync(filePath);
-    const key = `${prefix}${file}`;
-
-    // Determine content type
-    let contentType = 'application/octet-stream';
-    if (file.endsWith('.json')) {
-      contentType = 'application/json';
-    }
-
-    await s3.send(new PutObjectCommand({
-      Bucket: BUCKET,
-      Key: key,
-      Body: content,
-      ContentType: contentType,
-      CacheControl: 'no-cache, no-store, must-revalidate',
-    }));
-
-    console.log(`  ✓ ${key} (${(content.length / 1024 / 1024).toFixed(2)} MB)`);
-  }
 }
 
 function computeSha256(filePath: string): string {
@@ -244,7 +201,7 @@ async function uploadElectronBuilds(version: string) {
     console.log('  ✓ electron/latest');
   }
 
-  // Upload install-app.sh if --script is also set
+  // Upload install-app.sh if --script is set
   if (uploadScript) {
     console.log('Uploading install-app.sh...');
     const content = readFileSync(installAppScriptPath);
@@ -258,47 +215,11 @@ async function uploadElectronBuilds(version: string) {
     console.log(`  ✓ install-app.sh (${(content.length / 1024).toFixed(2)} KB)`);
   }
 
-  console.log('Electron upload complete!');
+  console.log('Upload complete!');
 }
 
 try {
-  // Upload Electron builds if --electron flag is set
-  if (uploadElectron) {
-    await uploadElectronBuilds(version);
-  } else {
-    // Upload TUI CLI builds (default behavior)
-    const versionPrefix = `${version}/`;
-    await deleteFolder(versionPrefix);
-    await uploadFolder(versionPrefix);
-    console.log('');
-
-    // If --latest, also update latest folder
-    if (isLatest) {
-      const latestPrefix = 'latest';
-      await s3.send(new PutObjectCommand({
-        Bucket: BUCKET,
-        Key: latestPrefix,
-        Body: JSON.stringify({ version }),
-        ContentType: 'application/json',
-      }));
-    }
-
-    // If --script, upload install.sh to bucket root
-    if (uploadScript) {
-      console.log('Uploading install.sh...');
-      const content = readFileSync(installScriptPath);
-      await s3.send(new PutObjectCommand({
-        Bucket: BUCKET,
-        Key: 'install.sh',
-        Body: content,
-        ContentType: 'text/x-shellscript',
-        CacheControl: 'no-cache, no-store, must-revalidate',
-      }));
-      console.log(`  ✓ install.sh (${(content.length / 1024).toFixed(2)} KB)`);
-    }
-  }
-
-  console.log('Upload complete!');
+  await uploadElectronBuilds(version);
 } catch (error) {
   console.error('Upload failed:', error);
   process.exit(1);

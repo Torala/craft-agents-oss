@@ -10,7 +10,7 @@ import { WindowManager } from './window-manager'
 import { UnifiedPreviewWindowManager } from './unified-preview-window'
 import { registerOnboardingHandlers } from './onboarding'
 import { IPC_CHANNELS, type FileAttachment, type StoredAttachment, type AuthType, type BillingMethodInfo, type SendMessageOptions, type PreviewData } from '../shared/types'
-import { readFileAttachment, perf } from '@craft-agent/shared/utils'
+import { readFileAttachment, perf, validateImageForClaudeAPI, IMAGE_LIMITS } from '@craft-agent/shared/utils'
 import { getAiCreditTopUpUrl } from '@craft-agent/shared/auth'
 import { getAuthType, setAuthType, getPreferencesPath, getModel, setModel, getSessionDraft, setSessionDraft, deleteSessionDraft, getAllSessionDrafts, getDefaultPermissionMode, setDefaultPermissionMode, getWorkspaceByNameOrId, addWorkspace, setActiveWorkspace, type Workspace } from '@craft-agent/shared/config'
 import { getSessionAttachmentsPath } from '@craft-agent/shared/sessions'
@@ -507,14 +507,63 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
       const storedFileName = `${id}_${safeName}`
       const storedPath = join(attachmentsDir, storedFileName)
 
-      // 1. Save the file
+      // Track if image was resized (for return value)
+      let wasResized = false
+      let finalSize = attachment.size
+
+      // 1. Save the file (with image validation and resizing)
       if (attachment.base64) {
         // Images, PDFs, Office files - decode from base64
-        const decoded = Buffer.from(attachment.base64, 'base64')
+        let decoded = Buffer.from(attachment.base64, 'base64')
         // Validate decoded size matches expected (allow small variance for encoding overhead)
         if (Math.abs(decoded.length - attachment.size) > 100) {
           throw new Error(`Attachment corrupted: size mismatch (expected ${attachment.size}, got ${decoded.length})`)
         }
+
+        // For images: validate and resize if needed for Claude API compatibility
+        if (attachment.type === 'image') {
+          // Get image dimensions using nativeImage
+          const image = nativeImage.createFromBuffer(decoded)
+          const imageSize = image.getSize()
+
+          // Validate image for Claude API
+          const validation = validateImageForClaudeAPI(decoded.length, imageSize.width, imageSize.height)
+
+          if (!validation.valid) {
+            // Hard error - reject the image
+            throw new Error(validation.error)
+          }
+
+          // If resize is recommended, do it now
+          if (validation.needsResize && validation.suggestedSize) {
+            ipcLog.info(`Resizing image from ${imageSize.width}×${imageSize.height} to ${validation.suggestedSize.width}×${validation.suggestedSize.height}`)
+
+            const resized = image.resize({
+              width: validation.suggestedSize.width,
+              height: validation.suggestedSize.height,
+              quality: 'best',
+            })
+
+            // Get as PNG for best quality (or JPEG for photos to save space)
+            const isPhoto = attachment.mimeType === 'image/jpeg'
+            decoded = isPhoto ? resized.toJPEG(90) : resized.toPNG()
+            wasResized = true
+            finalSize = decoded.length
+
+            // Re-validate final size after resize (should be much smaller)
+            if (decoded.length > IMAGE_LIMITS.MAX_SIZE) {
+              // Even after resize it's too big - try more aggressive compression
+              decoded = resized.toJPEG(75)
+              finalSize = decoded.length
+              if (decoded.length > IMAGE_LIMITS.MAX_SIZE) {
+                throw new Error(`Image still too large after resize (${(decoded.length / 1024 / 1024).toFixed(1)}MB). Please use a smaller image.`)
+              }
+            }
+
+            ipcLog.info(`Image resized: ${attachment.size} → ${finalSize} bytes (${Math.round((1 - finalSize / attachment.size) * 100)}% reduction)`)
+          }
+        }
+
         await writeFile(storedPath, decoded)
         filesToCleanup.push(storedPath)
       } else if (attachment.text) {
@@ -570,16 +619,19 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
       }
 
       // Return StoredAttachment metadata
+      // Include wasResized flag so UI can show notification
       return {
         id,
         type: attachment.type,
         name: attachment.name,
         mimeType: attachment.mimeType,
-        size: attachment.size,
+        size: finalSize, // Use final size (may differ if resized)
+        originalSize: wasResized ? attachment.size : undefined, // Track original if resized
         storedPath,
         thumbnailPath,
         thumbnailBase64,
         markdownPath,
+        wasResized,
       }
     } catch (error) {
       // Clean up any files we've written before the error
@@ -842,6 +894,18 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
   ipcMain.handle(IPC_CHANNELS.SETTINGS_SET_MODEL, async (_event, model: string) => {
     setModel(model)
     ipcLog.info(`Model updated to: ${model}`)
+  })
+
+  // Get session-specific model
+  ipcMain.handle(IPC_CHANNELS.SESSION_GET_MODEL, async (_event, sessionId: string, _workspaceId: string): Promise<string | null> => {
+    const session = await sessionManager.getSession(sessionId)
+    return session?.model ?? null
+  })
+
+  // Set session-specific model
+  ipcMain.handle(IPC_CHANNELS.SESSION_SET_MODEL, async (_event, sessionId: string, workspaceId: string, model: string | null) => {
+    await sessionManager.updateSessionModel(sessionId, workspaceId, model)
+    ipcLog.info(`Session ${sessionId} model updated to: ${model}`)
   })
 
   // Open native folder dialog for selecting working directory
@@ -1574,17 +1638,25 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
     return loadWorkspaceTheme(workspace.rootPath)
   })
 
-  // Preset themes
-  ipcMain.handle(IPC_CHANNELS.THEME_GET_PRESETS, async () => {
+  // Preset themes (workspace-scoped)
+  ipcMain.handle(IPC_CHANNELS.THEME_GET_PRESETS, async (_event, workspaceId: string) => {
+    const workspace = getWorkspaceByNameOrId(workspaceId)
+    if (!workspace) {
+      return []
+    }
     const { loadPresetThemes } = await import('@craft-agent/shared/config/storage')
     // Pass bundled themes path from Electron resources (dist/resources/themes)
     const bundledThemesDir = join(__dirname, 'resources/themes')
-    return loadPresetThemes(bundledThemesDir)
+    return loadPresetThemes(workspace.rootPath, bundledThemesDir)
   })
 
-  ipcMain.handle(IPC_CHANNELS.THEME_LOAD_PRESET, async (_event, themeId: string) => {
+  ipcMain.handle(IPC_CHANNELS.THEME_LOAD_PRESET, async (_event, workspaceId: string, themeId: string) => {
+    const workspace = getWorkspaceByNameOrId(workspaceId)
+    if (!workspace) {
+      return null
+    }
     const { loadPresetTheme } = await import('@craft-agent/shared/config/storage')
-    return loadPresetTheme(themeId)
+    return loadPresetTheme(workspace.rootPath, themeId)
   })
 
   ipcMain.handle(IPC_CHANNELS.THEME_GET_COLOR_THEME, async () => {

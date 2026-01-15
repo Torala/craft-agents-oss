@@ -43,6 +43,7 @@ import {
   SettingsMenuSelect,
 } from '@/components/settings'
 import { useUpdateChecker } from '@/hooks/useUpdateChecker'
+import { useAppShellContext } from '@/context/AppShellContext'
 import { Badge } from '@/components/ui/badge'
 import type { PresetTheme } from '@config/theme'
 import {
@@ -280,6 +281,9 @@ function ClaudeOAuthDialogContent({
 export default function AppSettingsPage() {
   const { mode, setMode, colorTheme, setColorTheme, font, setFont } = useTheme()
 
+  // Get workspace ID from context for loading preset themes
+  const { activeWorkspaceId } = useAppShellContext()
+
   // Preset themes state
   const [presetThemes, setPresetThemes] = useState<PresetTheme[]>([])
 
@@ -321,15 +325,13 @@ export default function AppSettingsPage() {
     const loadSettings = async () => {
       if (!window.electronAPI) return
       try {
-        const [billing, notificationsOn, themes] = await Promise.all([
+        const [billing, notificationsOn] = await Promise.all([
           window.electronAPI.getBillingMethod(),
           window.electronAPI.getNotificationsEnabled(),
-          window.electronAPI.loadPresetThemes?.() ?? [],
         ])
         setAuthType(billing.authType)
         setHasCredential(billing.hasCredential)
         setNotificationsEnabled(notificationsOn)
-        setPresetThemes(themes)
       } catch (error) {
         console.error('Failed to load settings:', error)
       } finally {
@@ -338,6 +340,24 @@ export default function AppSettingsPage() {
     }
     loadSettings()
   }, [])
+
+  // Load preset themes when workspace changes (themes are workspace-scoped)
+  useEffect(() => {
+    const loadThemes = async () => {
+      if (!window.electronAPI || !activeWorkspaceId) {
+        setPresetThemes([])
+        return
+      }
+      try {
+        const themes = await window.electronAPI.loadPresetThemes(activeWorkspaceId)
+        setPresetThemes(themes)
+      } catch (error) {
+        console.error('Failed to load preset themes:', error)
+        setPresetThemes([])
+      }
+    }
+    loadThemes()
+  }, [activeWorkspaceId])
 
   // Check Claude OAuth availability when expanding oauth_token option
   useEffect(() => {
@@ -449,11 +469,11 @@ export default function AppSettingsPage() {
   }, [])
 
   return (
-    <div className="h-full flex flex-col bg-surface-below">
-      <PanelHeader title="App Settings" actions={<HeaderMenu route={routes.view.settings('app')} />} className="bg-surface-below" />
+    <div className="h-full flex flex-col bg-transparent">
+      <PanelHeader title="App Settings" actions={<HeaderMenu route={routes.view.settings('app')} />} className="bg-transparent" />
       <div className="relative flex-1 min-h-0">
         {/* Top fade gradient */}
-        <div className="absolute top-0 left-0 right-2 h-8 z-10 bg-gradient-to-b from-surface-below to-transparent pointer-events-none" />
+        <div className="absolute top-0 left-0 right-2 h-8 z-10 bg-gradient-to-b from-transparent to-transparent pointer-events-none" />
         <ScrollArea className="h-full">
           <div className="px-5 py-7 max-w-3xl mx-auto">
           <div className="space-y-6">
@@ -624,7 +644,7 @@ export default function AppSettingsPage() {
         </div>
         </ScrollArea>
         {/* Bottom fade gradient */}
-        <div className="absolute bottom-0 left-0 right-2 h-8 z-10 bg-gradient-to-t from-surface-below to-transparent pointer-events-none" />
+        <div className="absolute bottom-0 left-0 right-2 h-8 z-10 bg-gradient-to-t from-transparent to-transparent pointer-events-none" />
       </div>
     </div>
   )

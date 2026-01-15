@@ -37,11 +37,6 @@ export function createStatus(
     suffix++;
   }
 
-  // Validate shortcut uniqueness
-  if (input.shortcut && config.statuses.some(s => s.shortcut === input.shortcut)) {
-    throw new Error(`Shortcut '${input.shortcut}' is already in use`);
-  }
-
   const maxOrder = Math.max(...config.statuses.map(s => s.order), -1);
 
   const status: StatusConfig = {
@@ -49,7 +44,6 @@ export function createStatus(
     label: input.label,
     color: input.color,
     icon: input.icon,
-    shortcut: input.shortcut,
     category: input.category,
     isFixed: false,
     isDefault: false,
@@ -63,7 +57,7 @@ export function createStatus(
 }
 
 /**
- * Update a status (label, color, icon, shortcut, category)
+ * Update a status (label, color, icon, category)
  * Cannot change ID or isFixed/isDefault flags
  * @throws Error if status is fixed and trying to change protected fields
  */
@@ -84,18 +78,10 @@ export function updateStatus(
     throw new Error('Cannot change category of fixed status');
   }
 
-  // Validate shortcut uniqueness
-  if (updates.shortcut !== undefined && updates.shortcut !== status.shortcut) {
-    if (updates.shortcut && config.statuses.some(s => s.id !== statusId && s.shortcut === updates.shortcut)) {
-      throw new Error(`Shortcut '${updates.shortcut}' is already in use`);
-    }
-  }
-
   // Apply updates
   if (updates.label !== undefined) status.label = updates.label;
   if (updates.color !== undefined) status.color = updates.color;
   if (updates.icon !== undefined) status.icon = updates.icon;
-  if ('shortcut' in updates) status.shortcut = updates.shortcut || undefined;
   if (updates.category !== undefined) status.category = updates.category;
 
   saveStatusConfig(workspaceRootPath, config);

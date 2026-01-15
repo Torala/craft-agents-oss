@@ -228,7 +228,8 @@ export default function App() {
   }, [])
 
   // Apply theme via hook (injects CSS variables)
-  useTheme({ appTheme, workspaceTheme })
+  // Pass workspaceId for workspace-scoped preset theme loading
+  useTheme({ workspaceId: windowWorkspaceId, appTheme, workspaceTheme })
 
   // Ref for sessionOptions to access current value in event handlers without re-registering
   const sessionOptionsRef = useRef(sessionOptions)

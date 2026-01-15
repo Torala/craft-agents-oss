@@ -13,6 +13,11 @@ import { useTheme as useThemeContext } from '@/context/ThemeContext'
 
 interface UseThemeOptions {
   /**
+   * Workspace ID for loading preset themes (required for preset theme loading)
+   */
+  workspaceId?: string | null
+
+  /**
    * App-level theme (from ~/.craft-agent/theme.json)
    */
   appTheme?: ThemeOverrides | null
@@ -45,27 +50,27 @@ interface UseThemeResult {
  * const { shikiTheme } = useTheme({ appTheme, workspaceTheme })
  * ```
  */
-export function useTheme({ appTheme, workspaceTheme }: UseThemeOptions = {}): UseThemeResult {
+export function useTheme({ workspaceId, appTheme, workspaceTheme }: UseThemeOptions = {}): UseThemeResult {
   // Get resolved mode, system preference, and color theme from ThemeContext
   const { resolvedMode, systemPreference, colorTheme } = useThemeContext()
   const isDark = resolvedMode === 'dark'
 
-  // Load preset theme when colorTheme changes
+  // Load preset theme when colorTheme or workspaceId changes
   const [presetTheme, setPresetTheme] = useState<ThemeFile | null>(null)
 
   useEffect(() => {
-    if (!colorTheme || colorTheme === 'default') {
+    if (!colorTheme || colorTheme === 'default' || !workspaceId) {
       setPresetTheme(null)
       return
     }
 
-    // Load preset theme via IPC
-    window.electronAPI?.loadPresetTheme?.(colorTheme).then((preset) => {
+    // Load preset theme via IPC (workspace-scoped)
+    window.electronAPI?.loadPresetTheme?.(workspaceId, colorTheme).then((preset) => {
       setPresetTheme(preset?.theme ?? null)
     }).catch(() => {
       setPresetTheme(null)
     })
-  }, [colorTheme])
+  }, [colorTheme, workspaceId])
 
   // Resolve cascading theme (preset → app → workspace)
   // Preset provides base, app/workspace can override

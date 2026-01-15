@@ -297,12 +297,26 @@ export interface Session {
   sharedUrl?: string
   // Shared session ID in viewer (for revoke)
   sharedId?: string
+  // Model to use for this session (overrides global config if set)
+  model?: string
   // Role/type of the last message (for badge display without loading messages)
   lastMessageRole?: 'user' | 'assistant' | 'plan' | 'tool' | 'error'
   // Current status for ProcessingIndicator (e.g., compacting)
   currentStatus?: {
     message: string
     statusType?: string
+  }
+  // Token usage for context tracking
+  tokenUsage?: {
+    inputTokens: number
+    outputTokens: number
+    totalTokens: number
+    contextTokens: number
+    costUsd: number
+    cacheReadTokens?: number
+    cacheCreationTokens?: number
+    /** Model's context window size in tokens (from SDK modelUsage) */
+    contextWindow?: number
   }
 }
 
@@ -328,7 +342,7 @@ export type SessionEvent =
   | { type: 'interrupted'; sessionId: string; message?: Message }
   | { type: 'status'; sessionId: string; message: string; statusType?: 'compacting' }
   | { type: 'info'; sessionId: string; message: string; statusType?: 'compaction_complete'; level?: 'info' | 'warning' | 'error' | 'success' }
-  | { type: 'title_generated'; sessionId: string; title: string }
+  | { type: 'title_generated'; sessionId: string; title: string; preview?: string }
   | { type: 'working_directory_changed'; sessionId: string; workingDirectory: string }
   | { type: 'permission_request'; sessionId: string; request: PermissionRequest }
   | { type: 'credential_request'; sessionId: string; request: CredentialRequest }
@@ -347,6 +361,7 @@ export type SessionEvent =
   // Session metadata events (for multi-window sync)
   | { type: 'session_flagged'; sessionId: string }
   | { type: 'session_unflagged'; sessionId: string }
+  | { type: 'session_model_changed'; sessionId: string; model: string | null }
   | { type: 'todo_state_changed'; sessionId: string; todoState: TodoState }
   | { type: 'session_deleted'; sessionId: string }
   | { type: 'session_shared'; sessionId: string; sharedUrl: string }
@@ -506,6 +521,8 @@ export const IPC_CHANNELS = {
   // Settings - Model
   SETTINGS_GET_MODEL: 'settings:getModel',
   SETTINGS_SET_MODEL: 'settings:setModel',
+  SESSION_GET_MODEL: 'session:getModel',
+  SESSION_SET_MODEL: 'session:setModel',
 
   // Folder dialog (for selecting working directory)
   OPEN_FOLDER_DIALOG: 'dialog:openFolder',
@@ -860,9 +877,12 @@ export interface ElectronAPI {
   updateBillingMethod(authType: AuthType, credential?: string): Promise<void>
   getCreditsUrl(): Promise<string | null>
 
-  // Settings - Model
+  // Settings - Model (global default)
   getModel(): Promise<string | null>
   setModel(model: string): Promise<void>
+  // Session-specific model (overrides global)
+  getSessionModel(sessionId: string, workspaceId: string): Promise<string | null>
+  setSessionModel(sessionId: string, workspaceId: string, model: string | null): Promise<void>
 
   // Workspace Settings (per-workspace configuration)
   getWorkspaceSettings(workspaceId: string): Promise<WorkspaceSettings | null>
@@ -927,9 +947,9 @@ export interface ElectronAPI {
   // Theme (cascading: app → workspace)
   getAppTheme(): Promise<import('@config/theme').ThemeOverrides | null>
   getWorkspaceTheme(workspaceId: string): Promise<import('@config/theme').ThemeOverrides | null>
-  // Preset themes
-  loadPresetThemes(): Promise<import('@config/theme').PresetTheme[]>
-  loadPresetTheme(themeId: string): Promise<import('@config/theme').PresetTheme | null>
+  // Preset themes (workspace-scoped)
+  loadPresetThemes(workspaceId: string): Promise<import('@config/theme').PresetTheme[]>
+  loadPresetTheme(workspaceId: string, themeId: string): Promise<import('@config/theme').PresetTheme | null>
   getColorTheme(): Promise<string>
   setColorTheme(themeId: string): Promise<void>
 

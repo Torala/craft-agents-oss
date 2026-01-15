@@ -711,10 +711,6 @@ Without this, you'll get: `Error: The "path" argument must be of type string...`
 ### 2. Authentication Environment
 Authentication env vars must be set BEFORE creating agents:
 ```typescript
-// Craft Credits
-setAnthropicOptionsEnv({ USE_CRAFT_AI_GATEWAY: 'true', CRAFT_API_GATEWAY_TOKEN: token })
-process.env.ANTHROPIC_API_KEY = 'craft-credits-placeholder'
-
 // Claude Max OAuth
 process.env.CLAUDE_CODE_OAUTH_TOKEN = token
 

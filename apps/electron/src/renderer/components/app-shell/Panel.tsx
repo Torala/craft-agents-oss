@@ -26,6 +26,8 @@ export interface PanelProps {
   variant?: 'shrink' | 'grow'
   /** Fixed width in pixels (only for shrink variant) */
   width?: number
+  /** Use transparent background with backdrop blur (for custom background image) */
+  transparent?: boolean
   /** Optional className for additional styling */
   className?: string
   /** Optional inline styles */
@@ -40,6 +42,7 @@ export interface PanelProps {
 export function Panel({
   variant = 'grow',
   width,
+  transparent = false,
   className,
   style,
   children,
@@ -49,7 +52,9 @@ export function Panel({
       className={cn(
         // Base styles shared by all panels
         // Note: No rounded corners here - parent container handles clipping via overflow-hidden
-        'h-full flex flex-col min-w-0 bg-background overflow-hidden',
+        'h-full flex flex-col min-w-0 overflow-hidden',
+        // Background: transparent with blur for custom background image, or solid
+        transparent ? 'bg-background/60 backdrop-blur-xl' : 'bg-background',
         // Variant-specific styles
         variant === 'grow' && 'flex-1',
         variant === 'shrink' && 'shrink-0',

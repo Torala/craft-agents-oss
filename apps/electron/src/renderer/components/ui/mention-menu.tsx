@@ -1,5 +1,4 @@
 import * as React from 'react'
-import { Icon_Folder } from '@craft-agent/ui'
 import { cn } from '@/lib/utils'
 import { SkillAvatar } from '@/components/ui/skill-avatar'
 import { SourceAvatar } from '@/components/ui/source-avatar'
@@ -9,6 +8,7 @@ import type { LoadedSkill, LoadedSource } from '../../../shared/types'
 // Types
 // ============================================================================
 
+// Note: 'folder' type kept for compatibility with mentions.ts parsing but folders are now in slash menu
 export type MentionItemType = 'skill' | 'source' | 'folder'
 
 export interface MentionItem {
@@ -201,11 +201,6 @@ export function InlineMentionMenu({
                     {item.type === 'source' && item.source && (
                       <SourceAvatar source={item.source} size="sm" />
                     )}
-                    {item.type === 'folder' && (
-                      <div className="h-5 w-5 rounded-[4px] bg-foreground/5 flex items-center justify-center">
-                        <Icon_Folder className="h-3.5 w-3.5 text-muted-foreground" strokeWidth={1.75} />
-                      </div>
-                    )}
                   </div>
 
                   {/* Label and description */}
@@ -239,6 +234,7 @@ export function InlineMentionMenu({
 /** Interface for elements that can be used with useInlineMention */
 export interface MentionInputElement {
   getBoundingClientRect: () => DOMRect
+  getCaretRect?: () => DOMRect | null
   value: string
   selectionStart: number
 }
@@ -248,7 +244,9 @@ export interface UseInlineMentionOptions {
   inputRef: React.RefObject<MentionInputElement | null>
   skills: LoadedSkill[]
   sources: LoadedSource[]
-  recentFolders: string[]
+  /** @deprecated Folders moved to slash menu - pass empty array for compatibility */
+  recentFolders?: string[]
+  /** @deprecated Folders moved to slash menu - kept for compatibility */
   homeDir?: string
   onSelect: (item: MentionItem) => void
 }
@@ -260,32 +258,13 @@ export interface UseInlineMentionReturn {
   sections: MentionSection[]
   handleInputChange: (value: string, cursorPosition: number) => void
   close: () => void
-  handleSelect: (item: MentionItem) => string
-}
-
-/**
- * Format path for display, shortening home directory
- */
-function formatPathForDisplay(path: string, homeDir?: string): string {
-  if (homeDir && path.startsWith(homeDir)) {
-    return '~' + path.slice(homeDir.length)
-  }
-  return path
-}
-
-/**
- * Get folder name from path
- */
-function getFolderName(path: string): string {
-  return path.split('/').pop() || path
+  handleSelect: (item: MentionItem) => { value: string; cursorPosition: number }
 }
 
 export function useInlineMention({
   inputRef,
   skills,
   sources,
-  recentFolders,
-  homeDir,
   onSelect,
 }: UseInlineMentionOptions): UseInlineMentionReturn {
   const [isOpen, setIsOpen] = React.useState(false)
@@ -295,7 +274,7 @@ export function useInlineMention({
   // Store current input state for handleSelect
   const currentInputRef = React.useRef({ value: '', cursorPosition: 0 })
 
-  // Build sections from available data
+  // Build sections from available data (skills and sources only - folders moved to slash menu)
   const sections = React.useMemo((): MentionSection[] => {
     const result: MentionSection[] = []
 
@@ -314,7 +293,7 @@ export function useInlineMention({
       })
     }
 
-    // Sources section (only show sources that need enabling or have tools)
+    // Sources section
     if (sources.length > 0) {
       result.push({
         id: 'sources',
@@ -329,31 +308,17 @@ export function useInlineMention({
       })
     }
 
-    // Recent folders section
-    if (recentFolders.length > 0) {
-      result.push({
-        id: 'folders',
-        label: 'Recent Folders',
-        items: recentFolders.slice(0, 4).map(path => ({
-          id: path,
-          type: 'folder' as const,
-          label: getFolderName(path),
-          description: formatPathForDisplay(path, homeDir),
-          path,
-        })),
-      })
-    }
-
     return result
-  }, [skills, sources, recentFolders, homeDir])
+  }, [skills, sources])
 
   const handleInputChange = React.useCallback((value: string, cursorPosition: number) => {
     // Store current state for handleSelect
     currentInputRef.current = { value, cursorPosition }
 
     const textBeforeCursor = value.slice(0, cursorPosition)
-    // Match @ at start of text or after whitespace, followed by optional word chars, hyphens, and slashes
-    const atMatch = textBeforeCursor.match(/(?:^|\s)@([\w\-/]*)$/)
+    // Match @ anywhere, followed by optional word chars, hyphens, and slashes
+    // This triggers on typing @ and shows menu while typing the filter
+    const atMatch = textBeforeCursor.match(/@([\w\-/]*)$/)
 
     // Only show menu if we have at least one section with items
     const hasItems = sections.some(s => s.items.length > 0)
@@ -361,23 +326,29 @@ export function useInlineMention({
     if (atMatch && hasItems) {
       const matchStart = textBeforeCursor.lastIndexOf('@')
       setAtStart(matchStart)
+      // Filter by the content after @
       setFilter(atMatch[1] || '')
 
       if (inputRef.current) {
-        const rect = inputRef.current.getBoundingClientRect()
+        // Try to get actual caret position from the input element
+        const caretRect = inputRef.current.getCaretRect?.()
 
-        // For position calculation, use a simplified approach:
-        // Position menu at bottom-left of input, with slight offset for the @ position
-        // A more accurate position would require measuring text, but this works well enough
-        const lineHeight = 20 // Approximate line height
-        const charWidth = 8 // Approximate character width
-        const linesBeforeCursor = textBeforeCursor.split('\n').length - 1
-        const charsOnCurrentLine = textBeforeCursor.split('\n').pop()?.length || 0
-
-        setPosition({
-          x: rect.left + Math.min(charsOnCurrentLine * charWidth, rect.width - 100),
-          y: rect.top + (linesBeforeCursor + 1) * lineHeight,
-        })
+        if (caretRect && caretRect.x > 0) {
+          // Use actual caret position
+          setPosition({
+            x: caretRect.x,
+            y: caretRect.y,
+          })
+        } else {
+          // Fallback: position at input element's left edge
+          const rect = inputRef.current.getBoundingClientRect()
+          const lineHeight = 20
+          const linesBeforeCursor = textBeforeCursor.split('\n').length - 1
+          setPosition({
+            x: rect.left,
+            y: rect.top + (linesBeforeCursor + 1) * lineHeight,
+          })
+        }
       }
 
       setIsOpen(true)
@@ -388,32 +359,35 @@ export function useInlineMention({
     }
   }, [inputRef, sections])
 
-  const handleSelect = React.useCallback((item: MentionItem): string => {
+  const handleSelect = React.useCallback((item: MentionItem): { value: string; cursorPosition: number } => {
     let result = ''
+    let newCursorPosition = 0
+
     if (atStart >= 0) {
       const { value: currentValue, cursorPosition } = currentInputRef.current
       const before = currentValue.slice(0, atStart)
       const after = currentValue.slice(cursorPosition)
 
-      // Build the mention text based on type
+      // Build the mention text based on type using bracket syntax
       let mentionText: string
       if (item.type === 'skill') {
-        mentionText = `@${item.id} `
+        mentionText = `[skill:${item.id}] `
       } else if (item.type === 'source') {
-        mentionText = `@src:${item.id} `
+        mentionText = `[source:${item.id}] `
       } else if (item.type === 'folder') {
-        mentionText = `@dir:${item.path} `
+        mentionText = `[dir:${item.path}] `
       } else {
-        mentionText = `@${item.id} `
+        mentionText = `[skill:${item.id}] `
       }
 
       result = before + mentionText + after
+      newCursorPosition = before.length + mentionText.length
     }
 
     onSelect(item)
     setIsOpen(false)
 
-    return result
+    return { value: result, cursorPosition: newCursorPosition }
   }, [onSelect, atStart])
 
   const close = React.useCallback(() => {

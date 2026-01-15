@@ -32,17 +32,27 @@ function SlashCommandDemo() {
     }
   }, [])
 
+  // Handle command selection (toggle active state)
+  const handleCommandSelect = React.useCallback((commandId: SlashCommandId) => {
+    setActiveCommands(prev =>
+      prev.includes(commandId)
+        ? prev.filter(id => id !== commandId)
+        : [...prev, commandId]
+    )
+  }, [])
+
+  // Handle folder selection (no-op in demo)
+  const handleFolderSelect = React.useCallback((_path: string) => {
+    // No-op in demo - just for testing the UI
+  }, [])
+
   // Inline slash command hook
   const inlineSlash = useInlineSlashCommand({
     inputRef,
     activeCommands,
-    onSelect: (commandId) => {
-      setActiveCommands(prev =>
-        prev.includes(commandId)
-          ? prev.filter(id => id !== commandId)
-          : [...prev, commandId]
-      )
-    },
+    onSelectCommand: handleCommandSelect,
+    onSelectFolder: handleFolderSelect,
+    recentFolders: [], // No folders in demo
   })
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -52,8 +62,15 @@ function SlashCommandDemo() {
     inlineSlash.handleInputChange(value, cursorPosition)
   }
 
-  const handleInlineSelect = (commandId: SlashCommandId) => {
-    const newValue = inlineSlash.handleSelect(commandId)
+  const handleInlineCommandSelect = (commandId: SlashCommandId) => {
+    const newValue = inlineSlash.handleSelectCommand(commandId)
+    setInputValue(newValue)
+    // Focus back to textarea
+    setTimeout(() => textareaRef.current?.focus(), 0)
+  }
+
+  const handleInlineFolderSelect = (path: string) => {
+    const newValue = inlineSlash.handleSelectFolder(path)
     setInputValue(newValue)
     // Focus back to textarea
     setTimeout(() => textareaRef.current?.focus(), 0)
@@ -189,9 +206,10 @@ function SlashCommandDemo() {
           onOpenChange={(open) => {
             if (!open) inlineSlash.close()
           }}
-          commands={DEFAULT_SLASH_COMMANDS}
+          sections={inlineSlash.sections}
           activeCommands={activeCommands}
-          onSelect={handleInlineSelect}
+          onSelectCommand={handleInlineCommandSelect}
+          onSelectFolder={handleInlineFolderSelect}
           filter={inlineSlash.filter}
           position={inlineSlash.position}
         />

@@ -1,20 +1,14 @@
 {
-  "name": "craft-tui-agent",
+  "name": "craft-agent",
   "version": "0.2.12",
   "description": "Claude Code-like agent for Craft documents",
-  "module": "apps/tui/src/index.tsx",
   "type": "module",
   "private": true,
   "workspaces": [
     "packages/*",
     "apps/*"
   ],
-  "bin": {
-    "craft": "./apps/tui/src/index.tsx"
-  },
   "scripts": {
-    "start": "bun run apps/tui/src/index.tsx",
-    "dev": "bun --watch run apps/tui/src/index.tsx",
     "test": "bun test",
     "typecheck": "cd packages/shared && bun run tsc --noEmit",
     "typecheck:all": "cd packages/core && bun run tsc --noEmit && cd ../shared && bun run tsc --noEmit",
@@ -90,20 +84,16 @@
     "@radix-ui/react-tooltip": "^1.2.8",
     "@shikijs/cli": "^3.19.0",
     "@tailwindcss/typography": "^0.5.19",
-    "chalk": "^5.2.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "gray-matter": "^4.0.3",
-    "ink": "^5.0.0",
     "jotai": "^2.16.0",
     "js-yaml": "^4.1.1",
     "linkify-it": "^5.0.0",
     "lucide-react": "^0.561.0",
     "marked": "^17.0.1",
-    "marked-terminal": "^7.3.0",
     "markitdown-js": "^0.0.14",
-    "meow": "^14.0.0",
     "open": "^11.0.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

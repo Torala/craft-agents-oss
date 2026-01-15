@@ -171,8 +171,9 @@
   --md-counters: var(--foreground-50);
 }
 
-/* Theme Override - Semi-transparent background to allow vibrancy through */
-html[data-theme-override]::before {
+/* Theme Override - Semi-transparent background to allow vibrancy through
+   When custom background is enabled, skip this overlay so the image shows at 100% */
+html[data-theme-override]:not([data-custom-background])::before {
   content: '';
   position: fixed;
   inset: 0;
@@ -189,6 +190,25 @@ html[data-theme-mismatch]::before {
   inset: 0;
   background: var(--foreground-10);
   z-index: -1;
+  pointer-events: none;
+}
+
+/* =============================================================================
+   CUSTOM BACKGROUND IMAGE (Experimental)
+
+   Enabled via data-custom-background attribute on html element.
+   To disable: remove the dataset.customBackground line in ThemeContext.tsx
+   To remove completely: delete this CSS block and the image file in assets/backgrounds/
+============================================================================= */
+html[data-custom-background]::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: url('./assets/backgrounds/mountain-sunset.jpg');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  z-index: -2;
   pointer-events: none;
 }
 
@@ -595,6 +615,25 @@ html[data-font="inter"] {
 /* Hide next item's separator when current item is hovered or selected */
 .source-item:hover + .source-item > .source-separator,
 .source-item[data-selected] + .source-item > .source-separator {
+  opacity: 0;
+}
+
+/* =============================================================================
+   IMPORT LIST - SEPARATOR VISIBILITY
+
+   Hide separators when import items are hovered or selected.
+   Same logic as session list.
+============================================================================= */
+
+/* Hide own separator when item is hovered or selected */
+.import-item:hover > .import-separator,
+.import-item[data-selected] > .import-separator {
+  opacity: 0;
+}
+
+/* Hide next item's separator when current item is hovered or selected */
+.import-item:hover + .import-item > .import-separator,
+.import-item[data-selected] + .import-item > .import-separator {
   opacity: 0;
 }
 

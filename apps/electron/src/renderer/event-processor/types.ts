@@ -183,6 +183,7 @@ export interface TitleGeneratedEvent {
   type: 'title_generated'
   sessionId: string
   title: string
+  preview?: string  // First user message preview for sidebar fallback
 }
 
 /**
@@ -201,6 +202,15 @@ export interface PermissionModeChangedEvent {
   type: 'permission_mode_changed'
   sessionId: string
   permissionMode: PermissionMode
+}
+
+/**
+ * Session model changed event
+ */
+export interface SessionModelChangedEvent {
+  type: 'session_model_changed'
+  sessionId: string
+  model: string | null
 }
 
 /**
@@ -333,6 +343,7 @@ export type AgentEvent =
   | TitleGeneratedEvent
   | WorkingDirectoryChangedEvent
   | PermissionModeChangedEvent
+  | SessionModelChangedEvent
   | TaskBackgroundedEvent
   | ShellBackgroundedEvent
   | TaskProgressEvent

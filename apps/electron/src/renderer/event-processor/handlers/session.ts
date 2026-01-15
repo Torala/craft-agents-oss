@@ -21,6 +21,7 @@ import type {
   TitleGeneratedEvent,
   WorkingDirectoryChangedEvent,
   PermissionModeChangedEvent,
+  SessionModelChangedEvent,
   UserMessageEvent,
   SessionSharedEvent,
   SessionUnsharedEvent,
@@ -280,7 +281,7 @@ export function handleInterrupted(
 }
 
 /**
- * Handle title_generated - update session title
+ * Handle title_generated - update session title and preview
  */
 export function handleTitleGenerated(
   state: SessionState,
@@ -290,7 +291,12 @@ export function handleTitleGenerated(
 
   return {
     state: {
-      session: { ...session, name: event.title },
+      session: {
+        ...session,
+        name: event.title,
+        // Also set preview if provided (for sidebar fallback when title generation fails)
+        preview: event.preview ?? session.preview,
+      },
       streaming,
     },
     effects: [],
@@ -329,6 +335,24 @@ export function handlePermissionModeChanged(
       sessionId: event.sessionId,
       permissionMode: event.permissionMode,
     }],
+  }
+}
+
+/**
+ * Handle session_model_changed - update session model
+ */
+export function handleSessionModelChanged(
+  state: SessionState,
+  event: SessionModelChangedEvent
+): ProcessResult {
+  const { session, streaming } = state
+
+  return {
+    state: {
+      session: { ...session, model: event.model ?? undefined },
+      streaming,
+    },
+    effects: [],
   }
 }
 

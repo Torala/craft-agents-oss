@@ -31,8 +31,6 @@ export function setAuthEnvironment(auth: AuthCredentials): void {
   // Clear all auth-related env vars first
   delete process.env.ANTHROPIC_API_KEY;
   delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
-  delete process.env.USE_CRAFT_AI_GATEWAY;
-  delete process.env.CRAFT_API_GATEWAY_TOKEN;
 
   switch (auth.type) {
     case 'api_key':
@@ -51,6 +49,4 @@ export function setAuthEnvironment(auth: AuthCredentials): void {
 export function clearAuthEnvironment(): void {
   delete process.env.ANTHROPIC_API_KEY;
   delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
-  delete process.env.USE_CRAFT_AI_GATEWAY;
-  delete process.env.CRAFT_API_GATEWAY_TOKEN;
 }

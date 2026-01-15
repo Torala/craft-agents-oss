@@ -131,7 +131,7 @@ export function DataTable<TData, TValue>({
           <TableRow key={headerGroup.id}>
             {headerGroup.headers.map((header) => {
               const meta = header.column.columnDef.meta as
-                | { fillWidth?: boolean; truncate?: boolean }
+                | { fillWidth?: boolean; truncate?: boolean; maxWidth?: string }
                 | undefined
               const minSize = header.column.columnDef.minSize
               const currentSize = header.getSize()
@@ -144,6 +144,7 @@ export function DataTable<TData, TValue>({
                   style={{
                     width: hasResized ? currentSize : undefined,
                     minWidth: minSize,
+                    maxWidth: meta?.maxWidth,
                   }}
                 >
                   <div className="flex items-center">
@@ -183,7 +184,7 @@ export function DataTable<TData, TValue>({
             >
               {row.getVisibleCells().map((cell) => {
                 const meta = cell.column.columnDef.meta as
-                  | { fillWidth?: boolean; truncate?: boolean }
+                  | { fillWidth?: boolean; truncate?: boolean; maxWidth?: string }
                   | undefined
                 const minSize = cell.column.columnDef.minSize
                 const currentSize = cell.column.getSize()
@@ -193,11 +194,12 @@ export function DataTable<TData, TValue>({
                     key={cell.id}
                     className={cn(
                       meta?.fillWidth && 'w-full',
-                      meta?.truncate && 'overflow-hidden max-w-0'
+                      meta?.truncate && 'overflow-hidden'
                     )}
                     style={{
                       width: hasResized ? currentSize : undefined,
                       minWidth: minSize,
+                      maxWidth: meta?.maxWidth,
                     }}
                   >
                     {flexRender(cell.column.columnDef.cell, cell.getContext())}

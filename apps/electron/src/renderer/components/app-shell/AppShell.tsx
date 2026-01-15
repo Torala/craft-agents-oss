@@ -112,6 +112,12 @@ interface AppShellProps {
 }
 
 /**
+ * Panel spacing constants (in pixels)
+ */
+const PANEL_WINDOW_EDGE_SPACING = 6 // Padding between panels and window edge
+const PANEL_PANEL_SPACING = 6 // Gap between adjacent panels
+
+/**
  * AppShell - Main 3-panel layout container
  *
  * Layout: [LeftSidebar 20%] | [NavigatorPanel 32%] | [MainContentPanel 48%]
@@ -487,9 +493,13 @@ export function AppShell({
       const files = e.clipboardData?.files
       if (!files || files.length === 0) return
 
-      // Skip if the active element is an input/textarea (let it handle paste directly)
-      const activeElement = document.activeElement
-      if (activeElement?.tagName === 'TEXTAREA' || activeElement?.tagName === 'INPUT') {
+      // Skip if the active element is an input/textarea/contenteditable (let it handle paste directly)
+      const activeElement = document.activeElement as HTMLElement | null
+      if (
+        activeElement?.tagName === 'TEXTAREA' ||
+        activeElement?.tagName === 'INPUT' ||
+        activeElement?.isContentEditable
+      ) {
         return
       }
 
@@ -1023,7 +1033,8 @@ export function AppShell({
       )}
 
       {/* === OUTER LAYOUT: Sidebar | Main Content === */}
-      <div className="h-full flex items-stretch relative">
+      {/* z-50 ensures content stacks above the fixed titlebar-drag-region (z-40) */}
+      <div className="h-full flex items-stretch relative z-50">
         {/* === SIDEBAR (Left) === (hidden in focused mode)
             Animated width with spring physics for smooth 60-120fps transitions.
             Uses overflow-hidden to clip content during collapse animation.
@@ -1200,24 +1211,20 @@ export function AppShell({
 
         {/* === MAIN CONTENT (Right) ===
             Flex layout: Session List | Chat Display */}
-        <div className={cn(
-          "flex-1 overflow-hidden min-w-0 flex h-full pl-1.5 pb-2 pt-[6px] gap-[3px]",
-          // Reduce right padding when inline sidebar is hidden to compensate for gap before 0-width motion.div
-          !isFocusedMode && !shouldUseOverlay && !isRightSidebarVisible ? "pr-0.75" : "pr-1.5"
-        )}>
+        <div
+          className="flex-1 overflow-hidden min-w-0 flex h-full"
+          style={{ padding: PANEL_WINDOW_EDGE_SPACING, gap: PANEL_PANEL_SPACING / 2 }}
+        >
           {/* === SESSION LIST PANEL === (hidden in focused mode) */}
           {!isFocusedMode && (
           <div
-            className={cn(
-              "h-full flex flex-col min-w-0 bg-background shrink-0 shadow-middle overflow-hidden",
-              isSidebarVisible ? "rounded-l-[14px] rounded-r-[10px]" : "rounded-l-[14px] rounded-r-[10px]"
-            )}
+            className="h-full flex flex-col min-w-0 bg-background/60 backdrop-blur-xl z-50 shrink-0 shadow-middle overflow-hidden rounded-l-[14px] rounded-r-[10px]"
             style={{ width: sessionListWidth }}
           >
             <PanelHeader
               title={isSidebarVisible ? listTitle : undefined}
               compensateForStoplight={!isSidebarVisible}
-              className="bg-background"
+              className="bg-transparent"
               actions={
                 <>
                   {/* Filter dropdown - allows filtering by todo states (only in All Chats view) */}
@@ -1419,7 +1426,7 @@ export function AppShell({
 
           {/* === MAIN CONTENT PANEL === */}
           <div className={cn(
-            "flex-1 overflow-hidden min-w-0 bg-background shadow-middle",
+            "flex-1 overflow-hidden min-w-0 bg-transparent z-50 shadow-middle",
             isFocusedMode ? "rounded-[14px]" : (isRightSidebarVisible ? "rounded-l-[10px] rounded-r-[10px]" : "rounded-l-[10px] rounded-r-[14px]")
           )}>
             <MainContentPanel isFocusedMode={isFocusedMode} />
@@ -1457,18 +1464,19 @@ export function AppShell({
                 initial={false}
                 animate={{
                   width: isRightSidebarVisible ? rightSidebarWidth : 0,
+                  marginLeft: isRightSidebarVisible ? 0 : -PANEL_PANEL_SPACING / 2,
                 }}
                 transition={isResizing === 'right-sidebar' || skipRightSidebarAnimation ? { duration: 0 } : springTransition}
-                className="h-full shrink-0 overflow-hidden"
+                className="h-full shrink-0 overflow-visible"
               >
                 <motion.div
                   initial={false}
                   animate={{
-                    x: isRightSidebarVisible ? 0 : rightSidebarWidth,
+                    x: isRightSidebarVisible ? 0 : rightSidebarWidth + PANEL_PANEL_SPACING / 2,
                     opacity: isRightSidebarVisible ? 1 : 0,
                   }}
                   transition={isResizing === 'right-sidebar' || skipRightSidebarAnimation ? { duration: 0 } : springTransition}
-                  className="h-full bg-surface-below shadow-middle rounded-l-[10px] rounded-r-[14px]"
+                  className="h-full bg-background/60 backdrop-blur-xl z-50 shadow-middle rounded-l-[10px] rounded-r-[14px]"
                   style={{ width: rightSidebarWidth }}
                 >
                   <RightSidebar
@@ -1503,7 +1511,7 @@ export function AppShell({
                     transition={skipRightSidebarAnimation ? { duration: 0 } : springTransition}
                     className="fixed inset-y-0 right-0 w-[316px] h-screen z-60 p-1.5"
                   >
-                    <div className="h-full bg-surface-below overflow-hidden shadow-strong rounded-[12px]">
+                    <div className="h-full bg-background/60 backdrop-blur-xl z-50 overflow-hidden shadow-strong rounded-[12px]">
                       <RightSidebar
                         panel={{ type: 'sessionMetadata' }}
                         sessionId={isChatsNavigation(navState) && navState.details ? navState.details.sessionId : undefined}

@@ -70,25 +70,16 @@ setPathToClaudeCodeExecutable(cliPath)
 
 ### 2. Authentication Environment Setup (CRITICAL)
 
-The SDK requires authentication environment variables to be set BEFORE creating agents. The TUI does this in `index.tsx`, but the Electron app must do it explicitly.
+The SDK requires authentication environment variables to be set BEFORE creating agents. The Electron app must do this explicitly during initialization.
 
 ```typescript
 import { getAuthState } from '../../../src/auth/state'
-import { setAnthropicOptionsEnv } from '../../../src/agent/options'
-import { getCraftToken } from '../../../src/auth/craft-token'
 
 // In initialize():
 const authState = await getAuthState()
 const { billing } = authState
 
-if (billing.type === 'craft_credits') {
-  const token = await getCraftToken()
-  setAnthropicOptionsEnv({
-    USE_CRAFT_AI_GATEWAY: 'true',
-    CRAFT_API_GATEWAY_TOKEN: token,
-  })
-  process.env.ANTHROPIC_API_KEY = 'craft-credits-placeholder'
-} else if (billing.type === 'oauth_token' && billing.claudeOAuthToken) {
+if (billing.type === 'oauth_token' && billing.claudeOAuthToken) {
   process.env.CLAUDE_CODE_OAUTH_TOKEN = billing.claudeOAuthToken
 } else if (billing.apiKey) {
   process.env.ANTHROPIC_API_KEY = billing.apiKey

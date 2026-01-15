@@ -673,7 +673,7 @@ export class CraftOAuth {
       }
     } else {
       // Use a default client ID for public clients
-      clientId = 'craft-tui-agent';
+      clientId = 'craft-agent';
       this.callbacks.onStatus(`Using default client ID: ${clientId}`);
     }
 

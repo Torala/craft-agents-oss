@@ -39,7 +39,7 @@ import { generateMessageId, debug } from '@craft-agent/core';
 ### Workspace & Config
 - `Workspace` - Workspace with MCP URL and auth config
 - `McpAuthType` - Auth method: `workspace_oauth` | `workspace_bearer` | `public`
-- `AuthType` - Billing: `api_key` | `oauth_token` | `craft_credits`
+- `AuthType` - Billing: `api_key` | `oauth_token`
 - `StoredConfig` - Application configuration
 - `OAuthCredentials` - OAuth token data
 

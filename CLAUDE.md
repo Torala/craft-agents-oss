@@ -7,10 +7,9 @@ Craft Agent is a Claude Code-like interface for managing Craft documents using t
 ## Monorepo Structure
 
 ```
-craft-tui-agent/
+craft-agent/
 ├── apps/
-│   ├── electron/    # Desktop GUI (primary interface)
-│   └── tui/         # Terminal CLI (deprecated)
+│   └── electron/    # Desktop GUI (primary interface)
 └── packages/
     ├── core/        # @craft-agent/core - Shared types
     └── shared/      # @craft-agent/shared - Business logic
@@ -30,15 +29,6 @@ bun run typecheck:all        # Type check all packages
 ```
 
 ## Releasing
-
-### TUI CLI
-
-Via [GitHub Actions](https://github.com/lukilabs/craft-terminal-agent/actions/workflows/build-and-upload.yml):
-1. Go to Actions → "Build and Upload" → Run workflow
-2. Enter version, check "upload to /latest" for default
-3. Builds: darwin-arm64, darwin-x64, linux-x64, linux-arm64
-
-**Install:** `curl -fsSL https://agents.craft.do/install.sh | bash`
 
 ### Electron Desktop App (macOS)
 
@@ -103,7 +93,7 @@ Core `CraftAgent` wrapping `@anthropic-ai/claude-agent-sdk`:
 
 ```typescript
 interface StoredConfig {
-  authType?: 'api_key' | 'oauth_token' | 'craft_credits';
+  authType?: 'api_key' | 'oauth_token';
   model?: string;
   workspaces: Workspace[];
   activeWorkspaceId: string | null;

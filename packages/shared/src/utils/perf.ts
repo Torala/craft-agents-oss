@@ -5,7 +5,7 @@
  * Logs to /tmp/craft-perf.log with aggregated statistics.
  *
  * IMPORTANT: Disabled by default. Only active when:
- * - TUI/CLI: --debug flag is passed (calls enableDebug())
+ * - CLI: --debug flag is passed (calls enableDebug())
  * - Electron: Running from source (!app.isPackaged)
  *
  * Usage:

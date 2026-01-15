@@ -234,6 +234,24 @@ function ProcessingIndicator({ startTime, statusMessage }: ProcessingIndicatorPr
 }
 
 /**
+ * Scrolls to target element on mount, before browser paint.
+ * Uses useLayoutEffect to ensure scroll happens before content is visible.
+ */
+function ScrollOnMount({
+  targetRef,
+  onScroll
+}: {
+  targetRef: React.RefObject<HTMLDivElement | null>
+  onScroll?: () => void
+}) {
+  React.useLayoutEffect(() => {
+    targetRef.current?.scrollIntoView({ behavior: 'instant' })
+    onScroll?.()
+  }, [])
+  return null
+}
+
+/**
  * ChatDisplay - Main chat interface for a selected session
  *
  * Structure:
@@ -289,16 +307,10 @@ export function ChatDisplay({
   // Reverse pagination: show last N turns initially, load more on scroll up
   const TURNS_PER_PAGE = 20
   const [visibleTurnCount, setVisibleTurnCount] = React.useState(TURNS_PER_PAGE)
-  // Track if messages were lazy-loaded (for fade-in animation)
-  // We use a counter that increments when messages finish loading, which forces motion.div to remount
-  const [fadeInKey, setFadeInKey] = React.useState(0)
-  const [shouldFadeIn, setShouldFadeIn] = React.useState(false)
   // Sticky-bottom: When true, auto-scroll on content changes. Toggled by user scroll behavior.
   const isStickToBottomRef = React.useRef(true)
   // Skip smooth scroll briefly after session switch (instant scroll already happened)
   const skipSmoothScrollUntilRef = React.useRef(0)
-  // Track pending scroll for session switches that happen while messages are still loading
-  const pendingScrollSessionRef = React.useRef<string | null>(null)
   const internalTextareaRef = React.useRef<RichTextInputHandle>(null)
   const textareaRef = externalTextareaRef || internalTextareaRef
 
@@ -381,11 +393,8 @@ export function ChatDisplay({
     return () => viewport.removeEventListener('scroll', handleScroll)
   }, [handleScroll])
 
-  // Track previous messagesLoading state to detect when loading completes
-  const prevMessagesLoadingRef = React.useRef(messagesLoading)
-
-  // Auto-scroll using ResizeObserver - fires AFTER layout is complete
-  // Debounced to wait for layout to settle before scrolling
+  // Auto-scroll using ResizeObserver for streaming content
+  // Initial scroll is handled by ScrollOnMount (useLayoutEffect, before paint)
   React.useEffect(() => {
     const viewport = scrollViewportRef.current
     if (!viewport) return
@@ -393,56 +402,13 @@ export function ChatDisplay({
     const isSessionSwitch = prevSessionIdRef.current !== session?.id
     prevSessionIdRef.current = session?.id ?? null
 
-    // Detect when messages finish loading (transition from loading to loaded)
-    const justFinishedLoading = prevMessagesLoadingRef.current && !messagesLoading
-    prevMessagesLoadingRef.current = messagesLoading
-
-    // Double-rAF scroll: ensures we're past React's commit phase and browser paint
-    // This fixes race conditions where scrollIntoView fires before content is rendered
-    const doInstantScroll = () => {
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          messagesEndRef.current?.scrollIntoView({ behavior: 'instant' })
-        })
-      })
-    }
-
-    // On session switch: reset UI state
+    // On session switch: reset UI state (scroll handled by ScrollOnMount)
     if (isSessionSwitch) {
-      setShouldFadeIn(false)
       isStickToBottomRef.current = true
       setVisibleTurnCount(TURNS_PER_PAGE)
-      skipSmoothScrollUntilRef.current = Date.now() + 500
-
-      if (!messagesLoading) {
-        // Messages already loaded (revisiting a cached session) - scroll immediately
-        doInstantScroll()
-      } else {
-        // Messages still loading - defer scroll until they're ready
-        pendingScrollSessionRef.current = session?.id ?? null
-      }
     }
 
-    // Messages just finished lazy loading: trigger fade-in animation, scroll immediately
-    // Increment fadeInKey to force motion.div remount so initial animation plays
-    if (justFinishedLoading) {
-      setShouldFadeIn(true)
-      setFadeInKey(k => k + 1)
-      isStickToBottomRef.current = true
-      setVisibleTurnCount(TURNS_PER_PAGE)
-      skipSmoothScrollUntilRef.current = Date.now() + 500
-      doInstantScroll()
-      pendingScrollSessionRef.current = null
-    }
-
-    // Handle deferred scroll from session switch that happened while loading
-    // This catches the case where session switch happened but messages weren't loaded yet
-    if (!messagesLoading && pendingScrollSessionRef.current === session?.id) {
-      doInstantScroll()
-      pendingScrollSessionRef.current = null
-    }
-
-    // Debounced scroll - waits for layout to settle
+    // Debounced scroll for streaming - waits for layout to settle
     let debounceTimer: ReturnType<typeof setTimeout> | null = null
 
     const resizeObserver = new ResizeObserver(() => {
@@ -467,7 +433,7 @@ export function ChatDisplay({
       resizeObserver.disconnect()
       if (debounceTimer) clearTimeout(debounceTimer)
     }
-  }, [session?.id, messagesLoading])
+  }, [session?.id])
 
   // Handle message submission from InputContainer
   // Backend handles interruption and queueing if currently processing
@@ -542,27 +508,51 @@ export function ChatDisplay({
       {session ? (
         <div className="flex flex-1 flex-col min-h-0 min-w-0 relative">
           {/* Content layer */}
-          <div className="flex flex-1 flex-col min-h-0 min-w-0 relative z-10 bg-surface-below">
+          <div className="flex flex-1 flex-col min-h-0 min-w-0 relative z-10 bg-transparent">
           {/* === MESSAGES AREA: Scrollable list of message bubbles === */}
           <div className="relative flex-1 min-h-0">
               <ScrollArea className="h-full min-w-0" viewportRef={scrollViewportRef}>
               <div className={cn(CHAT_LAYOUT.maxWidth, "mx-auto", CHAT_LAYOUT.containerPadding, CHAT_LAYOUT.messageSpacing, "min-w-0")}>
-                {messagesLoading ? (
-                  /* Loading State: Show spinner while messages are being lazy loaded */
-                  <div className="flex items-center justify-center h-64">
-                    <Spinner className="text-foreground/30" />
-                  </div>
-                ) : (
-                /* Turn-based Message Display - memoized to avoid re-grouping on every render */
-                /* Fade in when messages were lazy-loaded (not immediately available) */
-                /* key={fadeInKey} forces remount when messages finish loading, so initial animation plays */
-                <motion.div
-                  key={fadeInKey}
-                  initial={shouldFadeIn ? { opacity: 0 } : { opacity: 1 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ duration: 0.2, ease: 'easeOut' }}
-                  onAnimationComplete={() => shouldFadeIn && setShouldFadeIn(false)}
-                >
+                {/* Session-level AnimatePresence: Prevents layout jump when switching sessions */}
+                <AnimatePresence mode="wait" initial={false}>
+                  <motion.div
+                    key={session?.id}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.1, ease: 'easeOut' }}
+                  >
+                    {/* Loading/Content AnimatePresence: Handles spinner ↔ content transition */}
+                    <AnimatePresence mode="wait" initial={false}>
+                    {messagesLoading ? (
+                      /* Loading State: Show spinner while messages are being lazy loaded */
+                      <motion.div
+                        key="loading"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.1 }}
+                        className="flex items-center justify-center h-64"
+                      >
+                        <Spinner className="text-foreground/30" />
+                      </motion.div>
+                    ) : (
+                    /* Turn-based Message Display - memoized to avoid re-grouping on every render */
+                    /* AnimatePresence handles the fade-in animation when transitioning from loading */
+                    <motion.div
+                      key={`loaded-${session?.id}`}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.1, ease: 'easeOut' }}
+                    >
+                  {/* Scroll to bottom before paint - fires via useLayoutEffect */}
+                  <ScrollOnMount
+                    targetRef={messagesEndRef}
+                    onScroll={() => {
+                      skipSmoothScrollUntilRef.current = Date.now() + 500
+                    }}
+                  />
                   {/* Load more indicator - shown when there are older messages */}
                   {hasMoreAbove && (
                     <div className="text-center text-muted-foreground/60 text-xs py-3 select-none">
@@ -882,8 +872,11 @@ export function ChatDisplay({
                       />
                     )
                   })}
-                </motion.div>
-              )}
+                    </motion.div>
+                    )}
+                    </AnimatePresence>
+                  </motion.div>
+                </AnimatePresence>
                 {/* Processing Indicator - always visible while processing */}
                 {session.isProcessing && (() => {
                   // Find the last user message timestamp for accurate elapsed time
@@ -900,7 +893,7 @@ export function ChatDisplay({
               </div>
             </ScrollArea>
             {/* Bottom fade gradient - absolutely positioned overlay */}
-            <div className="absolute bottom-0 left-0 right-2 h-8 z-10 bg-gradient-to-t from-surface-below to-transparent pointer-events-none" />
+            <div className="absolute bottom-0 left-0 right-2 h-8 z-10 bg-gradient-to-t from-transparent to-transparent pointer-events-none" />
           </div>
 
           {/* === INPUT CONTAINER: FreeForm or Structured Input === */}
@@ -948,6 +941,11 @@ export function ChatDisplay({
               sessionId={session.id}
               disableSend={disableSend}
               isEmptySession={session.messages.length === 0}
+              contextStatus={{
+                isCompacting: session.currentStatus?.statusType === 'compacting',
+                inputTokens: session.tokenUsage?.inputTokens,
+                contextWindow: session.tokenUsage?.contextWindow,
+              }}
             />
           </div>
           </div>
@@ -992,7 +990,14 @@ function ErrorMessage({ message }: { message: Message }) {
 
   return (
     <div className="flex justify-start">
-      <div className="max-w-[80%] bg-destructive/10 rounded-[8px] pl-5 pr-4 pt-2 pb-2.5 break-words">
+      {/* Subtle bg (3% opacity) + tinted shadow for softer error appearance */}
+      <div
+        className="max-w-[80%] shadow-tinted rounded-[8px] pl-5 pr-4 pt-2 pb-2.5 break-words"
+        style={{
+          backgroundColor: 'oklch(from var(--destructive) l c h / 0.03)',
+          '--shadow-color': 'var(--destructive-rgb)',
+        } as React.CSSProperties}
+      >
         <div className="text-xs text-destructive/50 mb-0.5 font-semibold">
           {message.errorTitle || 'Error'}
         </div>

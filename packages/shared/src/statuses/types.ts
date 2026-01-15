@@ -47,9 +47,6 @@ export interface StatusConfig {
   /** Icon configuration */
   icon: StatusIcon;
 
-  /** Single char keyboard shortcut (optional) */
-  shortcut?: string;
-
   /** Category (open = inbox, closed = archive) */
   category: StatusCategory;
 
@@ -84,7 +81,6 @@ export interface CreateStatusInput {
   label: string;
   color: string;
   icon: StatusIcon;
-  shortcut?: string;
   category: StatusCategory;
 }
 
@@ -95,6 +91,5 @@ export interface UpdateStatusInput {
   label?: string;
   color?: string;
   icon?: StatusIcon;
-  shortcut?: string | null;  // null to remove
   category?: StatusCategory;
 }

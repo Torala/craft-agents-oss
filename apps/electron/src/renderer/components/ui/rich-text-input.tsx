@@ -1,12 +1,21 @@
 import * as React from 'react'
 import { cn } from '@/lib/utils'
-import { findMentionMatches, type MentionMatch } from '@/lib/mentions'
+import { findMentionMatches, parseMentions, type MentionMatch } from '@/lib/mentions'
+import {
+  loadSourceIcon,
+  loadSkillIcon,
+  getSourceIconSync,
+  getSkillIconSync,
+} from '@/lib/icon-cache'
 import type { LoadedSkill, LoadedSource } from '../../../shared/types'
 import type { MentionItemType } from './mention-menu'
 
 // ============================================================================
 // Types
 // ============================================================================
+
+/** Line count threshold for auto-converting pasted text to file attachment */
+const LONG_TEXT_LINE_THRESHOLD = 100
 
 export interface RichTextInputProps extends Omit<React.HTMLAttributes<HTMLDivElement>, 'onChange' | 'onInput' | 'onPaste'> {
   /** Current text value */
@@ -27,6 +36,8 @@ export interface RichTextInputProps extends Omit<React.HTMLAttributes<HTMLDivEle
   onInput?: (value: string, cursorPosition: number) => void
   /** Called on paste */
   onPaste?: (e: React.ClipboardEvent) => void
+  /** Called when pasted text exceeds line threshold - should create file attachment */
+  onLongTextPaste?: (text: string) => void
 }
 
 export interface RichTextInputHandle {
@@ -42,6 +53,8 @@ export interface RichTextInputHandle {
   setSelectionRange: (start: number, end: number) => void
   /** Get bounding rect for position calculations */
   getBoundingClientRect: () => DOMRect
+  /** Get bounding rect of the current caret/selection position */
+  getCaretRect: () => DOMRect | null
   /** The underlying div element */
   element: HTMLDivElement | null
 }
@@ -60,23 +73,39 @@ const SOURCE_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="10" heig
 function renderBadgeHTML(
   type: MentionItemType,
   label: string,
-  _skill?: LoadedSkill,
-  _source?: LoadedSource,
-  _workspaceId?: string
+  skill?: LoadedSkill,
+  source?: LoadedSource,
+  workspaceId?: string
 ): string {
-  // Render icon based on type using plain HTML strings
+  // Try to get cached icon first
   let iconHtml = ''
-  if (type === 'skill') {
-    iconHtml = `<span class="h-3.5 w-3.5 rounded-[3px] bg-foreground/5 flex items-center justify-center text-foreground/50">${SKILL_ICON_SVG}</span>`
-  } else if (type === 'source') {
-    iconHtml = `<span class="h-3.5 w-3.5 rounded-[3px] bg-foreground/5 flex items-center justify-center text-foreground/50">${SOURCE_ICON_SVG}</span>`
-  } else if (type === 'folder') {
-    iconHtml = `<span class="h-3.5 w-3.5 rounded-[3px] bg-foreground/5 flex items-center justify-center text-foreground/50">${FOLDER_ICON_SVG}</span>`
+  let cachedIconUrl: string | null = null
+
+  if (type === 'skill' && skill && workspaceId) {
+    cachedIconUrl = getSkillIconSync(workspaceId, skill.slug)
+  } else if (type === 'source' && source && workspaceId) {
+    cachedIconUrl = getSourceIconSync(workspaceId, source.config.slug)
+  }
+
+  if (cachedIconUrl) {
+    // Use cached icon as img
+    iconHtml = `<img src="${cachedIconUrl}" class="h-[12px] w-[12px] rounded-[2px] shrink-0" alt="" />`
+  } else {
+    // Fall back to generic SVG icon
+    if (type === 'skill') {
+      iconHtml = `<span class="h-[12px] w-[12px] rounded-[2px] bg-foreground/5 flex items-center justify-center text-foreground/50 shrink-0">${SKILL_ICON_SVG}</span>`
+    } else if (type === 'source') {
+      iconHtml = `<span class="h-[12px] w-[12px] rounded-[2px] bg-foreground/5 flex items-center justify-center text-foreground/50 shrink-0">${SOURCE_ICON_SVG}</span>`
+    } else if (type === 'folder') {
+      iconHtml = `<span class="h-[12px] w-[12px] rounded-[2px] bg-foreground/5 flex items-center justify-center text-foreground/50 shrink-0">${FOLDER_ICON_SVG}</span>`
+    }
   }
 
   const escapedLabel = label.replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
-  return `<span contenteditable="false" data-mention="true" class="inline-flex items-center gap-1 h-5 px-1.5 mx-0.5 rounded-[4px] bg-background shadow-minimal text-[12px] text-foreground align-baseline select-none">${iconHtml}<span class="truncate max-w-[80px]">${escapedLabel}</span></span>`
+  // Line height is increased when badges are present (see hasMentions in component)
+  // Use transform for upward shift - doesn't affect layout flow (works even at start of line)
+  return `<span contenteditable="false" data-mention="true" class="mention-badge inline-flex items-center gap-1 h-[22px] px-1.5 mx-1 rounded-[5px] bg-background shadow-minimal text-[12px] text-foreground [&_*]:selection:bg-transparent selection:bg-transparent" style="vertical-align: middle; transform: translateY(-1px)">${iconHtml}<span class="truncate max-w-[200px]">${escapedLabel}</span></span>`
 }
 
 // ============================================================================
@@ -86,9 +115,11 @@ function renderBadgeHTML(
 function getTextFromElement(element: HTMLElement): string {
   let text = ''
 
-  function processNode(node: Node) {
+  // isTopLevel: true for direct children of the contenteditable root
+  function processNode(node: Node, isTopLevel: boolean = false) {
     if (node.nodeType === Node.TEXT_NODE) {
-      text += node.textContent || ''
+      // Filter out zero-width spaces (used for contenteditable cursor fix)
+      text += (node.textContent || '').replace(/\u200B/g, '')
     } else if (node.nodeType === Node.ELEMENT_NODE) {
       const el = node as HTMLElement
 
@@ -106,19 +137,45 @@ function getTextFromElement(element: HTMLElement): string {
       if (el.tagName === 'BR') {
         text += '\n'
       } else if (el.tagName === 'DIV' && text.length > 0 && !text.endsWith('\n')) {
-        // New divs in contenteditable act as line breaks
-        text += '\n'
+        // DIVs in contenteditable normally represent line breaks.
+        // HOWEVER: When typing before a badge at position 0, browsers wrap the
+        // typed character in a <div>, creating: <div>typed</div><span badge>
+        // This is NOT a user-intended line break - it's browser behavior.
+        // We detect this by checking if a top-level DIV is immediately followed
+        // by a mention badge sibling. If so, skip adding the newline.
+        if (isTopLevel) {
+          // Check if this DIV is followed by a mention badge at top level.
+          // Skip over ZWS-only text nodes - browser may preserve them between
+          // the DIV wrapper and the badge span.
+          let nextSibling: Node | null = el.nextSibling
+          while (
+            nextSibling?.nodeType === Node.TEXT_NODE &&
+            nextSibling.textContent?.replace(/\u200B/g, '') === ''
+          ) {
+            nextSibling = nextSibling.nextSibling
+          }
+          const isBrowserWrapper =
+            (nextSibling as HTMLElement)?.getAttribute?.('data-mention') === 'true'
+          if (!isBrowserWrapper) {
+            text += '\n'
+          }
+          // If it IS followed by a badge, don't add newline - just process children
+        } else {
+          // Nested DIVs are always treated as line breaks
+          text += '\n'
+        }
       }
 
-      // Process children
+      // Process children (no longer top-level)
       Array.from(el.childNodes).forEach(child => {
-        processNode(child)
+        processNode(child, false)
       })
     }
   }
 
+  // Process direct children as top-level nodes
   Array.from(element.childNodes).forEach(child => {
-    processNode(child)
+    processNode(child, true)
   })
 
   return text
@@ -128,9 +185,9 @@ function getTextFromElement(element: HTMLElement): string {
 // Helper: Get cursor position in text model
 // ============================================================================
 
-function getCursorPosition(element: HTMLElement): number {
+function getCursorPosition(element: HTMLElement, fallback: number = 0): number {
   const selection = window.getSelection()
-  if (!selection || selection.rangeCount === 0) return 0
+  if (!selection || selection.rangeCount === 0) return fallback
 
   const range = selection.getRangeAt(0)
 
@@ -158,11 +215,29 @@ function setCursorPosition(element: HTMLElement, targetPosition: number): void {
 
   function findPosition(node: Node): { node: Node; offset: number } | null {
     if (node.nodeType === Node.TEXT_NODE) {
-      const nodeLength = node.textContent?.length || 0
-      if (currentPos + nodeLength >= targetPosition) {
-        return { node, offset: targetPosition - currentPos }
+      const rawText = node.textContent || ''
+      // Filter out zero-width spaces to match text model (ZWS is a DOM-only artifact)
+      const textWithoutZWS = rawText.replace(/\u200B/g, '')
+      const modelLength = textWithoutZWS.length
+
+      if (currentPos + modelLength >= targetPosition) {
+        // Calculate actual DOM offset accounting for zero-width spaces
+        const modelOffset = targetPosition - currentPos
+        let domOffset = 0
+        let modelCount = 0
+        while (modelCount < modelOffset && domOffset < rawText.length) {
+          if (rawText[domOffset] !== '\u200B') {
+            modelCount++
+          }
+          domOffset++
+        }
+        // Skip any trailing ZWS at the target position
+        while (domOffset < rawText.length && rawText[domOffset] === '\u200B') {
+          domOffset++
+        }
+        return { node, offset: domOffset }
       }
-      currentPos += nodeLength
+      currentPos += modelLength
     } else if (node.nodeType === Node.ELEMENT_NODE) {
       const el = node as HTMLElement
 
@@ -243,6 +318,11 @@ function textToHTML(
   let html = ''
   let lastIndex = 0
 
+  // If first match starts at position 0, prepend zero-width space for contenteditable cursor fix
+  if (matches[0].startIndex === 0) {
+    html += '\u200B'
+  }
+
   for (const match of matches) {
     // Add escaped text before this mention
     if (match.startIndex > lastIndex) {
@@ -313,6 +393,7 @@ export const RichTextInput = React.forwardRef<RichTextInputHandle, RichTextInput
       onKeyDown,
       onInput,
       onPaste,
+      onLongTextPaste,
       ...restProps
     },
     forwardedRef
@@ -324,9 +405,28 @@ export const RichTextInput = React.forwardRef<RichTextInputHandle, RichTextInput
     const cursorPositionRef = React.useRef(0)
     const lastMentionSignatureRef = React.useRef('')
     const isInternalUpdate = React.useRef(false)
+    // Pending cursor position to restore after external value update (e.g., after @mention selection)
+    const pendingCursorRef = React.useRef<number | null>(null)
 
     const skillSlugs = React.useMemo(() => skills.map(s => s.slug), [skills])
     const sourceSlugs = React.useMemo(() => sources.map(s => s.config.slug), [sources])
+
+    // Preload icons for sources and skills
+    React.useEffect(() => {
+      if (!workspaceId) return
+
+      // Preload source icons
+      for (const source of sources) {
+        loadSourceIcon({ config: source.config, workspaceId })
+      }
+
+      // Preload skill icons
+      for (const skill of skills) {
+        if (skill.iconPath) {
+          loadSkillIcon({ slug: skill.slug, iconPath: skill.iconPath }, workspaceId)
+        }
+      }
+    }, [sources, skills, workspaceId])
 
     // Expose imperative handle
     React.useImperativeHandle(forwardedRef, () => ({
@@ -338,12 +438,34 @@ export const RichTextInput = React.forwardRef<RichTextInputHandle, RichTextInput
         lastValueRef.current = newValue
       },
       setSelectionRange: (start: number, _end: number) => {
+        // Store pending cursor for when external value sync runs
+        pendingCursorRef.current = start
+        cursorPositionRef.current = start
         if (divRef.current) {
           setCursorPosition(divRef.current, start)
-          cursorPositionRef.current = start
         }
       },
       getBoundingClientRect: () => divRef.current?.getBoundingClientRect() ?? new DOMRect(),
+      getCaretRect: () => {
+        const selection = window.getSelection()
+        if (!selection || selection.rangeCount === 0) return null
+        const range = selection.getRangeAt(0)
+        const rect = range.getBoundingClientRect()
+        // If rect has zero dimensions (collapsed selection at line start), use a fallback
+        if (rect.width === 0 && rect.height === 0 && rect.x === 0 && rect.y === 0) {
+          // Insert a temporary span to measure position
+          const span = document.createElement('span')
+          span.textContent = '\u200B' // Zero-width space
+          range.insertNode(span)
+          const spanRect = span.getBoundingClientRect()
+          span.remove()
+          // Restore selection
+          selection.removeAllRanges()
+          selection.addRange(range)
+          return spanRect
+        }
+        return rect
+      },
       get element() { return divRef.current },
     }), [])
 
@@ -353,7 +475,7 @@ export const RichTextInput = React.forwardRef<RichTextInputHandle, RichTextInput
       if (!divRef.current) return
 
       const newText = getTextFromElement(divRef.current)
-      const cursorPos = getCursorPosition(divRef.current)
+      const cursorPos = getCursorPosition(divRef.current, cursorPositionRef.current)
 
       lastValueRef.current = newText
       cursorPositionRef.current = cursorPos
@@ -385,27 +507,57 @@ export const RichTextInput = React.forwardRef<RichTextInputHandle, RichTextInput
       handleInput()
     }, [handleInput])
 
-    // Handle paste - extract plain text only
+    // Handle paste - delegate files to parent, manually insert plain text
     const handlePasteInternal = React.useCallback((e: React.ClipboardEvent) => {
       // Check if we have files - let parent handle that
       const hasFiles = e.clipboardData?.files && e.clipboardData.files.length > 0
       if (hasFiles && onPaste) {
+        e.preventDefault()
         onPaste(e)
         return
       }
 
+      // Prevent default to avoid HTML paste, then insert plain text manually
       e.preventDefault()
 
-      // Insert plain text
-      const text = e.clipboardData.getData('text/plain')
-      if (text) {
-        document.execCommand('insertText', false, text)
+      const text = e.clipboardData?.getData('text/plain')
+      if (!text) return
+
+      // Check if text is too long - convert to file attachment instead
+      const lineCount = text.split('\n').length
+      if (lineCount > LONG_TEXT_LINE_THRESHOLD && onLongTextPaste) {
+        onLongTextPaste(text)
+        return
       }
-    }, [onPaste])
+
+      // Use Selection API to insert text at cursor position
+      const selection = window.getSelection()
+      if (!selection || !selection.rangeCount) return
+
+      const range = selection.getRangeAt(0)
+      range.deleteContents()
+
+      const textNode = document.createTextNode(text)
+      range.insertNode(textNode)
+
+      // Move cursor to end of inserted text
+      range.setStartAfter(textNode)
+      range.collapse(true)
+      selection.removeAllRanges()
+      selection.addRange(range)
+
+      // Trigger input event to update state
+      if (divRef.current) {
+        divRef.current.dispatchEvent(new Event('input', { bubbles: true }))
+      }
+    }, [onPaste, onLongTextPaste])
 
     // Handle focus
     const handleFocus = React.useCallback((e: React.FocusEvent<HTMLDivElement>) => {
       setIsFocused(true)
+      // Tell browser to use <br> instead of <div> for line breaks.
+      // This prevents div-wrapping when typing before non-editable spans (badges).
+      document.execCommand('defaultParagraphSeparator', false, 'br')
       onFocus?.(e)
     }, [onFocus])
 
@@ -428,9 +580,11 @@ export const RichTextInput = React.forwardRef<RichTextInputHandle, RichTextInput
       const html = textToHTML(value, skills, sources, workspaceId)
       divRef.current.innerHTML = html || '<br>'
 
-      // If focused, restore cursor at end
+      // If focused, restore cursor - use pending position if set, otherwise end
       if (document.activeElement === divRef.current) {
-        setCursorPosition(divRef.current, value.length)
+        const cursorPos = pendingCursorRef.current ?? value.length
+        setCursorPosition(divRef.current, cursorPos)
+        pendingCursorRef.current = null // Clear after use
       }
     }, [value, skills, sources, skillSlugs, sourceSlugs, workspaceId])
 
@@ -443,8 +597,57 @@ export const RichTextInput = React.forwardRef<RichTextInputHandle, RichTextInput
       lastValueRef.current = value
     }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
+    // Handle selection changes to highlight badges when selected
+    React.useEffect(() => {
+      // Get selection color from CSS variable (accent with transparency)
+      const getSelectionColor = () => {
+        const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()
+        // Return accent color with 40% opacity
+        return accent ? `oklch(${accent.replace('oklch(', '').replace(')', '')} / 0.4)` : 'rgba(99, 102, 241, 0.4)'
+      }
+
+      const handleSelectionChange = () => {
+        if (!divRef.current) return
+
+        const selection = window.getSelection()
+        if (!selection || selection.rangeCount === 0) return
+
+        const range = selection.getRangeAt(0)
+
+        // Get all mention badges
+        const badges = divRef.current.querySelectorAll('.mention-badge') as NodeListOf<HTMLElement>
+
+        badges.forEach((badge) => {
+          // Check if badge is within selection range
+          const badgeRange = document.createRange()
+          badgeRange.selectNode(badge)
+
+          const isSelected =
+            range.compareBoundaryPoints(Range.START_TO_END, badgeRange) > 0 &&
+            range.compareBoundaryPoints(Range.END_TO_START, badgeRange) < 0
+
+          if (isSelected) {
+            badge.style.backgroundColor = getSelectionColor()
+            badge.classList.remove('bg-background')
+          } else {
+            badge.style.backgroundColor = ''
+            badge.classList.add('bg-background')
+          }
+        })
+      }
+
+      document.addEventListener('selectionchange', handleSelectionChange)
+      return () => document.removeEventListener('selectionchange', handleSelectionChange)
+    }, [])
+
     // Show placeholder
     const showPlaceholder = !value
+
+    // Check if value contains any mentions (badges) to adjust line height
+    const hasMentions = React.useMemo(() => {
+      const mentions = parseMentions(value, skillSlugs, sourceSlugs)
+      return mentions.skills.length > 0 || mentions.sources.length > 0 || mentions.folders.length > 0
+    }, [value, skillSlugs, sourceSlugs])
 
     return (
       <div className="relative">
@@ -460,6 +663,8 @@ export const RichTextInput = React.forwardRef<RichTextInputHandle, RichTextInput
             showPlaceholder && !isFocused && 'text-transparent',
             className
           )}
+          // Use inline style for line-height to override text-sm's built-in line-height
+          style={{ lineHeight: 1.25 }}
           onInput={handleInput}
           onKeyDown={onKeyDown}
           onFocus={handleFocus}

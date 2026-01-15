@@ -69,6 +69,7 @@ export function readSessionJsonl(sessionFile: string): StoredSession | null {
       sdkCwd,
       sharedUrl: header.sharedUrl,
       sharedId: header.sharedId,
+      model: header.model,
       messages,
       tokenUsage: header.tokenUsage,
     };
@@ -115,6 +116,7 @@ export function createSessionHeader(session: StoredSession): SessionHeader {
     sdkCwd: session.sdkCwd,
     sharedUrl: session.sharedUrl,
     sharedId: session.sharedId,
+    model: session.model,
     // Pre-computed fields
     messageCount: session.messages.length,
     lastMessageRole: extractLastMessageRole(session.messages),

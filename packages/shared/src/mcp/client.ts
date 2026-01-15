@@ -19,7 +19,7 @@ export class CraftMcpClient {
 
   constructor(config: McpClientConfig) {
     this.client = new Client({
-      name: 'craft-tui-agent',
+      name: 'craft-agent',
       version: '1.0.0',
     });
 

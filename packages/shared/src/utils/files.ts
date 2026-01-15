@@ -57,6 +57,85 @@ const OFFICE_EXTENSIONS: Record<string, string> = {
 const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB limit
 const MAX_TEXT_SIZE = 100 * 1024; // 100KB for text files
 
+// Claude API image limits - images exceeding these will fail silently
+// See: https://docs.anthropic.com/en/docs/build-with-claude/vision
+const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB - Claude API hard limit
+const MAX_IMAGE_DIMENSION = 8000; // 8000x8000 max pixels
+const OPTIMAL_IMAGE_EDGE = 1568; // Recommended max edge for quality/cost balance (~1.15MP)
+
+/**
+ * Result of validating an image for Claude API compatibility
+ */
+export interface ImageValidationResult {
+  valid: boolean;
+  /** Hard error - image cannot be sent */
+  error?: string;
+  /** Warning - image will work but may have issues */
+  warning?: string;
+  /** Image needs resizing for optimal performance */
+  needsResize?: boolean;
+  /** Suggested new dimensions if resize needed */
+  suggestedSize?: { width: number; height: number };
+}
+
+/**
+ * Validate an image for Claude API compatibility
+ * Returns validation result with errors, warnings, and resize suggestions
+ *
+ * @param size - File size in bytes
+ * @param width - Image width in pixels (optional, for dimension checking)
+ * @param height - Image height in pixels (optional, for dimension checking)
+ */
+export function validateImageForClaudeAPI(
+  size: number,
+  width?: number,
+  height?: number
+): ImageValidationResult {
+  // Check file size first (hard limit)
+  if (size > MAX_IMAGE_SIZE) {
+    const sizeMB = (size / 1024 / 1024).toFixed(1);
+    return {
+      valid: false,
+      error: `Image too large (${sizeMB}MB). Claude API limit is 5MB. Please resize or compress the image.`,
+    };
+  }
+
+  // Check dimensions if provided
+  if (width !== undefined && height !== undefined) {
+    // Hard limit on dimensions
+    if (width > MAX_IMAGE_DIMENSION || height > MAX_IMAGE_DIMENSION) {
+      return {
+        valid: false,
+        error: `Image dimensions too large (${width}×${height}). Maximum is ${MAX_IMAGE_DIMENSION}×${MAX_IMAGE_DIMENSION} pixels.`,
+      };
+    }
+
+    // Check if resize is recommended for optimal performance
+    const maxEdge = Math.max(width, height);
+    if (maxEdge > OPTIMAL_IMAGE_EDGE) {
+      const scale = OPTIMAL_IMAGE_EDGE / maxEdge;
+      return {
+        valid: true,
+        needsResize: true,
+        warning: `Large image (${width}×${height}). Will be resized to optimize tokens and latency.`,
+        suggestedSize: {
+          width: Math.round(width * scale),
+          height: Math.round(height * scale),
+        },
+      };
+    }
+  }
+
+  return { valid: true };
+}
+
+// Export constants for use in other modules
+export const IMAGE_LIMITS = {
+  MAX_SIZE: MAX_IMAGE_SIZE,
+  MAX_DIMENSION: MAX_IMAGE_DIMENSION,
+  OPTIMAL_EDGE: OPTIMAL_IMAGE_EDGE,
+} as const;
+
 /**
  * Extract file paths from input text
  * Handles:

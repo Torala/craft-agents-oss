@@ -1,13 +1,12 @@
 /**
- * Fetch interceptor to inject 1-hour TTL into Anthropic prompt caching.
+ * Fetch interceptor for Anthropic API requests.
  *
  * Loaded via bunfig.toml preload to run BEFORE any modules are evaluated.
  * This ensures we patch globalThis.fetch before the SDK captures it.
  *
- * Can be configured via `extendedCacheTtl` in ~/.craft-agent/config.json:
- * - Not set (default): Auto mode - 1h for Opus models, 5m for others
- * - true: Force 1h for all models
- * - false: Force 5m for all models
+ * Features:
+ * - Captures API errors for error handler (4xx/5xx responses)
+ * - Adds _intent and _displayName metadata to MCP tool schemas
  */
 
 import { appendFileSync, existsSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
@@ -20,7 +19,6 @@ type HeadersInitType = Headers | Record<string, string> | string[][];
 
 const DEBUG = process.argv.includes('--debug') || process.env.CRAFT_DEBUG === '1';
 const LOG_FILE = '/tmp/craft-debug.log';
-const CONFIG_FILE = join(homedir(), '.craft-agent', 'config.json');
 
 /**
  * Store the last API error for the error handler to access.
@@ -94,32 +92,6 @@ export function clearLastApiError(): void {
   setStoredError(null);
 }
 
-/**
- * Check if extended cache TTL is explicitly configured.
- * Returns: true (force enable), false (force disable), or null (auto based on model)
- */
-function getExtendedCacheConfig(): boolean | null {
-  try {
-    if (!existsSync(CONFIG_FILE)) return null;
-    const content = readFileSync(CONFIG_FILE, 'utf-8');
-    const config = JSON.parse(content);
-    if (typeof config.extendedCacheTtl === 'boolean') {
-      return config.extendedCacheTtl;
-    }
-    return null; // Auto mode - enabled for Opus only
-  } catch {
-    return null;
-  }
-}
-
-const EXTENDED_CACHE_CONFIG = getExtendedCacheConfig();
-
-/**
- * Check if model is Opus (uses 1h cache by default)
- */
-function isOpusModel(model: string): boolean {
-  return model.includes('opus');
-}
 
 function debugLog(...args: unknown[]) {
   if (!DEBUG) return;
@@ -142,27 +114,9 @@ function debugLog(...args: unknown[]) {
   }
 }
 
-/**
- * Recursively find and modify all cache_control objects to add ttl: "1h"
- */
-function addCacheTtl(obj: unknown): unknown {
-  if (obj === null || typeof obj !== 'object') return obj;
-  if (Array.isArray(obj)) return obj.map(addCacheTtl);
-
-  const record = obj as Record<string, unknown>;
-  if (record.type === 'ephemeral' && !('ttl' in record)) {
-    return { ...record, ttl: '1h' };
-  }
-
-  const result: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(record)) {
-    result[key] = addCacheTtl(value);
-  }
-  return result;
-}
 
 /**
- * Check if URL is Anthropic API (for cache TTL modification)
+ * Check if URL is Anthropic API
  */
 function isAnthropicMessagesUrl(url: string): boolean {
   return url.includes('api.anthropic.com') && url.includes('/messages');
@@ -237,12 +191,10 @@ function addMetadataToMcpTools(body: Record<string, unknown>): Record<string, un
 }
 
 /**
- * Check if URL should have API errors captured (includes Craft Gateway)
+ * Check if URL should have API errors captured
  */
 function shouldCaptureApiErrors(url: string): boolean {
-  const isAnthropicDirect = url.includes('api.anthropic.com') && url.includes('/messages');
-  const isCraftGateway = url.includes('api.craft.do/ai-gateway/anthropic') && url.includes('/messages');
-  return isAnthropicDirect || isCraftGateway;
+  return url.includes('api.anthropic.com') && url.includes('/messages');
 }
 
 const originalFetch = globalThis.fetch.bind(globalThis);
@@ -401,64 +353,26 @@ async function interceptedFetch(
     debugLog(toCurl(url, init));
   }
 
-  // Skip cache TTL modification if explicitly disabled
-  if (EXTENDED_CACHE_CONFIG === false) {
-    const response = await originalFetch(input, init);
-    return logResponse(response, url, startTime);
-  }
-
   if (
     isAnthropicMessagesUrl(url) &&
     init?.method?.toUpperCase() === 'POST' &&
     init?.body
   ) {
     try {
-      let headers = init?.headers;
-      let newUrl = new URL(url);
-      if (process.env.USE_CRAFT_AI_GATEWAY === 'true' && process.env.CRAFT_API_GATEWAY_TOKEN != null) {
-        newUrl.hostname = 'api.craft.do';
-        newUrl.pathname = '/ai-gateway/anthropic' + newUrl.pathname;
-        headers = {
-          ...JSON.parse(JSON.stringify(headers)),
-          'authorization': `${process.env.CRAFT_API_GATEWAY_TOKEN}`,
-        };
-        console.error('[Interceptor] Redirecting to Craft AI Gateway');
-        debugLog('  [Redirecting to Craft AI Gateway]');
-      }
       const body = typeof init.body === 'string' ? init.body : undefined;
       if (body) {
         let parsed = JSON.parse(body);
-        const model = parsed.model as string | undefined;
 
-        // Add _intent to MCP tool schemas (always, regardless of cache config)
+        // Add _intent and _displayName to MCP tool schemas
         parsed = addMetadataToMcpTools(parsed);
 
-        // Determine if we should apply 1h TTL:
-        // - If explicitly enabled in config: always apply
-        // - If not configured (null): only apply for Opus models
-        const shouldApply =
-          EXTENDED_CACHE_CONFIG === true ||
-          (EXTENDED_CACHE_CONFIG === null && model && isOpusModel(model));
-
-        if (shouldApply) {
-          debugLog('  [Applying 1h cache TTL]');
-        }
-
-        const modified = shouldApply ? addCacheTtl(parsed) : parsed;
         const modifiedInit = {
           ...init,
-          body: JSON.stringify(modified),
-          headers: headers,
+          body: JSON.stringify(parsed),
         };
 
-        // Log the modified request if it differs
-        if (DEBUG && (shouldApply || newUrl.toString() !== url)) {
-          debugLog('\n→ MODIFIED REQUEST');
-          debugLog(toCurl(newUrl.toString(), modifiedInit));
-        }
-
-        const response = await originalFetch(newUrl.toString(), modifiedInit);
-        return logResponse(response, newUrl.toString(), startTime);
+        const response = await originalFetch(url, modifiedInit);
+        return logResponse(response, url, startTime);
       }
     } catch (e) {
       debugLog('FETCH modification failed:', e);
@@ -485,11 +399,4 @@ const fetchProxy = new Proxy(interceptedFetch, {
 });
 
 (globalThis as unknown as { fetch: unknown }).fetch = fetchProxy;
-debugLog(
-  'Fetch interceptor installed, extended cache TTL:',
-  EXTENDED_CACHE_CONFIG === true
-    ? 'enabled (1h for all models)'
-    : EXTENDED_CACHE_CONFIG === false
-      ? 'disabled (5m for all models)'
-      : 'auto (1h for Opus, 5m for others)'
-);
+debugLog('Fetch interceptor installed');

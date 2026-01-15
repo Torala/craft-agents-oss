@@ -171,6 +171,10 @@ function PermissionModeDropdown({ permissionMode, ultrathinkEnabled = false, onP
         align="start"
         sideOffset={4}
         style={{ borderRadius: '8px', boxShadow: '0 8px 24px rgba(0, 0, 0, 0.25)' }}
+        onCloseAutoFocus={(e) => {
+          e.preventDefault()
+          window.dispatchEvent(new CustomEvent('craft:focus-input'))
+        }}
       >
         <SlashCommandMenu
           commandGroups={DEFAULT_SLASH_COMMAND_GROUPS}

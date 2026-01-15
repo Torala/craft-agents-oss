@@ -14,6 +14,7 @@
 import * as React from 'react'
 import { CrossfadeAvatar } from '@/components/ui/avatar'
 import { cn } from '@/lib/utils'
+import { skillIconCache, clearSkillIconCaches } from '@/lib/icon-cache'
 import { Zap } from 'lucide-react'
 import type { LoadedSkill } from '../../../shared/types'
 
@@ -38,14 +39,11 @@ const SIZE_CONFIG: Record<SkillAvatarSize, string> = {
   lg: 'h-6 w-6',
 }
 
-// Cache for loaded skill icons
-const skillIconCache = new Map<string, string>()
-
 /**
  * Clear the skill icon cache
  */
 export function clearSkillIconCache(): void {
-  skillIconCache.clear()
+  clearSkillIconCaches()
 }
 
 /**

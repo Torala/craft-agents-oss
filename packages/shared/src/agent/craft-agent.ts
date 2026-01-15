@@ -1,4 +1,4 @@
-import { query, createSdkMcpServer, tool, AbortError, type Query, type SDKMessage, type SDKUserMessage, type Options } from '@anthropic-ai/claude-agent-sdk';
+import { query, createSdkMcpServer, tool, AbortError, type Query, type SDKMessage, type SDKUserMessage, type SDKAssistantMessageError, type Options } from '@anthropic-ai/claude-agent-sdk';
 import { getDefaultOptions } from './options.ts';
 import type { ContentBlockParam } from '@anthropic-ai/sdk/resources';
 import { z } from 'zod';
@@ -118,48 +118,6 @@ const DANGEROUS_COMMANDS = new Set([
   'curl', 'wget', 'ssh', 'scp', 'rsync',
   'git push', 'git reset', 'git rebase', 'git checkout',
 ]);
-
-/**
- * Detects internal SDK errors that should NOT be shown to users.
- *
- * ## Why This Exists
- *
- * The Claude Agent SDK runs as a subprocess and handles various internal operations
- * like telemetry, event logging, and analytics. When these internal systems fail
- * (e.g., network issues, rate limits, server errors), the SDK propagates these
- * errors through its event stream.
- *
- * These errors are NOT user-actionable - they're internal SDK plumbing that users
- * cannot fix or do anything about. Showing them in the UI:
- * 1. Confuses users with technical jargon ("1P event logging", "export failed")
- * 2. Makes the app appear broken when it's actually functioning normally
- * 3. Pollutes the conversation history with irrelevant error messages
- *
- * ## Known Internal Error Patterns
- *
- * - "1P event logging: X events failed to export" - Anthropic's first-party
- *   telemetry system failed to send usage/analytics data. Does not affect
- *   the actual AI conversation.
- *
- * - "Failed to export N events" - Generic export failure, usually telemetry.
- *
- * ## Maintenance Note
- *
- * When new internal SDK errors are discovered appearing in the UI, add them
- * to the patterns array below. Always log filtered errors to debug so they
- * can still be investigated when troubleshooting with --debug flag.
- */
-function isInternalSDKError(message: string): boolean {
-  // Patterns that indicate internal SDK errors (not user-facing issues)
-  const internalErrorPatterns = [
-    '1p event logging',       // Anthropic's first-party telemetry system
-    'events failed to export', // Telemetry export failures
-    'failed to export',       // Generic export failures (case variations)
-  ];
-
-  const lowerMsg = message.toLowerCase();
-  return internalErrorPatterns.some((pattern) => lowerMsg.includes(pattern));
-}
 
 // ============================================================
 // Global Tool Permission System
@@ -432,7 +390,9 @@ export class CraftAgent {
   public onSourceActivationRequest: ((sourceSlug: string) => Promise<boolean>) | null = null;
 
   constructor(config: CraftAgentConfig) {
-    this.config = config;
+    // Resolve model: prioritize session model > config model > global config > DEFAULT_MODEL
+    const resolvedModel = config.session?.model ?? config.model ?? loadStoredConfig()?.model ?? DEFAULT_MODEL;
+    this.config = { ...config, model: resolvedModel };
     this.isHeadless = config.isHeadless ?? false;
 
     // Initialize sessionId from session config for conversation resumption
@@ -1561,8 +1521,8 @@ export class CraftAgent {
       let currentTurnId: string | null = null;
       try {
         for await (const message of this.currentQuery) {
-          // Capture session ID for conversation continuity
-          if ('session_id' in message && message.session_id) {
+          // Capture session ID for conversation continuity (only when it changes)
+          if ('session_id' in message && message.session_id && message.session_id !== this.sessionId) {
             this.sessionId = message.session_id;
             // Notify caller of new SDK session ID (for immediate persistence)
             this.config.onSdkSessionIdUpdate?.(message.session_id);
@@ -1820,22 +1780,6 @@ export class CraftAgent {
         // (Auth, billing, and rate limit errors are handled above)
         const rawMessage = sdkError instanceof Error ? sdkError.message : String(sdkError);
 
-        // Filter out internal SDK errors that shouldn't be shown to users.
-        // These are internal SDK plumbing errors (telemetry, analytics, etc.) that:
-        // 1. Users cannot fix or take action on
-        // 2. Don't affect the actual AI conversation functionality
-        // 3. Would only confuse users with technical internal error messages
-        //
-        // We still log them to debug for troubleshooting purposes.
-        // See isInternalSDKError() for detailed documentation on what gets filtered.
-        if (isInternalSDKError(rawMessage)) {
-          debug(`[CraftAgent] Filtered internal SDK error: ${rawMessage}`);
-          // Don't emit error event - silently complete
-          // The agent can still function normally despite these internal failures
-          yield { type: 'complete' };
-          return;
-        }
-
         yield { type: 'error', message: rawMessage };
         yield { type: 'complete' };
         return;
@@ -1846,17 +1790,7 @@ export class CraftAgent {
       console.error(`[CraftAgent] OUTER CATCH triggered: ${error instanceof Error ? error.message : String(error)}`);
       console.error(`[CraftAgent] Error stack: ${error instanceof Error ? error.stack : 'no stack'}`);
 
-      // Extract error message for filtering check
       const errorMessage = error instanceof Error ? error.message : String(error);
-
-      // Filter out internal SDK errors that shouldn't be shown to users.
-      // See isInternalSDKError() for detailed documentation on what gets filtered.
-      if (isInternalSDKError(errorMessage)) {
-        debug(`[CraftAgent] Filtered internal SDK error (outer catch): ${errorMessage}`);
-        // Don't emit error event - silently complete
-        yield { type: 'complete' };
-        return;
-      }
 
       // Check if this is a recognizable error type
       const typedError = parseError(error);
@@ -2243,6 +2177,90 @@ export class CraftAgent {
     return supported[mimeType] || null;
   }
 
+  /**
+   * Map SDK assistant message error codes to typed error events with user-friendly messages.
+   */
+  private mapSDKErrorToTypedError(errorCode: SDKAssistantMessageError): { type: 'typed_error'; error: AgentError } {
+    const errorMap: Record<SDKAssistantMessageError, AgentError> = {
+      'authentication_failed': {
+        code: 'invalid_api_key',
+        title: 'Authentication Failed',
+        message: 'Unable to authenticate with Anthropic. Your API key may be invalid or expired.',
+        details: ['Check your API key in settings', 'Ensure your API key has not been revoked'],
+        actions: [
+          { key: 's', label: 'Settings', action: 'settings' },
+          { key: 'r', label: 'Retry', action: 'retry' },
+        ],
+        canRetry: true,
+        retryDelayMs: 1000,
+      },
+      'billing_error': {
+        code: 'insufficient_credits',
+        title: 'Billing Error',
+        message: 'Your account has insufficient credits or has billing issues.',
+        details: ['Check your Anthropic account billing status', 'Ensure you have available credits'],
+        actions: [
+          { key: 'c', label: 'Check credits', action: 'credits' },
+        ],
+        canRetry: false,
+      },
+      'rate_limit': {
+        code: 'rate_limited',
+        title: 'Rate Limit Exceeded',
+        message: 'Too many requests. Please wait a moment before trying again.',
+        details: ['Rate limits reset after a short period', 'Consider upgrading your plan for higher limits'],
+        actions: [
+          { key: 'r', label: 'Retry', action: 'retry' },
+        ],
+        canRetry: true,
+        retryDelayMs: 5000,
+      },
+      'invalid_request': {
+        code: 'unknown_error',
+        title: 'Invalid Request',
+        message: 'The request was invalid.',
+        details: ['Try sending a new message', 'Report this issue if it persists'],
+        actions: [
+          { key: 'r', label: 'Retry', action: 'retry' },
+        ],
+        canRetry: true,
+        retryDelayMs: 1000,
+      },
+      'server_error': {
+        code: 'network_error',
+        title: 'Connection Error',
+        message: 'Unable to connect to Anthropic servers. Check your internet connection.',
+        details: [
+          'Verify your network connection is active',
+          'Check if api.anthropic.com is accessible',
+          'Firewall or VPN may be blocking the connection',
+        ],
+        actions: [
+          { key: 'r', label: 'Retry', action: 'retry' },
+        ],
+        canRetry: true,
+        retryDelayMs: 2000,
+      },
+      'unknown': {
+        code: 'unknown_error',
+        title: 'Unknown Error',
+        message: 'An unexpected error occurred while connecting to Anthropic.',
+        details: ['This may be a temporary issue', 'Check your network connection'],
+        actions: [
+          { key: 'r', label: 'Retry', action: 'retry' },
+        ],
+        canRetry: true,
+        retryDelayMs: 2000,
+      },
+    };
+
+    const error = errorMap[errorCode];
+    return {
+      type: 'typed_error',
+      error,
+    };
+  }
+
   private convertSDKMessage(
     message: SDKMessage,
     pendingToolUses: Map<string, { name: string; input: Record<string, unknown> }>,
@@ -2271,6 +2289,15 @@ export class CraftAgent {
 
     switch (message.type) {
       case 'assistant': {
+        // Check for SDK-level errors FIRST (auth, network, rate limits, etc.)
+        // These errors are set by the SDK when API calls fail
+        if ('error' in message && message.error) {
+          const errorEvent = this.mapSDKErrorToTypedError(message.error);
+          events.push(errorEvent);
+          // Don't process content blocks when there's an error
+          break;
+        }
+
         // Skip replayed messages when resuming a session - they're historical
         if ('isReplay' in message && message.isReplay) {
           break;
@@ -2755,12 +2782,19 @@ export class CraftAgent {
         // Total input = input_tokens + cache_creation + cache_read
         const cacheRead = message.usage.cache_read_input_tokens ?? 0;
         const cacheCreation = message.usage.cache_creation_input_tokens ?? 0;
+
+        // Extract context window from modelUsage (SDK provides per-model usage breakdown)
+        // Use the first model's contextWindow (typically only one model per turn)
+        const modelUsageEntries = Object.values(message.modelUsage || {});
+        const contextWindow = modelUsageEntries[0]?.contextWindow;
+
         const usage = {
           inputTokens: message.usage.input_tokens + cacheRead + cacheCreation,
           outputTokens: message.usage.output_tokens,
           cacheReadTokens: cacheRead,
           cacheCreationTokens: cacheCreation,
           costUsd: message.total_cost_usd,
+          contextWindow,
         };
 
         if (message.subtype === 'success') {

@@ -243,7 +243,7 @@ export class SecureStorageBackend implements CredentialBackend {
       .update(hostname())
       .update(userInfo().username)
       .update(homedir())
-      .update('craft-tui-agent-v1') // App-specific constant
+      .update('craft-agent-v1') // App-specific constant
       .digest();
 
     // Derive key using PBKDF2

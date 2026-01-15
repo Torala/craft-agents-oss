@@ -10,6 +10,7 @@
  * - ~/.craft-agent/theme.json - App-level theme overrides
  * - ~/.craft-agent/workspaces/{slug}/ - Workspace directory (recursive)
  *   - theme.json - Workspace-level theme overrides
+ *   - themes/*.json - Preset theme files
  *   - sources/{slug}/config.json, guide.md, permissions.json
  *   - skills/{slug}/SKILL.md, icon.*
  *   - permissions.json
@@ -34,8 +35,8 @@ import { permissionsConfigCache } from '../agent/permissions-config.ts';
 import { getWorkspacePath, getWorkspaceSourcesPath, getWorkspaceSkillsPath } from '../workspaces/storage.ts';
 import type { LoadedSkill } from '../skills/types.ts';
 import { loadSkill, loadWorkspaceSkills } from '../skills/storage.ts';
-import { loadAppTheme, loadWorkspaceTheme } from './storage.ts';
-import type { ThemeOverrides } from './theme.ts';
+import { loadAppTheme, loadWorkspaceTheme, loadPresetThemes, loadPresetTheme } from './storage.ts';
+import type { ThemeOverrides, PresetTheme } from './theme.ts';
 
 // ============================================================
 // Constants
@@ -108,6 +109,10 @@ export interface ConfigWatcherCallbacks {
   onAppThemeChange?: (theme: ThemeOverrides | null) => void;
   /** Called when workspace-level theme.json changes */
   onWorkspaceThemeChange?: (theme: ThemeOverrides | null) => void;
+  /** Called when a preset theme file changes (null if deleted) */
+  onPresetThemeChange?: (themeId: string, theme: PresetTheme | null) => void;
+  /** Called when the preset themes list changes (add/remove files) */
+  onPresetThemesListChange?: (themes: PresetTheme[]) => void;
 
   // Error callbacks
   /** Called when a validation error occurs */
@@ -155,11 +160,13 @@ export class ConfigWatcher {
   // Track known items for detecting adds/removes
   private knownSources: Set<string> = new Set();
   private knownSkills: Set<string> = new Set();
+  private knownThemes: Set<string> = new Set();
 
   // Computed paths
   private workspaceDir: string;
   private sourcesDir: string;
   private skillsDir: string;
+  private themesDir: string;
 
   constructor(workspaceIdOrPath: string, callbacks: ConfigWatcherCallbacks) {
     this.callbacks = callbacks;
@@ -175,6 +182,7 @@ export class ConfigWatcher {
     }
     this.sourcesDir = getWorkspaceSourcesPath(this.workspaceDir);
     this.skillsDir = getWorkspaceSkillsPath(this.workspaceDir);
+    this.themesDir = join(this.workspaceDir, 'themes');
   }
 
   /**
@@ -218,6 +226,9 @@ export class ConfigWatcher {
     this.scanSkills();
     span.mark('scanSkills');
 
+    this.scanThemes();
+    span.mark('scanThemes');
+
     debug('[ConfigWatcher] Started watching files');
     span.end();
   }
@@ -246,6 +257,7 @@ export class ConfigWatcher {
 
     this.knownSources.clear();
     this.knownSkills.clear();
+    this.knownThemes.clear();
 
     debug('[ConfigWatcher] Stopped');
   }
@@ -315,6 +327,21 @@ export class ConfigWatcher {
     // Workspace-level theme.json
     if (relativePath === 'theme.json') {
       this.debounce('workspace-theme', () => this.handleWorkspaceThemeChange());
+      return;
+    }
+
+    // Preset themes changes: themes/*.json
+    if (parts[0] === 'themes' && parts.length >= 2) {
+      const file = parts[1];
+
+      // Only handle .json files in the themes directory
+      if (file && file.endsWith('.json')) {
+        const themeId = file.replace('.json', '');
+        this.debounce(`preset-theme:${themeId}`, () => this.handlePresetThemeChange(themeId));
+      } else if (parts.length === 1) {
+        // Directory-level change (themes folder itself)
+        this.debounce('themes-dir', () => this.handleThemesDirChange());
+      }
       return;
     }
 
@@ -736,6 +763,126 @@ export class ConfigWatcher {
     debug('[ConfigWatcher] Workspace theme.json changed:', this.workspaceId);
     const theme = loadWorkspaceTheme(this.workspaceDir);
     this.callbacks.onWorkspaceThemeChange?.(theme);
+  }
+
+  // ============================================================
+  // Preset Themes Handlers
+  // ============================================================
+
+  /**
+   * Scan themes directory to populate known themes
+   */
+  private scanThemes(): void {
+    if (!existsSync(this.themesDir)) {
+      // Don't create themes dir here - it will be created when ensurePresetThemes is called
+      return;
+    }
+
+    try {
+      const files = readdirSync(this.themesDir).filter(f => f.endsWith('.json'));
+
+      for (const file of files) {
+        const themeId = file.replace('.json', '');
+        this.knownThemes.add(themeId);
+      }
+
+      debug('[ConfigWatcher] Known themes:', Array.from(this.knownThemes));
+    } catch (error) {
+      debug('[ConfigWatcher] Error scanning themes:', error);
+    }
+  }
+
+  /**
+   * Handle themes directory change (add/remove files)
+   */
+  private handleThemesDirChange(): void {
+    debug('[ConfigWatcher] Themes directory changed');
+
+    if (!existsSync(this.themesDir)) {
+      // Directory was deleted
+      const removed = Array.from(this.knownThemes);
+      this.knownThemes.clear();
+
+      for (const themeId of removed) {
+        this.callbacks.onPresetThemeChange?.(themeId, null);
+      }
+
+      this.callbacks.onPresetThemesListChange?.([]);
+      return;
+    }
+
+    try {
+      const files = readdirSync(this.themesDir).filter(f => f.endsWith('.json'));
+      const currentThemes = new Set<string>();
+
+      for (const file of files) {
+        const themeId = file.replace('.json', '');
+        currentThemes.add(themeId);
+      }
+
+      // Find added themes
+      for (const themeId of currentThemes) {
+        if (!this.knownThemes.has(themeId)) {
+          debug('[ConfigWatcher] New theme:', themeId);
+          this.knownThemes.add(themeId);
+
+          const theme = loadPresetTheme(this.workspaceDir, themeId);
+          if (theme) {
+            this.callbacks.onPresetThemeChange?.(themeId, theme);
+          }
+        }
+      }
+
+      // Find removed themes
+      for (const themeId of this.knownThemes) {
+        if (!currentThemes.has(themeId)) {
+          debug('[ConfigWatcher] Removed theme:', themeId);
+          this.knownThemes.delete(themeId);
+          this.callbacks.onPresetThemeChange?.(themeId, null);
+        }
+      }
+
+      // Notify list change
+      const allThemes = loadPresetThemes(this.workspaceDir);
+      this.callbacks.onPresetThemesListChange?.(allThemes);
+    } catch (error) {
+      debug('[ConfigWatcher] Error handling themes dir change:', error);
+      this.callbacks.onError?.('themes/', error as Error);
+    }
+  }
+
+  /**
+   * Handle preset theme file change
+   */
+  private handlePresetThemeChange(themeId: string): void {
+    debug('[ConfigWatcher] Preset theme changed:', themeId);
+
+    const themePath = join(this.themesDir, `${themeId}.json`);
+
+    if (!existsSync(themePath)) {
+      // Theme was deleted
+      if (this.knownThemes.has(themeId)) {
+        this.knownThemes.delete(themeId);
+        this.callbacks.onPresetThemeChange?.(themeId, null);
+
+        // Also notify list change
+        const allThemes = loadPresetThemes(this.workspaceDir);
+        this.callbacks.onPresetThemesListChange?.(allThemes);
+      }
+      return;
+    }
+
+    // Theme was added or modified
+    if (!this.knownThemes.has(themeId)) {
+      this.knownThemes.add(themeId);
+    }
+
+    const theme = loadPresetTheme(this.workspaceDir, themeId);
+    this.callbacks.onPresetThemeChange?.(themeId, theme);
+
+    // Also notify list change in case name changed (affects sorting)
+    const allThemes = loadPresetThemes(this.workspaceDir);
+    this.callbacks.onPresetThemesListChange?.(allThemes);
   }
 }
 

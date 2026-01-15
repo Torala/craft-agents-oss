@@ -9,6 +9,7 @@ import {
   Check,
   DatabaseZap,
   ChevronDown,
+  Loader2,
 } from 'lucide-react'
 import { Icon_Folder } from '@craft-agent/ui'
 
@@ -18,7 +19,6 @@ import { Button } from '@/components/ui/button'
 import {
   InlineSlashCommand,
   useInlineSlashCommand,
-  DEFAULT_SLASH_COMMANDS,
   type SlashCommandId,
 } from '@/components/ui/slash-command-menu'
 import {
@@ -45,6 +45,18 @@ import type { FileAttachment, LoadedSource, LoadedSkill } from '../../../../shar
 import type { PermissionMode } from '@craft-agent/shared/agent/modes'
 import { PERMISSION_MODE_ORDER } from '@craft-agent/shared/agent/modes'
 
+/**
+ * Format token count for display (e.g., 1500 -> "1.5k", 200000 -> "200k")
+ */
+function formatTokenCount(tokens: number): string {
+  if (tokens >= 1000000) {
+    return `${(tokens / 1000000).toFixed(1)}M`
+  }
+  if (tokens >= 1000) {
+    return `${(tokens / 1000).toFixed(tokens >= 10000 ? 0 : 1)}k`
+  }
+  return tokens.toString()
+}
 
 export interface FreeFormInputProps {
   /** Placeholder text for the textarea */
@@ -105,6 +117,15 @@ export interface FreeFormInputProps {
   disableSend?: boolean
   /** Whether the session is empty (no messages yet) - affects context badge prominence */
   isEmptySession?: boolean
+  /** Context status for showing compaction indicator and token usage */
+  contextStatus?: {
+    /** True when SDK is actively compacting the conversation */
+    isCompacting?: boolean
+    /** Input tokens used so far in this session */
+    inputTokens?: number
+    /** Model's context window size in tokens */
+    contextWindow?: number
+  }
 }
 
 /**
@@ -147,6 +168,7 @@ export function FreeFormInput({
   sessionId,
   disableSend = false,
   isEmptySession = false,
+  contextStatus,
 }: FreeFormInputProps) {
   // Performance optimization: Always use internal state for typing to avoid parent re-renders
   // Sync FROM parent on mount/change (for restoring drafts)
@@ -214,6 +236,18 @@ export function FreeFormInput({
   const [sourceDropdownOpen, setSourceDropdownOpen] = React.useState(false)
   const [sourceFilter, setSourceFilter] = React.useState('')
   const [isFocused, setIsFocused] = React.useState(false)
+  const [inputMaxHeight, setInputMaxHeight] = React.useState(540)
+
+  // Calculate max height: min(66% of window height, 540px)
+  React.useEffect(() => {
+    const updateMaxHeight = () => {
+      const maxFromWindow = Math.floor(window.innerHeight * 0.66)
+      setInputMaxHeight(Math.min(maxFromWindow, 540))
+    }
+    updateMaxHeight()
+    window.addEventListener('resize', updateMaxHeight)
+    return () => window.removeEventListener('resize', updateMaxHeight)
+  }, [])
 
   const dragCounterRef = React.useRef(0)
   const containerRef = React.useRef<HTMLDivElement>(null)
@@ -227,6 +261,9 @@ export function FreeFormInput({
   // Merge refs for RichTextInput
   const internalInputRef = React.useRef<RichTextInputHandle>(null)
   const richInputRef = externalInputRef || internalInputRef
+
+  // Track last caret position for focus restoration (e.g., after permission mode popover closes)
+  const lastCaretPositionRef = React.useRef<number | null>(null)
 
   // Listen for craft:insert-text events (generic mechanism for inserting text into input)
   // Used by components that want to pre-fill the input with text
@@ -273,6 +310,24 @@ export function FreeFormInput({
     window.addEventListener('craft:approve-plan', handleApprovePlan as EventListener)
     return () => window.removeEventListener('craft:approve-plan', handleApprovePlan as EventListener)
   }, [sessionId, permissionMode, onPermissionModeChange, onSubmit])
+
+  // Listen for craft:focus-input events (restore focus after popover/dropdown closes)
+  React.useEffect(() => {
+    const handleFocusInput = () => {
+      richInputRef.current?.focus()
+      // Restore caret position if saved, then clear it (one-shot)
+      if (lastCaretPositionRef.current !== null) {
+        richInputRef.current?.setSelectionRange(
+          lastCaretPositionRef.current,
+          lastCaretPositionRef.current
+        )
+        lastCaretPositionRef.current = null
+      }
+    }
+
+    window.addEventListener('craft:focus-input', handleFocusInput)
+    return () => window.removeEventListener('craft:focus-input', handleFocusInput)
+  }, [richInputRef])
 
   // Listen for craft:paste-files events (for global paste when input not focused)
   React.useEffect(() => {
@@ -322,7 +377,7 @@ export function FreeFormInput({
     return active
   }, [permissionMode, ultrathinkEnabled])
 
-  // Handle slash command selection
+  // Handle slash command selection (mode/feature commands)
   const handleSlashCommand = React.useCallback((commandId: SlashCommandId) => {
     if (commandId === 'safe') onPermissionModeChange?.('safe')
     else if (commandId === 'ask') onPermissionModeChange?.('ask')
@@ -330,14 +385,16 @@ export function FreeFormInput({
     else if (commandId === 'ultrathink') onUltrathinkChange?.(!ultrathinkEnabled)
   }, [permissionMode, ultrathinkEnabled, onPermissionModeChange, onUltrathinkChange])
 
-  // Inline slash command hook
-  const inlineSlash = useInlineSlashCommand({
-    inputRef: richInputRef,
-    onSelect: handleSlashCommand,
-    activeCommands,
-  })
+  // Handle folder selection from slash command menu
+  const handleSlashFolderSelect = React.useCallback((path: string) => {
+    if (onWorkingDirectoryChange) {
+      addRecentDir(path)
+      setRecentFolders(getRecentDirs())
+      onWorkingDirectoryChange(path)
+    }
+  }, [onWorkingDirectoryChange])
 
-  // Get recent folders and home directory for mention menu
+  // Get recent folders and home directory for slash menu and mention menu
   const [recentFolders, setRecentFolders] = React.useState<string[]>([])
   const [homeDir, setHomeDir] = React.useState<string>('')
 
@@ -348,7 +405,17 @@ export function FreeFormInput({
     })
   }, [])
 
-  // Handle mention selection (sources, folders, skills)
+  // Inline slash command hook (modes, features, and folders)
+  const inlineSlash = useInlineSlashCommand({
+    inputRef: richInputRef,
+    onSelectCommand: handleSlashCommand,
+    onSelectFolder: handleSlashFolderSelect,
+    activeCommands,
+    recentFolders,
+    homeDir,
+  })
+
+  // Handle mention selection (sources, skills - folders moved to slash menu)
   const handleMentionSelect = React.useCallback((item: MentionItem) => {
     // For sources: enable the source immediately
     if (item.type === 'source' && item.source && onSourcesChange) {
@@ -360,22 +427,15 @@ export function FreeFormInput({
       }
     }
 
-    // For folders: change working directory
-    if (item.type === 'folder' && item.path && onWorkingDirectoryChange) {
-      addRecentDir(item.path)
-      setRecentFolders(getRecentDirs())
-      onWorkingDirectoryChange(item.path)
-    }
-
     // Skills don't need special handling - just the text insertion
-  }, [optimisticSourceSlugs, onSourcesChange, onWorkingDirectoryChange])
+  }, [optimisticSourceSlugs, onSourcesChange])
 
-  // Inline mention hook (unified for skills, sources, and folders)
+  // Inline mention hook (for skills and sources - folders moved to slash menu)
   const inlineMention = useInlineMention({
     inputRef: richInputRef,
     skills,
     sources,
-    recentFolders,
+    recentFolders: [], // No folders in mention menu anymore
     homeDir,
     onSelect: handleMentionSelect,
   })
@@ -558,6 +618,23 @@ export function FreeFormInput({
     }
   }
 
+  // Handle long text paste - convert to file attachment
+  const handleLongTextPaste = React.useCallback((text: string) => {
+    const timestamp = Date.now()
+    const fileName = `pasted-text-${timestamp}.txt`
+    const attachment: FileAttachment = {
+      type: 'text',
+      path: fileName,
+      name: fileName,
+      mimeType: 'text/plain',
+      text: text,
+      size: new Blob([text]).size,
+    }
+    setAttachments(prev => [...prev, attachment])
+    // Focus input after adding attachment
+    richInputRef.current?.focus()
+  }, [])
+
   const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
@@ -717,9 +794,48 @@ export function FreeFormInput({
 
   // Handle input changes from RichTextInput
   const handleInputChange = React.useCallback((value: string) => {
+    // Get previous input value before updating state
+    const prevValue = inputRef.current
+
     setInput(value)
     syncToParent(value) // Debounced sync to parent for draft persistence
-  }, [syncToParent])
+
+    // Sync source/folder selection when mentions are removed from input
+    if (onSourcesChange || onWorkingDirectoryChange) {
+      const sourceSlugs = sources.map(s => s.config.slug)
+
+      // Parse mentions from previous and current input
+      const prevMentions = parseMentions(prevValue, [], sourceSlugs)
+      const currMentions = parseMentions(value, [], sourceSlugs)
+
+      // Remove sources that were mentioned before but not anymore
+      if (onSourcesChange) {
+        const removedSources = prevMentions.sources.filter(slug => !currMentions.sources.includes(slug))
+        if (removedSources.length > 0) {
+          const newSlugs = optimisticSourceSlugs.filter(slug => !removedSources.includes(slug))
+          setOptimisticSourceSlugs(newSlugs)
+          onSourcesChange(newSlugs)
+        }
+      }
+
+      // Reset working directory if folder mention was removed
+      // Only reset if the removed folder matches the current working directory
+      if (onWorkingDirectoryChange && workingDirectory) {
+        const removedFolders = prevMentions.folders.filter(path => !currMentions.folders.includes(path))
+        const expandedWorkingDir = workingDirectory
+        for (const folder of removedFolders) {
+          const expandedFolder = folder.startsWith('~/')
+            ? (homeDir || '') + folder.slice(1)
+            : folder
+          if (expandedFolder === expandedWorkingDir && sessionFolderPath) {
+            // Reset to session root when the folder mention is deleted
+            onWorkingDirectoryChange(sessionFolderPath)
+            break
+          }
+        }
+      }
+    }
+  }, [syncToParent, sources, optimisticSourceSlugs, onSourcesChange, onWorkingDirectoryChange, workingDirectory, homeDir, sessionFolderPath])
 
   // Handle input with cursor position (for menu detection)
   const handleRichInput = React.useCallback((value: string, cursorPosition: number) => {
@@ -755,8 +871,16 @@ export function FreeFormInput({
   }, [inlineSlash, inlineMention, syncToParent])
 
   // Handle inline slash command selection (removes the /command text)
-  const handleInlineSlashSelect = React.useCallback((commandId: SlashCommandId) => {
-    const newValue = inlineSlash.handleSelect(commandId)
+  const handleInlineSlashCommandSelect = React.useCallback((commandId: SlashCommandId) => {
+    const newValue = inlineSlash.handleSelectCommand(commandId)
+    setInput(newValue)
+    syncToParent(newValue)
+    richInputRef.current?.focus()
+  }, [inlineSlash, syncToParent])
+
+  // Handle inline slash folder selection (inserts [dir:/path] badge)
+  const handleInlineSlashFolderSelect = React.useCallback((path: string) => {
+    const newValue = inlineSlash.handleSelectFolder(path)
     setInput(newValue)
     syncToParent(newValue)
     richInputRef.current?.focus()
@@ -764,12 +888,13 @@ export function FreeFormInput({
 
   // Handle inline mention selection (inserts appropriate mention text)
   const handleInlineMentionSelect = React.useCallback((item: MentionItem) => {
-    const newValue = inlineMention.handleSelect(item)
+    const { value: newValue, cursorPosition } = inlineMention.handleSelect(item)
     setInput(newValue)
     syncToParent(newValue)
-    // Focus input
+    // Focus input and restore cursor position after badge renders
     setTimeout(() => {
       richInputRef.current?.focus()
+      richInputRef.current?.setSelectionRange(cursorPosition, cursorPosition)
     }, 0)
   }, [inlineMention, syncToParent])
 
@@ -795,14 +920,15 @@ export function FreeFormInput({
         <InlineSlashCommand
           open={inlineSlash.isOpen}
           onOpenChange={(open) => !open && inlineSlash.close()}
-          commands={DEFAULT_SLASH_COMMANDS}
+          sections={inlineSlash.sections}
           activeCommands={activeCommands}
-          onSelect={handleInlineSlashSelect}
+          onSelectCommand={handleInlineSlashCommandSelect}
+          onSelectFolder={handleInlineSlashFolderSelect}
           filter={inlineSlash.filter}
           position={inlineSlash.position}
         />
 
-        {/* Inline Mention Autocomplete (skills, sources, folders) */}
+        {/* Inline Mention Autocomplete (skills, sources) */}
         <InlineMentionMenu
           open={inlineMention.isOpen}
           onOpenChange={(open) => !open && inlineMention.close()}
@@ -830,14 +956,21 @@ export function FreeFormInput({
           onInput={handleRichInput}
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
+          onLongTextPaste={handleLongTextPaste}
           onFocus={() => { setIsFocused(true); onFocusChange?.(true) }}
-          onBlur={() => { setIsFocused(false); onFocusChange?.(false) }}
+          onBlur={() => {
+            // Save caret position before losing focus (for restoration via craft:focus-input)
+            lastCaretPositionRef.current = richInputRef.current?.selectionStart ?? null
+            setIsFocused(false)
+            onFocusChange?.(false)
+          }}
           placeholder={placeholder}
           disabled={disabled}
           skills={skills}
           sources={sources}
           workspaceId={workspaceId}
-          className="min-h-[72px] pl-5 pr-4 pt-4 pb-3"
+          className="min-h-[88px] pl-5 pr-4 pt-4 pb-3 overflow-y-auto"
+          style={{ maxHeight: inputMaxHeight }}
           data-tutorial="chat-input"
         />
 
@@ -847,9 +980,10 @@ export function FreeFormInput({
           {/* 1. Attach Files Badge */}
           <FreeFormInputContextBadge
             icon={<Paperclip className="h-4 w-4" />}
+            // Show count ("1 file" / "X files") instead of filename for cleaner UI
             label={attachments.length > 0
               ? attachments.length === 1
-                ? attachments[0].name
+                ? "1 file"
                 : `${attachments.length} files`
               : "Attach Files"
             }
@@ -1110,6 +1244,37 @@ export function FreeFormInput({
                       )
                     })}
                   </div>
+                  {/* Context usage footer - only show when we have token data */}
+                  {contextStatus?.inputTokens != null && contextStatus.inputTokens > 0 && (
+                    <div className="mt-2 pt-2 border-t border-border/50 px-2">
+                      <div className="flex items-center justify-between text-xs text-muted-foreground">
+                        <span>Context</span>
+                        <span className="flex items-center gap-1.5">
+                          {contextStatus.isCompacting && (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          )}
+                          {formatTokenCount(contextStatus.inputTokens)}
+                          {contextStatus.contextWindow && (
+                            <span className="opacity-60">/ {formatTokenCount(contextStatus.contextWindow)}</span>
+                          )}
+                        </span>
+                      </div>
+                      {/* Progress bar - only show if we know the context window */}
+                      {contextStatus.contextWindow && (
+                        <div className="mt-1.5 h-1 bg-foreground/10 rounded-full overflow-hidden">
+                          <div
+                            className={cn(
+                              "h-full rounded-full transition-all",
+                              contextStatus.inputTokens / contextStatus.contextWindow > 0.8
+                                ? "bg-amber-500"
+                                : "bg-foreground/30"
+                            )}
+                            style={{ width: `${Math.min(100, (contextStatus.inputTokens / contextStatus.contextWindow) * 100)}%` }}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </>,
               document.body
@@ -1214,8 +1379,8 @@ function WorkingDirectoryBadge({
   // Filter out current directory from recent list
   const filteredRecent = recentDirs.filter(p => p !== workingDirectory)
 
-  // Determine label - "Work in Folder" if not set, otherwise folder name
-  const hasFolder = !!workingDirectory
+  // Determine label - "Work in Folder" if not set or at session root, otherwise folder name
+  const hasFolder = !!workingDirectory && workingDirectory !== sessionFolderPath
   const folderName = hasFolder ? (workingDirectory.split('/').pop() || 'Folder') : 'Work in Folder'
 
   return (

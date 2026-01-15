@@ -92,9 +92,10 @@ interface ClaudeCodeInnerMessage {
 
 /**
  * Claude Code JSONL line structure
+ * Note: Claude Code uses additional types like 'file-history-snapshot' that we skip during parsing
  */
 interface ClaudeCodeLine {
-  type: 'user' | 'assistant' | 'summary' | 'queue-operation';
+  type: 'user' | 'assistant' | 'summary' | 'queue-operation' | 'file-history-snapshot';
   parentUuid?: string | null;
   isSidechain?: boolean;
   userType?: string;
@@ -107,6 +108,9 @@ interface ClaudeCodeLine {
   timestamp: string;
   // Queue operation fields
   operation?: string;
+  // Summary fields - AI-generated session summary (excellent for preview)
+  summary?: string;
+  leafUuid?: string;
 }
 
 /**
@@ -117,10 +121,12 @@ export interface ClaudeCodeSessionInfo {
   filePath: string;
   /** Original session ID (UUID) */
   sessionId: string;
-  /** Decoded project path from directory name */
+  /** Decoded project path from directory name (may be inaccurate for paths with hyphens) */
   projectPath: string;
   /** Project directory slug (the folder name) */
   projectSlug: string;
+  /** Original cwd from JSONL file (accurate path, preferred for display) */
+  originalCwd?: string;
   /** Git branch if available */
   gitBranch?: string;
   /** Number of messages (excluding queue ops) */
@@ -133,6 +139,10 @@ export interface ClaudeCodeSessionInfo {
   preview?: string;
   /** File size in bytes */
   fileSize: number;
+  /** True if this session was created by Craft Agent */
+  isFromCraftAgent: boolean;
+  /** Craft Agent version if detected */
+  craftAgentVersion?: string;
 }
 
 /**
@@ -211,6 +221,18 @@ function getFirstAndLastLines(filePath: string): { firstLines: string[]; lastLin
 }
 
 /**
+ * Extract text from message content (string or content blocks)
+ */
+function getTextFromContent(content: ContentBlock[] | string): string {
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+  return content
+    .filter((b): b is TextBlock => b.type === 'text')
+    .map(b => b.text)
+    .join(' ');
+}
+
+/**
  * Fast session info extraction from first/last lines
  * Used for discovery - reads only ~16KB per file instead of entire file
  */
@@ -229,20 +251,50 @@ function getSessionInfoFast(
     let lastMessageAt: Date | null = null;
     let preview: string | undefined;
     let gitBranch: string | undefined;
+    let originalCwd: string | undefined;
+    let isFromCraftAgent = false;
+    let craftAgentVersion: string | undefined;
 
     // Parse first lines for metadata
+    // Priority for preview: 1) summary type messages (AI-generated), 2) first user message content
+    let userMessagePreview: string | undefined;
+
     for (const line of firstLines) {
       if (!line.trim()) continue;
       try {
         const parsed = JSON.parse(line) as ClaudeCodeLine;
 
-        // Skip queue operations
-        if (parsed.type === 'queue-operation') continue;
+        // Check for Craft Agent markers in message content
+        if (parsed.message && !isFromCraftAgent) {
+          const text = getTextFromContent(parsed.message.content);
+
+          // Primary: Look for environment marker (in system prompt)
+          const envMatch = text.match(/<craft_agent_environment\s+version="([^"]+)"/);
+          if (envMatch) {
+            isFromCraftAgent = true;
+            craftAgentVersion = envMatch[1];
+          }
+
+          // Fallback: Look for <session_state> marker (in user messages)
+          // This catches sessions created before environment marker was added
+          if (!isFromCraftAgent && text.includes('<session_state>')) {
+            isFromCraftAgent = true;
+            // No version info available from session_state
+          }
+        }
+
+        // Skip queue operations and file-history-snapshot
+        if (parsed.type === 'queue-operation' || parsed.type === 'file-history-snapshot') continue;
+
+        // Use summary type messages as the best preview source (AI-generated session summary)
+        if (parsed.type === 'summary' && parsed.summary && !preview) {
+          preview = parsed.summary.substring(0, 150);
+        }
 
         const timestamp = new Date(parsed.timestamp);
 
-        // First message timestamp
-        if (!firstMessageAt || timestamp < firstMessageAt) {
+        // First message timestamp (skip summary type as they don't have reliable timestamps)
+        if (parsed.type !== 'summary' && (!firstMessageAt || timestamp < firstMessageAt)) {
           firstMessageAt = timestamp;
         }
 
@@ -251,13 +303,23 @@ function getSessionInfoFast(
           gitBranch = parsed.gitBranch;
         }
 
-        // Preview from first user message
-        if (!preview && parsed.type === 'user' && parsed.message) {
-          preview = extractPreviewFromContent(parsed.message.content);
+        // Original cwd from first available (accurate path for display)
+        if (!originalCwd && parsed.cwd) {
+          originalCwd = parsed.cwd;
+        }
+
+        // Capture first user message content as fallback preview
+        if (!userMessagePreview && parsed.type === 'user' && parsed.message) {
+          userMessagePreview = extractPreviewFromContent(parsed.message.content);
         }
       } catch {
         // Skip malformed lines
       }
+    }
+
+    // Use user message preview as fallback if no summary was found
+    if (!preview && userMessagePreview) {
+      preview = userMessagePreview;
     }
 
     // Parse last line for most recent timestamp
@@ -290,12 +352,15 @@ function getSessionInfoFast(
       sessionId,
       projectPath,
       projectSlug,
+      originalCwd,
       gitBranch,
       messageCount: estimatedMessageCount,
       firstMessageAt,
       lastMessageAt,
       preview,
       fileSize,
+      isFromCraftAgent,
+      craftAgentVersion,
     };
   } catch (error) {
     debug('[claude-code-import] Failed to read session:', filePath, error);

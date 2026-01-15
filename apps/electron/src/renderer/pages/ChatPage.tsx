@@ -16,6 +16,7 @@ import { rendererPerf } from '@/lib/perf'
 import { routes } from '@/lib/navigate'
 import { ensureSessionMessagesLoadedAtom, loadedSessionsAtom, sessionMetaMapAtom } from '@/atoms/sessions'
 import { useTutorial } from '@/tutorial/TutorialContext'
+import { getSessionTitle } from '@/utils/session'
 
 export interface ChatPageProps {
   sessionId: string
@@ -33,7 +34,6 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     onSendMessage,
     onOpenFile,
     onOpenUrl,
-    onModelChange,
     onRespondToPermission,
     onRespondToCredential,
     onMarkSessionRead,
@@ -141,6 +141,16 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     onInputChange(sessionId, value)
   }, [sessionId, onInputChange])
 
+  // Session model change handler - persists per-session model
+  const handleModelChange = React.useCallback((model: string) => {
+    if (activeWorkspaceId) {
+      window.electronAPI.setSessionModel(sessionId, activeWorkspaceId, model)
+    }
+  }, [sessionId, activeWorkspaceId])
+
+  // Effective model for this session (session-specific or global fallback)
+  const effectiveModel = session?.model || currentModel
+
   // Working directory for this session
   const workingDirectory = session?.workingDirectory
   const handleWorkingDirectoryChange = React.useCallback(async (path: string) => {
@@ -181,8 +191,9 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     }
   }, [sessionId, session])
 
-  // Get display title for header
-  const displayTitle = session?.name || sessionMeta?.name || 'Chat'
+  // Get display title for header - use getSessionTitle for consistent fallback logic with SessionList
+  // Priority: name > first user message > preview > "New chat"
+  const displayTitle = session ? getSessionTitle(session) : (sessionMeta ? getSessionTitle(sessionMeta) : 'Chat')
   const isFlagged = session?.isFlagged || sessionMeta?.isFlagged || false
   const sharedUrl = session?.sharedUrl || sessionMeta?.sharedUrl || null
   const currentTodoState = session?.todoState || sessionMeta?.todoState || 'todo'
@@ -287,15 +298,15 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
 
       return (
         <div className="h-full flex flex-col">
-          <PanelHeader title={displayTitle} titleMenu={titleMenu} rightSidebarButton={rightSidebarButton} className="bg-surface-below" />
+          <PanelHeader title={displayTitle} titleMenu={titleMenu} rightSidebarButton={rightSidebarButton} className="bg-transparent" />
           <div className="flex-1 flex flex-col min-h-0">
             <ChatDisplay
               session={skeletonSession}
               onSendMessage={() => {}}
               onOpenFile={handleOpenFile}
               onOpenUrl={handleOpenUrl}
-              currentModel={currentModel}
-              onModelChange={onModelChange}
+              currentModel={effectiveModel}
+              onModelChange={handleModelChange}
               textareaRef={textareaRef}
               pendingPermission={undefined}
               onRespondToPermission={onRespondToPermission}
@@ -325,7 +336,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     // Session truly doesn't exist
     return (
       <div className="h-full flex flex-col">
-        <PanelHeader title="Chat" rightSidebarButton={rightSidebarButton} className="bg-surface-below" />
+        <PanelHeader title="Chat" rightSidebarButton={rightSidebarButton} className="bg-transparent" />
         <div className="flex-1 flex flex-col items-center justify-center gap-3 text-muted-foreground">
           <AlertCircle className="h-10 w-10" />
           <p className="text-sm">This session no longer exists</p>
@@ -336,7 +347,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
 
   return (
     <div className="h-full flex flex-col">
-      <PanelHeader title={displayTitle} titleMenu={titleMenu} rightSidebarButton={rightSidebarButton} className="bg-surface-below" />
+      <PanelHeader title={displayTitle} titleMenu={titleMenu} rightSidebarButton={rightSidebarButton} className="bg-transparent" />
       <div className="flex-1 flex flex-col min-h-0">
         <ChatDisplay
           session={session}
@@ -347,8 +358,8 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
           }}
           onOpenFile={handleOpenFile}
           onOpenUrl={handleOpenUrl}
-          currentModel={currentModel}
-          onModelChange={onModelChange}
+          currentModel={effectiveModel}
+          onModelChange={handleModelChange}
           textareaRef={textareaRef}
           pendingPermission={pendingPermission}
           onRespondToPermission={onRespondToPermission}

@@ -4,6 +4,8 @@ import { getPermissionModesDocumentation } from '../agent/mode-manager.ts';
 import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { DOC_REFS } from '../docs/index.ts';
+import { APP_VERSION } from '../version/app-version.ts';
+import os from 'os';
 
 /** Maximum size of CLAUDE.md file to include (10KB) */
 const MAX_CONTEXT_FILE_SIZE = 10 * 1024;
@@ -177,13 +179,30 @@ Grep pattern="." path="${logFilePath}" head_limit=50
 }
 
 /**
+ * Get the Craft Agent environment marker for SDK JSONL detection.
+ * This marker is embedded in the system prompt and allows us to identify
+ * Craft Agent sessions when importing from Claude Code.
+ */
+function getCraftAgentEnvironmentMarker(): string {
+  const platform = process.platform; // 'darwin', 'win32', 'linux'
+  const arch = process.arch; // 'arm64', 'x64'
+  const osVersion = os.release(); // OS kernel version
+
+  return `<craft_agent_environment version="${APP_VERSION}" platform="${platform}" arch="${arch}" os_version="${osVersion}" />`;
+}
+
+/**
  * Get the Craft Assistant system prompt with workspace-specific paths
  */
 function getCraftAssistantPrompt(workspaceRootPath?: string): string {
   // Default to ~/.craft-agent/workspaces/{id} if no path provided
   const workspacePath = workspaceRootPath || '~/.craft-agent/workspaces/{id}';
 
-  return `
+  // Environment marker for SDK JSONL detection
+  const environmentMarker = getCraftAgentEnvironmentMarker();
+
+  return `${environmentMarker}
+
 You are Craft Agent - an AI assistant that helps users connect and work across their data sources through a terminal interface.
 
 **Core capabilities:**

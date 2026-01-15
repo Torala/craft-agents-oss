@@ -12,7 +12,6 @@ export interface TodoStateConfig {
   id: string
   label: string
   color: string
-  shortcut?: string
 }
 
 export interface TodoState extends TodoStateConfig {
@@ -143,7 +142,6 @@ export async function statusConfigToTodoState(
     id: config.id,
     label: config.label,
     color: config.color,
-    shortcut: config.shortcut,
     icon,
     category: config.category,
     isFixed: config.isFixed,
@@ -195,16 +193,6 @@ export function getStateLabel(
 ): string {
   const state = states.find(s => s.id === stateId)
   return state?.label ?? stateId
-}
-
-/**
- * Get the shortcut for a todo state
- */
-export function getStateShortcut(
-  stateId: string,
-  states: TodoState[]
-): string | undefined {
-  return states.find(s => s.id === stateId)?.shortcut
 }
 
 /**

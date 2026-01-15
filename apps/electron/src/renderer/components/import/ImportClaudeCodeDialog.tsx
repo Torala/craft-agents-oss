@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import type { ColumnDef } from '@tanstack/react-table'
+import { formatDistanceToNow } from 'date-fns'
+import { Search, X, ChevronDown, Check } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -8,10 +9,45 @@ import {
   DialogFooter,
   DialogDescription,
 } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
-import { DataTable, SortableHeader } from '@/components/ui/data-table'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { Separator } from '@/components/ui/separator'
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from '@/components/ui/dropdown-menu'
+import { cn } from '@/lib/utils'
 import type { ClaudeCodeSessionInfo } from '../../../shared/types'
+
+/**
+ * Safely get timestamp from a date that may come from IPC as string or invalid Date
+ */
+function safeGetTime(date: Date | string | undefined | null): number {
+  if (!date) return 0
+  try {
+    const parsed = typeof date === 'string' ? new Date(date) : date
+    const time = parsed.getTime()
+    return isNaN(time) ? 0 : time
+  } catch {
+    return 0
+  }
+}
+
+/**
+ * Safely format a date that may come from IPC as string or invalid Date
+ */
+function safeFormatDistanceToNow(date: Date | string | undefined | null): string {
+  if (!date) return 'Unknown'
+  try {
+    const parsed = typeof date === 'string' ? new Date(date) : date
+    if (isNaN(parsed.getTime())) return 'Unknown'
+    return formatDistanceToNow(parsed, { addSuffix: true })
+  } catch {
+    return 'Unknown'
+  }
+}
 
 interface ImportClaudeCodeDialogProps {
   open: boolean
@@ -19,8 +55,150 @@ interface ImportClaudeCodeDialogProps {
   onImportComplete: (sessionIds: string[]) => void
 }
 
-interface SessionRow extends ClaudeCodeSessionInfo {
-  selected: boolean
+/**
+ * Get project name from session (prefer originalCwd for accuracy)
+ */
+function getProjectName(session: ClaudeCodeSessionInfo): string {
+  const path = session.originalCwd || session.projectPath
+  const parts = path.split('/').filter(Boolean)
+  return parts[parts.length - 1] || path
+}
+
+/**
+ * Get display path from session (prefer originalCwd for accuracy)
+ */
+function getDisplayPath(session: ClaudeCodeSessionInfo): string {
+  return session.originalCwd || session.projectPath
+}
+
+/**
+ * Group sessions by project
+ */
+function groupSessionsByProject(
+  sessions: ClaudeCodeSessionInfo[]
+): Array<{ projectName: string; projectPath: string; sessions: ClaudeCodeSessionInfo[] }> {
+  const groups = new Map<string, { projectName: string; projectPath: string; sessions: ClaudeCodeSessionInfo[] }>()
+
+  for (const session of sessions) {
+    const projectPath = getDisplayPath(session)
+    const projectName = getProjectName(session)
+
+    if (!groups.has(projectPath)) {
+      groups.set(projectPath, { projectName, projectPath, sessions: [] })
+    }
+    groups.get(projectPath)!.sessions.push(session)
+  }
+
+  // Sort groups by project name, sessions within each group by date descending
+  return Array.from(groups.values())
+    .sort((a, b) => a.projectName.localeCompare(b.projectName))
+    .map(group => ({
+      ...group,
+      sessions: group.sessions.sort((a, b) =>
+        safeGetTime(b.lastMessageAt) - safeGetTime(a.lastMessageAt)
+      ),
+    }))
+}
+
+/**
+ * ProjectHeader - Sticky section header showing project name
+ */
+function ProjectHeader({ name, path }: { name: string; path: string }) {
+  return (
+    <div className="sticky top-0 z-20 bg-background px-4 py-2" title={path}>
+      <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+        {name}
+      </span>
+    </div>
+  )
+}
+
+interface ImportSessionItemProps {
+  session: ClaudeCodeSessionInfo
+  isSelected: boolean
+  isFirstInGroup: boolean
+  onToggle: () => void
+}
+
+/**
+ * ImportSessionItem - Individual session item with selection checkbox
+ */
+function ImportSessionItem({
+  session,
+  isSelected,
+  isFirstInGroup,
+  onToggle,
+}: ImportSessionItemProps) {
+  return (
+    <div
+      className="import-item"
+      data-selected={isSelected || undefined}
+    >
+      {/* Separator - only show if not first in group */}
+      {!isFirstInGroup && (
+        <div className="import-separator pl-12 pr-4">
+          <Separator />
+        </div>
+      )}
+      {/* Wrapper for content, group for hover state */}
+      <div className="relative group select-none pl-2 mr-2">
+        {/* Checkbox - positioned absolutely */}
+        <div className="absolute left-4 top-3.5 z-10">
+          <div
+            className={cn(
+              "w-4 h-4 flex items-center justify-center rounded border transition-colors cursor-pointer",
+              isSelected
+                ? "bg-accent border-accent text-background"
+                : "border-muted-foreground/30 hover:border-muted-foreground/50"
+            )}
+            onClick={(e) => {
+              e.stopPropagation()
+              onToggle()
+            }}
+          >
+            {isSelected && <Check className="w-3 h-3" />}
+          </div>
+        </div>
+        {/* Main content button */}
+        <button
+          className={cn(
+            "flex w-full items-start gap-2 pl-2 pr-4 py-3 text-left text-sm outline-none rounded-[8px]",
+            "transition-[background-color] duration-75",
+            isSelected
+              ? "bg-foreground/5 hover:bg-foreground/7"
+              : "hover:bg-foreground/2"
+          )}
+          onClick={onToggle}
+        >
+          {/* Spacer for checkbox */}
+          <div className="w-4 h-5 shrink-0" />
+          {/* Content column */}
+          <div className="flex flex-col gap-1.5 min-w-0 flex-1">
+            {/* Title - preview text, up to 2 lines */}
+            <div className="flex items-start gap-2 w-full pr-6 min-w-0">
+              <div className="font-medium font-sans line-clamp-2 min-w-0 -mb-[2px]">
+                {session.preview || 'No preview available'}
+              </div>
+            </div>
+            {/* Metadata row */}
+            <div className="flex items-center gap-1.5 text-xs text-foreground/70 w-full -mb-[2px] pr-6 min-w-0">
+              {session.gitBranch && (
+                <span className="shrink-0 px-1.5 py-0.5 text-[10px] font-medium rounded bg-foreground/10">
+                  {session.gitBranch}
+                </span>
+              )}
+              <span className="shrink-0 px-1.5 py-0.5 text-[10px] font-medium rounded bg-foreground/5">
+                {session.messageCount} msgs
+              </span>
+              <span className="truncate">
+                {safeFormatDistanceToNow(session.lastMessageAt)}
+              </span>
+            </div>
+          </div>
+        </button>
+      </div>
+    </div>
+  )
 }
 
 export function ImportClaudeCodeDialog({
@@ -28,11 +206,13 @@ export function ImportClaudeCodeDialog({
   onOpenChange,
   onImportComplete,
 }: ImportClaudeCodeDialogProps) {
-  const [sessions, setSessions] = useState<SessionRow[]>([])
+  const [sessions, setSessions] = useState<ClaudeCodeSessionInfo[]>([])
+  const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(false)
   const [importing, setImporting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [searchFilter, setSearchFilter] = useState('')
+  const [projectFilter, setProjectFilter] = useState<Set<string>>(new Set())
 
   // Load sessions when dialog opens
   useEffect(() => {
@@ -43,7 +223,8 @@ export function ImportClaudeCodeDialog({
       setError(null)
       try {
         const discovered = await window.electronAPI.discoverClaudeCodeSessions()
-        setSessions(discovered.map(s => ({ ...s, selected: false })))
+        // Filter out Craft Agent sessions
+        setSessions(discovered.filter(s => !s.isFromCraftAgent))
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to discover sessions')
       } finally {
@@ -58,40 +239,83 @@ export function ImportClaudeCodeDialog({
   useEffect(() => {
     if (!open) {
       setSessions([])
+      setSelectedPaths(new Set())
       setSearchFilter('')
+      setProjectFilter(new Set())
       setError(null)
     }
   }, [open])
 
-  const toggleSession = useCallback((filePath: string) => {
-    setSessions(prev =>
-      prev.map(s =>
-        s.filePath === filePath ? { ...s, selected: !s.selected } : s
-      )
-    )
-  }, [])
+  // Get unique projects for filter dropdown
+  const uniqueProjects = useMemo(() => {
+    const projects = new Map<string, string>()
+    for (const session of sessions) {
+      const path = getDisplayPath(session)
+      const name = getProjectName(session)
+      if (!projects.has(path)) {
+        projects.set(path, name)
+      }
+    }
+    return Array.from(projects.entries())
+      .map(([path, name]) => ({ path, name }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }, [sessions])
 
-  const toggleAll = useCallback(() => {
-    setSessions(prev => {
-      const allSelected = prev.every(s => s.selected)
-      return prev.map(s => ({ ...s, selected: !allSelected }))
+  // Filter sessions
+  const filteredSessions = useMemo(() => {
+    return sessions.filter(session => {
+      // Search filter (by preview/title)
+      if (searchFilter.trim()) {
+        const query = searchFilter.toLowerCase()
+        const preview = (session.preview || '').toLowerCase()
+        if (!preview.includes(query)) return false
+      }
+      // Project filter
+      if (projectFilter.size > 0) {
+        const path = getDisplayPath(session)
+        if (!projectFilter.has(path)) return false
+      }
+      return true
+    })
+  }, [sessions, searchFilter, projectFilter])
+
+  // Group filtered sessions by project
+  const projectGroups = useMemo(() => {
+    return groupSessionsByProject(filteredSessions)
+  }, [filteredSessions])
+
+  const toggleSession = useCallback((filePath: string) => {
+    setSelectedPaths(prev => {
+      const next = new Set(prev)
+      if (next.has(filePath)) {
+        next.delete(filePath)
+      } else {
+        next.add(filePath)
+      }
+      return next
     })
   }, [])
 
-  const selectedCount = useMemo(
-    () => sessions.filter(s => s.selected).length,
-    [sessions]
-  )
+  const toggleProjectFilter = useCallback((projectPath: string) => {
+    setProjectFilter(prev => {
+      const next = new Set(prev)
+      if (next.has(projectPath)) {
+        next.delete(projectPath)
+      } else {
+        next.add(projectPath)
+      }
+      return next
+    })
+  }, [])
 
   const handleImport = useCallback(async () => {
-    const selectedSessions = sessions.filter(s => s.selected)
-    if (selectedSessions.length === 0) return
+    if (selectedPaths.size === 0) return
 
     setImporting(true)
     setError(null)
     try {
       const result = await window.electronAPI.importClaudeCodeSessions(
-        selectedSessions.map(s => s.filePath)
+        Array.from(selectedPaths)
       )
 
       if (result.failCount > 0 && result.successCount === 0) {
@@ -112,113 +336,14 @@ export function ImportClaudeCodeDialog({
     } finally {
       setImporting(false)
     }
-  }, [sessions, onImportComplete, onOpenChange])
+  }, [selectedPaths, onImportComplete, onOpenChange])
 
-  // Format date for display
-  const formatDate = (date: Date | string) => {
-    const d = typeof date === 'string' ? new Date(date) : date
-    return d.toLocaleDateString(undefined, {
-      month: 'short',
-      day: 'numeric',
-      year: d.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined,
-    })
-  }
-
-  // Format file size
-  const formatSize = (bytes: number) => {
-    if (bytes < 1024) return `${bytes} B`
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-  }
-
-  // Track if all filtered sessions are selected (for header checkbox)
-  const allSelected = useMemo(
-    () => sessions.length > 0 && sessions.every(s => s.selected),
-    [sessions]
-  )
-
-  // Column definitions - only depend on callbacks, not on sessions array
-  const columns: ColumnDef<SessionRow, unknown>[] = useMemo(
-    () => [
-      {
-        id: 'select',
-        header: () => (
-          <button
-            onClick={toggleAll}
-            className="w-4 h-4 border border-border rounded flex items-center justify-center hover:bg-accent/50"
-            aria-label="Select all sessions"
-            role="checkbox"
-            aria-checked={allSelected}
-          >
-            {allSelected && <span className="text-xs">✓</span>}
-          </button>
-        ),
-        cell: ({ row }) => (
-          <button
-            onClick={() => toggleSession(row.original.filePath)}
-            className="w-4 h-4 border border-border rounded flex items-center justify-center hover:bg-accent/50"
-            aria-label={`Select session from ${row.original.projectPath}`}
-            role="checkbox"
-            aria-checked={row.original.selected}
-          >
-            {row.original.selected && <span className="text-xs">✓</span>}
-          </button>
-        ),
-        size: 40,
-        enableSorting: false,
-        enableResizing: false,
-      },
-      {
-        id: 'project',
-        accessorFn: (row) => row.projectPath,
-        header: ({ column }) => <SortableHeader column={column} title="Project" />,
-        cell: ({ row }) => (
-          <div className="truncate max-w-[200px]" title={row.original.projectPath}>
-            {row.original.projectPath}
-          </div>
-        ),
-        meta: { truncate: true, fillWidth: true },
-      },
-      {
-        id: 'branch',
-        accessorFn: (row) => row.gitBranch,
-        header: ({ column }) => <SortableHeader column={column} title="Branch" />,
-        cell: ({ row }) => (
-          <span className="text-muted-foreground">
-            {row.original.gitBranch || '—'}
-          </span>
-        ),
-        size: 100,
-      },
-      {
-        id: 'messages',
-        accessorFn: (row) => row.messageCount,
-        header: ({ column }) => <SortableHeader column={column} title="Messages" />,
-        cell: ({ row }) => row.original.messageCount,
-        size: 80,
-      },
-      {
-        id: 'date',
-        accessorFn: (row) => new Date(row.lastMessageAt).getTime(),
-        header: ({ column }) => <SortableHeader column={column} title="Last Used" />,
-        cell: ({ row }) => formatDate(row.original.lastMessageAt),
-        size: 100,
-      },
-      {
-        id: 'size',
-        accessorFn: (row) => row.fileSize,
-        header: ({ column }) => <SortableHeader column={column} title="Size" />,
-        cell: ({ row }) => formatSize(row.original.fileSize),
-        size: 80,
-      },
-    ],
-    [allSelected, toggleAll, toggleSession]
-  )
+  const selectedCount = selectedPaths.size
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="sm:max-w-[800px] max-h-[80vh] flex flex-col"
+        className="sm:max-w-[600px] max-h-[80vh] flex flex-col"
         onOpenAutoFocus={(e) => e.preventDefault()}
       >
         <DialogHeader>
@@ -228,16 +353,73 @@ export function ImportClaudeCodeDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-col gap-4 flex-1 min-h-0">
-          {/* Search input */}
-          <Input
-            placeholder="Filter by project path..."
-            value={searchFilter}
-            onChange={(e) => setSearchFilter(e.target.value)}
-          />
+        <div className="flex flex-col gap-3 flex-1 min-h-0">
+          {/* Filter bar */}
+          <div className="flex items-center gap-2">
+            {/* Search input */}
+            <div className="relative flex-1">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+              <input
+                type="text"
+                value={searchFilter}
+                onChange={(e) => setSearchFilter(e.target.value)}
+                placeholder="Search by title..."
+                className="w-full h-8 pl-8 pr-8 text-sm bg-foreground/5 border-0 rounded-[8px] outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50"
+              />
+              {searchFilter && (
+                <button
+                  onClick={() => setSearchFilter('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 hover:bg-foreground/10 rounded"
+                >
+                  <X className="h-3.5 w-3.5 text-muted-foreground" />
+                </button>
+              )}
+            </div>
+            {/* Project filter dropdown */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="h-8 gap-1.5">
+                  Projects
+                  {projectFilter.size > 0 && (
+                    <span className="px-1.5 py-0.5 text-[10px] font-medium rounded bg-accent text-background">
+                      {projectFilter.size}
+                    </span>
+                  )}
+                  <ChevronDown className="h-3.5 w-3.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="max-h-[300px] overflow-auto">
+                {uniqueProjects.map(({ path, name }) => (
+                  <DropdownMenuItem
+                    key={path}
+                    onClick={() => toggleProjectFilter(path)}
+                    className="gap-2"
+                  >
+                    <div className={cn(
+                      "w-4 h-4 flex items-center justify-center rounded border",
+                      projectFilter.has(path)
+                        ? "bg-accent border-accent text-background"
+                        : "border-muted-foreground/30"
+                    )}>
+                      {projectFilter.has(path) && <Check className="w-3 h-3" />}
+                    </div>
+                    <span className="truncate">{name}</span>
+                  </DropdownMenuItem>
+                ))}
+                {projectFilter.size > 0 && (
+                  <>
+                    <Separator className="my-1" />
+                    <DropdownMenuItem onClick={() => setProjectFilter(new Set())}>
+                      Clear filters
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
 
-          {/* Sessions table */}
-          <div className="flex-1 min-h-0 overflow-auto">
+          {/* Sessions list */}
+          <div className="flex-1 min-h-0 -mx-6">
             {loading ? (
               <div className="h-[300px] flex items-center justify-center text-muted-foreground">
                 <div className="flex flex-col items-center gap-2">
@@ -252,21 +434,42 @@ export function ImportClaudeCodeDialog({
                   <span className="text-xs text-muted-foreground">{error}</span>
                 </div>
               </div>
+            ) : filteredSessions.length === 0 ? (
+              <div className="h-[300px] flex items-center justify-center">
+                <div className="flex flex-col items-center gap-1 text-muted-foreground">
+                  <span>No sessions found</span>
+                  {(searchFilter || projectFilter.size > 0) && (
+                    <button
+                      onClick={() => {
+                        setSearchFilter('')
+                        setProjectFilter(new Set())
+                      }}
+                      className="text-xs text-foreground hover:underline mt-1"
+                    >
+                      Clear filters
+                    </button>
+                  )}
+                </div>
+              </div>
             ) : (
-              <DataTable
-                columns={columns}
-                data={sessions}
-                globalFilter={searchFilter}
-                pagination
-                pageSize={50}
-                emptyContent={
-                  <div className="flex flex-col items-center gap-1 text-muted-foreground">
-                    <span>No Claude Code sessions found</span>
-                    <span className="text-xs">Sessions are stored in ~/.claude/projects/</span>
-                  </div>
-                }
-                noBorder
-              />
+              <ScrollArea className="h-[400px]">
+                <div className="flex flex-col pb-4">
+                  {projectGroups.map((group) => (
+                    <div key={group.projectPath}>
+                      <ProjectHeader name={group.projectName} path={group.projectPath} />
+                      {group.sessions.map((session, indexInGroup) => (
+                        <ImportSessionItem
+                          key={session.filePath}
+                          session={session}
+                          isSelected={selectedPaths.has(session.filePath)}
+                          isFirstInGroup={indexInGroup === 0}
+                          onToggle={() => toggleSession(session.filePath)}
+                        />
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              </ScrollArea>
             )}
           </div>
 

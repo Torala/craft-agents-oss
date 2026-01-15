@@ -169,9 +169,14 @@ const api: ElectronAPI = {
     ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_UPDATE_BILLING_METHOD, authType, credential),
   getCreditsUrl: () => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_GET_CREDITS_URL),
 
-  // Settings - Model
+  // Settings - Model (global default)
   getModel: () => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_GET_MODEL),
   setModel: (model: string) => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_SET_MODEL, model),
+  // Session-specific model (overrides global)
+  getSessionModel: (sessionId: string, workspaceId: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.SESSION_GET_MODEL, sessionId, workspaceId),
+  setSessionModel: (sessionId: string, workspaceId: string, model: string | null) =>
+    ipcRenderer.invoke(IPC_CHANNELS.SESSION_SET_MODEL, sessionId, workspaceId, model),
 
   // Workspace Settings (per-workspace configuration)
   getWorkspaceSettings: (workspaceId: string) =>
@@ -288,9 +293,9 @@ const api: ElectronAPI = {
   getAppTheme: () => ipcRenderer.invoke(IPC_CHANNELS.THEME_GET_APP),
   getWorkspaceTheme: (workspaceId: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.THEME_GET_WORKSPACE, workspaceId),
-  // Preset themes
-  loadPresetThemes: () => ipcRenderer.invoke(IPC_CHANNELS.THEME_GET_PRESETS),
-  loadPresetTheme: (themeId: string) => ipcRenderer.invoke(IPC_CHANNELS.THEME_LOAD_PRESET, themeId),
+  // Preset themes (workspace-scoped)
+  loadPresetThemes: (workspaceId: string) => ipcRenderer.invoke(IPC_CHANNELS.THEME_GET_PRESETS, workspaceId),
+  loadPresetTheme: (workspaceId: string, themeId: string) => ipcRenderer.invoke(IPC_CHANNELS.THEME_LOAD_PRESET, workspaceId, themeId),
   getColorTheme: () => ipcRenderer.invoke(IPC_CHANNELS.THEME_GET_COLOR_THEME),
   setColorTheme: (themeId: string) => ipcRenderer.invoke(IPC_CHANNELS.THEME_SET_COLOR_THEME, themeId),
 

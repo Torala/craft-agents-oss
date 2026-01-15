@@ -11,7 +11,7 @@ import { Separator } from "@/components/ui/separator"
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { TodoStateMenu } from "@/components/ui/todo-filter-menu"
-import { getStateColor, getStateIcon, getStateLabel, getStateShortcut, type TodoStateId } from "@/config/todo-states"
+import { getStateColor, getStateIcon, getStateLabel, type TodoStateId } from "@/config/todo-states"
 import type { TodoState } from "@/config/todo-states"
 import {
   DropdownMenu,
@@ -414,7 +414,7 @@ function SessionItem({
  */
 function DateHeader({ label }: { label: string }) {
   return (
-    <div className="sticky top-0 z-20 bg-background px-4 mr-2 py-2">
+    <div className="sticky top-0 z-20 bg-transparent px-4 mr-2 py-2">
       <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
         {label}
       </span>
@@ -726,7 +726,7 @@ export function SessionList({
       <ScrollArea className="h-screen select-none" ref={scrollRef}>
         {/* Search input - shown when search is active */}
         {searchActive && (
-          <div className="sticky top-0 z-20 bg-background px-2 py-2 border-b border-border/50">
+          <div className="sticky top-0 z-20 bg-transparent px-2 py-2 border-b border-border/50">
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
               <input
