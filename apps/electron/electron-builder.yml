@@ -87,7 +87,7 @@ win:
   artifactName: "Craft-Agent-${arch}.${ext}"
   # Disable code signing (causes EBUSY file locking issues in CI)
   # Re-enable when we have a proper Windows code signing certificate
-  sign: false
+  signAndEditExecutable: false
   # Exclude ripgrep binaries for other platforms
   files:
     - "!node_modules/@anthropic-ai/claude-agent-sdk/vendor/ripgrep/arm64-linux"
