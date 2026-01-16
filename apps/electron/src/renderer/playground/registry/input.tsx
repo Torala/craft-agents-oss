@@ -336,7 +336,7 @@ export const inputComponents: ComponentEntry[] = [
   {
     id: 'sonner-toasts',
     name: 'Sonner Toasts',
-    category: 'Feedback',
+    category: 'Chat Inputs',
     description: 'Toast notifications with different types, actions, and stacking behavior',
     component: SonnerPlayground,
     props: [],

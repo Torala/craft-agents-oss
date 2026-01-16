@@ -6,21 +6,60 @@
  * - PUT /s/api/{id} - Update existing session
  * - GET /s/api/{id} - Fetch session JSON
  * - DELETE /s/api/{id} - Delete session
+ *
+ * Security:
+ * - 21-char nanoid for session IDs (126 bits entropy)
+ * - Content-Type must be application/json
+ * - Max payload size: 5MB
+ * - Session validation: requires id (string) and messages (array)
+ *
+ * Rate limiting (configure in Cloudflare Dashboard > Security > WAF > Rate limiting rules):
+ * - Recommended: 10 POST requests/minute per IP to /s/api
+ * - Recommended: 1000 POST requests/minute globally to /s/api
  */
 
 interface Env {
   SESSIONS: R2Bucket
 }
 
+// Security constants
+const MAX_PAYLOAD_SIZE = 5 * 1024 * 1024 // 5MB
+
 // nanoid implementation (no external deps in CF Functions)
 const urlAlphabet = 'useandom-26T198340PX75pxJACKVERYMINDBUSHWOLF_GQZbfghjklqvwyzrict'
-function nanoid(size = 15): string {
+function nanoid(size = 21): string {
   let id = ''
   const bytes = crypto.getRandomValues(new Uint8Array(size))
   for (let i = 0; i < size; i++) {
     id += urlAlphabet[bytes[i] & 63]
   }
   return id
+}
+
+/**
+ * Validates Content-Type header is application/json
+ */
+function isValidContentType(request: Request): boolean {
+  const contentType = request.headers.get('Content-Type')
+  return contentType?.includes('application/json') ?? false
+}
+
+/**
+ * Checks if payload size exceeds limit using Content-Length header
+ */
+function isPayloadTooLarge(request: Request): boolean {
+  const contentLength = request.headers.get('Content-Length')
+  if (!contentLength) return false // Will be caught later if actually too large
+  return parseInt(contentLength, 10) > MAX_PAYLOAD_SIZE
+}
+
+/**
+ * Lightweight validation: session must have id (string) and messages (array)
+ */
+function isValidSession(body: unknown): body is { id: string; messages: unknown[] } {
+  if (!body || typeof body !== 'object') return false
+  const obj = body as Record<string, unknown>
+  return typeof obj.id === 'string' && Array.isArray(obj.messages)
 }
 
 export const onRequest: PagesFunction<Env> = async (context) => {
@@ -43,14 +82,24 @@ export const onRequest: PagesFunction<Env> = async (context) => {
   try {
     // POST /s/api - Create new session
     if (method === 'POST' && pathParts.length === 0) {
-      const body = await request.json()
-
-      // Validate it's a session object
-      if (!body || typeof body !== 'object') {
-        return Response.json({ error: 'Invalid session data' }, { status: 400, headers: corsHeaders })
+      // Validate Content-Type
+      if (!isValidContentType(request)) {
+        return Response.json({ error: 'Content-Type must be application/json' }, { status: 415, headers: corsHeaders })
       }
 
-      const id = nanoid(15)
+      // Check payload size before parsing
+      if (isPayloadTooLarge(request)) {
+        return Response.json({ error: 'Payload too large (max 5MB)' }, { status: 413, headers: corsHeaders })
+      }
+
+      const body = await request.json()
+
+      // Validate session structure (id + messages array)
+      if (!isValidSession(body)) {
+        return Response.json({ error: 'Invalid session: must have id (string) and messages (array)' }, { status: 400, headers: corsHeaders })
+      }
+
+      const id = nanoid()
       const key = `${id}.json`
 
       await env.SESSIONS.put(key, JSON.stringify(body), {
@@ -70,6 +119,16 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
     // PUT /s/api/{id} - Update existing session
     if (method === 'PUT' && pathParts.length === 1) {
+      // Validate Content-Type
+      if (!isValidContentType(request)) {
+        return Response.json({ error: 'Content-Type must be application/json' }, { status: 415, headers: corsHeaders })
+      }
+
+      // Check payload size before parsing
+      if (isPayloadTooLarge(request)) {
+        return Response.json({ error: 'Payload too large (max 5MB)' }, { status: 413, headers: corsHeaders })
+      }
+
       const id = pathParts[0]
       const key = `${id}.json`
 
@@ -81,9 +140,9 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
       const body = await request.json()
 
-      // Validate it's a session object
-      if (!body || typeof body !== 'object') {
-        return Response.json({ error: 'Invalid session data' }, { status: 400, headers: corsHeaders })
+      // Validate session structure (id + messages array)
+      if (!isValidSession(body)) {
+        return Response.json({ error: 'Invalid session: must have id (string) and messages (array)' }, { status: 400, headers: corsHeaders })
       }
 
       await env.SESSIONS.put(key, JSON.stringify(body), {

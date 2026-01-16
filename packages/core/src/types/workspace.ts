@@ -51,7 +51,6 @@ export interface StoredConfig {
   activeWorkspaceId: string | null;
   activeSessionId: string | null;  // Currently active session (primary scope)
   model?: string;
-  extendedCacheTtl?: boolean;  // Extended cache TTL: true=1h all, false=5m all, undefined=auto (Opus only)
   tokenDisplay?: TokenDisplayMode;  // How to show tokens in status bar
   showCost?: boolean;  // Whether to show cost in status bar
   cumulativeUsage?: CumulativeUsage;  // Global cumulative cost

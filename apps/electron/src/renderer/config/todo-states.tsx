@@ -11,14 +11,58 @@ export type TodoStateId = string
 export interface TodoStateConfig {
   id: string
   label: string
-  color: string
+  color?: string
+}
+
+// ============================================================================
+// Default Status Colors (design system semantic colors)
+// ============================================================================
+
+/**
+ * Default color mapping for built-in statuses.
+ * Uses Tailwind classes that map to our design system semantic colors.
+ * Custom statuses without a color will fall back to 'text-foreground/50'.
+ */
+const DEFAULT_STATUS_COLORS: Record<string, string> = {
+  'backlog': 'text-foreground/50',   // Muted - not yet planned
+  'todo': 'text-foreground/50',       // Muted - ready to work on
+  'in-progress': 'text-success',     // Green - active work (kept for existing configs)
+  'needs-review': 'text-info',       // Amber - attention needed
+  'done': 'text-accent',             // Purple - completed
+  'cancelled': 'text-foreground/50', // Muted - inactive
+}
+
+/** Fallback color for custom statuses without explicit color */
+const DEFAULT_FALLBACK_COLOR = 'text-foreground/50'
+
+/**
+ * Get the effective color for a status.
+ * Returns the explicit color if set, otherwise the design system default.
+ */
+export function getDefaultStatusColor(statusId: string): string {
+  return DEFAULT_STATUS_COLORS[statusId] ?? DEFAULT_FALLBACK_COLOR
 }
 
 export interface TodoState extends TodoStateConfig {
+  /** Color is always resolved (either from config or design system default) */
+  color: string
   icon: React.ReactNode
+  /**
+   * Whether the icon responds to color styling (uses currentColor).
+   * - true: SVGs with currentColor - apply status color
+   * - false: Emojis, images, SVGs with hardcoded colors - render at full opacity
+   */
+  iconColorable: boolean
   category?: 'open' | 'closed'
   isFixed?: boolean
   isDefault?: boolean
+}
+
+/** Result from resolving a status icon */
+interface ResolvedIcon {
+  node: React.ReactNode
+  /** True if icon uses currentColor and should inherit status color */
+  colorable: boolean
 }
 
 // ============================================================================
@@ -48,19 +92,34 @@ function sanitizeSvg(svg: string): string {
 }
 
 /**
- * Resolve status icon to React.ReactNode
- * Handles both emoji and file-based icons
+ * Check if an SVG uses currentColor (meaning it should inherit the status color).
+ * SVGs with hardcoded colors should render at full opacity.
+ */
+function svgUsesCurrentColor(svgContent: string): boolean {
+  // Check for currentColor in fill or stroke attributes
+  return svgContent.includes('currentColor')
+}
+
+/**
+ * Resolve status icon to React.ReactNode with colorability info.
+ * Handles both emoji and file-based icons.
+ *
+ * Returns { node, colorable } where:
+ * - colorable=true: Icon uses currentColor, should inherit status color
+ * - colorable=false: Icon has its own colors (emoji, image, hardcoded SVG)
  */
 export async function resolveStatusIcon(
   icon: StatusIcon,
   workspaceId: string,
   className: string = ICON_SIZE
-): Promise<React.ReactNode> {
+): Promise<ResolvedIcon> {
   switch (icon.type) {
     case 'emoji':
-      // Emojis need font-size for sizing, not height/width
-      // Use 13px to match the icon size, with flex centering
-      return <span className="text-[13px] leading-none">{icon.value}</span>
+      // Emojis have their own colors - never apply status color
+      return {
+        node: <span className="text-[13px] leading-none">{icon.value}</span>,
+        colorable: false,
+      }
 
     case 'file': {
       // Check cache first
@@ -74,37 +133,50 @@ export async function resolveStatusIcon(
           iconCache.set(cacheKey, fileContent)
         } catch (error) {
           console.error(`[resolveStatusIcon] Failed to load icon ${icon.value}:`, error)
-          // Fallback to empty span
-          return <span className={className}>●</span>
+          // Fallback to bullet - colorable since it's just text
+          return {
+            node: <span className={className}>●</span>,
+            colorable: true,
+          }
         }
       }
 
       // Detect file type by extension
       if (icon.value.endsWith('.svg')) {
         const sanitized = sanitizeSvg(fileContent)
-        return (
-          <div
-            className={className}
-            dangerouslySetInnerHTML={{ __html: sanitized }}
-            style={{ display: 'inline-block' }}
-          />
-        )
+        const colorable = svgUsesCurrentColor(fileContent)
+        return {
+          node: (
+            <div
+              className={className}
+              dangerouslySetInnerHTML={{ __html: sanitized }}
+              style={{ display: 'inline-block' }}
+            />
+          ),
+          colorable,
+        }
       } else {
-        // PNG, JPG, etc. - readWorkspaceImage returns a data URL
-        return (
-          <img
-            src={fileContent}
-            className={className}
-            alt=""
-            style={{ display: 'inline-block' }}
-          />
-        )
+        // PNG, JPG, etc. - images have their own colors
+        return {
+          node: (
+            <img
+              src={fileContent}
+              className={className}
+              alt=""
+              style={{ display: 'inline-block' }}
+            />
+          ),
+          colorable: false,
+        }
       }
     }
 
     default:
-      // Fallback
-      return <span className={className}>●</span>
+      // Fallback bullet - colorable
+      return {
+        node: <span className={className}>●</span>,
+        colorable: true,
+      }
   }
 }
 
@@ -136,13 +208,15 @@ export async function statusConfigToTodoState(
   config: StatusConfig,
   workspaceId: string
 ): Promise<TodoState> {
-  const icon = await resolveStatusIcon(config.icon, workspaceId)
+  const resolvedIcon = await resolveStatusIcon(config.icon, workspaceId)
 
   return {
     id: config.id,
     label: config.label,
-    color: config.color,
-    icon,
+    // Use explicit color if provided, otherwise fall back to design system default
+    color: config.color ?? getDefaultStatusColor(config.id),
+    icon: resolvedIcon.node,
+    iconColorable: resolvedIcon.colorable,
     category: config.category,
     isFixed: config.isFixed,
     isDefault: config.isDefault,

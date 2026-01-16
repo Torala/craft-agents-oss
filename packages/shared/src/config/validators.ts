@@ -79,7 +79,6 @@ export const StoredConfigSchema = z.object({
   activeWorkspaceId: z.string().nullable(),
   activeSessionId: z.string().nullable(),
   model: z.string().optional(),
-  extendedCacheTtl: z.boolean().optional(),
   tokenDisplay: TokenDisplayModeSchema.optional(),
   showCost: z.boolean().optional(),
   cumulativeUsage: CumulativeUsageSchema.optional(),

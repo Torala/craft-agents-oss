@@ -1,0 +1,85 @@
+# Craft Agent - Full Documentation
+
+> AI assistant that connects your data sources and helps you work across them
+
+## Overview
+
+Craft Agent is a Claude Code-like desktop application for managing documents and data using the Claude Agent SDK and MCP (Model Context Protocol) servers. It provides a terminal-style interface for AI-assisted workflows across multiple connected data sources.
+
+## Core Capabilities
+
+### 1. Connect External Sources
+
+Craft Agent can connect to various data sources:
+
+- **MCP Servers**: Linear, GitHub, Notion, Slack, and custom MCP servers
+- **REST APIs**: Any API with bearer, header, query, or basic authentication
+- **Local Filesystems**: Obsidian vaults, code repositories, data directories
+- **Google Services**: Gmail, Calendar, Drive (via OAuth)
+- **Microsoft Services**: Outlook, Teams, SharePoint, OneDrive (via OAuth)
+
+### 2. AI-Powered Assistance
+
+- Powered by Claude (Anthropic's AI)
+- Streaming responses with real-time updates
+- Tool execution for file operations, API calls, and more
+- Session continuity - resume conversations where you left off
+
+### 3. Workflow Automation
+
+- Combine data from multiple sources in one conversation
+- Pull issues from Linear, reference code from GitHub, summarize in Craft documents
+- Create custom skills for repeated workflows
+- Permission modes: Explore (read-only), Ask to Edit, Auto
+
+## Installation
+
+### macOS
+
+```bash
+curl -fsSL https://agents.craft.do/install-app.sh | bash
+```
+
+This downloads and installs the Craft Agent desktop app.
+
+## Architecture
+
+### Session System
+
+- Sessions stored as JSONL files (fast loading, append-only)
+- Session IDs: `YYMMDD-adjective-noun` (e.g., `260111-swift-river`)
+- Multi-session inbox with workflow statuses
+
+### Source Configuration
+
+Sources are configured at `~/.craft-agent/workspaces/{workspace}/sources/{source}/`:
+
+```
+├── config.json   # Connection settings and authentication
+└── guide.md      # Usage documentation
+```
+
+### Skills System
+
+Custom skills at `~/.craft-agent/workspaces/{workspace}/skills/{skill}/`:
+
+```
+├── SKILL.md      # YAML frontmatter + instructions
+└── icon.svg      # Optional icon
+```
+
+## Tech Stack
+
+- **Runtime**: Bun
+- **AI**: Claude Agent SDK (@anthropic-ai/claude-agent-sdk)
+- **UI**: Electron + React, Tailwind CSS v4, shadcn/ui
+- **Protocol**: MCP (Model Context Protocol)
+
+## Links
+
+- Website: https://agents.craft.do
+- Install script: https://agents.craft.do/install-app.sh
+
+## Contact
+
+For support or feedback, visit the website or check the GitHub repository.

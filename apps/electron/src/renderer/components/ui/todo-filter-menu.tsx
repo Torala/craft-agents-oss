@@ -24,11 +24,18 @@ const MENU_ITEM_STYLE = 'flex cursor-pointer select-none items-center gap-3 roun
 // ============================================================================
 
 function StateItemContent({ state }: { state: TodoState }) {
+  // Only apply color styling if the icon is colorable (uses currentColor)
+  // Emojis and images should render at full opacity with their own colors
+  const applyColor = state.iconColorable
+
   return (
     <>
       <span
-        className={cn("shrink-0 flex items-center mt-px", !isHexColor(state.color) && (state.color || "text-muted-foreground"))}
-        style={isHexColor(state.color) ? { color: state.color } : undefined}
+        className={cn(
+          "shrink-0 flex items-center mt-px",
+          applyColor && !isHexColor(state.color) && (state.color || "text-muted-foreground")
+        )}
+        style={applyColor && isHexColor(state.color) ? { color: state.color } : undefined}
       >
         {state.icon}
       </span>

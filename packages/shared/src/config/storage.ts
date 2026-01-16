@@ -2,7 +2,6 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync, statSync } 
 import { homedir } from 'os';
 import { join, dirname } from 'path';
 import { getCredentialManager } from '../credentials/index.ts';
-import { isOpusModel } from './models.ts';
 import { getOrCreateLatestSession, type SessionConfig } from '../sessions/index.ts';
 import {
   discoverWorkspacesInDefaultLocation,
@@ -46,7 +45,6 @@ export interface StoredConfig {
   activeWorkspaceId: string | null;
   activeSessionId: string | null;  // Currently active session (primary scope)
   model?: string;
-  extendedCacheTtl?: boolean;  // Extended cache TTL: true=1h all, false=5m all, undefined=auto (Opus only)
   tokenDisplay?: TokenDisplayMode;  // How to show tokens in status bar: hidden, total, or separate in/out
   showCost?: boolean;  // Whether to show cost in status bar (only relevant for API Key auth)
   showClock?: boolean;  // Whether to show clock with timezone in header
@@ -112,30 +110,6 @@ export function loadStoredConfig(): StoredConfig | null {
   } catch {
     return null;
   }
-}
-
-/**
- * Get extended cache TTL configuration.
- * @returns true (force 1h), false (force 5m), or null (auto: 1h for Opus only)
- */
-export function getExtendedCacheTtlConfig(): boolean | null {
-  const config = loadStoredConfig();
-  if (config && typeof config.extendedCacheTtl === 'boolean') {
-    return config.extendedCacheTtl;
-  }
-  return null; // Auto mode
-}
-
-/**
- * Check if extended cache TTL should be used for the given model.
- * Auto mode enables 1h cache for Opus models only (cost-effective).
- */
-export function shouldUseExtendedCacheTtl(model: string): boolean {
-  const config = getExtendedCacheTtlConfig();
-  if (config === true) return true;
-  if (config === false) return false;
-  // Auto mode: only for Opus models
-  return isOpusModel(model);
 }
 
 /**
@@ -832,7 +806,6 @@ export function getAllSessionDrafts(): Record<string, string> {
 
 import type { ThemeOverrides, ThemeFile, PresetTheme } from './theme.ts';
 import { readdirSync } from 'fs';
-import { fileURLToPath } from 'url';
 
 const APP_THEME_FILE = join(CONFIG_DIR, 'theme.json');
 const APP_THEMES_DIR = join(CONFIG_DIR, 'themes');
@@ -843,23 +816,6 @@ const APP_THEMES_DIR = join(CONFIG_DIR, 'themes');
  */
 export function getAppThemesDir(): string {
   return APP_THEMES_DIR;
-}
-
-// Get the directory where bundled themes are stored (in the package)
-// Returns null if running in bundled CJS environment where import.meta.url is unavailable
-function getBundledThemesDir(): string | null {
-  try {
-    // import.meta.url is undefined when bundled with esbuild to CJS format
-    if (typeof import.meta?.url !== 'string') {
-      return null;
-    }
-    // __dirname equivalent for ESM
-    const currentFilePath = fileURLToPath(import.meta.url);
-    const currentDir = dirname(currentFilePath);
-    return join(currentDir, 'themes');
-  } catch {
-    return null;
-  }
 }
 
 /**
@@ -892,11 +848,11 @@ export function saveAppTheme(theme: ThemeOverrides): void {
 
 /**
  * Ensure preset themes directory exists and has bundled themes.
- * Copies bundled themes from package to app themes dir on first run.
+ * Copies bundled themes from the provided directory to app themes dir on first run.
  * Only copies if theme doesn't exist (preserves user edits).
- * @param externalBundledDir - Optional path to bundled themes (for Electron)
+ * @param bundledThemesDir - Path to bundled themes (e.g., Electron's resources/themes)
  */
-export function ensurePresetThemes(externalBundledDir?: string): void {
+export function ensurePresetThemes(bundledThemesDir?: string): void {
   const themesDir = getAppThemesDir();
 
   // Create themes directory if it doesn't exist
@@ -904,19 +860,18 @@ export function ensurePresetThemes(externalBundledDir?: string): void {
     mkdirSync(themesDir, { recursive: true });
   }
 
-  // Get bundled themes directory - prefer external path (from Electron) over ESM path
-  const bundledDir = externalBundledDir ?? getBundledThemesDir();
-  if (!bundledDir || !existsSync(bundledDir)) {
-    return; // No bundled themes available
+  // If no bundled themes directory provided, just ensure the directory exists
+  if (!bundledThemesDir || !existsSync(bundledThemesDir)) {
+    return;
   }
 
   // Copy each bundled theme if it doesn't exist in app themes dir
   try {
-    const bundledFiles = readdirSync(bundledDir).filter(f => f.endsWith('.json'));
+    const bundledFiles = readdirSync(bundledThemesDir).filter(f => f.endsWith('.json'));
     for (const file of bundledFiles) {
       const destPath = join(themesDir, file);
       if (!existsSync(destPath)) {
-        const srcPath = join(bundledDir, file);
+        const srcPath = join(bundledThemesDir, file);
         const content = readFileSync(srcPath, 'utf-8');
         writeFileSync(destPath, content, 'utf-8');
       }
@@ -1064,15 +1019,15 @@ export function getPresetThemesDir(): string {
  * Reset a preset theme to its bundled default.
  * Copies the bundled version over the user's version.
  * @param id - Theme ID to reset
- * @param externalBundledDir - Optional path to bundled themes (for Electron)
+ * @param bundledThemesDir - Path to bundled themes (e.g., Electron's resources/themes)
  */
-export function resetPresetTheme(id: string, externalBundledDir?: string): boolean {
-  const bundledDir = externalBundledDir ?? getBundledThemesDir();
-  if (!bundledDir) {
-    return false; // Bundled themes not available in this environment
+export function resetPresetTheme(id: string, bundledThemesDir?: string): boolean {
+  // Bundled themes directory must be provided (e.g., by Electron)
+  if (!bundledThemesDir) {
+    return false;
   }
 
-  const bundledPath = join(bundledDir, `${id}.json`);
+  const bundledPath = join(bundledThemesDir, `${id}.json`);
   const themesDir = getAppThemesDir();
   const destPath = join(themesDir, `${id}.json`);
 

@@ -93,8 +93,11 @@ export function ActiveOptionBadges({
         </button>
       )}
 
-      {/* Background Tasks */}
-      {sessionId && <ActiveTasksBar tasks={tasks} sessionId={sessionId} onKillTask={onKillTask} onInsertMessage={onInsertMessage} />}
+      {/* Background Tasks - DISABLED: UI hidden because task tracking is not reliable.
+       * The underlying infrastructure (useBackgroundTasks hook, atoms, event handlers) is kept
+       * intact for when we fix the reliability issues. See apps/electron/CLAUDE.md for details.
+       */}
+      {/* {sessionId && <ActiveTasksBar tasks={tasks} sessionId={sessionId} onKillTask={onKillTask} onInsertMessage={onInsertMessage} />} */}
     </div>
   )
 }

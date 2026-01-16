@@ -27,20 +27,31 @@ function CraftAgentLogo({ className }: { className?: string }) {
 
 interface HeaderProps {
   hasSession: boolean
+  sessionTitle?: string
   isDark: boolean
   onToggleTheme: () => void
   onClear: () => void
 }
 
-export function Header({ hasSession, isDark, onToggleTheme, onClear }: HeaderProps) {
+export function Header({ hasSession, sessionTitle, isDark, onToggleTheme, onClear }: HeaderProps) {
   return (
-    <header className="shrink-0 flex items-center justify-between px-4 py-3 border-b border-foreground/5">
-      <div className="flex items-center gap-3">
-        {/* Logo / Branding */}
-        <div className="flex items-center gap-2">
-          <CraftAgentLogo className="w-6 h-6 text-[#9570BE]" />
-          <span className="font-medium text-foreground">Session Viewer</span>
-        </div>
+    <header className="shrink-0 grid grid-cols-[auto_1fr_auto] items-center px-4 py-3">
+      {/* Logo - links to main site */}
+      <a
+        href="https://agents.craft.do"
+        className="hover:opacity-80 transition-opacity"
+        title="Craft Agent"
+      >
+        <CraftAgentLogo className="w-6 h-6 text-[#9570BE]" />
+      </a>
+
+      {/* Session title - centered */}
+      <div className="flex justify-center">
+        {sessionTitle && (
+          <span className="text-sm font-semibold text-foreground truncate max-w-md">
+            {sessionTitle}
+          </span>
+        )}
       </div>
 
       <div className="flex items-center gap-2">
@@ -48,26 +59,20 @@ export function Header({ hasSession, isDark, onToggleTheme, onClear }: HeaderPro
         {hasSession && (
           <button
             onClick={onClear}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 text-sm rounded-md
-                       text-foreground/60 hover:text-foreground hover:bg-foreground/5
-                       transition-colors"
+            className="p-1.5 rounded-md bg-background shadow-minimal text-foreground/40 hover:text-foreground/70 transition-colors"
+            title="Clear session"
           >
             <X className="w-4 h-4" />
-            <span>Clear</span>
           </button>
         )}
 
         {/* Theme toggle */}
         <button
           onClick={onToggleTheme}
-          className="p-2 rounded-md text-foreground/50 hover:text-foreground hover:bg-foreground/5 transition-colors"
+          className="p-1.5 rounded-md bg-background shadow-minimal text-foreground/40 hover:text-foreground/70 transition-colors"
           title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
         >
-          {isDark ? (
-            <Sun className="w-4 h-4" />
-          ) : (
-            <Moon className="w-4 h-4" />
-          )}
+          {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
         </button>
       </div>
     </header>

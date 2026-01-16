@@ -42,7 +42,7 @@ export interface ShikiThemeProviderProps {
  * const { shikiTheme } = useTheme({ appTheme })
  *
  * <ShikiThemeProvider shikiTheme={shikiTheme}>
- *   <ChatView />
+ *   <SessionViewer />
  * </ShikiThemeProvider>
  * ```
  */

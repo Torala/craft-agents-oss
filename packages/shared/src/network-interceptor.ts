@@ -9,7 +9,7 @@
  * - Adds _intent and _displayName metadata to MCP tool schemas
  */
 
-import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, unlinkSync, appendFileSync, mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -18,6 +18,19 @@ import { join } from 'node:path';
 type HeadersInitType = Headers | Record<string, string> | string[][];
 
 const DEBUG = process.argv.includes('--debug') || process.env.CRAFT_DEBUG === '1';
+
+// Log file for debug output (avoids console spam)
+const LOG_DIR = join(homedir(), '.craft-agent', 'logs');
+const LOG_FILE = join(LOG_DIR, 'interceptor.log');
+
+// Ensure log directory exists at module load
+try {
+  if (!existsSync(LOG_DIR)) {
+    mkdirSync(LOG_DIR, { recursive: true });
+  }
+} catch {
+  // Ignore - logging will silently fail if dir can't be created
+}
 
 /**
  * Store the last API error for the error handler to access.
@@ -95,19 +108,23 @@ export function clearLastApiError(): void {
 function debugLog(...args: unknown[]) {
   if (!DEBUG) return;
   const timestamp = new Date().toISOString();
-  const message = `${timestamp} [cache-interceptor] ${args.map((a) => {
+  const message = `${timestamp} [interceptor] ${args.map((a) => {
     if (typeof a === 'object') {
       try {
         return JSON.stringify(a);
       } catch (e) {
         const keys = a && typeof a === 'object' ? Object.keys(a as object).join(', ') : 'unknown';
-        return `[CYCLIC STRUCTURE in cache-interceptor debugLog, keys: ${keys}] (error: ${e})`;
+        return `[CYCLIC STRUCTURE, keys: ${keys}] (error: ${e})`;
       }
     }
     return String(a);
   }).join(' ')}`;
-  // Output to stderr to avoid interfering with stdout
-  process.stderr.write(message + '\n');
+  // Write to log file instead of stderr to avoid console spam
+  try {
+    appendFileSync(LOG_FILE, message + '\n');
+  } catch {
+    // Silently fail if can't write to log file
+  }
 }
 
 

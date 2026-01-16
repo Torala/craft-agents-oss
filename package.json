@@ -46,7 +46,10 @@
     "electron:dist:linux": "bun run electron:build && electron-builder --config electron-builder.yml --project apps/electron --linux",
     "viewer:dev": "lsof -ti:5174 | xargs kill -9 2>/dev/null; vite dev --config apps/viewer/vite.config.ts --open /s/tz5-13I84pwK_he",
     "viewer:build": "vite build --config apps/viewer/vite.config.ts",
-    "viewer:preview": "vite preview --config apps/viewer/vite.config.ts"
+    "viewer:preview": "vite preview --config apps/viewer/vite.config.ts",
+    "marketing:dev": "vite dev --config apps/marketing/vite.config.ts",
+    "marketing:build": "vite build --config apps/marketing/vite.config.ts",
+    "marketing:preview": "vite preview --config apps/marketing/vite.config.ts"
   },
   "devDependencies": {
     "@aws-sdk/client-s3": "^3.947.0",

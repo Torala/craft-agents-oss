@@ -369,6 +369,9 @@ function headerToMetadata(header: SessionHeader, workspaceRootPath: string): Ses
       workingDirectory: workingDir,
       sdkCwd,
       model: header.model,
+      // Shared viewer state - must be included for persistence across app restarts
+      sharedUrl: header.sharedUrl,
+      sharedId: header.sharedId,
     };
   } catch {
     return null;

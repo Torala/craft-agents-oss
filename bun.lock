@@ -1,6 +1,5 @@
 {
   "lockfileVersion": 1,
-  "configVersion": 0,
   "workspaces": {
     "": {
       "name": "craft-agent",
@@ -103,6 +102,23 @@
         "strip-markdown": "^6.0.0",
         "unist-util-visit": "^5.0.0",
         "vaul": "^1.1.2",
+      },
+    },
+    "apps/marketing": {
+      "name": "@craft-agent/marketing",
+      "version": "0.1.0",
+      "dependencies": {
+        "react": "^18.3.1",
+        "react-dom": "^18.3.1",
+      },
+      "devDependencies": {
+        "@tailwindcss/vite": "^4.1.18",
+        "@types/react": "^18.3.0",
+        "@types/react-dom": "^18.3.0",
+        "@vitejs/plugin-react": "^5.1.2",
+        "tailwindcss": "^4.1.18",
+        "typescript": "^5.0.0",
+        "vite": "^6.2.4",
       },
     },
     "apps/viewer": {
@@ -354,6 +370,8 @@
     "@craft-agent/core": ["@craft-agent/core@workspace:packages/core"],
 
     "@craft-agent/electron": ["@craft-agent/electron@workspace:apps/electron"],
+
+    "@craft-agent/marketing": ["@craft-agent/marketing@workspace:apps/marketing"],
 
     "@craft-agent/shared": ["@craft-agent/shared@workspace:packages/shared"],
 

@@ -1,0 +1,10 @@
+# Allow all crawlers
+User-agent: *
+Allow: /
+
+# Sitemap location
+Sitemap: https://agents.craft.do/sitemap.xml
+
+# AI-friendly content
+# See /llms.txt for AI agent instructions
+# See /llms-full.txt for full content

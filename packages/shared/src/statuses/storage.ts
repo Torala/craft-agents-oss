@@ -18,33 +18,36 @@ const STATUS_ICONS_DIR = 'statuses/icons';
  * Get default status configuration (matches current hardcoded behavior)
  */
 export function getDefaultStatusConfig(): WorkspaceStatusConfig {
+  // Note: color is omitted - the renderer applies design system defaults:
+  // - backlog: text-foreground/50 (muted, not yet planned)
+  // - todo: text-foreground (solid, ready to work on)
+  // - needs-review: text-info (amber, attention needed)
+  // - done: text-accent (purple, completed)
+  // - cancelled: text-foreground/50 (muted, inactive)
   return {
     version: 1,
     statuses: [
       {
+        id: 'backlog',
+        label: 'Backlog',
+        icon: { type: 'file', value: 'backlog.svg' },
+        category: 'open',
+        isFixed: false,
+        isDefault: true,
+        order: 0,
+      },
+      {
         id: 'todo',
         label: 'Todo',
-        color: '#71717A',
         icon: { type: 'file', value: 'todo.svg' },
         category: 'open',
         isFixed: true,
         isDefault: false,
-        order: 0,
-      },
-      {
-        id: 'in-progress',
-        label: 'In Progress',
-        color: '#3B82F6',
-        icon: { type: 'file', value: 'in-progress.svg' },
-        category: 'open',
-        isFixed: false,
-        isDefault: true,
         order: 1,
       },
       {
         id: 'needs-review',
         label: 'Needs Review',
-        color: '#F59E0B',
         icon: { type: 'file', value: 'needs-review.svg' },
         category: 'open',
         isFixed: false,
@@ -54,7 +57,6 @@ export function getDefaultStatusConfig(): WorkspaceStatusConfig {
       {
         id: 'done',
         label: 'Done',
-        color: '#9570BE',
         icon: { type: 'file', value: 'done.svg' },
         category: 'closed',
         isFixed: true,
@@ -64,7 +66,6 @@ export function getDefaultStatusConfig(): WorkspaceStatusConfig {
       {
         id: 'cancelled',
         label: 'Cancelled',
-        color: '#A1A1AA',
         icon: { type: 'file', value: 'cancelled.svg' },
         category: 'closed',
         isFixed: true,

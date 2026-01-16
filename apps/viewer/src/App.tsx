@@ -12,7 +12,7 @@
 import { useState, useCallback, useEffect, useMemo } from 'react'
 import type { StoredSession } from '@craft-agent/core'
 import {
-  ChatView,
+  SessionViewer,
   GenericOverlay,
   CodePreviewOverlay,
   DiffPreviewOverlay,
@@ -160,9 +160,10 @@ export function App() {
   const theme = isDark ? 'dark' : 'light'
 
   return (
-    <div className="h-full flex flex-col bg-background text-foreground">
+    <div className="h-full flex flex-col bg-foreground-2 text-foreground">
       <Header
         hasSession={!!session}
+        sessionTitle={session?.name}
         isDark={isDark}
         onToggleTheme={toggleTheme}
         onClear={handleClear}
@@ -187,7 +188,7 @@ export function App() {
           </div>
         </div>
       ) : session ? (
-        <ChatView
+        <SessionViewer
           session={session}
           mode="readonly"
           platformActions={platformActions}

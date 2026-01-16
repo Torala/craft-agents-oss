@@ -167,13 +167,6 @@ Configuration is stored at `~/.craft-agent/`:
 
 Tool responses exceeding ~60KB are automatically summarized using Claude Haiku with intent-aware context. The `_intent` field is injected into MCP tool schemas to preserve summarization focus.
 
-### Extended Prompt Cache
-
-The app can extend Anthropic's prompt cache TTL from 5 minutes to 1 hour for longer conversations:
-
-- **Default**: 1-hour cache for Opus models only (2x write cost)
-- **Override**: Set `extendedCacheTtl: true/false` in config.json
-
 ### Deep Linking
 
 External apps can navigate using `craftagents://` URLs:

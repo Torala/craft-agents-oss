@@ -11,6 +11,8 @@ export interface LinkItem {
   label?: string        // Optional badge (e.g., count)
   icon: LucideIcon | React.ReactNode  // LucideIcon or custom React element
   iconColor?: string    // Optional color class for the icon
+  /** Whether the icon responds to color (uses currentColor). Default true for Lucide icons. */
+  iconColorable?: boolean
   variant: "default" | "ghost"  // "default" = highlighted, "ghost" = subtle
   onClick?: () => void
   // Expandable item properties
@@ -131,7 +133,7 @@ export function LeftSidebar({ links, isCollapsed, getItemProps, focusedItemId, i
           // Handle separator items
           if (isSeparatorItem(item)) {
             return (
-              <div key={item.id} className="py-2 px-2" aria-hidden="true">
+              <div key={item.id} className="py-1 px-2" aria-hidden="true">
                 <div className="h-px bg-foreground/5" />
               </div>
             )
@@ -141,58 +143,65 @@ export function LeftSidebar({ links, isCollapsed, getItemProps, focusedItemId, i
           const itemProps = getItemProps?.(link.id)
           const isFocused = focusedItemId === link.id
 
-          const content = (
-            <>
-              <button
-                {...itemProps}
-                onClick={link.onClick}
-                data-tutorial={link.dataTutorial}
-                className={cn(
-                  "group flex w-full items-center gap-2 rounded-[6px] py-[5px] text-[13px] select-none outline-none",
-                  "focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
-                  // Same padding for all items
-                  "px-2",
-                  link.variant === "default"
-                    ? "bg-foreground/[0.07]"
-                    : "hover:bg-foreground/5"
+          // Button element shared by both expandable and non-expandable items
+          const buttonElement = (
+            <button
+              {...itemProps}
+              onClick={link.onClick}
+              data-tutorial={link.dataTutorial}
+              className={cn(
+                "group flex w-full items-center gap-2 rounded-[6px] py-[5px] text-[13px] select-none outline-none",
+                "focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
+                // Same padding for all items
+                "px-2",
+                link.variant === "default"
+                  ? "bg-foreground/[0.07]"
+                  : "hover:bg-foreground/5"
+              )}
+            >
+              {/* Icon container with hover toggle for expandable items */}
+              <span className="relative h-3.5 w-3.5 shrink-0 flex items-center justify-center">
+                {link.expandable ? (
+                  <>
+                    {/* Main icon - hidden on hover */}
+                    <span className="absolute inset-0 flex items-center justify-center group-hover:opacity-0 transition-opacity duration-150">
+                      {renderIcon(link)}
+                    </span>
+                    {/* Toggle chevron - shown on hover */}
+                    <span
+                      className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-150 cursor-pointer"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        link.onToggle?.()
+                      }}
+                    >
+                      <ChevronRight
+                        className={cn(
+                          "h-3.5 w-3.5 text-muted-foreground transition-transform duration-200",
+                          link.expanded && "rotate-90"
+                        )}
+                      />
+                    </span>
+                  </>
+                ) : (
+                  renderIcon(link)
                 )}
-              >
-                {/* Icon container with hover toggle for expandable items */}
-                <span className="relative h-3.5 w-3.5 shrink-0 flex items-center justify-center">
-                  {link.expandable ? (
-                    <>
-                      {/* Main icon - hidden on hover */}
-                      <span className="absolute inset-0 flex items-center justify-center group-hover:opacity-0 transition-opacity duration-150">
-                        {renderIcon(link)}
-                      </span>
-                      {/* Toggle chevron - shown on hover */}
-                      <span
-                        className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-150 cursor-pointer"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          link.onToggle?.()
-                        }}
-                      >
-                        <ChevronRight
-                          className={cn(
-                            "h-3.5 w-3.5 text-muted-foreground transition-transform duration-200",
-                            link.expanded && "rotate-90"
-                          )}
-                        />
-                      </span>
-                    </>
-                  ) : (
-                    renderIcon(link)
-                  )}
+              </span>
+              {link.title}
+              {/* Label Badge: Shows count or status on the right */}
+              {link.label && (
+                <span className="ml-auto text-xs text-foreground/30 opacity-0 group-hover/section:opacity-100 transition-opacity">
+                  {link.label}
                 </span>
-                {link.title}
-                {/* Label Badge: Shows count or status on the right */}
-                {link.label && (
-                  <span className="ml-auto text-xs text-muted-foreground/50">
-                    {link.label}
-                  </span>
-                )}
-              </button>
+              )}
+            </button>
+          )
+
+          // Expandable items: wrap in group/section so parent + children share hover state for labels
+          // Non-expandable items: wrap in group/section so each item has its own hover state
+          const content = (
+            <div className="group/section">
+              {buttonElement}
               {/* Expandable subitems with animation */}
               {link.expandable && link.items && (
                 <AnimatePresence initial={false}>
@@ -215,7 +224,7 @@ export function LeftSidebar({ links, isCollapsed, getItemProps, focusedItemId, i
                   )}
                 </AnimatePresence>
               )}
-            </>
+            </div>
           )
 
           // For nested items, wrap in motion.div for stagger animation
@@ -241,12 +250,17 @@ function renderIcon(link: LinkItem) {
   const isComponent = typeof link.icon === 'function' ||
     (typeof link.icon === 'object' && link.icon !== null && 'render' in link.icon)
   const defaultColor = "text-foreground/60"
+
+  // Lucide components are always colorable; ReactNode icons check iconColorable
+  // Default to true for backwards compatibility (most icons are colorable)
+  const applyColor = link.iconColorable !== false
+
   if (isComponent) {
     const Icon = link.icon as React.ComponentType<{ className?: string; style?: React.CSSProperties }>
     return (
       <Icon
-        className={cn("h-3.5 w-3.5 shrink-0", !isHexColor(link.iconColor) && (link.iconColor || defaultColor))}
-        style={isHexColor(link.iconColor) ? { color: link.iconColor } : undefined}
+        className={cn("h-3.5 w-3.5 shrink-0", applyColor && !isHexColor(link.iconColor) && (link.iconColor || defaultColor))}
+        style={applyColor && isHexColor(link.iconColor) ? { color: link.iconColor } : undefined}
       />
     )
   }
@@ -257,9 +271,9 @@ function renderIcon(link: LinkItem) {
       className={cn(
         "h-3.5 w-3.5 shrink-0 flex items-center justify-center",
         "[&>svg]:w-full [&>svg]:h-full [&>div>svg]:w-full [&>div>svg]:h-full [&>img]:w-full [&>img]:h-full",
-        !isHexColor(link.iconColor) && (link.iconColor || defaultColor)
+        applyColor && !isHexColor(link.iconColor) && (link.iconColor || defaultColor)
       )}
-      style={isHexColor(link.iconColor) ? { color: link.iconColor } : undefined}
+      style={applyColor && isHexColor(link.iconColor) ? { color: link.iconColor } : undefined}
     >
       {link.icon as React.ReactNode}
     </span>

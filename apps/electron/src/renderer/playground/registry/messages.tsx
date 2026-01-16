@@ -1,38 +1,27 @@
 import * as React from 'react'
 import type { ComponentEntry } from './types'
-import { TurnCard, type ActivityItem, type ResponseContent, Markdown, CollapsibleMarkdownProvider } from '@craft-agent/ui'
-import { Spinner } from '@craft-agent/ui'
 import {
-  AlertTriangle,
-  CheckCircle2,
-  ChevronDown,
-  ChevronRight,
-  CircleAlert,
-  ExternalLink,
-  Info,
-} from 'lucide-react'
-import { AnimatedCollapsibleContent } from '@/components/ui/collapsible'
+  TurnCard,
+  type ActivityItem,
+  type ResponseContent,
+  Markdown,
+  CollapsibleMarkdownProvider,
+  Spinner,
+  UserMessageBubble,
+  SystemMessage,
+} from '@craft-agent/ui'
+import { ExternalLink } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { cn } from '@/lib/utils'
 import { AuthRequestCard } from '@/components/chat/AuthRequestCard'
 import type { Message } from '../../../shared/types'
 
 // ============================================================================
-// Message Components - Extracted from ChatDisplay for playground preview
+// Message Components - Demo components for playground preview
+// Uses shared components from @craft-agent/ui where available
 // ============================================================================
 
-/** User message bubble - right aligned with subtle background */
-function UserMessage({ content }: { content: string }) {
-  return (
-    <div className="flex flex-col items-end gap-1">
-      <div className="max-w-[80%] bg-foreground/5 rounded-[16px] px-4 py-1 break-words min-w-0">
-        <p className="text-sm">{content}</p>
-      </div>
-    </div>
-  )
-}
-
-/** Assistant message bubble - left aligned white card */
+/** Assistant message bubble - left aligned white card (playground demo version) */
 function AssistantMessage({ content }: { content: string }) {
   return (
     <div className="flex justify-start group">
@@ -57,54 +46,7 @@ function AssistantMessage({ content }: { content: string }) {
   )
 }
 
-/** Error message bubble - red themed with collapsible details */
-interface ErrorMessageProps {
-  content: string
-  errorTitle?: string
-  errorDetails?: string[]
-  errorOriginal?: string
-}
-
-function ErrorMessage({ content, errorTitle, errorDetails, errorOriginal }: ErrorMessageProps) {
-  const hasDetails = (errorDetails && errorDetails.length > 0) || errorOriginal
-  const [detailsOpen, setDetailsOpen] = React.useState(false)
-
-  return (
-    <div className="flex justify-start">
-      <div className="max-w-[80%] bg-destructive/10 rounded-[8px] pl-3.5 pr-4 pt-3 pb-3 break-words">
-        <div className="text-xs text-destructive/50 mb-0.5 font-semibold">
-          {errorTitle || 'Error'}
-        </div>
-        <p className="text-sm text-destructive">{content}</p>
-
-        {hasDetails && (
-          <div className="mt-2">
-            <button
-              onClick={() => setDetailsOpen(!detailsOpen)}
-              className="flex items-center gap-1 text-xs text-destructive/70 hover:text-destructive transition-colors"
-            >
-              {detailsOpen ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
-              <span>{detailsOpen ? 'Hide' : 'Show'} technical details</span>
-            </button>
-
-            <AnimatedCollapsibleContent isOpen={detailsOpen} className="overflow-hidden">
-              <div className="mt-2 pt-2 border-t border-destructive/20 text-xs text-destructive/60 font-mono space-y-0.5">
-                {errorDetails?.map((detail, i) => (
-                  <div key={i}>{detail}</div>
-                ))}
-                {errorOriginal && !errorDetails?.some(d => d.includes('Raw error:')) && (
-                  <div className="mt-1">Raw: {errorOriginal.slice(0, 200)}{errorOriginal.length > 200 ? '...' : ''}</div>
-                )}
-              </div>
-            </AnimatedCollapsibleContent>
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
-/** Status message - spinner with text, used during compaction etc */
+/** Status message - spinner with text, used during compaction etc (playground demo) */
 function StatusMessage({ content }: { content: string }) {
   return (
     <div className="flex items-center gap-2 px-3 py-1 text-[13px] text-muted-foreground">
@@ -116,50 +58,7 @@ function StatusMessage({ content }: { content: string }) {
   )
 }
 
-/** Info message - icon with text, supports different severity levels */
-type InfoMessageLevel = 'info' | 'warning' | 'error' | 'success'
-
-interface InfoMessageProps {
-  content: string
-  level?: InfoMessageLevel
-}
-
-const infoMessageConfig: Record<InfoMessageLevel, { icon: typeof Info; className: string }> = {
-  info: { icon: Info, className: 'text-muted-foreground' },
-  warning: { icon: AlertTriangle, className: 'text-amber-600' },
-  error: { icon: CircleAlert, className: 'text-destructive' },
-  success: { icon: CheckCircle2, className: 'text-emerald-600' },
-}
-
-function InfoMessage({ content, level = 'info' }: InfoMessageProps) {
-  const config = infoMessageConfig[level]
-  const Icon = config.icon
-
-  return (
-    <div className={cn('flex items-center gap-2 px-3 py-1 text-[13px]', config.className)}>
-      <div className="w-3 h-3 flex items-center justify-center shrink-0">
-        <Icon className="w-3 h-3" />
-      </div>
-      <span>{content}</span>
-    </div>
-  )
-}
-
-/** Warning message - amber themed bubble */
-function WarningMessage({ content }: { content: string }) {
-  return (
-    <div className="flex justify-start">
-      <div className="max-w-[80%] bg-amber-500/10 rounded-[8px] pl-3.5 pr-4 pt-3 pb-3 break-words">
-        <div className="text-xs text-amber-600/50 dark:text-amber-500/50 mb-0.5 font-semibold">
-          Warning
-        </div>
-        <p className="text-sm text-amber-700 dark:text-amber-400">{content}</p>
-      </div>
-    </div>
-  )
-}
-
-/** Compaction divider - horizontal rule with centered label shown after context compaction */
+/** Compaction divider - horizontal rule with centered label shown after context compaction (playground demo) */
 function CompactionDivider({ label = 'Conversation Compacted' }: { label?: string }) {
   return (
     <div className="flex items-center gap-3 my-12 px-3">
@@ -368,16 +267,13 @@ function MessageGallery() {
 
   return (
     <div className="max-w-[960px] mx-auto p-8 space-y-8">
-      {/* Section: System Messages */}
+      {/* Section: Status & Dividers (playground demo components) */}
       <section>
-        <h2 className="text-lg font-semibold mb-4 text-foreground/80">System Messages</h2>
+        <h2 className="text-lg font-semibold mb-4 text-foreground/80">Status & Dividers</h2>
         <div className="bg-muted/20 rounded-lg">
           <StatusMessage content="Compacting conversation..." />
           <CompactionDivider />
-          <InfoMessage content="Session restored from 5 minutes ago" />
-          <InfoMessage content="Agent activated successfully" level="success" />
-          <InfoMessage content="Rate limit approaching" level="warning" />
-          <InfoMessage content="Connection lost" level="error" />
+          <StatusMessage content="Connecting to server..." />
         </div>
       </section>
 
@@ -393,8 +289,8 @@ function MessageGallery() {
       <section>
         <h2 className="text-lg font-semibold mb-4 text-foreground/80">User Messages</h2>
         <div className="space-y-3">
-          <UserMessage content="How do I authenticate with the API?" />
-          <UserMessage content="Can you search for all files that contain 'handleError' and show me how they work?" />
+          <UserMessageBubble content="How do I authenticate with the API?" />
+          <UserMessageBubble content="Can you search for all files that contain 'handleError' and show me how they work?" />
         </div>
       </section>
 
@@ -419,33 +315,14 @@ const config = {
         </div>
       </section>
 
-      {/* Section: Warning Messages */}
+      {/* Section: SystemMessage (from @craft-agent/ui) */}
       <section>
-        <h2 className="text-lg font-semibold mb-4 text-foreground/80">Warning Messages</h2>
-        <div className="space-y-3">
-          <WarningMessage content="This operation may take a while for large codebases." />
-          <WarningMessage content="The API rate limit is approaching. Consider batching your requests." />
-        </div>
-      </section>
-
-      {/* Section: Error Messages */}
-      <section>
-        <h2 className="text-lg font-semibold mb-4 text-foreground/80">Error Messages</h2>
-        <div className="space-y-3">
-          <ErrorMessage
-            content="Failed to connect to the API server."
-            errorTitle="Connection Error"
-          />
-          <ErrorMessage
-            content="The authentication token has expired."
-            errorTitle="Auth Error"
-            errorDetails={[
-              'Token expired at: 2025-01-15T10:30:00Z',
-              'Last refresh attempt: 2025-01-15T10:25:00Z',
-              'Refresh token status: invalid',
-            ]}
-            errorOriginal="AuthenticationError: Token validation failed with code AUTH_EXPIRED_TOKEN at validateToken (auth.ts:142)"
-          />
+        <h2 className="text-lg font-semibold mb-4 text-foreground/80">SystemMessage (Shared)</h2>
+        <div className="bg-muted/20 rounded-lg">
+          <SystemMessage content="This is a system message." type="system" />
+          <SystemMessage content="This is an info message." type="info" />
+          <SystemMessage content="This is a warning message." type="warning" />
+          <SystemMessage content="This is an error message." type="error" />
         </div>
       </section>
 
@@ -683,11 +560,11 @@ export const messagesComponents: ComponentEntry[] = [
     mockData: () => ({}),
   },
   {
-    id: 'user-message',
-    name: 'UserMessage',
+    id: 'user-message-bubble',
+    name: 'UserMessageBubble',
     category: 'Chat Messages',
-    description: 'Right-aligned user message bubble',
-    component: UserMessage,
+    description: 'Right-aligned user message bubble (from @craft-agent/ui)',
+    component: UserMessageBubble,
     props: [
       {
         name: 'content',
@@ -746,94 +623,38 @@ export const messagesComponents: ComponentEntry[] = [
     mockData: () => ({}),
   },
   {
-    id: 'info-message',
-    name: 'InfoMessage',
+    id: 'system-message',
+    name: 'SystemMessage',
     category: 'Chat Messages',
-    description: 'System message with icon indicating severity level',
-    component: InfoMessage,
+    description: 'System/info/warning/error message (from @craft-agent/ui)',
+    component: SystemMessage,
     props: [
       {
         name: 'content',
-        description: 'Info message text',
-        control: { type: 'string', placeholder: 'Info message...' },
-        defaultValue: 'Session restored from 5 minutes ago',
+        description: 'Message text content',
+        control: { type: 'textarea', placeholder: 'Message content...', rows: 2 },
+        defaultValue: 'This is a system message.',
       },
       {
-        name: 'level',
-        description: 'Severity level determining icon and color',
+        name: 'type',
+        description: 'Message type determining visual style',
         control: {
           type: 'select',
           options: [
+            { label: 'System', value: 'system' },
             { label: 'Info', value: 'info' },
             { label: 'Warning', value: 'warning' },
             { label: 'Error', value: 'error' },
-            { label: 'Success', value: 'success' },
           ],
         },
-        defaultValue: 'info',
+        defaultValue: 'system',
       },
     ],
     variants: [
-      { name: 'Info', props: { content: 'Session restored from 5 minutes ago', level: 'info' } },
-      { name: 'Success', props: { content: 'Agent activated successfully', level: 'success' } },
-      { name: 'Warning', props: { content: 'Rate limit approaching', level: 'warning' } },
-      { name: 'Error', props: { content: 'Connection lost', level: 'error' } },
-    ],
-    mockData: () => ({}),
-  },
-  {
-    id: 'warning-message',
-    name: 'WarningMessage',
-    category: 'Chat Messages',
-    description: 'Amber-themed warning message',
-    component: WarningMessage,
-    props: [
-      {
-        name: 'content',
-        description: 'Warning message text',
-        control: { type: 'textarea', placeholder: 'Warning message...', rows: 2 },
-        defaultValue: 'This operation may take a while for large codebases.',
-      },
-    ],
-    variants: [
-      { name: 'Performance', props: { content: 'This operation may take a while for large codebases.' } },
-      { name: 'Rate Limit', props: { content: 'The API rate limit is approaching. Consider batching your requests.' } },
-      { name: 'Deprecation', props: { content: 'This API endpoint will be deprecated in v2.0. Please migrate to the new endpoint.' } },
-    ],
-    mockData: () => ({}),
-  },
-  {
-    id: 'error-message',
-    name: 'ErrorMessage',
-    category: 'Chat Messages',
-    description: 'Red-themed error with collapsible technical details',
-    component: ErrorMessage,
-    props: [
-      {
-        name: 'content',
-        description: 'Error message text',
-        control: { type: 'textarea', placeholder: 'Error message...', rows: 2 },
-        defaultValue: 'Failed to connect to the API server.',
-      },
-      {
-        name: 'errorTitle',
-        description: 'Error title/type',
-        control: { type: 'string', placeholder: 'Error' },
-        defaultValue: 'Connection Error',
-      },
-    ],
-    variants: [
-      { name: 'Simple', props: { content: 'Failed to connect to the API server.', errorTitle: 'Connection Error' } },
-      {
-        name: 'With Details',
-        props: {
-          content: 'The authentication token has expired.',
-          errorTitle: 'Auth Error',
-          errorDetails: ['Token expired at: 2025-01-15T10:30:00Z', 'Last refresh attempt: 2025-01-15T10:25:00Z'],
-          errorOriginal: 'AuthenticationError: Token validation failed',
-        }
-      },
-      { name: 'Network Error', props: { content: 'Network request failed. Please check your internet connection.', errorTitle: 'Network Error' } },
+      { name: 'System', props: { content: 'Session restored from 5 minutes ago.', type: 'system' } },
+      { name: 'Info', props: { content: 'Agent activated successfully.', type: 'info' } },
+      { name: 'Warning', props: { content: 'Rate limit approaching.', type: 'warning' } },
+      { name: 'Error', props: { content: 'Connection lost.', type: 'error' } },
     ],
     mockData: () => ({}),
   },

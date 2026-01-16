@@ -13,6 +13,16 @@
 @source "../../../packages/ui/src/**/*.{tsx,ts}";
 
 /* Viewer-specific overrides */
+
+/* Override background to pure white (cards/buttons pop on the off-white page) */
+:root {
+  --background: white;
+}
+
+.dark {
+  --background: oklch(0.26 0.01 270);
+}
+
 html, body, #root {
   height: 100%;
   overflow: hidden;

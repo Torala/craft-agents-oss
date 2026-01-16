@@ -131,8 +131,8 @@ mkdir -p "$ELECTRON_DIR/node_modules/@anthropic-ai"
 cp -r "$SDK_SOURCE" "$ELECTRON_DIR/node_modules/@anthropic-ai/"
 
 # 5. Copy interceptor
-INTERCEPTOR_SOURCE="$ROOT_DIR/packages/shared/src/cache-ttl-interceptor.ts"
-require_path "$INTERCEPTOR_SOURCE" "Interceptor" "Ensure packages/shared/src/cache-ttl-interceptor.ts exists."
+INTERCEPTOR_SOURCE="$ROOT_DIR/packages/shared/src/network-interceptor.ts"
+require_path "$INTERCEPTOR_SOURCE" "Interceptor" "Ensure packages/shared/src/network-interceptor.ts exists."
 echo "Copying interceptor..."
 mkdir -p "$ELECTRON_DIR/packages/shared/src"
 cp "$INTERCEPTOR_SOURCE" "$ELECTRON_DIR/packages/shared/src/"

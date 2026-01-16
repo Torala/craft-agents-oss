@@ -10,6 +10,7 @@ import {
 import { Spinner } from '@craft-agent/ui'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
+import { useTheme } from '@/hooks/useTheme'
 import type { BackgroundTask } from './ActiveTasksBar'
 
 /** Format elapsed time in a compact way */
@@ -53,6 +54,9 @@ export interface TaskActionMenuProps {
  */
 export function TaskActionMenu({ task, sessionId, onKillTask, onInsertMessage, className }: TaskActionMenuProps) {
   const [open, setOpen] = React.useState(false)
+  // Get isDark from useTheme hook for preview windows
+  // This accounts for scenic themes (like Haze) that force dark mode
+  const { isDark } = useTheme()
 
   // Local timer for shell tasks (since they don't get task_progress events)
   // For agent tasks, we use elapsedSeconds from events
@@ -85,6 +89,7 @@ export function TaskActionMenu({ task, sessionId, onKillTask, onInsertMessage, c
         mode: 'terminal',
         sessionId,
         previewId: `task-${task.id}`,
+        resolvedTheme: isDark ? 'dark' : 'light',
         terminal: {
           command: task.intent || `${task.type} task`,
           output: output || 'No output available yet',

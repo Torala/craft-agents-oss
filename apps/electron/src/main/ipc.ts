@@ -1243,35 +1243,24 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
         return { success: false, error: 'Source has not been tested yet' }
       }
 
-      // Fetch tools based on transport type
-      let tools: Array<{ name: string; description?: string }>
+      // Create unified MCP client for both stdio and HTTP transports
+      const { CraftMcpClient } = await import('@craft-agent/shared/mcp')
+      let client: InstanceType<typeof CraftMcpClient>
 
       if (source.config.mcp.transport === 'stdio') {
-        // Validate command exists before spawning
+        // Stdio transport - spawn local MCP server process
         if (!source.config.mcp.command) {
           return { success: false, error: 'Stdio MCP source is missing required "command" field' }
         }
-
-        // Stdio transport - spawn process and list tools
         ipcLog.info(`Fetching MCP tools via stdio: ${source.config.mcp.command}`)
-        const { validateStdioMcpConnection } = await import('@craft-agent/shared/mcp')
-
-        const result = await validateStdioMcpConnection({
+        client = new CraftMcpClient({
+          transport: 'stdio',
           command: source.config.mcp.command,
           args: source.config.mcp.args,
           env: source.config.mcp.env,
-          timeout: 10000,
         })
-
-        if (!result.success) {
-          return { success: false, error: result.error || 'Failed to connect to stdio MCP server' }
-        }
-
-        // validateStdioMcpConnection only returns tool names, not descriptions
-        // For now, we'll just use the names
-        tools = (result.tools || []).map(name => ({ name }))
       } else {
-        // HTTP/SSE transport - use HTTP client
+        // HTTP/SSE transport - connect to remote MCP server
         if (!source.config.mcp.url) {
           return { success: false, error: 'MCP source URL is required for HTTP/SSE transport' }
         }
@@ -1287,15 +1276,16 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
         }
 
         ipcLog.info(`Fetching MCP tools from ${source.config.mcp.url}`)
-        const { CraftMcpClient } = await import('@craft-agent/shared/mcp')
-        const client = new CraftMcpClient({
+        client = new CraftMcpClient({
+          transport: 'http',
           url: source.config.mcp.url,
           headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
         })
-
-        tools = await client.listTools()
-        await client.close()
       }
+
+      // Both transports now return full Tool[] with descriptions
+      const tools = await client.listTools()
+      await client.close()
 
       // Load permissions patterns
       const { loadSourcePermissionsConfig, permissionsConfigCache } = await import('@craft-agent/shared/agent')

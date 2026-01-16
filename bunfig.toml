@@ -1,1 +1,1 @@
-preload = ["./packages/shared/src/cache-ttl-interceptor.ts"]
+preload = ["./packages/shared/src/network-interceptor.ts"]

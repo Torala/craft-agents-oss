@@ -1,5 +1,8 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react'
 import * as storage from '@/lib/local-storage'
+import log from '@/lib/logger'
+
+const themeLog = log.scope('theme')
 
 export type ThemeMode = 'light' | 'dark' | 'system'
 export type FontFamily = 'inter' | 'system'
@@ -58,6 +61,10 @@ function saveTheme(theme: StoredTheme): void {
 
 function applyThemeToDOM(resolvedMode: 'light' | 'dark', colorTheme: string, mode: ThemeMode, font: FontFamily, systemPreference: 'light' | 'dark'): void {
   const root = document.documentElement
+  const prevClass = root.classList.contains('dark') ? 'dark' : 'light'
+
+  // [THEME-DEBUG] Log class change
+  themeLog.info(`applyThemeToDOM: ${prevClass} → ${resolvedMode} (mode=${mode}, colorTheme=${colorTheme}, sysPref=${systemPreference})`)
 
   // Apply mode
   root.classList.remove('light', 'dark')

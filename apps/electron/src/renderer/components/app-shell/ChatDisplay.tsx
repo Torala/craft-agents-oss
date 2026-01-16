@@ -18,6 +18,7 @@ import { Markdown, CollapsibleMarkdownProvider, StreamingMarkdown, type RenderMo
 import { AnimatedCollapsibleContent } from "@/components/ui/collapsible"
 import { Spinner, parseReadResult, parseBashResult, parseGrepResult, parseGlobResult } from "@craft-agent/ui"
 import { useFocusZone } from "@/hooks/keyboard"
+import { useTheme } from "@/hooks/useTheme"
 import type { Session, Message, FileAttachment, StoredAttachment, PermissionRequest, CredentialRequest, CredentialResponse, LoadedSource, LoadedSkill, FileChange } from "../../../shared/types"
 import type { PermissionMode } from "@craft-agent/shared/agent/modes"
 import { TurnCard, UserMessageBubble, groupMessagesByTurn, formatTurnAsMarkdown, formatActivityAsMarkdown, type Turn, type AssistantTurn, type UserTurn, type SystemTurn, type OnboardingTurn, type AuthRequestTurn } from "@craft-agent/ui"
@@ -314,6 +315,10 @@ export function ChatDisplay({
   const internalTextareaRef = React.useRef<RichTextInputHandle>(null)
   const textareaRef = externalTextareaRef || internalTextareaRef
 
+  // Get isDark from useTheme hook for preview windows
+  // This accounts for scenic themes (like Haze) that force dark mode
+  const { isDark } = useTheme()
+
   // Register as focus zone - when zone gains focus, focus the textarea
   const { zoneRef, isFocused } = useFocusZone({
     zoneId: 'chat',
@@ -341,13 +346,14 @@ export function ChatDisplay({
       mode: 'markdown',
       sessionId: session.id,
       previewId: message.id,
+      resolvedTheme: isDark ? 'dark' : 'light',
       markdown: {
         mode: 'readOnly',
         content: message.content,
         title: 'Message Preview',
       },
     })
-  }, [session])
+  }, [session, isDark])
 
   // Ref to track total turn count for scroll handler
   const totalTurnCountRef = React.useRef(0)
@@ -660,6 +666,7 @@ export function ChatDisplay({
                               mode: 'markdown',
                               sessionId: session.id,
                               previewId: turn.turnId,
+                              resolvedTheme: isDark ? 'dark' : 'light',
                               markdown: {
                                 mode: 'readOnly',
                                 content: text,
@@ -675,6 +682,7 @@ export function ChatDisplay({
                               mode: 'markdown',
                               sessionId: session.id,
                               previewId: `details-${turn.turnId}`,
+                              resolvedTheme: isDark ? 'dark' : 'light',
                               markdown: {
                                 mode: 'readOnly',
                                 content: markdown,
@@ -733,6 +741,7 @@ export function ChatDisplay({
                                   mode: 'multi-diff',
                                   sessionId: session.id,
                                   previewId: `multi-${turn.turnId}-${activity.id}`,
+                                  resolvedTheme: isDark ? 'dark' : 'light',
                                   multiDiff: {
                                     turnId: turn.turnId,
                                     changes,
@@ -752,6 +761,7 @@ export function ChatDisplay({
                                 mode: 'view',
                                 sessionId: session.id,
                                 previewId: `code-${activity.id}`,
+                                resolvedTheme: isDark ? 'dark' : 'light',
                                 view: {
                                   filePath,
                                   content: parsed.content,
@@ -772,6 +782,7 @@ export function ChatDisplay({
                                 mode: 'terminal',
                                 sessionId: session.id,
                                 previewId: `terminal-${activity.id}`,
+                                resolvedTheme: isDark ? 'dark' : 'light',
                                 terminal: {
                                   command,
                                   output: parsed.output,
@@ -792,6 +803,7 @@ export function ChatDisplay({
                                 mode: 'terminal',
                                 sessionId: session.id,
                                 previewId: `terminal-${activity.id}`,
+                                resolvedTheme: isDark ? 'dark' : 'light',
                                 terminal: {
                                   command: parsed.command,
                                   output: parsed.output,
@@ -810,6 +822,7 @@ export function ChatDisplay({
                                 mode: 'terminal',
                                 sessionId: session.id,
                                 previewId: `terminal-${activity.id}`,
+                                resolvedTheme: isDark ? 'dark' : 'light',
                                 terminal: {
                                   command: parsed.command,
                                   output: parsed.output,
@@ -825,6 +838,7 @@ export function ChatDisplay({
                                 mode: 'markdown',
                                 sessionId: session.id,
                                 previewId: `activity-${activity.id}`,
+                                resolvedTheme: isDark ? 'dark' : 'light',
                                 markdown: {
                                   mode: 'readOnly',
                                   content: markdown,
@@ -869,6 +883,7 @@ export function ChatDisplay({
                                 mode: 'multi-diff',
                                 sessionId: session.id,
                                 previewId: `multi-${turn.turnId}`,
+                                resolvedTheme: isDark ? 'dark' : 'light',
                                 multiDiff: {
                                   turnId: turn.turnId,
                                   changes,

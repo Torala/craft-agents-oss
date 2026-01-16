@@ -12,7 +12,7 @@ import { CraftMcpClient } from './client.js';
 import { debug } from '../utils/debug.ts';
 import { DEFAULT_MODEL } from '../config/models.ts';
 import { parseError, type AgentError } from '../agent/errors.ts';
-import { getLastApiError } from '../cache-ttl-interceptor.ts';
+import { getLastApiError } from '../network-interceptor.ts';
 
 export interface InvalidProperty {
   toolName: string;
@@ -205,6 +205,7 @@ export async function validateMcpConnection(
         // Connection successful - now validate tool schemas
         // Use direct MCP client to fetch tools (SDK already validated connection)
         const mcpClient = new CraftMcpClient({
+          transport: 'http',
           url: mcpUrl,
           headers: config.mcpAccessToken
             ? { Authorization: `Bearer ${config.mcpAccessToken}` }

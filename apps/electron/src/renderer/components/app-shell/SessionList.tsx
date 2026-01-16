@@ -282,11 +282,11 @@ function SessionItem({
           <div className="w-4 h-5 shrink-0" />
           {/* Content column */}
           <div className="flex flex-col gap-1.5 min-w-0 flex-1">
-            {/* Title - up to 2 lines, with shimmer during regeneration */}
+            {/* Title - up to 2 lines, with shimmer during async operations (sharing, title regen, etc.) */}
             <div className="flex items-start gap-2 w-full pr-6 min-w-0">
               <div className={cn(
                 "font-medium font-sans line-clamp-2 min-w-0 -mb-[2px]",
-                item.isRegeneratingTitle && "animate-shimmer-text"
+                item.isAsyncOperationOngoing && "animate-shimmer-text"
               )}>
                 {searchQuery ? highlightMatch(getSessionTitle(item), searchQuery) : getSessionTitle(item)}
               </div>
@@ -297,7 +297,7 @@ function SessionItem({
                 <Spinner className="text-[8px] text-foreground shrink-0" />
               )}
               {!item.isProcessing && hasUnreadMessages(item) && (
-                <span className="shrink-0 px-1.5 py-0.5 text-[10px] font-medium rounded bg-accent text-background">
+                <span className="shrink-0 px-1.5 py-0.5 text-[10px] font-medium rounded bg-accent text-white">
                   New
                 </span>
               )}
@@ -314,7 +314,7 @@ function SessionItem({
                   className={cn(
                     "shrink-0 px-1.5 py-0.5 text-[10px] font-medium rounded",
                     // Mode-specific styling using CSS variables (theme-aware)
-                    permissionMode === 'safe' && "bg-foreground/10 text-foreground/60",
+                    permissionMode === 'safe' && "bg-foreground/5 text-foreground/60",
                     permissionMode === 'ask' && "bg-info/10 text-info",
                     permissionMode === 'allow-all' && "bg-accent/10 text-accent"
                   )}
@@ -326,7 +326,7 @@ function SessionItem({
                 <DropdownMenu modal={true}>
                   <DropdownMenuTrigger asChild>
                     <span
-                      className="shrink-0 px-1.5 py-0.5 h-[18px] text-[10px] font-medium rounded flex items-center bg-foreground/10 text-foreground/70 cursor-pointer hover:bg-foreground/15"
+                      className="shrink-0 px-1.5 py-0.5 h-[18px] text-[10px] font-medium rounded flex items-center bg-foreground/5 text-foreground/70 cursor-pointer hover:bg-foreground/10"
                       onClick={(e) => e.stopPropagation()}
                     >
                       <CloudUpload className="h-[10px] w-[10px]" />

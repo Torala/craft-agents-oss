@@ -1229,8 +1229,10 @@ export function FreeFormInput({
                             <Loader2 className="h-3 w-3 animate-spin" />
                           )}
                           {formatTokenCount(contextStatus.inputTokens)}
+                          {/* Show compaction threshold (~77.5% of context window) as the limit,
+                              since that's when auto-compaction kicks in - not the full context window */}
                           {contextStatus.contextWindow && (
-                            <span className="opacity-60">/ {formatTokenCount(contextStatus.contextWindow)}</span>
+                            <span className="opacity-60">/ {formatTokenCount(Math.round(contextStatus.contextWindow * 0.775))}</span>
                           )}
                         </span>
                       </div>
@@ -1244,12 +1246,16 @@ export function FreeFormInput({
 
           {/* 5.5 Context Usage Warning Badge - shows when approaching auto-compaction threshold */}
           {(() => {
-            // Calculate usage percentage, capped at 99% to avoid showing 100%+
-            // (compaction should kick in before 100%, but cap just in case)
-            const usagePercent = contextStatus?.inputTokens && contextStatus?.contextWindow
-              ? Math.min(99, Math.round((contextStatus.inputTokens / contextStatus.contextWindow) * 100))
+            // Calculate usage percentage based on compaction threshold (~77.5% of context window),
+            // not the full context window - this gives users meaningful warnings before compaction kicks in.
+            // SDK triggers compaction at ~155k tokens for a 200k context window.
+            const compactionThreshold = contextStatus?.contextWindow
+              ? Math.round(contextStatus.contextWindow * 0.775)
               : null
-            // Show badge when >= 80% used AND not currently compacting
+            const usagePercent = contextStatus?.inputTokens && compactionThreshold
+              ? Math.min(99, Math.round((contextStatus.inputTokens / compactionThreshold) * 100))
+              : null
+            // Show badge when >= 80% of compaction threshold AND not currently compacting
             const showWarning = usagePercent !== null && usagePercent >= 80 && !contextStatus?.isCompacting
 
             if (!showWarning) return null

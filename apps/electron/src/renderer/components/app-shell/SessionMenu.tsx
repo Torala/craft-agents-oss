@@ -186,7 +186,7 @@ export function SessionMenu({
       )}
       <Separator />
 
-      {/* Status submenu */}
+      {/* Status submenu - includes all statuses plus Flag/Unflag at the bottom */}
       <Sub>
         <SubTrigger>
           <span
@@ -207,40 +207,47 @@ export function SessionMenu({
           <span className="flex-1">Status</span>
         </SubTrigger>
         <SubContent>
-          {todoStates.map((state) => (
-            <MenuItem
-              key={state.id}
-              onClick={() => onTodoStateChange(state.id)}
-              className={currentTodoState === state.id ? 'bg-foreground/5' : ''}
-            >
-              <span
-                className={cn(
-                  'shrink-0 flex items-center justify-center -mt-px h-3.5 w-3.5',
-                  '[&>svg]:w-full [&>svg]:h-full [&>div>svg]:w-full [&>div>svg]:h-full [&>img]:w-full [&>img]:h-full',
-                  !isHexColor(state.color) && state.color
-                )}
-                style={isHexColor(state.color) ? { color: state.color } : undefined}
+          {todoStates.map((state) => {
+            // Only apply color if icon is colorable (uses currentColor)
+            const applyColor = state.iconColorable
+            return (
+              <MenuItem
+                key={state.id}
+                onClick={() => onTodoStateChange(state.id)}
+                className={currentTodoState === state.id ? 'bg-foreground/5' : ''}
               >
-                {state.icon}
-              </span>
-              <span className="flex-1">{state.label}</span>
+                <span
+                  className={cn(
+                    'shrink-0 flex items-center justify-center -mt-px h-3.5 w-3.5',
+                    '[&>svg]:w-full [&>svg]:h-full [&>div>svg]:w-full [&>div>svg]:h-full [&>img]:w-full [&>img]:h-full',
+                    applyColor && !isHexColor(state.color) && state.color
+                  )}
+                  style={applyColor && isHexColor(state.color) ? { color: state.color } : undefined}
+                >
+                  {state.icon}
+                </span>
+                <span className="flex-1">{state.label}</span>
+              </MenuItem>
+            )
+          })}
+
+          {/* Separator before Flag/Unflag */}
+          <Separator />
+
+          {/* Flag/Unflag at the bottom of status menu */}
+          {!isFlagged ? (
+            <MenuItem onClick={onFlag}>
+              <Flag className="h-3.5 w-3.5 text-info" />
+              <span className="flex-1">Flag</span>
             </MenuItem>
-          ))}
+          ) : (
+            <MenuItem onClick={onUnflag}>
+              <FlagOff className="h-3.5 w-3.5" />
+              <span className="flex-1">Unflag</span>
+            </MenuItem>
+          )}
         </SubContent>
       </Sub>
-
-      {/* Flag/Unflag */}
-      {!isFlagged ? (
-        <MenuItem onClick={onFlag}>
-          <Flag className="h-3.5 w-3.5" />
-          <span className="flex-1">Flag</span>
-        </MenuItem>
-      ) : (
-        <MenuItem onClick={onUnflag}>
-          <FlagOff className="h-3.5 w-3.5" />
-          <span className="flex-1">Unflag</span>
-        </MenuItem>
-      )}
 
       {/* Mark as Unread - only show if session has been read */}
       {!hasUnreadMessages && hasMessages && (

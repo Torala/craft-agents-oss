@@ -298,7 +298,10 @@ export interface Session {
   model?: string
   // Role/type of the last message (for badge display without loading messages)
   lastMessageRole?: 'user' | 'assistant' | 'plan' | 'tool' | 'error'
-  // Whether title is currently being regenerated (for shimmer effect)
+  // Whether an async operation is ongoing (sharing, updating share, revoking, title regeneration)
+  // Used for shimmer effect on session title in sidebar and panel header
+  isAsyncOperationOngoing?: boolean
+  /** @deprecated Use isAsyncOperationOngoing instead */
   isRegeneratingTitle?: boolean
   // Current status for ProcessingIndicator (e.g., compacting)
   currentStatus?: {
@@ -343,6 +346,8 @@ export type SessionEvent =
   | { type: 'info'; sessionId: string; message: string; statusType?: 'compaction_complete'; level?: 'info' | 'warning' | 'error' | 'success' }
   | { type: 'title_generated'; sessionId: string; title: string }
   | { type: 'title_regenerating'; sessionId: string; isRegenerating: boolean }
+  // Generic async operation state (sharing, updating share, revoking, title regeneration)
+  | { type: 'async_operation'; sessionId: string; isOngoing: boolean }
   | { type: 'working_directory_changed'; sessionId: string; workingDirectory: string }
   | { type: 'permission_request'; sessionId: string; request: PermissionRequest }
   | { type: 'credential_request'; sessionId: string; request: CredentialRequest }
@@ -722,45 +727,49 @@ export type MarkdownPreviewData =
 // ============================================
 
 /**
+ * Base fields shared by all preview data types
+ */
+interface PreviewDataBase {
+  sessionId: string
+  previewId: string
+  /**
+   * Resolved theme from the main window ('light' or 'dark').
+   * Passed via URL params to ensure preview windows use the same theme
+   * as the app, not re-evaluating system preference.
+   */
+  resolvedTheme?: 'light' | 'dark'
+}
+
+/**
  * Unified preview data - supports all preview modes in a single window
  * Uses discriminated union for type-safe mode handling
  */
 export type PreviewData =
-  | {
+  | (PreviewDataBase & {
       /** Markdown preview - view or edit markdown content */
       mode: 'markdown'
-      sessionId: string
-      previewId: string
       markdown: MarkdownPreviewData
-    }
-  | {
+    })
+  | (PreviewDataBase & {
       /** Code view - Read/Write tool results */
       mode: 'view'
-      sessionId: string
-      previewId: string
       view: FilePreviewViewData
-    }
-  | {
+    })
+  | (PreviewDataBase & {
       /** Diff view - single Edit tool result */
       mode: 'diff'
-      sessionId: string
-      previewId: string
       diff: FilePreviewDiffData
-    }
-  | {
+    })
+  | (PreviewDataBase & {
       /** Multi-diff view - multiple edits/writes in a turn */
       mode: 'multi-diff'
-      sessionId: string
-      previewId: string
       multiDiff: FilePreviewMultiDiffData
-    }
-  | {
+    })
+  | (PreviewDataBase & {
       /** Terminal view - Bash/Grep/Glob tool output */
       mode: 'terminal'
-      sessionId: string
-      previewId: string
       terminal: TerminalPreviewData
-    }
+    })
 
 /**
  * Preview mode type for discriminated union

@@ -41,8 +41,8 @@ export interface StatusConfig {
   /** Display name */
   label: string;
 
-  /** Hex color code (e.g., '#3B82F6') */
-  color: string;
+  /** Optional color (hex code or Tailwind class). If omitted, uses design system defaults. */
+  color?: string;
 
   /** Icon configuration */
   icon: StatusIcon;
@@ -79,7 +79,7 @@ export interface WorkspaceStatusConfig {
  */
 export interface CreateStatusInput {
   label: string;
-  color: string;
+  color?: string;
   icon: StatusIcon;
   category: StatusCategory;
 }

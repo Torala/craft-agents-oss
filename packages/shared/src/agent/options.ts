@@ -23,8 +23,8 @@ export function setPathToClaudeCodeExecutable(path: string) {
 }
 
 /**
- * Set the path to the cache-ttl-interceptor for the SDK subprocess.
- * This interceptor patches fetch for extended cache TTL.
+ * Set the path to the network interceptor for the SDK subprocess.
+ * This interceptor captures API errors and adds metadata to MCP tool schemas.
  */
 export function setInterceptorPath(path: string) {
     customInterceptorPath = path;
@@ -67,8 +67,8 @@ export function getDefaultOptions(): Partial<Options> {
             // This makes the compiled Bun executable act as the full Bun CLI,
             // eliminating the need for external Node or Bun installation
             executable: process.execPath as 'bun',
-            // Inject cache-ttl-interceptor into SDK subprocess to patch fetch for extended TTL
-            executableArgs: ['--preload', join(baseDir, 'cache-ttl-interceptor.ts')],
+            // Inject network interceptor into SDK subprocess for API error capture and MCP schema injection
+            executableArgs: ['--preload', join(baseDir, 'network-interceptor.ts')],
             env: {
                 ...process.env,
                 BUN_BE_BUN: '1',

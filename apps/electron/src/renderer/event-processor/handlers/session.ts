@@ -20,6 +20,7 @@ import type {
   InterruptedEvent,
   TitleGeneratedEvent,
   TitleRegeneratingEvent,
+  AsyncOperationEvent,
   WorkingDirectoryChangedEvent,
   PermissionModeChangedEvent,
   SessionModelChangedEvent,
@@ -313,6 +314,7 @@ export function handleTitleGenerated(
 
 /**
  * Handle title_regenerating - set regenerating state for shimmer effect
+ * @deprecated Use handleAsyncOperation instead
  */
 export function handleTitleRegenerating(
   state: SessionState,
@@ -325,6 +327,28 @@ export function handleTitleRegenerating(
       session: {
         ...session,
         isRegeneratingTitle: event.isRegenerating,
+      },
+      streaming,
+    },
+    effects: [],
+  }
+}
+
+/**
+ * Handle async_operation - set async operation state for shimmer effect
+ * Generic handler for any async operation (sharing, updating share, revoking, title regeneration)
+ */
+export function handleAsyncOperation(
+  state: SessionState,
+  event: AsyncOperationEvent
+): ProcessResult {
+  const { session, streaming } = state
+
+  return {
+    state: {
+      session: {
+        ...session,
+        isAsyncOperationOngoing: event.isOngoing,
       },
       streaming,
     },

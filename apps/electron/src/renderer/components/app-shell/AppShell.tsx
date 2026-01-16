@@ -1075,15 +1075,6 @@ function AppShellContent({
                       expanded: isExpanded('nav:allChats'),
                       onToggle: () => toggleExpanded('nav:allChats'),
                       items: [
-                        {
-                          id: "nav:flagged",
-                          title: "Flagged",
-                          label: String(flaggedCount),
-                          icon: <Flag className="h-3.5 w-3.5 fill-current" />,
-                          iconColor: "text-orange-500",
-                          variant: chatFilter?.kind === 'flagged' ? "default" : "ghost",
-                          onClick: handleFlaggedClick,
-                        },
                         // Dynamic status items from todoStates
                         ...todoStates.map(state => ({
                           id: `nav:state:${state.id}`,
@@ -1091,9 +1082,22 @@ function AppShellContent({
                           label: String(todoStateCounts[state.id] || 0),
                           icon: state.icon,
                           iconColor: state.color,
+                          iconColorable: state.iconColorable,
                           variant: (chatFilter?.kind === 'state' && chatFilter.stateId === state.id ? "default" : "ghost") as "default" | "ghost",
                           onClick: () => handleTodoStateClick(state.id),
                         })),
+                        // Separator before Flagged
+                        { id: "separator:before-flagged", type: "separator" },
+                        // Flagged at the bottom
+                        {
+                          id: "nav:flagged",
+                          title: "Flagged",
+                          label: String(flaggedCount),
+                          icon: <Flag className="h-3.5 w-3.5 fill-current" />,
+                          iconColor: "text-info",
+                          variant: chatFilter?.kind === 'flagged' ? "default" : "ghost",
+                          onClick: handleFlaggedClick,
+                        },
                       ],
                     },
                     {
@@ -1211,29 +1215,36 @@ function AppShellContent({
                           )}
                         </div>
                         {/* Dynamic status filter items */}
-                        {todoStates.map(state => (
-                          <StyledDropdownMenuItem
-                            key={state.id}
-                            onClick={(e) => {
-                              e.preventDefault()
-                              setListFilter(prev => {
-                                const next = new Set(prev)
-                                if (next.has(state.id)) next.delete(state.id)
-                                else next.add(state.id)
-                                return next
-                              })
-                            }}
-                          >
-                            <span
-                              className="h-3.5 w-3.5 flex items-center justify-center shrink-0 [&>svg]:w-full [&>svg]:h-full [&>img]:w-full [&>img]:h-full"
-                              style={isHexColor(state.color) ? { color: state.color } : undefined}
+                        {todoStates.map(state => {
+                          // Only apply color if icon is colorable (uses currentColor)
+                          const applyColor = state.iconColorable
+                          return (
+                            <StyledDropdownMenuItem
+                              key={state.id}
+                              onClick={(e) => {
+                                e.preventDefault()
+                                setListFilter(prev => {
+                                  const next = new Set(prev)
+                                  if (next.has(state.id)) next.delete(state.id)
+                                  else next.add(state.id)
+                                  return next
+                                })
+                              }}
                             >
-                              {state.icon}
-                            </span>
-                            <span className="flex-1">{state.label}</span>
-                            <span className="w-3.5 ml-4">{listFilter.has(state.id) && <Check className="h-3.5 w-3.5 text-foreground" />}</span>
-                          </StyledDropdownMenuItem>
-                        ))}
+                              <span
+                                className={cn(
+                                  "h-3.5 w-3.5 flex items-center justify-center shrink-0 [&>svg]:w-full [&>svg]:h-full [&>img]:w-full [&>img]:h-full",
+                                  applyColor && !isHexColor(state.color) && state.color
+                                )}
+                                style={applyColor && isHexColor(state.color) ? { color: state.color } : undefined}
+                              >
+                                {state.icon}
+                              </span>
+                              <span className="flex-1">{state.label}</span>
+                              <span className="w-3.5 ml-4">{listFilter.has(state.id) && <Check className="h-3.5 w-3.5 text-foreground" />}</span>
+                            </StyledDropdownMenuItem>
+                          )
+                        })}
                         <StyledDropdownMenuSeparator />
                         <StyledDropdownMenuItem
                           onClick={() => {
@@ -1383,7 +1394,7 @@ function AppShellContent({
 
           {/* === MAIN CONTENT PANEL === */}
           <div className={cn(
-            "flex-1 overflow-hidden min-w-0 bg-foreground-1.5 shadow-middle",
+            "flex-1 overflow-hidden min-w-0 bg-foreground-2 shadow-middle",
             isFocusedMode ? "rounded-[14px]" : (isRightSidebarVisible ? "rounded-l-[10px] rounded-r-[10px]" : "rounded-l-[10px] rounded-r-[14px]")
           )}>
             <MainContentPanel isFocusedMode={isFocusedMode} />
@@ -1433,7 +1444,7 @@ function AppShellContent({
                     opacity: isRightSidebarVisible ? 1 : 0,
                   }}
                   transition={isResizing === 'right-sidebar' || skipRightSidebarAnimation ? { duration: 0 } : springTransition}
-                  className="h-full bg-foreground-1.5 shadow-middle rounded-l-[10px] rounded-r-[14px]"
+                  className="h-full bg-foreground-2 shadow-middle rounded-l-[10px] rounded-r-[14px]"
                   style={{ width: rightSidebarWidth }}
                 >
                   <RightSidebar
@@ -1468,7 +1479,7 @@ function AppShellContent({
                     transition={skipRightSidebarAnimation ? { duration: 0 } : springTransition}
                     className="fixed inset-y-0 right-0 w-[316px] h-screen z-overlay p-1.5"
                   >
-                    <div className="h-full bg-foreground-1.5 overflow-hidden shadow-strong rounded-[12px]">
+                    <div className="h-full bg-foreground-2 overflow-hidden shadow-strong rounded-[12px]">
                       <RightSidebar
                         panel={{ type: 'sessionMetadata' }}
                         sessionId={isChatsNavigation(navState) && navState.details ? navState.details.sessionId : undefined}

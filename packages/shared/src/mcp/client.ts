@@ -1,20 +1,41 @@
 /**
  * MCP client using official @modelcontextprotocol/sdk
- * Configured for Craft's streamable HTTP transport
+ * Supports both HTTP and stdio transports for remote and local MCP servers
  */
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 
-export interface McpClientConfig {
+/**
+ * HTTP transport config for remote MCP servers
+ */
+export interface HttpMcpClientConfig {
+  transport: 'http';
   url: string;
   headers?: Record<string, string>;
 }
 
+/**
+ * Stdio transport config for local MCP servers (spawns subprocess)
+ */
+export interface StdioMcpClientConfig {
+  transport: 'stdio';
+  command: string;
+  args?: string[];
+  env?: Record<string, string>;
+}
+
+/**
+ * Unified config supporting both transport types
+ */
+export type McpClientConfig = HttpMcpClientConfig | StdioMcpClientConfig;
+
 export class CraftMcpClient {
   private client: Client;
-  private transport: StreamableHTTPClientTransport;
+  private transport: Transport;
   private connected = false;
 
   constructor(config: McpClientConfig) {
@@ -23,14 +44,31 @@ export class CraftMcpClient {
       version: '1.0.0',
     });
 
-    this.transport = new StreamableHTTPClientTransport(
-      new URL(config.url),
-      {
-        requestInit: {
-          headers: config.headers,
-        },
+    // Create transport based on config type
+    if (config.transport === 'stdio') {
+      // Stdio transport for local MCP servers - merge with process env
+      const processEnv: Record<string, string> = {};
+      for (const [key, value] of Object.entries(process.env)) {
+        if (value !== undefined) {
+          processEnv[key] = value;
+        }
       }
-    );
+      this.transport = new StdioClientTransport({
+        command: config.command,
+        args: config.args,
+        env: { ...processEnv, ...config.env },
+      });
+    } else {
+      // HTTP transport for remote MCP servers
+      this.transport = new StreamableHTTPClientTransport(
+        new URL(config.url),
+        {
+          requestInit: {
+            headers: config.headers,
+          },
+        }
+      );
+    }
   }
 
   async connect(): Promise<void> {

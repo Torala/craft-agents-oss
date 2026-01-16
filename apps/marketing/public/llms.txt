@@ -1,0 +1,25 @@
+# Craft Agent
+
+> AI assistant that connects your data sources
+
+## What is Craft Agent?
+
+Craft Agent is a desktop application that helps you work across multiple data sources using AI. It's like Claude Code, but for your documents, APIs, and tools.
+
+## Key Features
+
+- **Connect Sources**: MCP servers, REST APIs, local filesystems
+- **AI-Powered**: Powered by Claude for intelligent assistance
+- **Desktop App**: Native macOS experience with session management
+- **Integrations**: Linear, GitHub, Notion, Slack, Gmail, and more
+
+## Installation
+
+```bash
+curl -fsSL https://agents.craft.do/install-app.sh | bash
+```
+
+## Links
+
+- Website: https://agents.craft.do
+- Full documentation: /llms-full.txt

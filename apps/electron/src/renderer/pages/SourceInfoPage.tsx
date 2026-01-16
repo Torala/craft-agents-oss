@@ -13,6 +13,7 @@ import { SourceMenu } from '@/components/app-shell/SourceMenu'
 import { cn } from '@/lib/utils'
 import { routes, navigate } from '@/lib/navigate'
 import { toast } from 'sonner'
+import { useTheme } from '@/hooks/useTheme'
 import {
   Info_Page,
   Info_Section,
@@ -170,6 +171,10 @@ export default function SourceInfoPage({ sourceSlug, workspaceId, onDelete }: So
   const [mcpToolsLoading, setMcpToolsLoading] = useState(false)
   const [mcpToolsError, setMcpToolsError] = useState<string | null>(null)
   const [localMcpEnabled, setLocalMcpEnabled] = useState(true)
+
+  // Get isDark from useTheme hook for preview windows
+  // This accounts for scenic themes (like Haze) that force dark mode
+  const { isDark } = useTheme()
 
   // Load source data
   useEffect(() => {
@@ -334,13 +339,14 @@ export default function SourceInfoPage({ sourceSlug, workspaceId, onDelete }: So
       mode: 'markdown',
       sessionId: 'workspace',
       previewId: `source-guide:${sourceSlug}`,
+      resolvedTheme: isDark ? 'dark' : 'light',
       markdown: {
         mode: 'readWrite',
         filePath: guidePath,
         title: `${source.config.name} - guide.md`,
       },
     })
-  }, [source, sourceSlug])
+  }, [source, sourceSlug, isDark])
 
   // Handle deleting source
   const handleDelete = useCallback(async () => {

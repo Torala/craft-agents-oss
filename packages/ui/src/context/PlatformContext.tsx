@@ -87,7 +87,7 @@ export interface PlatformProviderProps {
  *   onOpenUrl: (url) => window.electronAPI.openUrl(url),
  *   onCopyToClipboard: (text) => navigator.clipboard.writeText(text),
  * }}>
- *   <ChatView session={session} mode="interactive" />
+ *   <SessionViewer session={session} />
  * </PlatformProvider>
  * ```
  *
@@ -98,7 +98,7 @@ export interface PlatformProviderProps {
  *   onCopyToClipboard: (text) => navigator.clipboard.writeText(text),
  *   // onOpenFile not provided - clicks do nothing or show inline
  * }}>
- *   <ChatView session={session} mode="readonly" />
+ *   <SessionViewer session={session} mode="readonly" />
  * </PlatformProvider>
  * ```
  */

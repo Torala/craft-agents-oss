@@ -9,7 +9,8 @@ Craft Agent is a Claude Code-like interface for managing Craft documents using t
 ```
 craft-agent/
 ├── apps/
-│   └── electron/    # Desktop GUI (primary interface)
+│   ├── electron/    # Desktop GUI (primary interface)
+│   └── viewer/      # Web viewer for session transcripts
 └── packages/
     ├── core/        # @craft-agent/core - Shared types
     └── shared/      # @craft-agent/shared - Business logic
@@ -25,6 +26,7 @@ craft-agent/
 bun install                  # Install deps
 bun run electron:dev         # Hot reload dev mode
 bun run electron:start       # Build & run Electron
+bun run viewer:dev           # Web viewer at http://localhost:5174
 bun run typecheck:all        # Type check all packages
 ```
 
@@ -262,12 +264,15 @@ App-level only. **6-color system:** background, foreground, accent, info, succes
 |-------------|---------|------|----------|
 | Electron Main | Yes | Yes | `~/Library/Logs/Craft Agents/main.log` |
 | Electron Renderer | Yes | No | DevTools console |
+| Fetch Interceptor | No | Yes | `~/.craft-agent/logs/interceptor.log` |
 
 ```typescript
 import { debug, createLogger } from '@craft-agent/shared/utils'
 const log = createLogger('agent')
 log.info('Connected to MCP')
 ```
+
+**Interceptor logs:** Enable with `--debug` flag or `CRAFT_DEBUG=1`. Logs all Anthropic API requests/responses to file (not console).
 
 ## Development Secrets (1Password)
 

@@ -86,6 +86,24 @@
   --shadow-border-opacity: 0.08;            /* Border ring opacity */
   --shadow-blur-opacity: 0.06;              /* Blur/spread shadow opacity */
 
+  /* === SHADOW VALUES (reusable across utility classes and component overrides) === */
+  --shadow-minimal:
+    rgba(0, 0, 0, 0) 0px 0px 0px 0px,
+    rgba(0, 0, 0, 0) 0px 0px 0px 0px,
+    rgba(var(--foreground-rgb), 0.06) 0px 0px 0px 1px,
+    rgba(0, 0, 0, var(--shadow-blur-opacity)) 0px 1px 1px -0.5px,
+    rgba(0, 0, 0, var(--shadow-blur-opacity)) 0px 3px 3px -1.5px;
+
+  --shadow-modal-small:
+    rgba(0, 0, 0, 0) 0px 0px 0px 0px,
+    rgba(0, 0, 0, 0) 0px 0px 0px 0px,
+    rgba(var(--foreground-rgb), 0.06) 0px 0px 0px 1px,
+    rgba(0, 0, 0, calc(var(--shadow-blur-opacity) * 0.67)) 0px 1px 1px -0.5px,
+    rgba(0, 0, 0, calc(var(--shadow-blur-opacity) * 0.67)) 0px 3px 3px 0px,
+    rgba(0, 0, 0, calc(var(--shadow-blur-opacity) * 0.33)) 0px 6px 6px 0px,
+    rgba(0, 0, 0, calc(var(--shadow-blur-opacity) * 0.33)) 0px 12px 12px 0px,
+    rgba(0, 0, 0, calc(var(--shadow-blur-opacity) * 0.33)) 0px 24px 24px 0px;
+
   /* === MIX VARIANTS (solid interpolation toward background) === */
   /* Use -2, -3, -5, -10, -20, ..., -90, -95 for solid colors (e.g., separators, Explore mode) */
   --foreground-1\.5: color-mix(in srgb, var(--foreground) 1.5%, var(--background));
@@ -187,16 +205,6 @@
 
 }
 
-/* Theme color transitions - smooth preview when hovering over themes in settings */
-:root,
-.dark {
-  transition:
-    background-color 500ms linear,
-    color 500ms linear,
-    border-color 500ms linear,
-    box-shadow 500ms linear;
-}
-
 /* Dark Mode */
 .dark {
   /* === 6 BASE COLORS === */
@@ -261,7 +269,6 @@ html[data-theme-override]::before {
   background: color-mix(in srgb, var(--background) 50%, transparent);
   z-index: -1;
   pointer-events: none;
-  transition: background 500ms linear;
 }
 
 /* Theme Mismatch - Solid background when theme doesn't support current mode
@@ -273,7 +280,6 @@ html[data-theme-mismatch]::before {
   background: var(--foreground-10);
   z-index: -1;
   pointer-events: none;
-  transition: background 500ms linear;
 }
 
 /* =============================================================================
@@ -489,12 +495,7 @@ html[data-font="inter"] {
   }
 
   .shadow-minimal {
-    box-shadow:
-      rgba(0, 0, 0, 0) 0px 0px 0px 0px,
-      rgba(0, 0, 0, 0) 0px 0px 0px 0px,
-      rgba(var(--foreground-rgb), 0.06) 0px 0px 0px 1px,
-      rgba(0, 0, 0, var(--shadow-blur-opacity)) 0px 1px 1px -0.5px,
-      rgba(0, 0, 0, var(--shadow-blur-opacity)) 0px 3px 3px -1.5px;
+    box-shadow: var(--shadow-minimal);
   }
 
   .shadow-middle {
@@ -532,15 +533,7 @@ html[data-font="inter"] {
   }
 
   .shadow-modal-small {
-    box-shadow:
-      rgba(0, 0, 0, 0) 0px 0px 0px 0px,
-      rgba(0, 0, 0, 0) 0px 0px 0px 0px,
-      rgba(var(--foreground-rgb), 0.06) 0px 0px 0px 1px,
-      rgba(0, 0, 0, calc(var(--shadow-blur-opacity) * 0.67)) 0px 1px 1px -0.5px,
-      rgba(0, 0, 0, calc(var(--shadow-blur-opacity) * 0.67)) 0px 3px 3px 0px,
-      rgba(0, 0, 0, calc(var(--shadow-blur-opacity) * 0.33)) 0px 6px 6px 0px,
-      rgba(0, 0, 0, calc(var(--shadow-blur-opacity) * 0.33)) 0px 12px 12px 0px,
-      rgba(0, 0, 0, calc(var(--shadow-blur-opacity) * 0.33)) 0px 24px 24px 0px;
+    box-shadow: var(--shadow-modal-small);
   }
 
   /* =============================================================================
@@ -589,10 +582,10 @@ html[data-font="inter"] {
    Target panels by their shadow classes (shadow-middle, shadow-strong).
 ============================================================================= */
 
-html[data-scenic] .shadow-middle,
-html[data-scenic] .shadow-strong {
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
+  html[data-scenic] .shadow-middle,
+  html[data-scenic] .shadow-strong {
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   position: relative;
   /* Ensure panels are above the titlebar drag region (z-titlebar: 40) so header buttons are clickable.
      Without this, the position:relative creates a stacking context at z-index:auto which is below the fixed titlebar. */
@@ -953,4 +946,95 @@ html.dark[data-scenic] .fullscreen-overlay-background {
 
 .animate-shake {
   animation: shake 0.4s ease-in-out;
+}
+
+/* =============================================================================
+   SONNER TOAST OVERRIDES
+
+   Override sonner's inline box-shadow with our design system shadow.
+============================================================================= */
+
+[data-sonner-toast] {
+  box-shadow: var(--shadow-modal-small) !important;
+  background-color: oklch(from var(--popover) l c h / 0.8) !important;
+}
+
+/* Hide icon container to remove leftover padding */
+[data-sonner-toast] [data-icon] {
+  display: none !important;
+}
+
+/* Single line titles and descriptions with ellipsis overflow */
+[data-sonner-toast] [data-title],
+[data-sonner-toast] [data-description] {
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+/* Description (subtitle) at 70% opacity */
+[data-sonner-toast] [data-description] {
+  opacity: 0.7 !important;
+}
+
+[data-sonner-toast] [data-button],
+[data-sonner-toast] [data-cancel] {
+  background-color: var(--background) !important;
+  box-shadow: var(--shadow-minimal) !important;
+  color: oklch(from var(--foreground) l c h / 0.7) !important;
+  transition: color 0.15s ease !important;
+}
+
+[data-sonner-toast] [data-button]:hover,
+[data-sonner-toast] [data-cancel]:hover {
+  color: var(--foreground) !important;
+}
+
+/* Tinted backgrounds for toast states - use linear-gradient to layer
+   the tint color on top of the base popover background in one property.
+   Title and description get subtle color tinting via [data-title] and [data-description]. */
+[data-sonner-toast][data-type="error"] {
+  background: linear-gradient(rgba(var(--destructive-rgb), 0.07), rgba(var(--destructive-rgb), 0.07)),
+    oklch(from var(--popover) l c h / 0.8) !important;
+}
+
+[data-sonner-toast][data-type="error"] [data-title],
+[data-sonner-toast][data-type="error"] [data-description] {
+  color: color-mix(in srgb, rgb(var(--foreground-rgb)) 70%, rgb(var(--destructive-rgb))) !important;
+}
+
+[data-sonner-toast][data-type="warning"] {
+  background: linear-gradient(rgba(var(--info-rgb), 0.07), rgba(var(--info-rgb), 0.07)),
+    oklch(from var(--popover) l c h / 0.8) !important;
+}
+
+[data-sonner-toast][data-type="warning"] [data-title],
+[data-sonner-toast][data-type="warning"] [data-description] {
+  color: color-mix(in srgb, rgb(var(--foreground-rgb)) 70%, rgb(var(--info-rgb))) !important;
+}
+
+[data-sonner-toast][data-type="success"] {
+  background: linear-gradient(rgba(var(--success-rgb), 0.07), rgba(var(--success-rgb), 0.07)),
+    oklch(from var(--popover) l c h / 0.8) !important;
+}
+
+[data-sonner-toast][data-type="success"] [data-title],
+[data-sonner-toast][data-type="success"] [data-description] {
+  color: color-mix(in srgb, rgb(var(--foreground-rgb)) 70%, rgb(var(--success-rgb))) !important;
+}
+
+/* Dark mode: stronger tints since dark backgrounds absorb color more */
+.dark [data-sonner-toast][data-type="error"] {
+  background: linear-gradient(rgba(var(--destructive-rgb), 0.15), rgba(var(--destructive-rgb), 0.15)),
+    oklch(from var(--popover) l c h / 0.8) !important;
+}
+
+.dark [data-sonner-toast][data-type="warning"] {
+  background: linear-gradient(rgba(var(--info-rgb), 0.15), rgba(var(--info-rgb), 0.15)),
+    oklch(from var(--popover) l c h / 0.8) !important;
+}
+
+.dark [data-sonner-toast][data-type="success"] {
+  background: linear-gradient(rgba(var(--success-rgb), 0.15), rgba(var(--success-rgb), 0.15)),
+    oklch(from var(--popover) l c h / 0.8) !important;
 }

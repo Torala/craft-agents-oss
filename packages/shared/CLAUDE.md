@@ -51,7 +51,7 @@ src/
 ├── version/            # Version management, install scripts
 ├── workspaces/         # Workspace storage
 ├── branding.ts         # Branding constants
-└── cache-ttl-interceptor.ts  # Extended prompt cache TTL
+└── network-interceptor.ts    # Fetch interceptor for API errors and MCP schema injection
 ```
 
 ## Key Concepts

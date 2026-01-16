@@ -168,6 +168,9 @@ interface ManagedSession {
   model?: string
   // Role/type of the last message (for badge display without loading messages)
   lastMessageRole?: 'user' | 'assistant' | 'plan' | 'tool' | 'error'
+  // Whether an async operation is ongoing (sharing, updating share, revoking, title regeneration)
+  // Used for shimmer effect on session title
+  isAsyncOperationOngoing?: boolean
   // Preview of first user message (for sidebar display fallback)
   preview?: string
   // Message queue for handling new messages while processing
@@ -491,9 +494,9 @@ export class SessionManager {
 
     // Set path to fetch interceptor for SDK subprocess
     // This interceptor captures API errors and adds metadata to MCP tool schemas
-    const interceptorPath = join(basePath, 'packages', 'shared', 'src', 'cache-ttl-interceptor.ts')
+    const interceptorPath = join(basePath, 'packages', 'shared', 'src', 'network-interceptor.ts')
     if (!existsSync(interceptorPath)) {
-      const error = `Cache TTL interceptor not found at ${interceptorPath}. The app package may be corrupted.`
+      const error = `Network interceptor not found at ${interceptorPath}. The app package may be corrupted.`
       sessionLog.error(error)
       throw new Error(error)
     }
@@ -578,6 +581,9 @@ export class SessionManager {
             messageQueue: [],
             backgroundShellCommands: new Map(),
             messagesLoaded: false,  // Mark as not loaded
+            // Shared viewer state - loaded from metadata for persistence across restarts
+            sharedUrl: meta.sharedUrl,
+            sharedId: meta.sharedId,
           }
 
           this.sessions.set(meta.id, managed)
@@ -1145,6 +1151,27 @@ export class SessionManager {
           this.persistSession(managed)
           sessionPersistenceQueue.flush(managed.id)
         },
+        // Called when SDK session ID is cleared after failed resume (empty response recovery)
+        onSdkSessionIdCleared: () => {
+          managed.sdkSessionId = undefined
+          sessionLog.info(`SDK session ID cleared for ${managed.id} (resume recovery)`)
+          // Persist immediately to prevent repeated resume attempts
+          this.persistSession(managed)
+          sessionPersistenceQueue.flush(managed.id)
+        },
+        // Called to get recent messages for recovery context when resume fails.
+        // Returns last 6 messages (3 exchanges) of user/assistant content.
+        getRecoveryMessages: () => {
+          const relevantMessages = managed.messages
+            .filter(m => m.role === 'user' || m.role === 'assistant')
+            .filter(m => !m.isIntermediate)  // Skip intermediate assistant messages
+            .slice(-6);  // Last 6 messages (3 exchanges)
+
+          return relevantMessages.map(m => ({
+            type: m.role as 'user' | 'assistant',
+            content: m.content,
+          }));
+        },
         // Debug mode - enables log file path injection into system prompt
         debugMode: isDebugMode ? {
           enabled: true,
@@ -1443,6 +1470,10 @@ export class SessionManager {
       return { success: false, error: 'Session not found' }
     }
 
+    // Signal async operation start for shimmer effect
+    managed.isAsyncOperationOngoing = true
+    this.sendEvent({ type: 'async_operation', sessionId, isOngoing: true }, managed.workspace.id)
+
     try {
       // Load session directly from disk (already in correct format)
       const storedSession = loadStoredSession(managed.workspace.rootPath, sessionId)
@@ -1480,6 +1511,10 @@ export class SessionManager {
     } catch (error) {
       sessionLog.error('Share error:', error)
       return { success: false, error: error instanceof Error ? error.message : 'Unknown error' }
+    } finally {
+      // Signal async operation end
+      managed.isAsyncOperationOngoing = false
+      this.sendEvent({ type: 'async_operation', sessionId, isOngoing: false }, managed.workspace.id)
     }
   }
 
@@ -1495,6 +1530,10 @@ export class SessionManager {
     if (!managed.sharedId) {
       return { success: false, error: 'Session not shared' }
     }
+
+    // Signal async operation start for shimmer effect
+    managed.isAsyncOperationOngoing = true
+    this.sendEvent({ type: 'async_operation', sessionId, isOngoing: true }, managed.workspace.id)
 
     try {
       // Load session directly from disk (already in correct format)
@@ -1520,6 +1559,10 @@ export class SessionManager {
     } catch (error) {
       sessionLog.error('Update share error:', error)
       return { success: false, error: error instanceof Error ? error.message : 'Unknown error' }
+    } finally {
+      // Signal async operation end
+      managed.isAsyncOperationOngoing = false
+      this.sendEvent({ type: 'async_operation', sessionId, isOngoing: false }, managed.workspace.id)
     }
   }
 
@@ -1535,6 +1578,10 @@ export class SessionManager {
     if (!managed.sharedId) {
       return { success: false, error: 'Session not shared' }
     }
+
+    // Signal async operation start for shimmer effect
+    managed.isAsyncOperationOngoing = true
+    this.sendEvent({ type: 'async_operation', sessionId, isOngoing: true }, managed.workspace.id)
 
     try {
       const { VIEWER_URL } = await import('@craft-agent/shared/branding')
@@ -1564,6 +1611,10 @@ export class SessionManager {
     } catch (error) {
       sessionLog.error('Revoke error:', error)
       return { success: false, error: error instanceof Error ? error.message : 'Unknown error' }
+    } finally {
+      // Signal async operation end
+      managed.isAsyncOperationOngoing = false
+      this.sendEvent({ type: 'async_operation', sessionId, isOngoing: false }, managed.workspace.id)
     }
   }
 
@@ -1723,6 +1774,9 @@ export class SessionManager {
     sessionLog.info(`refreshTitle: Calling regenerateSessionTitle...`)
 
     // Notify renderer that title regeneration has started (for shimmer effect)
+    managed.isAsyncOperationOngoing = true
+    this.sendEvent({ type: 'async_operation', sessionId, isOngoing: true }, managed.workspace.id)
+    // Keep legacy event for backward compatibility
     this.sendEvent({ type: 'title_regenerating', sessionId, isRegenerating: true }, managed.workspace.id)
 
     try {
@@ -1745,6 +1799,10 @@ export class SessionManager {
       const message = error instanceof Error ? error.message : 'Unknown error'
       sessionLog.error(`Failed to refresh title for session ${sessionId}:`, error)
       return { success: false, error: message }
+    } finally {
+      // Signal async operation end
+      managed.isAsyncOperationOngoing = false
+      this.sendEvent({ type: 'async_operation', sessionId, isOngoing: false }, managed.workspace.id)
     }
   }
 

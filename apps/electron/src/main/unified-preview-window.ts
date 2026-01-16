@@ -4,7 +4,6 @@ import { windowLog } from './logger'
 import { join, basename } from 'path'
 import { IPC_CHANNELS, type PreviewData, type MarkdownPreviewData } from '../shared/types'
 import type { WindowManager } from './window-manager'
-import { getBackgroundColor } from '@config/theme'
 
 // Vite dev server URL for hot reload
 const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL
@@ -136,23 +135,31 @@ export class UnifiedPreviewWindowManager {
       markdownOriginalContent = markdownContent
     }
 
-    const backgroundColor = getBackgroundColor(nativeTheme.shouldUseDarkColors)
     const title = getWindowTitle(data)
     const dimensions = getWindowDimensions(data)
 
+    // Note: Don't set backgroundColor here - the HTML/CSS handles it based on the user's
+    // saved theme preference (read from localStorage in preview.html inline script).
+    // Using nativeTheme.shouldUseDarkColors would use system preference, not user preference.
+    // We use show: false + ready-to-show to avoid any white flash before content renders.
     const window = new BrowserWindow({
       ...dimensions,
       title,
+      show: false, // Don't show until content is ready (prevents white flash)
       titleBarStyle: 'hiddenInset',
       trafficLightPosition: { x: 18, y: 18 },
       vibrancy: 'under-window',
       visualEffectState: 'active',
-      backgroundColor,
       webPreferences: {
         preload: join(__dirname, 'preload.cjs'),
         contextIsolation: true,
         nodeIntegration: false,
       },
+    })
+
+    // Show window only after first paint is ready (prevents white flash)
+    window.once('ready-to-show', () => {
+      window.show()
     })
 
     // Open external links in default browser
@@ -172,7 +179,12 @@ export class UnifiedPreviewWindowManager {
     })
 
     // Load the unified preview renderer
-    const query = { sessionId, previewId }
+    // Pass resolvedTheme from the main window to ensure the preview uses the same theme
+    // as the user's app preference, not re-evaluating system preference when mode='system'
+    const query: Record<string, string> = { sessionId, previewId }
+    if (data.resolvedTheme) {
+      query.theme = data.resolvedTheme
+    }
 
     if (VITE_DEV_SERVER_URL) {
       const params = new URLSearchParams(query).toString()

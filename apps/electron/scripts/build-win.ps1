@@ -165,7 +165,7 @@ New-Item -ItemType Directory -Force -Path "$ElectronDir\node_modules\@anthropic-
 Copy-Item -Recurse -Force $SdkSource "$ElectronDir\node_modules\@anthropic-ai\"
 
 # 5. Copy interceptor
-$InterceptorSource = "$RootDir\packages\shared\src\cache-ttl-interceptor.ts"
+$InterceptorSource = "$RootDir\packages\shared\src\network-interceptor.ts"
 if (-not (Test-Path $InterceptorSource)) {
     Write-Host "ERROR: Interceptor not found at $InterceptorSource" -ForegroundColor Red
     exit 1

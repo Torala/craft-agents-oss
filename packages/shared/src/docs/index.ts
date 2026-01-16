@@ -1520,13 +1520,15 @@ Session statuses represent workflow states. Each workspace has its own status co
 
 ## Default Statuses
 
-| ID | Label | Color | Category | Type |
-|----|-------|-------|----------|------|
-| \`todo\` | Todo | #71717A | open | Fixed |
-| \`in-progress\` | In Progress | #3B82F6 | open | Default |
-| \`needs-review\` | Needs Review | #F59E0B | open | Default |
-| \`done\` | Done | #9570BE | closed | Fixed |
-| \`cancelled\` | Cancelled | #A1A1AA | closed | Fixed |
+| ID | Label | Default Color | Category | Type |
+|----|-------|---------------|----------|------|
+| \`backlog\` | Backlog | text-foreground/50 | open | Default |
+| \`todo\` | Todo | text-foreground | open | Fixed |
+| \`needs-review\` | Needs Review | text-info | open | Default |
+| \`done\` | Done | text-accent | closed | Fixed |
+| \`cancelled\` | Cancelled | text-foreground/50 | closed | Fixed |
+
+**Note:** Color is optional. When omitted, the design system default is used.
 
 ## Status Types
 
@@ -1548,7 +1550,6 @@ Session statuses represent workflow states. Each workspace has its own status co
     {
       "id": "todo",
       "label": "Todo",
-      "color": "#71717A",
       "icon": { "type": "file", "value": "todo.svg" },
       "category": "open",
       "isFixed": true,
@@ -1566,7 +1567,7 @@ Session statuses represent workflow states. Each workspace has its own status co
 |----------|------|-------------|
 | \`id\` | string | Unique slug (lowercase, hyphens) |
 | \`label\` | string | Display name |
-| \`color\` | string | Hex color code |
+| \`color\` | string? | Optional color (hex or Tailwind class). Uses design system default if omitted. |
 | \`icon\` | object | Icon config (see below) |
 | \`category\` | \`"open"\` \\| \`"closed"\` | Inbox vs archive |
 | \`isFixed\` | boolean | Cannot delete/rename if true |

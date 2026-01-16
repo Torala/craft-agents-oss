@@ -15,6 +15,7 @@
     "./agent/modes": "./src/agent/mode-types.ts",
     "./agent/mode-types": "./src/agent/mode-types.ts",
     "./auth": "./src/auth/index.ts",
+    "./auth/callback-page": "./src/auth/callback-page.ts",
     "./auth/types": "./src/auth/types.ts",
     "./clients": "./src/clients/index.ts",
     "./config": "./src/config/index.ts",
@@ -36,7 +37,7 @@
     "./validation": "./src/validation/index.ts",
     "./version": "./src/version/index.ts",
     "./branding": "./src/branding.ts",
-    "./cache-ttl-interceptor": "./src/cache-ttl-interceptor.ts"
+    "./network-interceptor": "./src/network-interceptor.ts"
   },
   "dependencies": {
     "@craft-agent/core": "workspace:*",

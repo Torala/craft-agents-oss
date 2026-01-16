@@ -38,7 +38,9 @@ export interface SessionMeta {
   todoState?: string
   /** Role/type of the last message (for badge display without loading messages) */
   lastMessageRole?: 'user' | 'assistant' | 'plan' | 'tool' | 'error'
-  /** Whether title is currently being regenerated (for shimmer effect) */
+  /** Whether an async operation is ongoing (sharing, updating share, revoking, title regeneration) */
+  isAsyncOperationOngoing?: boolean
+  /** @deprecated Use isAsyncOperationOngoing instead */
   isRegeneratingTitle?: boolean
 }
 
@@ -78,6 +80,8 @@ export function extractSessionMeta(session: Session): SessionMeta {
     lastFinalMessageId,
     todoState: session.todoState,
     lastMessageRole: session.lastMessageRole,
+    // Use isAsyncOperationOngoing if available, fall back to deprecated isRegeneratingTitle
+    isAsyncOperationOngoing: session.isAsyncOperationOngoing ?? session.isRegeneratingTitle,
     isRegeneratingTitle: session.isRegeneratingTitle,
   }
 }
