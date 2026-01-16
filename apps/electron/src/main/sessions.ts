@@ -1,6 +1,6 @@
 import { app } from 'electron'
 import { join } from 'path'
-import { existsSync, copyFileSync } from 'fs'
+import { existsSync } from 'fs'
 import { rm, readFile } from 'fs/promises'
 import { CraftAgent, type AgentEvent, setPermissionMode, type PermissionMode, unregisterSessionScopedToolCallbacks, AbortReason, type AuthRequest, type AuthResult, type CredentialAuthRequest } from '@craft-agent/shared/agent'
 import { sessionLog, isDebugMode, getLogFilePath } from './logger'
@@ -493,29 +493,14 @@ export class SessionManager {
 
     // Set path to fetch interceptor for SDK subprocess
     // This interceptor captures API errors and adds metadata to MCP tool schemas
-    const interceptorSourcePath = join(basePath, 'packages', 'shared', 'src', 'network-interceptor.ts')
-    if (!existsSync(interceptorSourcePath)) {
-      const error = `Network interceptor not found at ${interceptorSourcePath}. The app package may be corrupted.`
+    const interceptorPath = join(basePath, 'packages', 'shared', 'src', 'network-interceptor.ts')
+    if (!existsSync(interceptorPath)) {
+      const error = `Network interceptor not found at ${interceptorPath}. The app package may be corrupted.`
       sessionLog.error(error)
       throw new Error(error)
     }
     // Skip interceptor on Windows development (--preload is bun-specific, not supported by node)
     if (process.platform !== 'win32' || app.isPackaged) {
-      // On Windows packaged app, copy interceptor to userData to avoid EPERM errors
-      // when installed in Program Files (which is read-only for non-elevated processes)
-      let interceptorPath = interceptorSourcePath
-      if (process.platform === 'win32' && app.isPackaged) {
-        const userDataInterceptorPath = join(app.getPath('userData'), 'network-interceptor.ts')
-        try {
-          // Always copy to ensure it's up to date with the current app version
-          copyFileSync(interceptorSourcePath, userDataInterceptorPath)
-          interceptorPath = userDataInterceptorPath
-          sessionLog.info('Copied interceptor to userData for Windows:', userDataInterceptorPath)
-        } catch (copyError) {
-          sessionLog.warn('Failed to copy interceptor to userData, using original path:', copyError)
-          // Fall back to original path - may work if not in Program Files
-        }
-      }
       sessionLog.info('Setting interceptorPath:', interceptorPath)
       setInterceptorPath(interceptorPath)
     } else {
@@ -538,16 +523,6 @@ export class SessionManager {
       }
       sessionLog.info('Setting executable:', bunPath)
       setExecutable(bunPath)
-
-      // On Windows, configure Bun to use writable directories for temp/cache.
-      // This allows the app to be installed in Program Files (which is read-only).
-      // All Bun data goes under userData (%LOCALAPPDATA%\Craft Agent\).
-      if (process.platform === 'win32') {
-        const bunDataDir = join(app.getPath('userData'), 'bun')
-        process.env.BUN_INSTALL_CACHE_DIR = join(bunDataDir, 'cache')
-        process.env.BUN_TMPDIR = join(bunDataDir, 'tmp')
-        sessionLog.info('Configured Bun env for Windows:', { BUN_INSTALL_CACHE_DIR: process.env.BUN_INSTALL_CACHE_DIR, BUN_TMPDIR: process.env.BUN_TMPDIR })
-      }
     } else if (process.platform === 'win32') {
       // On Windows in development, use 'node' instead of 'bun' as bun may crash
       // due to architecture emulation issues (e.g., x64 bun on ARM64 Windows)
