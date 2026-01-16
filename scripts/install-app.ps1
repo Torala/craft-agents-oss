@@ -53,6 +53,7 @@ try {
     }
     $checksum = $binaryInfo.sha256
     $filename = $binaryInfo.filename
+    $installerUrl = $binaryInfo.url
 } catch {
     Write-Err "Failed to fetch manifest: $_"
 }
@@ -67,20 +68,66 @@ if (-not $filename) {
     $filename = "Craft-Agent-$arch.exe"
 }
 
+# Use default URL if not in manifest
+if (-not $installerUrl) {
+    $installerUrl = "$VERSIONS_URL/$version/$filename"
+}
+
 Write-Info "Expected checksum: $($checksum.Substring(0, 16))..."
 
-# Download installer
-$installerUrl = "$VERSIONS_URL/$version/$filename"
+# Download installer with progress bar
 $installerPath = Join-Path $DOWNLOAD_DIR $filename
+$fileSize = $binaryInfo.size
 
-Write-Info "Downloading $filename..."
+# Clean up any partial download from previous attempts
+Remove-Item -Path $installerPath -Force -ErrorAction SilentlyContinue
+
+Write-Info "Downloading $filename ($([math]::Round($fileSize / 1MB, 1)) MB)..."
 Write-Host ""
+
+$webClient = $null
 try {
-    $ProgressPreference = 'Continue'
-    Invoke-WebRequest -Uri $installerUrl -OutFile $installerPath -UseBasicParsing
+    $webClient = New-Object System.Net.WebClient
+    $downloadComplete = $false
+    $downloadError = $null
+
+    # Progress event handler
+    $webClient.add_DownloadProgressChanged({
+        param($sender, $e)
+        $percent = $e.ProgressPercentage
+        $downloaded = [math]::Round($e.BytesReceived / 1MB, 1)
+        $total = [math]::Round($e.TotalBytesToReceive / 1MB, 1)
+        Write-Progress -Activity "Downloading Craft Agent" -Status "$downloaded MB / $total MB" -PercentComplete $percent
+    })
+
+    $webClient.add_DownloadFileCompleted({
+        param($sender, $e)
+        $script:downloadComplete = $true
+        if ($e.Error) { $script:downloadError = $e.Error }
+    })
+
+    # Start async download
+    $webClient.DownloadFileAsync([Uri]$installerUrl, $installerPath)
+
+    # Wait for completion
+    while (-not $downloadComplete) {
+        Start-Sleep -Milliseconds 100
+    }
+
+    Write-Progress -Activity "Downloading Craft Agent" -Completed
+
+    if ($downloadError) {
+        throw $downloadError
+    }
 } catch {
+    # Clean up partial download on failure
     Remove-Item -Path $installerPath -Force -ErrorAction SilentlyContinue
     Write-Err "Download failed: $_"
+} finally {
+    # Dispose WebClient
+    if ($webClient) {
+        $webClient.Dispose()
+    }
 }
 Write-Host ""
 
