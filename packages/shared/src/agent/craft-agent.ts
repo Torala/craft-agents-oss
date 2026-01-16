@@ -730,7 +730,8 @@ export class CraftAgent {
       }
 
       // Block SDK's plan mode tools (we don't use them - safe mode is user-controlled)
-      const disallowedTools: string[] = ['EnterPlanMode', 'ExitPlanMode'];
+      // Also block AskUserQuestion for more autonomous agent behavior
+      const disallowedTools: string[] = ['EnterPlanMode', 'ExitPlanMode', 'AskUserQuestion'];
 
       // Build MCP servers config - always use HTTP (SDK handles sources efficiently)
       // Filter out stdio servers if local MCP is disabled
