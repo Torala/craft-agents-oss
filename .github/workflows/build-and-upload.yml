@@ -286,6 +286,10 @@ jobs:
           S3_VERSIONS_BUCKET_ACCESS_KEY_ID: ${{ secrets.S3_VERSIONS_BUCKET_ACCESS_KEY_ID }}
           S3_VERSIONS_BUCKET_SECRET_ACCESS_KEY: ${{ secrets.S3_VERSIONS_BUCKET_SECRET_ACCESS_KEY }}
         run: |
+          echo "=== Upload Configuration ==="
+          echo "inputs.isLatest: ${{ inputs.isLatest }}"
+          echo "inputs.uploadScript: ${{ inputs.uploadScript }}"
+
           FLAGS=""
           if [ "${{ inputs.isLatest }}" = "true" ]; then
             FLAGS="$FLAGS --latest"
@@ -293,7 +297,11 @@ jobs:
           if [ "${{ inputs.uploadScript }}" = "true" ]; then
             FLAGS="$FLAGS --script"
           fi
-          bun run scripts/upload.ts "$FLAGS"
+
+          echo "FLAGS: $FLAGS"
+          echo "Running: bun run scripts/upload.ts $FLAGS"
+          echo "==========================="
+          bun run scripts/upload.ts $FLAGS
 
       - name: Create GitHub Release
         if: ${{ inputs.createRelease }}
