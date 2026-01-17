@@ -28,8 +28,6 @@ import {
   getSessionAttachmentsPath,
   getSessionPath as getSessionStoragePath,
   sessionPersistenceQueue,
-  generateOnboardingMessages,
-  formatOnboardingContext,
   type StoredSession,
   type StoredMessage,
   type SessionMetadata,
@@ -44,6 +42,18 @@ import { CraftMcpClient } from '@craft-agent/shared/mcp'
 import { type Session, type Message, type SessionEvent, type FileAttachment, type StoredAttachment, type SendMessageOptions, IPC_CHANNELS, generateMessageId } from '../shared/types'
 import { generateSessionTitle, regenerateSessionTitle, formatPathsToRelative, formatToolInputPaths, perf } from '@craft-agent/shared/utils'
 import { DEFAULT_MODEL } from '@craft-agent/shared/config'
+
+/**
+ * Sanitize message content for use as session title.
+ * Strips XML blocks (e.g. <edit_request>) and normalizes whitespace.
+ */
+function sanitizeForTitle(content: string): string {
+  return content
+    .replace(/<edit_request>[\s\S]*?<\/edit_request>/g, '') // Strip entire edit_request blocks
+    .replace(/<[^>]+>/g, '')     // Strip remaining XML/HTML tags
+    .replace(/\s+/g, ' ')        // Collapse whitespace
+    .trim()
+}
 
 /**
  * Feature flags for agent behavior
@@ -209,6 +219,7 @@ function messageToStored(msg: Message): StoredMessage {
     parentToolUseId: msg.parentToolUseId,
     isError: msg.isError,
     attachments: msg.attachments,
+    badges: msg.badges,  // Content badges for inline display (sources, skills, context)
     // Turn grouping
     isIntermediate: msg.isIntermediate,
     turnId: msg.turnId,
@@ -255,6 +266,7 @@ function storedToMessage(stored: StoredMessage): Message {
     parentToolUseId: stored.parentToolUseId,
     isError: stored.isError,
     attachments: stored.attachments,
+    badges: stored.badges,  // Content badges for inline display (sources, skills, context)
     // Turn grouping
     isIntermediate: stored.isIntermediate,
     turnId: stored.turnId,
@@ -365,6 +377,10 @@ export class SessionManager {
         sessionLog.info(`App theme changed`)
         this.broadcastAppThemeChanged(theme)
       },
+      onDefaultPermissionsChange: () => {
+        sessionLog.info('Default permissions changed')
+        this.broadcastDefaultPermissionsChanged()
+      },
       onSkillsListChange: async (skills) => {
         sessionLog.info(`Skills list changed in ${workspaceRootPath} (${skills.length} skills)`)
         this.broadcastSkillsChanged(skills)
@@ -417,6 +433,16 @@ export class SessionManager {
     if (!this.windowManager) return
     sessionLog.info(`Broadcasting skills changed (${skills.length} skills)`)
     this.windowManager.broadcastToAll(IPC_CHANNELS.SKILLS_CHANGED, skills)
+  }
+
+  /**
+   * Broadcast default permissions changed event to all windows
+   * Triggered when ~/.craft-agent/permissions/default.json changes
+   */
+  private broadcastDefaultPermissionsChanged(): void {
+    if (!this.windowManager) return
+    sessionLog.info('Broadcasting default permissions changed')
+    this.windowManager.broadcastToAll(IPC_CHANNELS.DEFAULT_PERMISSIONS_CHANGED, null)
   }
 
   /**
@@ -1043,44 +1069,36 @@ export class SessionManager {
     }
 
     // Get new session defaults from workspace config (with global fallback)
-    const defaultPermissionMode = getDefaultPermissionMode()
+    // Options.permissionMode overrides the workspace default (used by EditPopover for auto-execute)
+    const defaultPermissionMode = options?.permissionMode ?? getDefaultPermissionMode()
     const workspaceRootPath = workspace.rootPath
     const wsConfig = loadWorkspaceConfig(workspaceRootPath)
-    const defaultWorkingDir = wsConfig?.defaults?.workingDirectory || undefined
+    const userDefaultWorkingDir = wsConfig?.defaults?.workingDirectory || undefined
+
+    // Resolve working directory from options:
+    // - 'user_default' or undefined: Use workspace's configured default
+    // - 'none': No working directory (empty string means session folder only)
+    // - Absolute path: Use as-is
+    let resolvedWorkingDir: string | undefined
+    if (options?.workingDirectory === 'none') {
+      resolvedWorkingDir = undefined  // No working directory
+    } else if (options?.workingDirectory === 'user_default' || options?.workingDirectory === undefined) {
+      resolvedWorkingDir = userDefaultWorkingDir
+    } else {
+      resolvedWorkingDir = options.workingDirectory
+    }
 
     // Use storage layer to create and persist the session
     const storedSession = createStoredSession(workspaceRootPath, {
       permissionMode: defaultPermissionMode,
-      workingDirectory: defaultWorkingDir,
+      workingDirectory: resolvedWorkingDir,
     })
-
-    // Generate onboarding messages only if requested via options
-    let onboardingMessages: Message[] = []
-    if (options?.onboarding) {
-      const sources = loadWorkspaceSources(workspaceRootPath)
-      const storedOnboardingMessages = generateOnboardingMessages({
-        sources: sources.map((s) => s.config),
-        workspaceName: workspace.name,
-        context: options.onboarding,
-      })
-
-      // Convert StoredMessage to Message for runtime use
-      onboardingMessages = storedOnboardingMessages.map((m) => ({
-        id: m.id,
-        role: m.type as Message['role'],
-        content: m.content,
-        timestamp: m.timestamp ?? Date.now(),
-        onboardingId: m.onboardingId,
-        onboardingWidget: m.onboardingWidget,
-        onboardingData: m.onboardingData,
-      }))
-    }
 
     const managed: ManagedSession = {
       id: storedSession.id,
       workspace,
       agent: null,  // Lazy-load agent on first message
-      messages: onboardingMessages,
+      messages: [],
       isProcessing: false,
       lastMessageAt: storedSession.lastUsedAt,
       streamingText: '',
@@ -1090,7 +1108,7 @@ export class SessionManager {
       pendingTextParent: undefined,
       isFlagged: false,
       permissionMode: defaultPermissionMode,
-      workingDirectory: defaultWorkingDir,
+      workingDirectory: resolvedWorkingDir,
       model: storedSession.model,
       messageQueue: [],
       backgroundShellCommands: new Map(),
@@ -1099,22 +1117,17 @@ export class SessionManager {
 
     this.sessions.set(storedSession.id, managed)
 
-    // Only persist if we have onboarding messages to save
-    if (onboardingMessages.length > 0) {
-      this.persistSession(managed)
-    }
-
     return {
       id: storedSession.id,
       workspaceId: workspace.id,
       workspaceName: workspace.name,
       lastMessageAt: managed.lastMessageAt,
-      messages: onboardingMessages,
+      messages: [],
       isProcessing: false,
       isFlagged: false,
       permissionMode: defaultPermissionMode,
       todoState: undefined,  // User-controlled, defaults to undefined (treated as 'todo')
-      workingDirectory: defaultWorkingDir,
+      workingDirectory: resolvedWorkingDir,
       model: managed.model,
       sessionFolderPath: getSessionStoragePath(workspaceRootPath, storedSession.id),
     }
@@ -2004,7 +2017,9 @@ export class SessionManager {
       // AI generation will enhance it later, but we always have a title from the start
       const isFirstUserMessage = managed.messages.filter(m => m.role === 'user').length === 1
       if (isFirstUserMessage && !managed.name) {
-        const initialTitle = message.slice(0, 50) + (message.length > 50 ? '…' : '')
+        // Sanitize message to remove XML blocks (e.g. <edit_request>) before using as title
+        const sanitized = sanitizeForTitle(message)
+        const initialTitle = sanitized.slice(0, 50) + (sanitized.length > 50 ? '…' : '')
         managed.name = initialTitle
         this.persistSession(managed)
         // Flush immediately so disk is authoritative before notifying renderer
@@ -2082,23 +2097,6 @@ export class SessionManager {
         sessionLog.info('Attachments:', attachments.length)
       }
 
-      // Check for unsent onboarding messages and prepend context
-      let messageToSend = message
-      const onboardingMsgs = managed.messages.filter(
-        (m) => m.role === 'onboarding' && !m.onboardingSent
-      )
-      if (onboardingMsgs.length > 0) {
-        const onboardingContext = formatOnboardingContext(onboardingMsgs)
-        if (onboardingContext) {
-          messageToSend = `${onboardingContext}\n\n${message}`
-          // Mark onboarding messages as sent
-          for (const msg of onboardingMsgs) {
-            msg.onboardingSent = true
-          }
-          sessionLog.info('Prepended onboarding context to message')
-        }
-      }
-
       // Skills mentioned via @mentions are handled by the Agent SDK's Skill tool
       // The @skill-name text remains in the message for the agent to process
       if (options?.skillSlugs?.length) {
@@ -2106,7 +2104,7 @@ export class SessionManager {
       }
 
       sendSpan.mark('chat.starting')
-      const chatIterator = agent.chat(messageToSend, attachments)
+      const chatIterator = agent.chat(message, attachments)
       sessionLog.info('Got chat iterator, starting iteration...')
 
       for await (const event of chatIterator) {
