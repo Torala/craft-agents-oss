@@ -154,7 +154,7 @@ log "Found app: $app_source"
 # This prevents MITM attacks where a malicious DMG could be served
 log "Verifying code signature..."
 
-# Expected Team ID for Craft Agent (Luki Labs)
+# Expected Team ID for Craft Agent (Craft Docs Ltd.)
 EXPECTED_TEAM_ID="LVV532B7S8"
 
 # Check if app is signed and get signing info

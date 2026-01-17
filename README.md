@@ -211,7 +211,7 @@ This project uses the [Claude Agent SDK](https://www.npmjs.com/package/@anthropi
 
 ### Trademark
 
-"Craft" and "Craft Agents" are trademarks of Luki Labs Kft. See [TRADEMARK.md](TRADEMARK.md) for usage guidelines.
+"Craft" and "Craft Agents" are trademarks of Craft Docs Ltd. See [TRADEMARK.md](TRADEMARK.md) for usage guidelines.
 
 ## Contributing
 

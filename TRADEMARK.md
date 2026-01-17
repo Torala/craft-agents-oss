@@ -4,7 +4,7 @@ This trademark policy governs the use of the "Craft" and "Craft Agents" names, l
 
 ## Trademarks
 
-The following are trademarks of Luki Labs Kft.:
+The following are trademarks of Craft Docs Ltd.:
 
 - **Craft** (word mark)
 - **Craft Agents** (word mark)
@@ -52,15 +52,15 @@ You may not:
 - Use "Craft" or "Craft Agents" as your product name
 - Use the Craft logo as your application icon
 - Suggest that your fork is the official version
-- Imply that Luki Labs or Craft endorses your product
+- Imply that Craft Docs Ltd. or Craft endorses your product
 
 ### Create Confusion
 
 You may not use the trademarks in any way that:
 
-- Suggests your product is created by or affiliated with Luki Labs
+- Suggests your product is created by or affiliated with Craft Docs Ltd.
 - Could cause confusion between your product and the official Craft Agents
-- Disparages Luki Labs or the Craft Agents project
+- Disparages Craft Docs Ltd. or the Craft Agents project
 
 ## Branding Locations
 

@@ -43,8 +43,10 @@ apps/electron/resources/**/*
 # Electron ESLint rules
 apps/electron/eslint-rules/**/*
 
-# Electron scripts (public only)
-apps/electron/scripts/self-update.sh
+# Electron scripts (build only)
+apps/electron/scripts/build-dmg.sh
+apps/electron/scripts/build-win.ps1
+apps/electron/scripts/build-linux.sh
 
 # =============================================================================
 # APPS - VIEWER (Session Viewer Web App)
@@ -76,8 +78,6 @@ packages/ui/**/*
 # =============================================================================
 # SCRIPTS (Public Only)
 # =============================================================================
-scripts/install-app.sh
-scripts/uninstall-app.sh
-scripts/tail-electron-logs.sh
-scripts/electron-dev.sh
 scripts/sync-version.ts
+scripts/install-app.sh
+scripts/install-app.ps1
