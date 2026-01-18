@@ -36,35 +36,3 @@ export function generatePKCE(): PKCEChallenge {
 export function generateState(): string {
   return crypto.randomBytes(16).toString('base64url');
 }
-
-/**
- * Build a Craft OAuth login URL with PKCE parameters.
- *
- * @param options - OAuth URL options
- * @returns The full login URL to redirect users to
- */
-export function buildCraftLoginUrl(options: {
-  codeChallenge: string;
-  state: string;
-  redirectUri: string;
-  platform?: string;
-  domain?: string;
-}): string {
-  const {
-    codeChallenge,
-    state,
-    redirectUri,
-    platform = 'chaps',
-    domain = 'docs.craft.do',
-  } = options;
-
-  const params = new URLSearchParams({
-    platform,
-    code_challenge: codeChallenge,
-    state,
-    redirect_uri: redirectUri,
-  });
-
-  // Use http - Craft handles the redirect to https
-  return `http://${domain}/login?${params.toString()}`;
-}
