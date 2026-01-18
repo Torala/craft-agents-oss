@@ -42,6 +42,7 @@ import { CraftMcpClient } from '@craft-agent/shared/mcp'
 import { type Session, type Message, type SessionEvent, type FileAttachment, type StoredAttachment, type SendMessageOptions, IPC_CHANNELS, generateMessageId } from '../shared/types'
 import { generateSessionTitle, regenerateSessionTitle, formatPathsToRelative, formatToolInputPaths, perf } from '@craft-agent/shared/utils'
 import { DEFAULT_MODEL } from '@craft-agent/shared/config'
+import { type ThinkingLevel, DEFAULT_THINKING_LEVEL } from '@craft-agent/shared/agent/thinking-levels'
 
 /**
  * Sanitize message content for use as session title.
@@ -175,6 +176,8 @@ interface ManagedSession {
   sharedId?: string
   // Model to use for this session (overrides global config if set)
   model?: string
+  // Thinking level for this session ('off', 'think', 'max')
+  thinkingLevel?: ThinkingLevel
   // Role/type of the last message (for badge display without loading messages)
   lastMessageRole?: 'user' | 'assistant' | 'plan' | 'tool' | 'error'
   // Whether an async operation is ongoing (sharing, updating share, revoking, title regeneration)
@@ -605,6 +608,7 @@ export class SessionManager {
             workingDirectory: meta.workingDirectory ?? wsDefaultWorkingDir,
             sdkCwd: meta.sdkCwd,
             model: meta.model,
+            thinkingLevel: meta.thinkingLevel,
             lastMessageRole: meta.lastMessageRole,
             messageQueue: [],
             backgroundShellCommands: new Map(),
@@ -647,6 +651,7 @@ export class SessionManager {
         enabledSourceSlugs: managed.enabledSourceSlugs,
         workingDirectory: managed.workingDirectory,
         sdkCwd: managed.sdkCwd,
+        thinkingLevel: managed.thinkingLevel,
         messages: persistableMessages.map(messageToStored),
         tokenUsage: managed.tokenUsage ?? {
           inputTokens: 0,
@@ -961,6 +966,7 @@ export class SessionManager {
         isProcessing: m.isProcessing,
         isFlagged: m.isFlagged,
         permissionMode: m.permissionMode,
+        thinkingLevel: m.thinkingLevel,
         todoState: m.todoState,
         lastReadMessageId: m.lastReadMessageId,
         workingDirectory: m.workingDirectory,
@@ -996,6 +1002,7 @@ export class SessionManager {
       isProcessing: m.isProcessing,
       isFlagged: m.isFlagged,
       permissionMode: m.permissionMode,
+      thinkingLevel: m.thinkingLevel,
       todoState: m.todoState,
       lastReadMessageId: m.lastReadMessageId,
       workingDirectory: m.workingDirectory,
@@ -1074,6 +1081,8 @@ export class SessionManager {
     const workspaceRootPath = workspace.rootPath
     const wsConfig = loadWorkspaceConfig(workspaceRootPath)
     const userDefaultWorkingDir = wsConfig?.defaults?.workingDirectory || undefined
+    // Get default thinking level from workspace config, fallback to 'think'
+    const defaultThinkingLevel = wsConfig?.defaults?.thinkingLevel ?? DEFAULT_THINKING_LEVEL
 
     // Resolve working directory from options:
     // - 'user_default' or undefined: Use workspace's configured default
@@ -1110,6 +1119,7 @@ export class SessionManager {
       permissionMode: defaultPermissionMode,
       workingDirectory: resolvedWorkingDir,
       model: storedSession.model,
+      thinkingLevel: defaultThinkingLevel,
       messageQueue: [],
       backgroundShellCommands: new Map(),
       messagesLoaded: true,  // New sessions don't need to load messages from disk
@@ -1129,6 +1139,7 @@ export class SessionManager {
       todoState: undefined,  // User-controlled, defaults to undefined (treated as 'todo')
       workingDirectory: resolvedWorkingDir,
       model: managed.model,
+      thinkingLevel: defaultThinkingLevel,
       sessionFolderPath: getSessionStoragePath(workspaceRootPath, storedSession.id),
     }
   }
@@ -1144,6 +1155,8 @@ export class SessionManager {
         workspace: managed.workspace,
         // Session model takes priority, fallback to global config
         model: managed.model || config?.model,
+        // Initialize thinking level at construction to avoid race conditions
+        thinkingLevel: managed.thinkingLevel,
         isHeadless: !AGENT_FLAGS.defaultModesEnabled,
         // Always pass session object - id is required for plan mode callbacks
         // sdkSessionId is optional and used for conversation resumption
@@ -2085,10 +2098,11 @@ export class SessionManager {
       sessionLog.info('Agent model:', agent.getModel())
       sessionLog.info('process.cwd():', process.cwd())
 
-      // Set ultrathink mode if enabled (single-shot - resets after query)
+      // Set ultrathink override if enabled (single-shot - resets after query)
+      // This boosts the session's thinkingLevel to 'max' for this message only
       if (options?.ultrathinkEnabled) {
-        sessionLog.info('Ultrathink mode ENABLED')
-        agent.setUltrathinkMode(true)
+        sessionLog.info('Ultrathink override ENABLED')
+        agent.setUltrathinkOverride(true)
       }
 
       // Process the message through the agent
@@ -2517,6 +2531,27 @@ To view this task's output:
         sessionId: managed.id,
         permissionMode: mode,
       }, managed.workspace.id)
+      // Persist to disk
+      this.persistSession(managed)
+    }
+  }
+
+  /**
+   * Set the thinking level for a session ('off', 'think', 'max')
+   * This is sticky and persisted across messages.
+   */
+  setSessionThinkingLevel(sessionId: string, level: ThinkingLevel): void {
+    const managed = this.sessions.get(sessionId)
+    if (managed) {
+      // Update thinking level in managed session
+      managed.thinkingLevel = level
+
+      // Update the agent's thinking level if it exists
+      if (managed.agent) {
+        managed.agent.setThinkingLevel(level)
+      }
+
+      sessionLog.info(`Session ${sessionId}: thinking level set to ${level}`)
       // Persist to disk
       this.persistSession(managed)
     }

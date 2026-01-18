@@ -21,8 +21,9 @@ import { cn } from '@/lib/utils'
 import { routes } from '@/lib/navigate'
 import { Spinner } from '@craft-agent/ui'
 import { RenameDialog } from '@/components/ui/rename-dialog'
-import type { PermissionMode, WorkspaceSettings } from '../../../shared/types'
+import type { PermissionMode, ThinkingLevel, WorkspaceSettings } from '../../../shared/types'
 import { PERMISSION_MODE_CONFIG } from '@craft-agent/shared/agent/mode-types'
+import { DEFAULT_THINKING_LEVEL, THINKING_LEVELS } from '@craft-agent/shared/agent/thinking-levels'
 import type { DetailsPageMeta } from '@/lib/navigation-registry'
 
 import {
@@ -56,6 +57,7 @@ export default function WorkspaceSettingsPage() {
   const [wsIconUrl, setWsIconUrl] = useState<string | null>(null)
   const [isUploadingIcon, setIsUploadingIcon] = useState(false)
   const [wsModel, setWsModel] = useState('claude-sonnet-4-5-20250929')
+  const [wsThinkingLevel, setWsThinkingLevel] = useState<ThinkingLevel>(DEFAULT_THINKING_LEVEL)
   const [permissionMode, setPermissionMode] = useState<PermissionMode>('ask')
   const [workingDirectory, setWorkingDirectory] = useState('')
   const [localMcpEnabled, setLocalMcpEnabled] = useState(true)
@@ -94,6 +96,7 @@ export default function WorkspaceSettingsPage() {
           setWsName(settings.name || '')
           setWsNameEditing(settings.name || '')
           setWsModel(settings.model || 'claude-sonnet-4-5-20250929')
+          setWsThinkingLevel(settings.thinkingLevel || DEFAULT_THINKING_LEVEL)
           setPermissionMode(settings.permissionMode || 'ask')
           setWorkingDirectory(settings.workingDirectory || '')
           setLocalMcpEnabled(settings.localMcpEnabled ?? true)
@@ -205,6 +208,14 @@ export default function WorkspaceSettingsPage() {
       onModelChange?.(newModel)
     },
     [updateWorkspaceSetting, onModelChange]
+  )
+
+  const handleThinkingLevelChange = useCallback(
+    async (newLevel: ThinkingLevel) => {
+      setWsThinkingLevel(newLevel)
+      await updateWorkspaceSetting('thinkingLevel', newLevel)
+    },
+    [updateWorkspaceSetting]
   )
 
   const handlePermissionModeChange = useCallback(
@@ -397,6 +408,17 @@ export default function WorkspaceSettingsPage() {
                     { value: 'claude-sonnet-4-5-20250929', label: 'Sonnet 4.5', description: 'Best for everyday tasks' },
                     { value: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5', description: 'Fastest for quick answers' },
                   ]}
+                />
+                <SettingsMenuSelectRow
+                  label="Thinking level"
+                  description="Reasoning depth for new chats"
+                  value={wsThinkingLevel}
+                  onValueChange={(v) => handleThinkingLevelChange(v as ThinkingLevel)}
+                  options={THINKING_LEVELS.map(({ id, name, description }) => ({
+                    value: id,
+                    label: name,
+                    description,
+                  }))}
                 />
               </SettingsCard>
             </SettingsSection>

@@ -309,6 +309,8 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
               onRespondToPermission={onRespondToPermission}
               pendingCredential={undefined}
               onRespondToCredential={onRespondToCredential}
+              thinkingLevel={sessionOpts.thinkingLevel}
+              onThinkingLevelChange={(level) => setOption('thinkingLevel', level)}
               ultrathinkEnabled={sessionOpts.ultrathinkEnabled}
               onUltrathinkChange={(enabled) => setOption('ultrathinkEnabled', enabled)}
               permissionMode={sessionOpts.permissionMode}
@@ -361,6 +363,8 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
           onRespondToPermission={onRespondToPermission}
           pendingCredential={pendingCredential}
           onRespondToCredential={onRespondToCredential}
+          thinkingLevel={sessionOpts.thinkingLevel}
+          onThinkingLevelChange={(level) => setOption('thinkingLevel', level)}
           ultrathinkEnabled={sessionOpts.ultrathinkEnabled}
           onUltrathinkChange={(enabled) => setOption('ultrathinkEnabled', enabled)}
           permissionMode={sessionOpts.permissionMode}

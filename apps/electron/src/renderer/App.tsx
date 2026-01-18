@@ -345,10 +345,12 @@ export default function App() {
       for (const s of loadedSessions) {
         // Only store non-default options to keep the map lean
         const hasNonDefaultMode = s.permissionMode && s.permissionMode !== 'ask'
-        if (hasNonDefaultMode) {
+        const hasNonDefaultThinking = s.thinkingLevel && s.thinkingLevel !== 'think'
+        if (hasNonDefaultMode || hasNonDefaultThinking) {
           optionsMap.set(s.id, {
             ultrathinkEnabled: false, // ultrathink is single-shot, never persisted
             permissionMode: s.permissionMode ?? 'ask',
+            thinkingLevel: s.thinkingLevel ?? 'think',
           })
         }
       }
@@ -587,12 +589,14 @@ export default function App() {
 
     // Apply session defaults to the unified sessionOptions
     const hasNonDefaultMode = session.permissionMode && session.permissionMode !== 'ask'
-    if (hasNonDefaultMode) {
+    const hasNonDefaultThinking = session.thinkingLevel && session.thinkingLevel !== 'think'
+    if (hasNonDefaultMode || hasNonDefaultThinking) {
       setSessionOptions(prev => {
         const next = new Map(prev)
         next.set(session.id, {
           ultrathinkEnabled: false,
           permissionMode: session.permissionMode ?? 'ask',
+          thinkingLevel: session.thinkingLevel ?? 'think',
         })
         return next
       })
@@ -811,6 +815,10 @@ export default function App() {
     if (updates.permissionMode !== undefined) {
       // Sync permission mode change with backend
       window.electronAPI.sessionCommand(sessionId, { type: 'setPermissionMode', mode: updates.permissionMode })
+    }
+    if (updates.thinkingLevel !== undefined) {
+      // Sync thinking level change with backend (session-level, persisted)
+      window.electronAPI.sessionCommand(sessionId, { type: 'setThinkingLevel', level: updates.thinkingLevel })
     }
     // ultrathinkEnabled is UI-only (single-shot), no backend persistence needed
   }, [sessionOptions])

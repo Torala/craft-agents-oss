@@ -10,6 +10,7 @@
  */
 
 import type { PermissionMode } from '../agent/mode-manager.ts';
+import type { ThinkingLevel } from '../agent/thinking-levels.ts';
 import type { StoredAttachment, MessageRole, ToolStatus, AuthRequestType, AuthStatus, CredentialInputMode, StoredMessage } from '@craft-agent/core/types';
 
 /**
@@ -81,6 +82,8 @@ export interface SessionConfig {
   sharedId?: string;
   /** Model to use for this session (overrides global config if set) */
   model?: string;
+  /** Thinking level for this session ('off', 'think', 'max') */
+  thinkingLevel?: ThinkingLevel;
 }
 
 /**
@@ -127,6 +130,8 @@ export interface SessionHeader {
   sharedId?: string;
   /** Model to use for this session (overrides global config if set) */
   model?: string;
+  /** Thinking level for this session ('off', 'think', 'max') */
+  thinkingLevel?: ThinkingLevel;
   // Pre-computed fields for fast list loading
   /** Number of messages in session */
   messageCount: number;
@@ -171,4 +176,6 @@ export interface SessionMetadata {
   lastMessageRole?: 'user' | 'assistant' | 'plan' | 'tool' | 'error';
   /** Model to use for this session (overrides global config if set) */
   model?: string;
+  /** Thinking level for this session ('off', 'think', 'max') */
+  thinkingLevel?: ThinkingLevel;
 }

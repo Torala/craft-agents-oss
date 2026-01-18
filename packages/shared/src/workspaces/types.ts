@@ -12,6 +12,7 @@
  */
 
 import type { PermissionMode } from '../agent/mode-manager.ts';
+import type { ThinkingLevel } from '../agent/thinking-levels.ts';
 
 /**
  * Local MCP server configuration
@@ -42,6 +43,7 @@ export interface WorkspaceConfig {
     enabledSourceSlugs?: string[]; // Sources to enable by default
     permissionMode?: PermissionMode; // Default permission mode ('safe', 'ask', 'allow-all')
     workingDirectory?: string;
+    thinkingLevel?: ThinkingLevel; // Default thinking level ('off', 'think', 'max') - default: 'think'
   };
 
   /**

@@ -44,7 +44,6 @@ import {
 } from '@/components/settings'
 import { useUpdateChecker } from '@/hooks/useUpdateChecker'
 import { useAppShellContext } from '@/context/AppShellContext'
-import { Badge } from '@/components/ui/badge'
 import type { PresetTheme } from '@config/theme'
 import {
   Dialog,
@@ -603,10 +602,14 @@ export default function AppSettingsPage() {
                     <span className="text-muted-foreground">
                       {updateChecker.updateInfo?.currentVersion ?? 'Loading...'}
                     </span>
-                    {updateChecker.updateAvailable && (
-                      <Badge variant="secondary" className="text-xs">
-                        Update available
-                      </Badge>
+                    {updateChecker.updateAvailable && updateChecker.updateInfo?.latestVersion && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={updateChecker.installUpdate}
+                      >
+                        Update to {updateChecker.updateInfo.latestVersion}
+                      </Button>
                     )}
                   </div>
                 </SettingsRow>

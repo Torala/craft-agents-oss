@@ -33,8 +33,16 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import {
   DropdownMenu,
   DropdownMenuTrigger,
+  DropdownMenuSub,
+  DropdownMenuPortal,
 } from '@/components/ui/dropdown-menu'
-import { StyledDropdownMenuContent, StyledDropdownMenuItem } from '@/components/ui/styled-dropdown'
+import {
+  StyledDropdownMenuContent,
+  StyledDropdownMenuItem,
+  StyledDropdownMenuSeparator,
+  StyledDropdownMenuSubTrigger,
+  StyledDropdownMenuSubContent,
+} from '@/components/ui/styled-dropdown'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
 import { applySmartTypography } from '@/lib/smart-typography'
@@ -45,6 +53,7 @@ import { FreeFormInputContextBadge } from './FreeFormInputContextBadge'
 import type { FileAttachment, LoadedSource, LoadedSkill } from '../../../../shared/types'
 import type { PermissionMode } from '@craft-agent/shared/agent/modes'
 import { PERMISSION_MODE_ORDER } from '@craft-agent/shared/agent/modes'
+import { type ThinkingLevel, THINKING_LEVELS, getThinkingLevelName } from '@craft-agent/shared/agent/thinking-levels'
 import { useEscapeInterrupt } from '@/context/EscapeInterruptContext'
 import { EscapeInterruptOverlay } from './EscapeInterruptOverlay'
 
@@ -78,6 +87,11 @@ export interface FreeFormInputProps {
   currentModel: string
   /** Callback when model changes */
   onModelChange: (model: string) => void
+  // Thinking level (session-level setting)
+  /** Current thinking level ('off', 'think', 'max') */
+  thinkingLevel?: ThinkingLevel
+  /** Callback when thinking level changes */
+  onThinkingLevelChange?: (level: ThinkingLevel) => void
   // Advanced options
   ultrathinkEnabled?: boolean
   onUltrathinkChange?: (enabled: boolean) => void
@@ -150,6 +164,8 @@ export function FreeFormInput({
   inputRef: externalInputRef,
   currentModel,
   onModelChange,
+  thinkingLevel = 'think',
+  onThinkingLevelChange,
   ultrathinkEnabled = false,
   onUltrathinkChange,
   permissionMode = 'ask',
@@ -235,7 +251,6 @@ export function FreeFormInput({
 
   const [isDraggingOver, setIsDraggingOver] = React.useState(false)
   const [loadingCount, setLoadingCount] = React.useState(0)
-  const [modelDropdownOpen, setModelDropdownOpen] = React.useState(false)
   const [sourceDropdownOpen, setSourceDropdownOpen] = React.useState(false)
   const [sourceFilter, setSourceFilter] = React.useState('')
   const [isFocused, setIsFocused] = React.useState(false)
@@ -257,9 +272,6 @@ export function FreeFormInput({
 
   const dragCounterRef = React.useRef(0)
   const containerRef = React.useRef<HTMLDivElement>(null)
-  const modelButtonRef = React.useRef<HTMLButtonElement>(null)
-  const modelDropdownRef = React.useRef<HTMLDivElement>(null)
-  const [modelDropdownPosition, setModelDropdownPosition] = React.useState<{ top: number; left: number; buttonCenter: number } | null>(null)
   const sourceButtonRef = React.useRef<HTMLButtonElement>(null)
   const sourceFilterInputRef = React.useRef<HTMLInputElement>(null)
   const [sourceDropdownPosition, setSourceDropdownPosition] = React.useState<{ top: number; left: number } | null>(null)
@@ -459,37 +471,6 @@ export function FreeFormInput({
     observer.observe(containerRef.current)
     return () => observer.disconnect()
   }, [onHeightChange])
-
-  // Adjust model dropdown position if it would overflow the viewport
-  React.useLayoutEffect(() => {
-    if (!modelDropdownOpen || !modelDropdownRef.current || !modelDropdownPosition) return
-
-    const dropdown = modelDropdownRef.current
-    const dropdownRect = dropdown.getBoundingClientRect()
-    const viewportWidth = window.innerWidth
-    const padding = 8 // Minimum padding from viewport edge
-
-    // Calculate where the dropdown would be if centered
-    const centeredLeft = modelDropdownPosition.buttonCenter - dropdownRect.width / 2
-    const centeredRight = modelDropdownPosition.buttonCenter + dropdownRect.width / 2
-
-    // Check if it overflows on the right
-    if (centeredRight > viewportWidth - padding) {
-      // Shift left to fit, but keep natural width
-      const newLeft = viewportWidth - padding - dropdownRect.width / 2
-      if (newLeft !== modelDropdownPosition.left) {
-        setModelDropdownPosition(prev => prev ? { ...prev, left: newLeft } : null)
-      }
-    }
-    // Check if it overflows on the left
-    else if (centeredLeft < padding) {
-      // Shift right to fit
-      const newLeft = padding + dropdownRect.width / 2
-      if (newLeft !== modelDropdownPosition.left) {
-        setModelDropdownPosition(prev => prev ? { ...prev, left: newLeft } : null)
-      }
-    }
-  }, [modelDropdownOpen, modelDropdownPosition])
 
   // Check if running in Electron environment (has electronAPI)
   const hasElectronAPI = typeof window !== 'undefined' && !!window.electronAPI
@@ -1144,106 +1125,105 @@ export function FreeFormInput({
           {/* Spacer */}
           <div className="flex-1" />
 
-          {/* 5. Model Selector */}
-          <div className="relative">
+          {/* 5. Model Selector - Radix DropdownMenu for automatic positioning and submenu support */}
+          <DropdownMenu>
             <Tooltip>
               <TooltipTrigger asChild>
-                <button
-                  ref={modelButtonRef}
-                  type="button"
-                  className={cn(
-                    "inline-flex items-center h-7 px-1.5 gap-0.5 text-[13px] shrink-0 rounded-[6px] hover:bg-foreground/5 transition-colors",
-                    modelDropdownOpen && "bg-foreground/5"
-                  )}
-                  onClick={() => {
-                    if (!modelDropdownOpen && modelButtonRef.current) {
-                      // Calculate position when opening
-                      const rect = modelButtonRef.current.getBoundingClientRect()
-                      const buttonCenter = rect.left + rect.width / 2
-                      setModelDropdownPosition({
-                        top: rect.top,
-                        left: buttonCenter, // Start centered, will adjust in useLayoutEffect if needed
-                        buttonCenter,
-                      })
-                    }
-                    setModelDropdownOpen(!modelDropdownOpen)
-                  }}
-                >
-                  {getModelShortName(currentModel)}
-                  <ChevronDown className="h-3 w-3 opacity-50 shrink-0" />
-                </button>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    className="inline-flex items-center h-7 px-1.5 gap-0.5 text-[13px] shrink-0 rounded-[6px] hover:bg-foreground/5 transition-colors data-[state=open]:bg-foreground/5"
+                  >
+                    {getModelShortName(currentModel)}
+                    <ChevronDown className="h-3 w-3 opacity-50 shrink-0" />
+                  </button>
+                </DropdownMenuTrigger>
               </TooltipTrigger>
               <TooltipContent side="top">Model</TooltipContent>
             </Tooltip>
-            {modelDropdownOpen && modelDropdownPosition && ReactDOM.createPortal(
-              <>
-                {/* Backdrop to close on click outside */}
-                <div
-                  className="fixed inset-0 z-floating-backdrop"
-                  onClick={() => setModelDropdownOpen(false)}
-                />
-                <div
-                  ref={modelDropdownRef}
-                  className="fixed popover-styled p-2 z-floating-menu min-w-[240px]"
-                  style={{
-                    top: modelDropdownPosition.top - 8, // 8px gap above button
-                    left: modelDropdownPosition.left,
-                    transform: 'translate(-50%, -100%)', // Center horizontally, position above
-                  }}
-                >
-                  <div className="space-y-1">
-                    {MODELS.map((model) => {
-                      const isSelected = currentModel === model.id
-                      const descriptions: Record<string, string> = {
-                        'claude-opus-4-5-20251101': 'Most capable for complex work',
-                        'claude-sonnet-4-5-20250929': 'Best for everyday tasks',
-                        'claude-haiku-4-5-20251001': 'Fastest for quick answers',
-                      }
-                      return (
-                        <button
-                          key={model.id}
-                          type="button"
-                          onClick={() => {
-                            onModelChange(model.id)
-                            setModelDropdownOpen(false)
-                          }}
-                          className="w-full flex items-center justify-between px-2 py-2 rounded-lg hover:bg-foreground/3 transition-colors"
-                        >
-                          <div className="text-left">
-                            <div className="font-medium text-sm">{model.name}</div>
-                            <div className="text-xs text-muted-foreground">{descriptions[model.id] || model.description}</div>
-                          </div>
-                          {isSelected && (
-                            <Check className="h-4 w-4 text-foreground shrink-0 ml-3" />
-                          )}
-                        </button>
-                      )
-                    })}
-                  </div>
-                  {/* Context usage footer - only show when we have token data */}
-                  {contextStatus?.inputTokens != null && contextStatus.inputTokens > 0 && (
-                    <div className="mt-2 pt-2 border-t border-border/50 px-2">
-                      <div className="flex items-center justify-between text-xs text-muted-foreground">
-                        <span>Context</span>
-                        <span className="flex items-center gap-1.5">
-                          {contextStatus.isCompacting && (
-                            <Loader2 className="h-3 w-3 animate-spin" />
-                          )}
-                          {formatTokenCount(contextStatus.inputTokens)}
-                          {/* Show compaction threshold (~77.5% of context window) as the limit,
-                              since that's when auto-compaction kicks in - not the full context window */}
-                          {contextStatus.contextWindow && (
-                            <span className="opacity-60">/ {formatTokenCount(Math.round(contextStatus.contextWindow * 0.775))}</span>
-                          )}
-                        </span>
-                      </div>
+            <StyledDropdownMenuContent side="top" align="end" sideOffset={8} className="min-w-[240px]">
+              {/* Model options */}
+              {MODELS.map((model) => {
+                const isSelected = currentModel === model.id
+                const descriptions: Record<string, string> = {
+                  'claude-opus-4-5-20251101': 'Most capable for complex work',
+                  'claude-sonnet-4-5-20250929': 'Best for everyday tasks',
+                  'claude-haiku-4-5-20251001': 'Fastest for quick answers',
+                }
+                return (
+                  <StyledDropdownMenuItem
+                    key={model.id}
+                    onSelect={() => onModelChange(model.id)}
+                    className="flex items-center justify-between px-2 py-2 rounded-lg cursor-pointer"
+                  >
+                    <div className="text-left">
+                      <div className="font-medium text-sm">{model.name}</div>
+                      <div className="text-xs text-muted-foreground">{descriptions[model.id] || model.description}</div>
                     </div>
-                  )}
-                </div>
-              </>,
-              document.body
-            )}
-          </div>
+                    {isSelected && (
+                      <Check className="h-4 w-4 text-foreground shrink-0 ml-3" />
+                    )}
+                  </StyledDropdownMenuItem>
+                )
+              })}
+
+              {/* Separator before thinking level */}
+              <StyledDropdownMenuSeparator className="my-1" />
+
+              {/* Thinking Level - Radix submenu with automatic edge detection */}
+              <DropdownMenuSub>
+                <StyledDropdownMenuSubTrigger className="flex items-center justify-between px-2 py-2 rounded-lg">
+                  <div className="text-left flex-1">
+                    <div className="font-medium text-sm">{getThinkingLevelName(thinkingLevel)}</div>
+                    <div className="text-xs text-muted-foreground">Extended reasoning depth</div>
+                  </div>
+                </StyledDropdownMenuSubTrigger>
+                <StyledDropdownMenuSubContent className="min-w-[220px]">
+                  {THINKING_LEVELS.map(({ id, name, description }) => {
+                    const isSelected = thinkingLevel === id
+                    return (
+                      <StyledDropdownMenuItem
+                        key={id}
+                        onSelect={() => onThinkingLevelChange?.(id)}
+                        className="flex items-center justify-between px-2 py-2 rounded-lg cursor-pointer"
+                      >
+                        <div className="text-left">
+                          <div className="font-medium text-sm">{name}</div>
+                          <div className="text-xs text-muted-foreground">{description}</div>
+                        </div>
+                        {isSelected && (
+                          <Check className="h-4 w-4 text-foreground shrink-0 ml-3" />
+                        )}
+                      </StyledDropdownMenuItem>
+                    )
+                  })}
+                </StyledDropdownMenuSubContent>
+              </DropdownMenuSub>
+
+              {/* Context usage footer - only show when we have token data */}
+              {contextStatus?.inputTokens != null && contextStatus.inputTokens > 0 && (
+                <>
+                  <StyledDropdownMenuSeparator className="my-1" />
+                  <div className="px-2 py-1.5">
+                    <div className="flex items-center justify-between text-xs text-muted-foreground">
+                      <span>Context</span>
+                      <span className="flex items-center gap-1.5">
+                        {contextStatus.isCompacting && (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        )}
+                        {formatTokenCount(contextStatus.inputTokens)}
+                        {/* Show compaction threshold (~77.5% of context window) as the limit,
+                            since that's when auto-compaction kicks in - not the full context window */}
+                        {contextStatus.contextWindow && (
+                          <span className="opacity-60">/ {formatTokenCount(Math.round(contextStatus.contextWindow * 0.775))}</span>
+                        )}
+                      </span>
+                    </div>
+                  </div>
+                </>
+              )}
+            </StyledDropdownMenuContent>
+          </DropdownMenu>
 
           {/* 5.5 Context Usage Warning Badge - shows when approaching auto-compaction threshold */}
           {(() => {

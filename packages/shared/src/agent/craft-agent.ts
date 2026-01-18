@@ -48,6 +48,7 @@ import {
   type ConfigWatcherCallbacks,
 } from '../config/watcher.ts';
 import type { ValidationIssue } from '../config/validators.ts';
+import { type ThinkingLevel, getThinkingTokens, DEFAULT_THINKING_LEVEL } from './thinking-levels.ts';
 import type { LoadedSource } from '../sources/types.ts';
 
 // Re-export permission mode functions for application usage
@@ -101,6 +102,7 @@ export interface CraftAgentConfig {
   session?: Session;           // Current session (primary isolation boundary)
   mcpToken?: string;           // Override token (for testing)
   model?: string;
+  thinkingLevel?: ThinkingLevel; // Initial thinking level (defaults to 'think')
   onSdkSessionIdUpdate?: (sdkSessionId: string) => void;  // Callback when SDK session ID is captured
   onSdkSessionIdCleared?: () => void;  // Callback when SDK session ID is cleared (e.g., after failed resume)
   /**
@@ -344,8 +346,10 @@ export class CraftAgent {
   private safeMode: boolean = false;
   // SDK tools list (captured from init message)
   private sdkTools: string[] = [];
-  // Ultrathink mode - when enabled, sets maxThinkingTokens for extended reasoning
-  private ultrathinkMode: boolean = false;
+  // Session-level thinking level ('off', 'think', 'max') - sticky, persisted
+  private thinkingLevel: ThinkingLevel = 'think';
+  // Ultrathink override - when true, boosts to max thinking for one message (resets after query)
+  private ultrathinkOverride: boolean = false;
   // Config file watcher for hot-reloading source changes
   private configWatcher: ConfigWatcher | null = null;
   // Pinned system prompt components (captured on first chat, used for consistency after compaction)
@@ -421,6 +425,11 @@ export class CraftAgent {
     const resolvedModel = config.session?.model ?? config.model ?? loadStoredConfig()?.model ?? DEFAULT_MODEL;
     this.config = { ...config, model: resolvedModel };
     this.isHeadless = config.isHeadless ?? false;
+
+    // Initialize thinking level from config (defaults to 'think' from class initialization)
+    if (config.thinkingLevel) {
+      this.thinkingLevel = config.thinkingLevel;
+    }
 
     // Initialize sessionId from session config for conversation resumption
     if (config.session?.sdkSessionId) {
@@ -531,12 +540,29 @@ export class CraftAgent {
   }
 
   /**
-   * Enable or disable ultrathink mode
-   * When enabled, maxThinkingTokens will be set for extended reasoning
+   * Set the session-level thinking level.
+   * This is sticky and persisted across messages.
    */
-  setUltrathinkMode(enabled: boolean): void {
-    this.ultrathinkMode = enabled;
-    this.onDebug?.(`[CraftAgent] Ultrathink mode: ${enabled ? 'ENABLED' : 'disabled'}`);
+  setThinkingLevel(level: ThinkingLevel): void {
+    this.thinkingLevel = level;
+    this.onDebug?.(`[CraftAgent] Thinking level: ${level}`);
+  }
+
+  /**
+   * Get the current session-level thinking level.
+   */
+  getThinkingLevel(): ThinkingLevel {
+    return this.thinkingLevel;
+  }
+
+  /**
+   * Enable or disable ultrathink override (per-message boost to max thinking).
+   * When enabled, overrides thinkingLevel to 'max' for one message only.
+   * Resets to false after query completes.
+   */
+  setUltrathinkOverride(enabled: boolean): void {
+    this.ultrathinkOverride = enabled;
+    this.onDebug?.(`[CraftAgent] Ultrathink override: ${enabled ? 'ENABLED' : 'disabled'}`);
   }
 
   /**
@@ -770,13 +796,10 @@ export class CraftAgent {
       // Configure SDK options
       const model = this.config.model || DEFAULT_MODEL;
 
-      // Determine maxThinkingTokens based on model when ultrathink is enabled
-      // Opus/Sonnet support up to 128k, Haiku up to 8k
-      const getUltrathinkTokens = (modelName: string): number => {
-        const lowerModel = modelName.toLowerCase();
-        if (lowerModel.includes('haiku')) return 8000;
-        return 64000; // Opus and Sonnet
-      };
+      // Determine effective thinking level: ultrathink override boosts to max for this message
+      const effectiveThinkingLevel: ThinkingLevel = this.ultrathinkOverride ? 'max' : this.thinkingLevel;
+      const thinkingTokens = getThinkingTokens(effectiveThinkingLevel, model);
+      debug(`[chat] Thinking: level=${this.thinkingLevel}, override=${this.ultrathinkOverride}, effective=${effectiveThinkingLevel}, tokens=${thinkingTokens}`);
 
       // NOTE: Parent-child tracking for subagents is documented below (search for
       // "PARENT-CHILD TOOL TRACKING"). The SDK's parent_tool_use_id is authoritative.
@@ -802,8 +825,8 @@ export class CraftAgent {
         // Beta features:
         // - advanced-tool-use-2025-11-20: Enhanced tool use capabilities
         betas: ['advanced-tool-use-2025-11-20'] as any,
-        // Extended thinking: set tokens based on model when ultrathink mode is active, otherwise 0
-        maxThinkingTokens: this.ultrathinkMode ? getUltrathinkTokens(model) : 0,
+        // Extended thinking: tokens based on effective thinking level (session level + ultrathink override)
+        maxThinkingTokens: thinkingTokens,
         // Option A: Append to Claude Code's system prompt (recommended by docs)
         // Use pinned values for consistency after compaction (SDK expects stable system prompt)
         systemPrompt: {
@@ -1919,8 +1942,9 @@ export class CraftAgent {
       yield { type: 'complete' };
     } finally {
       this.currentQuery = null;
-      // Reset ultrathink mode after query completes (single-shot activation)
-      this.ultrathinkMode = false;
+      // Reset ultrathink override after query completes (single-shot per-message boost)
+      // Note: thinkingLevel is NOT reset - it's sticky for the session
+      this.ultrathinkOverride = false;
     }
   }
 

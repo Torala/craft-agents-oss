@@ -18,6 +18,11 @@ import type { PermissionMode } from '@craft-agent/shared/agent/modes';
 export type { PermissionMode };
 export { PERMISSION_MODE_CONFIG } from '@craft-agent/shared/agent/modes';
 
+// Import thinking level types
+import type { ThinkingLevel } from '@craft-agent/shared/agent/thinking-levels';
+export type { ThinkingLevel };
+export { THINKING_LEVELS, DEFAULT_THINKING_LEVEL } from '@craft-agent/shared/agent/thinking-levels';
+
 export type {
   CoreMessage as Message,
   CoreMessageRole as MessageRole,
@@ -272,6 +277,8 @@ export interface Session {
   sharedId?: string
   // Model to use for this session (overrides global config if set)
   model?: string
+  // Thinking level for this session ('off', 'think', 'max')
+  thinkingLevel?: ThinkingLevel
   // Role/type of the last message (for badge display without loading messages)
   lastMessageRole?: 'user' | 'assistant' | 'plan' | 'tool' | 'error'
   // Whether an async operation is ongoing (sharing, updating share, revoking, title regeneration)
@@ -389,6 +396,7 @@ export type SessionCommand =
   | { type: 'markRead' }
   | { type: 'markUnread' }
   | { type: 'setPermissionMode'; mode: PermissionMode }
+  | { type: 'setThinkingLevel'; level: ThinkingLevel }
   | { type: 'updateWorkingDirectory'; dir: string }
   | { type: 'setSources'; sourceSlugs: string[] }
   | { type: 'showInFinder' }
@@ -850,6 +858,8 @@ export interface WorkspaceSettings {
   name?: string
   model?: string
   permissionMode?: PermissionMode
+  /** Default thinking level for new sessions ('off', 'think', 'max'). Defaults to 'think'. */
+  thinkingLevel?: ThinkingLevel
   workingDirectory?: string
   /** Whether local (stdio) MCP servers are enabled */
   localMcpEnabled?: boolean
