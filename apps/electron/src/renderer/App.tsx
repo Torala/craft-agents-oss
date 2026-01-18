@@ -578,15 +578,10 @@ export default function App() {
     const unsubShortcuts = window.electronAPI.onMenuKeyboardShortcuts(() => {
       navigate(routes.view.settings('shortcuts'))
     })
-    const unsubHelp = window.electronAPI.onMenuOpenHelp(() => {
-      // Open help documentation URL
-      window.electronAPI.openUrl('https://craft.do/help')
-    })
     return () => {
       unsubNewChat()
       unsubSettings()
       unsubShortcuts()
-      unsubHelp()
     }
   }, [])
 
@@ -1204,7 +1199,6 @@ export default function App() {
     return (
       <OnboardingWizard
         state={onboarding.state}
-        onCancel={handleOnboardingCancel}
         onContinue={onboarding.handleContinue}
         onBack={onboarding.handleBack}
         onSelectBillingMethod={onboarding.handleSelectBillingMethod}
