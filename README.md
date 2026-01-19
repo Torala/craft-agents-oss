@@ -146,22 +146,15 @@ bun run typecheck:all
 
 ### Environment Variables
 
-OAuth integrations require credentials. Set up via 1Password CLI:
+OAuth integrations (Google, Slack, Microsoft) require credentials. Create a `.env` file:
 
 ```bash
-# One-time setup
-brew install 1password-cli
-bun run sync-secrets   # Syncs .env.1password → .env
-```
-
-Or manually create `.env`:
-
-```bash
-# Google OAuth uses PKCE - only client_id is needed (no secret)
 GOOGLE_OAUTH_CLIENT_ID=your-client-id.apps.googleusercontent.com
 SLACK_OAUTH_CLIENT_ID=your-slack-client-id
 SLACK_OAUTH_CLIENT_SECRET=your-slack-client-secret
 ```
+
+See [Google Cloud Console](https://console.cloud.google.com/apis/credentials) to create OAuth credentials.
 
 ## Configuration
 
@@ -200,16 +193,6 @@ craftagents://settings                    # Settings
 craftagents://sources/source/github       # Source info
 craftagents://action/new-chat             # Create new chat
 ```
-
-## Releasing
-
-Via [GitHub Actions](https://github.com/lukilabs/craft-agents/actions/workflows/build-and-upload.yml):
-
-1. Go to Actions → "Build and Upload" → Run workflow
-2. Select platforms to build (macOS, Windows, Linux)
-3. Check "upload to /latest" to update the download links above
-
-Builds are uploaded to `agents.craft.do/electron/{version}/`
 
 ## Tech Stack
 
