@@ -3,7 +3,15 @@
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.1-4baaaa.svg)](CODE_OF_CONDUCT.md)
 
-A powerful AI assistant desktop app built on the Anthropic Claude Agent SDK. Manage documents, connect to external services, and automate workflows — all through natural conversation with Claude.
+Craft Agents is a tool we built so that we (at craft.do) can work effectively with agents. It enables intuitive multitasking, no-fluff connection to any API or Service, sharing sessions, and a more document (vs code) centric workflow - in a beautiful and fluid UI.
+
+It leans on Claude Code through the Claude Agent SDK - follow what we found great, and improves areas where we've desired improvements.
+
+It's built with Agent Native software principles in mind, and is highly customisable out of the box. One of the first of its kind.
+
+Craft Agents is open source under the Apache 2.0 license - so you are free to remix, change anything. And that's actually possible. We ourselves are building Craft Agents with Craft Agents only - no code editors - so really, any customisation is just a prompt away.
+
+We built Craft Agents because we wanted a better, more opinionated (and preferably non-CLI way) of working with the most powerful agents in the world. We'll continue to improve it, based on our experiences and intuition.
 
 ![Craft Agents Desktop App](apps/marketing/src/assets/desktop/screenshot.jpg)
 
