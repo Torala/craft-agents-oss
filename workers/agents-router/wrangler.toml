@@ -1,0 +1,20 @@
+# Router Worker for agents.craft.do
+# Routes:
+#   /electron/* → R2 bucket (installers, manifests)
+#   /install-app.* → R2 bucket (install scripts)
+#   /* → Proxy to Pages marketing site
+
+name = "agents-router"
+main = "index.ts"
+compatibility_date = "2024-01-01"
+
+# Route all agents.craft.do traffic through this Worker
+# R2 paths go to bucket, everything else proxies to Pages
+routes = [
+  { pattern = "agents.craft.do/*", zone_name = "craftdocs-edge.com" }
+]
+
+# R2 bucket binding for downloads
+[[r2_buckets]]
+binding = "DOWNLOADS"
+bucket_name = "agents-craft-do"

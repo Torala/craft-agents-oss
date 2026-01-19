@@ -27,7 +27,7 @@ jobs:
 
       - name: Deploy to Cloudflare Pages
         working-directory: apps/marketing
-        run: bunx wrangler pages deploy dist --project-name=craft-agents-marketing
+        run: bunx wrangler pages deploy dist --project-name=craft-agents-marketing --commit-dirty=true
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_MARKETING_PAGES_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_MARKETING_PAGES_ACCOUNT_ID }}
