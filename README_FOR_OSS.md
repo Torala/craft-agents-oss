@@ -22,8 +22,8 @@ irm https://agents.craft.do/install-app.ps1 | iex
 ### Build from Source
 
 ```bash
-git clone https://github.com/lukilabs/craft-agents.git
-cd craft-agents
+git clone https://github.com/lukilabs/craft-agents-oss.git
+cd craft-agents-oss
 bun install
 bun run electron:start
 ```
