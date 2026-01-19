@@ -200,6 +200,12 @@ main() {
     cp "$REPO_ROOT/$file" "$dest"
   done
 
+  # Rename README_FOR_OSS.md to README.md
+  if [[ -f "$TEMP_DIR/target/README_FOR_OSS.md" ]]; then
+    mv "$TEMP_DIR/target/README_FOR_OSS.md" "$TEMP_DIR/target/README.md"
+    echo "Renamed README_FOR_OSS.md → README.md"
+  fi
+
   # Show diff
   cd "$TEMP_DIR/target"
   echo ""
