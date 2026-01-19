@@ -347,6 +347,30 @@ jobs:
           echo "==========================="
           bun run scripts/upload.ts $FLAGS
 
+      - name: Create git tag
+        if: github.ref == 'refs/heads/main'
+        run: |
+          VERSION="${{ needs.prepare.outputs.version }}"
+          TAG="v${VERSION}"
+
+          # Check if tag already exists on remote (not just locally)
+          if git ls-remote --tags origin | grep -q "refs/tags/${TAG}$"; then
+            echo "Tag $TAG already exists on remote, skipping"
+          else
+            echo "Creating tag $TAG"
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git tag -a "$TAG" -m "Release $TAG"
+
+            # Push and verify success
+            if git push origin "$TAG"; then
+              echo "Tag $TAG created and pushed successfully"
+            else
+              echo "ERROR: Failed to push tag $TAG"
+              exit 1
+            fi
+          fi
+
       - name: Create GitHub Release
         if: ${{ inputs.createRelease }}
         env:
@@ -371,6 +395,7 @@ jobs:
       - name: Print install commands
         run: |
           VERSION="${{ needs.prepare.outputs.version }}"
+          BASE_URL="https://agents.craft.do/electron"
           echo ""
           echo "=========================================="
           echo "  Build Complete - Version $VERSION"
@@ -384,6 +409,20 @@ jobs:
           echo "  Windows (PowerShell):"
           echo "    irm https://agents.craft.do/install-app.ps1 | iex"
           echo ""
-          echo "Direct downloads:"
-          echo "  https://agents.craft.do/electron/$VERSION/"
+          echo "Direct download URLs:"
+          echo ""
+          echo "  macOS (Apple Silicon):"
+          echo "    ${BASE_URL}/${VERSION}/Craft-Agent-arm64.dmg"
+          echo ""
+          echo "  macOS (Intel):"
+          echo "    ${BASE_URL}/${VERSION}/Craft-Agent-x64.dmg"
+          echo ""
+          echo "  Windows:"
+          echo "    ${BASE_URL}/${VERSION}/Craft-Agent-x64.exe"
+          echo ""
+          echo "  Linux:"
+          echo "    ${BASE_URL}/${VERSION}/Craft-Agent-x64.AppImage"
+          echo ""
+          echo "Version folder:"
+          echo "  ${BASE_URL}/${VERSION}/"
           echo ""

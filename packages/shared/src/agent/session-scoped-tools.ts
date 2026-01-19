@@ -56,6 +56,7 @@ import {
 import type { FolderSourceConfig, LoadedSource } from '../sources/types.ts';
 import { getSourceCredentialManager } from '../sources/index.ts';
 import { inferGoogleServiceFromUrl, inferSlackServiceFromUrl, inferMicrosoftServiceFromUrl, isApiOAuthProvider, type GoogleService, type SlackService, type MicrosoftService } from '../sources/types.ts';
+import { buildAuthorizationHeader } from '../sources/api-tools.ts';
 import { DOC_REFS } from '../docs/index.ts';
 
 // ============================================================
@@ -637,8 +638,7 @@ async function testApiSource(
       if (credValue) {
         // Apply credential based on authType config
         if (source.api.authType === 'bearer' || isApiOAuthProvider(source.provider)) {
-          const scheme = source.api.authScheme || 'Bearer';
-          headers['Authorization'] = `${scheme} ${credValue}`;
+          headers['Authorization'] = buildAuthorizationHeader(source.api.authScheme, credValue);
         } else if (source.api.authType === 'header' && source.api.headerName) {
           headers[source.api.headerName] = credValue;
         } else if (source.api.authType === 'basic') {

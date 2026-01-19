@@ -16,6 +16,28 @@ import type { ApiCredential, BasicAuthCredential } from './credential-manager.ts
 export type { ApiCredential, BasicAuthCredential } from './credential-manager.ts';
 
 /**
+ * Build an Authorization header value for bearer-style authentication.
+ *
+ * Supports three cases:
+ * - `authScheme: undefined` → defaults to "Bearer {token}"
+ * - `authScheme: "Token"` → "Token {token}" (custom prefix)
+ * - `authScheme: ""` → "{token}" (no prefix, for APIs that expect raw tokens)
+ *
+ * The empty string case is needed for APIs like some GraphQL endpoints or
+ * internal services that expect the raw JWT/token without a "Bearer" prefix.
+ *
+ * @param authScheme - The auth scheme prefix (undefined defaults to "Bearer", empty string means no prefix)
+ * @param token - The authentication token
+ * @returns The full Authorization header value
+ */
+export function buildAuthorizationHeader(authScheme: string | undefined, token: string): string {
+  // Use nullish coalescing (??) so empty string "" is preserved, only undefined/null falls back to 'Bearer'
+  const scheme = authScheme ?? 'Bearer';
+  // If scheme is empty string, return just the token; otherwise prefix with scheme
+  return scheme ? `${scheme} ${token}` : token;
+}
+
+/**
  * API credential source - can be a static credential or a function that returns a token.
  * Token getter functions are used for OAuth sources that need auto-refresh.
  */
@@ -73,8 +95,7 @@ function buildHeaders(
   if (auth.type === 'header') {
     headers[auth.headerName || 'x-api-key'] = apiKey;
   } else if (auth.type === 'bearer') {
-    const scheme = auth.authScheme || 'Bearer';
-    headers['Authorization'] = `${scheme} ${apiKey}`;
+    headers['Authorization'] = buildAuthorizationHeader(auth.authScheme, apiKey);
   }
   // Query type is handled in buildUrl
 

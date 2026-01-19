@@ -20,6 +20,13 @@ INSTALL_DIR="/Applications"
 APP_BUNDLE_ID="com.lukilabs.craft-agent"
 BACKUP_DIR="/tmp/craft-agent-backup-$$"
 
+# Launch verification settings
+# Time to wait after launch before checking if app is running.
+# 3 seconds is sufficient for most Macs; on slow machines with FileVault
+# or spinning disks, the app may take longer to appear in lsappinfo.
+LAUNCH_WAIT_SECONDS=3
+MAX_LAUNCH_ATTEMPTS=3
+
 # Get DMG path from argument or environment
 DMG_PATH="${1:-$CRAFT_UPDATE_DMG}"
 APP_PATH="${2:-$CRAFT_APP_PATH}"
@@ -250,24 +257,76 @@ unset ELECTRON_RUN_AS_NODE
 unset NODE_OPTIONS
 unset VITE_DEV_SERVER_URL
 
-# Launch with minimal clean environment
-env -i HOME="$HOME" USER="$USER" PATH="/usr/bin:/bin:/usr/sbin:/sbin" open -n -a "Craft Agent"
+# Launch using bundle ID (more reliable than app name which may vary)
+# Use -n to open new instance, -b for bundle ID
+# PATH includes /usr/local/bin for Homebrew-installed tools that some apps may need
+launch_app_by_bundle_id() {
+    env -i HOME="$HOME" USER="$USER" PATH="/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin" \
+        open -n -b "$APP_BUNDLE_ID" 2>&1
+}
 
-# Wait briefly to see if the app launches successfully
-sleep 3
+launch_app_by_path() {
+    env -i HOME="$HOME" USER="$USER" PATH="/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin" \
+        open -n "$INSTALL_DIR/$APP_NAME" 2>&1
+}
 
-# Verify the new app launched (check if running)
-if lsappinfo info -only pid -app "$APP_BUNDLE_ID" 2>/dev/null | grep -q "pid"; then
+verify_launch() {
+    lsappinfo info -only pid -app "$APP_BUNDLE_ID" 2>/dev/null | grep -q "pid"
+}
+
+# Try to launch and verify the app with retries
+launch_succeeded=false
+for attempt in $(seq 1 $MAX_LAUNCH_ATTEMPTS); do
+    log "Launch attempt $attempt of $MAX_LAUNCH_ATTEMPTS..."
+
+    # Try bundle ID first, fall back to path
+    launch_output=$(launch_app_by_bundle_id)
+    launch_exit=$?
+
+    if [ $launch_exit -ne 0 ]; then
+        log "Bundle ID launch failed (exit $launch_exit): $launch_output"
+        log "Trying app path fallback..."
+        launch_output=$(launch_app_by_path)
+        launch_exit=$?
+        if [ $launch_exit -ne 0 ]; then
+            log "Path launch also failed (exit $launch_exit): $launch_output"
+        fi
+    fi
+
+    # Wait for app to start
+    sleep $LAUNCH_WAIT_SECONDS
+
+    # Check if app is running
+    if verify_launch; then
+        log "App launched successfully on attempt $attempt"
+        launch_succeeded=true
+        break
+    else
+        log "App not running after attempt $attempt"
+    fi
+done
+
+if [ "$launch_succeeded" = true ]; then
     log "New version launched successfully"
     # Clean up backup and DMG only after successful launch
     rm -rf "$BACKUP_DIR" 2>/dev/null || true
     rm -f "$DMG_PATH" 2>/dev/null || true
     log "Cleanup complete"
 else
-    log "WARNING: Could not verify new app launch"
+    log "ERROR: Could not launch app after $MAX_LAUNCH_ATTEMPTS attempts"
     # Keep backup and DMG for manual recovery
     log "Backup kept at: $BACKUP_DIR"
     log "DMG kept at: $DMG_PATH"
+
+    # Show prominent notification to user (log errors but don't fail script)
+    if ! osascript -e 'display notification "Update installed but app failed to restart. Please launch Craft Agent manually." with title "Craft Agent Update" sound name "Basso"' 2>&1; then
+        log "WARNING: Failed to show notification"
+    fi
+
+    # Also try to show an alert dialog as a last resort
+    if ! osascript -e 'display dialog "Craft Agent was updated but could not restart automatically.\n\nPlease launch it manually from Applications." buttons {"OK"} default button "OK" with title "Craft Agent Update" with icon caution' 2>&1; then
+        log "WARNING: Failed to show dialog"
+    fi
 fi
 
 log "Update complete!"

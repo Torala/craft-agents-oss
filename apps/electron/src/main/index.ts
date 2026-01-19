@@ -152,10 +152,13 @@ app.whenReady().then(async () => {
 
   // Check for pending update and auto-install if available
   // This must happen early, before creating windows
-  const isAutoInstalling = await checkPendingUpdateAndInstall()
-  if (isAutoInstalling) {
-    // App will quit and install update - don't proceed with startup
-    return
+  // Skip in dev mode to avoid accidentally installing over /Applications version
+  if (app.isPackaged) {
+    const isAutoInstalling = await checkPendingUpdateAndInstall()
+    if (isAutoInstalling) {
+      // App will quit and install update - don't proceed with startup
+      return
+    }
   }
 
   // Application menu is created after windowManager initialization (see below)
@@ -204,10 +207,15 @@ app.whenReady().then(async () => {
     await sessionManager.initialize()
 
     // Initialize auto-update (check immediately on launch)
+    // Skip in dev mode to avoid replacing /Applications app and launching it instead
     setAutoUpdateWindowManager(windowManager)
-    checkForUpdatesOnLaunch().catch(err => {
-      mainLog.error('[auto-update] Launch check failed:', err)
-    })
+    if (app.isPackaged) {
+      checkForUpdatesOnLaunch().catch(err => {
+        mainLog.error('[auto-update] Launch check failed:', err)
+      })
+    } else {
+      mainLog.info('[auto-update] Skipping auto-update in dev mode')
+    }
 
     // Process pending deep link from cold start
     if (pendingDeepLink) {
