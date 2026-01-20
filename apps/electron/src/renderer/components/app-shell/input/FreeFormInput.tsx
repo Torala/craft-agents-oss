@@ -1348,21 +1348,33 @@ export function FreeFormInput({
 
             if (!showWarning) return null
 
+            const handleCompactClick = () => {
+              if (!isProcessing) {
+                onSubmit('/compact', [])
+              }
+            }
+
             return (
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <div
-                    className="inline-flex items-center h-6 px-2 text-[12px] font-medium bg-info/10 rounded-[6px] shadow-tinted select-none"
+                  <button
+                    type="button"
+                    onClick={handleCompactClick}
+                    disabled={isProcessing}
+                    className="inline-flex items-center h-6 px-2 text-[12px] font-medium bg-info/10 rounded-[6px] shadow-tinted select-none cursor-pointer hover:bg-info/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     style={{
                       '--shadow-color': 'var(--info-rgb)',
                       color: 'color-mix(in oklab, var(--info) 30%, var(--foreground))',
                     } as React.CSSProperties}
                   >
                     {usagePercent}%
-                  </div>
+                  </button>
                 </TooltipTrigger>
                 <TooltipContent side="top">
-                  {usagePercent}% context used — auto-compaction soon
+                  {isProcessing
+                    ? `${usagePercent}% context used — wait for current operation`
+                    : `${usagePercent}% context used — click to compact`
+                  }
                 </TooltipContent>
               </Tooltip>
             )
