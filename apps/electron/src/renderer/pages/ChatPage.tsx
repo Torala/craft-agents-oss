@@ -11,6 +11,7 @@ import { AlertCircle } from 'lucide-react'
 import { ChatDisplay } from '@/components/app-shell/ChatDisplay'
 import { PanelHeader } from '@/components/app-shell/PanelHeader'
 import { SessionMenu } from '@/components/app-shell/SessionMenu'
+import { RenameDialog } from '@/components/ui/rename-dialog'
 import { useAppShellContext, usePendingPermission, usePendingCredential, useSessionOptionsFor, useSession as useSessionData } from '@/context/AppShellContext'
 import { rendererPerf } from '@/lib/perf'
 import { routes } from '@/lib/navigate'
@@ -199,13 +200,22 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
   // Use isAsyncOperationOngoing for shimmer effect (sharing, updating share, revoking, title regeneration)
   const isAsyncOperationOngoing = session?.isAsyncOperationOngoing || sessionMeta?.isAsyncOperationOngoing || false
 
+  // Rename dialog state
+  const [renameDialogOpen, setRenameDialogOpen] = React.useState(false)
+  const [renameName, setRenameName] = React.useState('')
+
   // Session action handlers
   const handleRename = React.useCallback(() => {
-    const newName = window.prompt('Rename chat', displayTitle)
-    if (newName && newName !== displayTitle) {
-      onRenameSession(sessionId, newName)
+    setRenameName(displayTitle)
+    setRenameDialogOpen(true)
+  }, [displayTitle])
+
+  const handleRenameSubmit = React.useCallback(() => {
+    if (renameName.trim() && renameName.trim() !== displayTitle) {
+      onRenameSession(sessionId, renameName.trim())
     }
-  }, [sessionId, displayTitle, onRenameSession])
+    setRenameDialogOpen(false)
+  }, [sessionId, renameName, displayTitle, onRenameSession])
 
   const handleFlag = React.useCallback(() => {
     onFlagSession(sessionId)
@@ -294,40 +304,51 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
       }
 
       return (
-        <div className="h-full flex flex-col">
-          <PanelHeader  title={displayTitle} titleMenu={titleMenu} rightSidebarButton={rightSidebarButton} isRegeneratingTitle={isAsyncOperationOngoing} />
-          <div className="flex-1 flex flex-col min-h-0">
-            <ChatDisplay
-              session={skeletonSession}
-              onSendMessage={() => {}}
-              onOpenFile={handleOpenFile}
-              onOpenUrl={handleOpenUrl}
-              currentModel={effectiveModel}
-              onModelChange={handleModelChange}
-              textareaRef={textareaRef}
-              pendingPermission={undefined}
-              onRespondToPermission={onRespondToPermission}
-              pendingCredential={undefined}
-              onRespondToCredential={onRespondToCredential}
-              thinkingLevel={sessionOpts.thinkingLevel}
-              onThinkingLevelChange={(level) => setOption('thinkingLevel', level)}
-              ultrathinkEnabled={sessionOpts.ultrathinkEnabled}
-              onUltrathinkChange={(enabled) => setOption('ultrathinkEnabled', enabled)}
-              permissionMode={sessionOpts.permissionMode}
-              onPermissionModeChange={setPermissionMode}
-              enabledModes={enabledModes}
-              inputValue={inputValue}
-              onInputChange={handleInputChange}
-              sources={enabledSources}
-              skills={skills}
-              workspaceId={activeWorkspaceId || undefined}
-              onSourcesChange={(slugs) => onSessionSourcesChange?.(sessionId, slugs)}
-              workingDirectory={sessionMeta.workingDirectory}
-              onWorkingDirectoryChange={handleWorkingDirectoryChange}
-              messagesLoading={true}
-            />
+        <>
+          <div className="h-full flex flex-col">
+            <PanelHeader  title={displayTitle} titleMenu={titleMenu} rightSidebarButton={rightSidebarButton} isRegeneratingTitle={isAsyncOperationOngoing} />
+            <div className="flex-1 flex flex-col min-h-0">
+              <ChatDisplay
+                session={skeletonSession}
+                onSendMessage={() => {}}
+                onOpenFile={handleOpenFile}
+                onOpenUrl={handleOpenUrl}
+                currentModel={effectiveModel}
+                onModelChange={handleModelChange}
+                textareaRef={textareaRef}
+                pendingPermission={undefined}
+                onRespondToPermission={onRespondToPermission}
+                pendingCredential={undefined}
+                onRespondToCredential={onRespondToCredential}
+                thinkingLevel={sessionOpts.thinkingLevel}
+                onThinkingLevelChange={(level) => setOption('thinkingLevel', level)}
+                ultrathinkEnabled={sessionOpts.ultrathinkEnabled}
+                onUltrathinkChange={(enabled) => setOption('ultrathinkEnabled', enabled)}
+                permissionMode={sessionOpts.permissionMode}
+                onPermissionModeChange={setPermissionMode}
+                enabledModes={enabledModes}
+                inputValue={inputValue}
+                onInputChange={handleInputChange}
+                sources={enabledSources}
+                skills={skills}
+                workspaceId={activeWorkspaceId || undefined}
+                onSourcesChange={(slugs) => onSessionSourcesChange?.(sessionId, slugs)}
+                workingDirectory={sessionMeta.workingDirectory}
+                onWorkingDirectoryChange={handleWorkingDirectoryChange}
+                messagesLoading={true}
+              />
+            </div>
           </div>
-        </div>
+          <RenameDialog
+            open={renameDialogOpen}
+            onOpenChange={setRenameDialogOpen}
+            title="Rename Chat"
+            value={renameName}
+            onValueChange={setRenameName}
+            onSubmit={handleRenameSubmit}
+            placeholder="Enter chat name..."
+          />
+        </>
       )
     }
 
@@ -344,45 +365,56 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
   }
 
   return (
-    <div className="h-full flex flex-col">
-      <PanelHeader  title={displayTitle} titleMenu={titleMenu} rightSidebarButton={rightSidebarButton} isRegeneratingTitle={isAsyncOperationOngoing} />
-      <div className="flex-1 flex flex-col min-h-0">
-        <ChatDisplay
-          session={session}
-          onSendMessage={(message, attachments, skillSlugs) => {
-            if (session) {
-              onSendMessage(session.id, message, attachments, skillSlugs)
-            }
-          }}
-          onOpenFile={handleOpenFile}
-          onOpenUrl={handleOpenUrl}
-          currentModel={effectiveModel}
-          onModelChange={handleModelChange}
-          textareaRef={textareaRef}
-          pendingPermission={pendingPermission}
-          onRespondToPermission={onRespondToPermission}
-          pendingCredential={pendingCredential}
-          onRespondToCredential={onRespondToCredential}
-          thinkingLevel={sessionOpts.thinkingLevel}
-          onThinkingLevelChange={(level) => setOption('thinkingLevel', level)}
-          ultrathinkEnabled={sessionOpts.ultrathinkEnabled}
-          onUltrathinkChange={(enabled) => setOption('ultrathinkEnabled', enabled)}
-          permissionMode={sessionOpts.permissionMode}
-          onPermissionModeChange={setPermissionMode}
-          enabledModes={enabledModes}
-          inputValue={inputValue}
-          onInputChange={handleInputChange}
-          sources={enabledSources}
-          skills={skills}
-          workspaceId={activeWorkspaceId || undefined}
-          onSourcesChange={(slugs) => onSessionSourcesChange?.(sessionId, slugs)}
-          workingDirectory={workingDirectory}
-          onWorkingDirectoryChange={handleWorkingDirectoryChange}
-          sessionFolderPath={session?.sessionFolderPath}
-          messagesLoading={!messagesLoaded}
-        />
+    <>
+      <div className="h-full flex flex-col">
+        <PanelHeader  title={displayTitle} titleMenu={titleMenu} rightSidebarButton={rightSidebarButton} isRegeneratingTitle={isAsyncOperationOngoing} />
+        <div className="flex-1 flex flex-col min-h-0">
+          <ChatDisplay
+            session={session}
+            onSendMessage={(message, attachments, skillSlugs) => {
+              if (session) {
+                onSendMessage(session.id, message, attachments, skillSlugs)
+              }
+            }}
+            onOpenFile={handleOpenFile}
+            onOpenUrl={handleOpenUrl}
+            currentModel={effectiveModel}
+            onModelChange={handleModelChange}
+            textareaRef={textareaRef}
+            pendingPermission={pendingPermission}
+            onRespondToPermission={onRespondToPermission}
+            pendingCredential={pendingCredential}
+            onRespondToCredential={onRespondToCredential}
+            thinkingLevel={sessionOpts.thinkingLevel}
+            onThinkingLevelChange={(level) => setOption('thinkingLevel', level)}
+            ultrathinkEnabled={sessionOpts.ultrathinkEnabled}
+            onUltrathinkChange={(enabled) => setOption('ultrathinkEnabled', enabled)}
+            permissionMode={sessionOpts.permissionMode}
+            onPermissionModeChange={setPermissionMode}
+            enabledModes={enabledModes}
+            inputValue={inputValue}
+            onInputChange={handleInputChange}
+            sources={enabledSources}
+            skills={skills}
+            workspaceId={activeWorkspaceId || undefined}
+            onSourcesChange={(slugs) => onSessionSourcesChange?.(sessionId, slugs)}
+            workingDirectory={workingDirectory}
+            onWorkingDirectoryChange={handleWorkingDirectoryChange}
+            sessionFolderPath={session?.sessionFolderPath}
+            messagesLoading={!messagesLoaded}
+          />
+        </div>
       </div>
-    </div>
+      <RenameDialog
+        open={renameDialogOpen}
+        onOpenChange={setRenameDialogOpen}
+        title="Rename Chat"
+        value={renameName}
+        onValueChange={setRenameName}
+        onSubmit={handleRenameSubmit}
+        placeholder="Enter chat name..."
+      />
+    </>
   )
 })
 
