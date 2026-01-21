@@ -79,12 +79,12 @@ For local MCP servers that run as processes on your machine:
 ```json
 {
   "type": "mcp",
-  "name": "File System",
-  "tagline": "Access local files",
+  "name": "MCP Name",
+  "tagline": "MCP Description",
   "mcp": {
     "transport": "stdio",
     "command": "npx",
-    "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/directory"]
+    "args": ["-y", "@package/name", "/path/to/directory"]
   }
 }
 ```

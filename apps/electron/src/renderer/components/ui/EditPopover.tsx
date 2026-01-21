@@ -276,10 +276,11 @@ const EDIT_CONFIGS: Record<EditContextKey, (location: string) => EditConfig> = {
       label: 'Add Local Folder',
       filePath: `${location}/sources/`,
       context:
-        'The user is viewing local folder sources and wants to add a new local filesystem source. ' +
-        'Default to creating a local MCP source using the filesystem MCP server. ' +
-        'This typically uses stdio transport with the @anthropic-ai/mcp-server-filesystem package. ' +
-        'Ask about the folder path they want to connect. ' +
+        'The user wants to add a local folder source. ' +
+        'First, look up the guide: mcp__craft-agents-docs__SearchCraftAgents({ query: "filesystem" }). ' +
+        'Local folders are bookmarks - use type: "local" with a local.path field. ' +
+        'They use existing Read, Write, Glob, Grep tools - no MCP server needed. ' +
+        'If unclear, ask about the folder path they want to connect. ' +
         'Create the source folder and config.json in the workspace sources directory. ' +
         'Follow the patterns in ~/.craft-agent/docs/sources.md. ' +
         'After creating the source, call source_test with the source slug to verify the configuration.',

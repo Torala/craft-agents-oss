@@ -59,12 +59,12 @@ For MCP servers that run locally on your machine, use stdio transport:
 ```json
 {
   "type": "mcp",
-  "name": "File System",
-  "tagline": "Access local file system",
+  "name": "Local MCP",
+  "tagline": "MCP Description",
   "mcp": {
     "transport": "stdio",
     "command": "npx",
-    "args": ["-y", "@modelcontextprotocol/server-filesystem", "/Users/me/projects"]
+    "args": ["-y", "@package/name", "/Users/me/projects"]
   }
 }
 ```

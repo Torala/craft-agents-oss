@@ -1,70 +1,120 @@
 ---
 title: "Filesystem"
-description: "Connect local filesystem directories through MCP in Craft Agents"
+description: "Connect local directories as bookmarked sources in Craft Agents"
+icon: "folder"
 ---
 
 # Filesystem
 
-Access and manage local filesystem directories through the MCP protocol.
+<img src="https://cdn-icons-png.flaticon.com/512/716/716784.png" alt="Folder" width="64" style={{ float: 'right', marginLeft: '16px' }} />
 
-## Capabilities
+Local filesystem sources provide direct access to directories on your machine. Use them to connect:
 
-- **List directories** - Browse directory contents with filtering
-- **Read files** - Get file contents (text, code, documents)
-- **Write files** - Create or update files (if allowed)
-- **Search** - Find files by name patterns
+- **Code repositories** - Browse and work with local Git repos
+- **Note vaults** - Obsidian vaults, Logseq graphs, Zettelkasten folders
+- **Project folders** - Design files, documents, data directories
+- **Config directories** - Dotfiles, application settings
 
-## Guidelines
+## How It Works
 
-- Paths must be within the configured allowed directories
-- Respects OS file permissions
-- Best for exploring project structures and local codebases
-- Large files may be truncated
+Filesystem sources are **direct bookmarks** to local directories. Unlike MCP servers, they don't require running external processes—Craft Agent accesses files directly through its built-in file tools (Read, Write, Edit, Glob, Grep).
+
+When you create a filesystem source, you're telling Craft Agent: "This folder is important—treat it as a named source I can reference."
+
+## Key Concepts
+
+### Path Scope
+Each source points to a single directory. All file operations are scoped to that path and its subdirectories.
+
+### Source Context
+When active, the source's `guide.md` is loaded into context, helping Craft Agent understand:
+- What the directory contains
+- How to navigate the structure
+- Any special conventions or patterns
+
+### Permissions
+In Explore mode, only read operations are allowed (Read, Glob, Grep). Write and Edit require Ask to Edit or Execute mode.
 
 ---
 
 ## Setup Guide
-
-<Note>
-This is a **local stdio MCP server** - it runs on the user's machine via npx.
-</Note>
 
 ### Configuration
 
 **Required config.json:**
 ```json
 {
-  "name": "Filesystem",
-  "slug": "filesystem",
+  "name": "My Project",
+  "slug": "my-project",
   "enabled": true,
   "provider": "filesystem",
-  "type": "mcp",
-  "mcp": {
-    "transport": "stdio",
-    "command": "npx",
-    "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/directory"]
+  "type": "local",
+  "icon": "📁",
+  "tagline": "Local project files and documentation",
+  "local": {
+    "path": "/Users/you/Projects/my-project"
   }
 }
 ```
 
 <Warning>
-The last argument is the directory path the server will have access to. **Ask the user which directory they want to access.**
+The `path` must be an **absolute path** to an existing directory. Use `~` expansion or full paths like `/Users/you/...`
 </Warning>
 
 ### Recommended Questions
-- Which directory do you want to access? (e.g., ~/Documents, ~/Projects)
-- Do you need read-only or full file access?
+- Which directory do you want to connect?
+- What does this directory contain? (code, notes, data, etc.)
+- How is it organized? (any special folder structure)
 
-### Permissions for Explore Mode
+### Example: Obsidian Vault
+
 ```json
 {
-  "allowedMcpPatterns": [
-    { "pattern": "list", "comment": "List directory contents" },
-    { "pattern": "read", "comment": "Read file contents" },
-    { "pattern": "search", "comment": "Search for files" }
+  "name": "Personal Vault",
+  "slug": "personal-vault",
+  "enabled": true,
+  "provider": "obsidian",
+  "type": "local",
+  "icon": "https://obsidian.md/favicon.ico",
+  "tagline": "Personal notes, journals, and knowledge base",
+  "local": {
+    "path": "/Users/you/Documents/ObsidianVault"
+  }
+}
+```
+
+### Example: GitHub Repository
+
+```json
+{
+  "name": "My App",
+  "slug": "my-app",
+  "enabled": true,
+  "provider": "github",
+  "type": "local",
+  "icon": "https://github.githubassets.com/favicons/favicon.svg",
+  "tagline": "iOS app source code and documentation",
+  "local": {
+    "path": "/Users/you/Developer/my-app"
+  }
+}
+```
+
+### Permissions for Explore Mode
+
+Filesystem sources use Bash patterns for Explore mode permissions:
+
+```json
+{
+  "allowedBashPatterns": [
+    { "pattern": "^(ls|cat|head|tail|grep|find|tree)\\s", "comment": "Read-only file commands" }
   ]
 }
 ```
 
+<Note>
+Built-in file tools (Read, Glob, Grep) are always allowed in Explore mode. Bash patterns are only needed if you want to allow specific shell commands.
+</Note>
+
 ### No Authentication Required
-This is a local server - no API keys or OAuth needed.
+Local sources access files directly—no API keys, tokens, or OAuth needed.

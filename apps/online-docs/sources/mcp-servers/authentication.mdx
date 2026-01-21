@@ -99,12 +99,12 @@ Local servers using stdio transport typically don't require network authenticati
 ```json
 {
   "type": "mcp",
-  "name": "File System",
-  "tagline": "Local file access",
+  "name": "Local MCP",
+  "tagline": "MCP Description",
   "mcp": {
     "transport": "stdio",
     "command": "npx",
-    "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/dir"]
+    "args": ["-y", "@package/name", "/path/to/dir"]
   }
 }
 ```
@@ -174,16 +174,6 @@ A workspace with sources using different authentication methods:
       "transport": "http",
       "url": "https://mcp.exa.ai/mcp",
       "authType": "bearer"
-    }
-  },
-  {
-    "type": "mcp",
-    "name": "File System",
-    "tagline": "Local file access",
-    "mcp": {
-      "transport": "stdio",
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/projects"]
     }
   },
   {
