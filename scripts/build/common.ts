@@ -65,6 +65,7 @@ export async function verifySha256(filePath: string, expectedHash: string): Prom
 
 /**
  * Download and verify Bun binary
+ * Uses curl for downloads (more reliable in CI than fetch + Bun.write)
  */
 export async function downloadBun(config: BuildConfig): Promise<void> {
   const { platform, arch, electronDir } = config;
@@ -84,18 +85,16 @@ export async function downloadBun(config: BuildConfig): Promise<void> {
     const zipUrl = `https://github.com/oven-sh/bun/releases/download/${BUN_VERSION}/${bunDownload}.zip`;
     const checksumUrl = `https://github.com/oven-sh/bun/releases/download/${BUN_VERSION}/SHASUMS256.txt`;
 
-    // Download files
+    // Download files using curl (more reliable in CI than fetch + Bun.write)
     const zipPath = join(tempDir, `${bunDownload}.zip`);
     const checksumPath = join(tempDir, 'SHASUMS256.txt');
 
     console.log(`  Downloading ${zipUrl}...`);
-    const zipResponse = await fetch(zipUrl);
-    if (!zipResponse.ok) throw new Error(`Failed to download Bun: ${zipResponse.statusText}`);
-    await Bun.write(zipPath, zipResponse);
+    await $`curl -fsSL --retry 3 --retry-delay 2 -o ${zipPath} ${zipUrl}`;
+    console.log('  Download complete');
 
-    const checksumResponse = await fetch(checksumUrl);
-    if (!checksumResponse.ok) throw new Error(`Failed to download checksums: ${checksumResponse.statusText}`);
-    await Bun.write(checksumPath, checksumResponse);
+    console.log('  Downloading checksums...');
+    await $`curl -fsSL --retry 3 --retry-delay 2 -o ${checksumPath} ${checksumUrl}`;
 
     // Verify checksum
     console.log('  Verifying checksum...');

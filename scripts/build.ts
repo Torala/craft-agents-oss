@@ -16,6 +16,17 @@
  *   --help        Show this help message
  */
 
+// Catch uncaught exceptions to ensure we always exit with error code
+process.on('uncaughtException', (error) => {
+  console.error('\n✗ Uncaught exception:', error);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('\n✗ Unhandled rejection:', reason);
+  process.exit(1);
+});
+
 import { parseArgs } from 'util';
 import { dirname, join } from 'path';
 import { existsSync } from 'fs';
@@ -142,16 +153,27 @@ async function main(): Promise<void> {
 
   try {
     // Load environment variables
+    console.log('\n[1/8] Loading environment...');
     await loadEnvFile(config);
 
     // Common build steps
+    console.log('\n[2/8] Cleaning previous builds...');
     cleanBuildArtifacts(config);
+
+    console.log('\n[3/8] Installing dependencies...');
     await installDependencies(config);
+
+    console.log('\n[4/8] Downloading Bun runtime...');
     await downloadBun(config);
+
+    console.log('\n[5/8] Copying SDK...');
     copySDK(config);
+
+    console.log('\n[6/8] Copying interceptor...');
     copyInterceptor(config);
 
     // Build Electron app (Windows has special OAuth injection)
+    console.log('\n[7/8] Building Electron app...');
     if (platform === 'win32') {
       await buildElectronAppWindows(config);
     } else {
@@ -159,6 +181,7 @@ async function main(): Promise<void> {
     }
 
     // Package for the target platform
+    console.log('\n[8/8] Packaging for platform...');
     let artifactPath: string;
     switch (platform) {
       case 'darwin':
