@@ -19,6 +19,7 @@ import type {
 } from './types.ts';
 import { validateSourceConfig } from '../config/validators.ts';
 import { debug } from '../utils/debug.ts';
+import { getBuiltinSources } from './builtin-sources.ts';
 import { expandPath, toPortablePath } from '../utils/paths.ts';
 import { getWorkspaceSourcesPath } from '../workspaces/storage.ts';
 import {
@@ -359,6 +360,21 @@ export function getSourcesBySlugs(workspaceRootPath: string, slugs: string[]): L
     }
   }
   return sources;
+}
+
+/**
+ * Load all sources for a workspace INCLUDING built-in sources.
+ * Built-in sources (like craft-agents-docs) are always available and merged
+ * with user-configured sources from the workspace.
+ *
+ * Use this when the agent needs visibility into all available sources,
+ * including system-provided ones that don't live on disk.
+ */
+export function loadAllSources(workspaceRootPath: string): LoadedSource[] {
+  const workspaceId = basename(workspaceRootPath);
+  const userSources = loadWorkspaceSources(workspaceRootPath);
+  const builtinSources = getBuiltinSources(workspaceId, workspaceRootPath);
+  return [...userSources, ...builtinSources];
 }
 
 // ============================================================

@@ -1,0 +1,70 @@
+---
+title: "Filesystem"
+description: "Connect local filesystem directories through MCP in Craft Agents"
+---
+
+# Filesystem
+
+Access and manage local filesystem directories through the MCP protocol.
+
+## Capabilities
+
+- **List directories** - Browse directory contents with filtering
+- **Read files** - Get file contents (text, code, documents)
+- **Write files** - Create or update files (if allowed)
+- **Search** - Find files by name patterns
+
+## Guidelines
+
+- Paths must be within the configured allowed directories
+- Respects OS file permissions
+- Best for exploring project structures and local codebases
+- Large files may be truncated
+
+---
+
+## Setup Guide
+
+<Note>
+This is a **local stdio MCP server** - it runs on the user's machine via npx.
+</Note>
+
+### Configuration
+
+**Required config.json:**
+```json
+{
+  "name": "Filesystem",
+  "slug": "filesystem",
+  "enabled": true,
+  "provider": "filesystem",
+  "type": "mcp",
+  "mcp": {
+    "transport": "stdio",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/directory"]
+  }
+}
+```
+
+<Warning>
+The last argument is the directory path the server will have access to. **Ask the user which directory they want to access.**
+</Warning>
+
+### Recommended Questions
+- Which directory do you want to access? (e.g., ~/Documents, ~/Projects)
+- Do you need read-only or full file access?
+
+### Permissions for Explore Mode
+```json
+{
+  "allowedMcpPatterns": [
+    { "pattern": "list", "comment": "List directory contents" },
+    { "pattern": "read", "comment": "Read file contents" },
+    { "pattern": "search", "comment": "Search for files" }
+  ]
+}
+```
+
+### No Authentication Required
+This is a local server - no API keys or OAuth needed.

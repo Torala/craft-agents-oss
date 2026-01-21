@@ -1,222 +1,134 @@
 ---
-title: "Local Filesystems"
-description: "Give your agents access to files and folders on your machine"
+title: "Local Folders"
+description: "Bookmark folders on your machine for quick access and documentation"
 ---
 
-The filesystem MCP server lets your agent read and write files on your local machine. This is useful for working with project directories, notes, data files, or any content stored locally.
+Local folders are bookmarks to directories on your machine. They provide a named reference that appears in your sources list, with optional documentation via `guide.md`.
 
-## How It Works
+<Note>
+**No special setup required.** Local folders use the same Read, Write, Glob, and Grep tools that work on any path. The value is organization and documentation.
+</Note>
 
-Local filesystem access uses the [MCP filesystem server](https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem) running via stdio transport. Instead of connecting to a remote URL, Craft Agents spawns a local process that communicates with the model.
+## When to Use Local Folders
+
+| Need | Solution |
+|------|----------|
+| Work in a single project directory | Use [Working Directory](/core-concepts/working-directory) |
+| Bookmark multiple folders | Use Local Folders |
+| Document folder contents and conventions | Use Local Folders with guide.md |
 
 ## Configuration
 
-Create a source with `type: "mcp"` and `transport: "stdio"`:
+Create a source folder with a `config.json`:
 
 ```json
 {
-  "type": "mcp",
-  "name": "My Files",
-  "slug": "my-files",
+  "type": "local",
+  "name": "My Notes",
+  "slug": "my-notes",
   "enabled": true,
-  "provider": "filesystem",
-  "tagline": "Local filesystem access",
-  "mcp": {
-    "transport": "stdio",
-    "command": "npx",
-    "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/directory"],
-    "authType": "none"
+  "provider": "local",
+  "local": {
+    "path": "/Users/me/Documents/Notes"
   }
 }
 ```
 
-### Configuration Fields
+### Fields
 
 | Field | Description |
 |-------|-------------|
-| `transport` | Must be `"stdio"` for local servers |
-| `command` | The executable to run (`npx`, `node`, `python`, etc.) |
-| `args` | Command arguments, including the directory path |
-| `authType` | Usually `"none"` for local servers |
+| `type` | Must be `"local"` |
+| `name` | Display name in sources list |
+| `slug` | URL-safe identifier (used as folder name) |
+| `enabled` | Whether the source is active |
+| `provider` | Service identifier, use `"local"` |
+| `local.path` | Absolute path to the folder |
 
-### Directory Path
+### Optional: Format Hint
 
-The last argument specifies which directory your agent can access:
-
-```json
-"args": ["-y", "@modelcontextprotocol/server-filesystem", "/Users/me/Projects"]
-```
-
-<Warning>
-Your agent will have read/write access to everything in this directory. Choose your paths carefully and consider using Explore mode permissions to limit write operations.
-</Warning>
-
-## Example Configurations
-
-### Single Project Directory
+You can add a format hint to help your agent understand the folder contents:
 
 ```json
 {
-  "type": "mcp",
-  "name": "My Project",
-  "slug": "my-project",
-  "enabled": true,
-  "provider": "filesystem",
-  "tagline": "Access to project files",
-  "mcp": {
-    "transport": "stdio",
-    "command": "npx",
-    "args": ["-y", "@modelcontextprotocol/server-filesystem", "/Users/me/Projects/my-app"],
-    "authType": "none"
+  "type": "local",
+  "name": "Obsidian Vault",
+  "slug": "my-vault",
+  "provider": "obsidian",
+  "local": {
+    "path": "/Users/me/Documents/ObsidianVault",
+    "format": "obsidian"
   }
 }
 ```
 
-### Notes and Documents
+## Adding a Local Folder
 
-```json
-{
-  "type": "mcp",
-  "name": "Notes",
-  "slug": "notes",
-  "enabled": true,
-  "provider": "filesystem",
-  "tagline": "Personal notes and documents",
-  "mcp": {
-    "transport": "stdio",
-    "command": "npx",
-    "args": ["-y", "@modelcontextprotocol/server-filesystem", "/Users/me/Documents/Notes"],
-    "authType": "none"
-  }
-}
+The easiest way is to ask your agent:
+
+> "Add my Desktop folder as a source"
+
+Or create manually:
+
+1. Create the source folder:
+   ```
+   ~/.craft-agent/workspaces/{workspace-id}/sources/my-folder/
+   ```
+
+2. Add `config.json` with the configuration above
+
+3. Optionally add `guide.md` with context about the folder
+
+## guide.md Example
+
+The guide helps your agent understand what's in the folder and how to use it:
+
+```markdown
+# Desktop
+
+Temporary files and downloads. Check here for recent screenshots and exports.
+
+## Contents
+- Screenshots from CMD+Shift+4
+- Downloaded PDFs and documents
+- Temporary exports from apps
+
+## Conventions
+- Screenshots go in /Screenshots subfolder
+- Delete files older than 1 week
+- Don't commit anything from here to git
 ```
-
-### Multiple Directories
-
-To access multiple directories, create separate sources for each:
-
-```json
-// Source 1: projects
-{
-  "name": "Projects",
-  "slug": "projects",
-  "mcp": {
-    "transport": "stdio",
-    "command": "npx",
-    "args": ["-y", "@modelcontextprotocol/server-filesystem", "/Users/me/Projects"],
-    "authType": "none"
-  }
-}
-
-// Source 2: documents
-{
-  "name": "Documents",
-  "slug": "documents",
-  "mcp": {
-    "transport": "stdio",
-    "command": "npx",
-    "args": ["-y", "@modelcontextprotocol/server-filesystem", "/Users/me/Documents"],
-    "authType": "none"
-  }
-}
-```
-
-## Prerequisites
-
-### Local MCP Must Be Enabled
-
-Stdio-based MCP servers require the "Local MCP" option to be enabled in your workspace settings. This is a security feature that prevents arbitrary local commands from running without your consent.
-
-To enable:
-1. Open workspace settings
-2. Enable "Allow Local MCP Servers"
-
-### Node.js Required
-
-The filesystem server runs via `npx`, which requires Node.js to be installed. The server package is downloaded automatically on first use.
-
-## Environment Variable Isolation
-
-For security, Craft Agents does not pass your shell environment variables to stdio MCP processes. This prevents accidental exposure of sensitive variables like API keys or credentials.
-
-If your MCP server needs specific environment variables, define them explicitly in the config:
-
-```json
-{
-  "mcp": {
-    "transport": "stdio",
-    "command": "npx",
-    "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path"],
-    "env": {
-      "SPECIFIC_VAR": "value"
-    },
-    "authType": "none"
-  }
-}
-```
-
-## Available Tools
-
-The filesystem MCP server provides these tools to your agent:
-
-| Tool | Description |
-|------|-------------|
-| `read_file` | Read the contents of a file |
-| `read_multiple_files` | Read several files at once |
-| `write_file` | Create or overwrite a file |
-| `edit_file` | Make targeted edits to a file |
-| `create_directory` | Create a new directory |
-| `list_directory` | List files and folders |
-| `move_file` | Move or rename a file |
-| `search_files` | Search for files by pattern |
-| `get_file_info` | Get file metadata |
-| `list_allowed_directories` | Show accessible paths |
 
 ## Explore Mode Permissions
 
-To use filesystem sources in Explore mode (read-only), create a `permissions.json`:
+By default, local folders work in Explore mode with the standard read-only bash commands (ls, cat, head, tail, etc.).
+
+To customize, add `permissions.json`:
 
 ```json
 {
-  "allowedMcpPatterns": [
-    { "pattern": "read", "comment": "Read file contents" },
-    { "pattern": "list", "comment": "List directories" },
-    { "pattern": "search", "comment": "Search for files" },
-    { "pattern": "get_file_info", "comment": "Get file metadata" }
+  "allowedBashPatterns": [
+    { "pattern": "^ls\\s", "comment": "List contents" },
+    { "pattern": "^tree\\s", "comment": "Show directory tree" }
   ]
 }
 ```
 
-This allows your agent to browse and read files while blocking write, edit, move, and delete operations.
+## Local Folders vs Working Directory
 
-## Troubleshooting
+Choose the right approach for your use case:
 
-### "Local MCP not enabled"
+<CardGroup cols={2}>
+  <Card title="Working Directory" icon="folder-open">
+    Your **active project**. Set once per session. Full tool access for coding, building, and testing.
 
-Enable "Allow Local MCP Servers" in your workspace settings.
+    Use for: The project you're currently working on
+  </Card>
+  <Card title="Local Folders" icon="bookmark">
+    **Bookmarks** to folders you reference occasionally. Named sources with documentation.
 
-### "Command not found: npx"
+    Use for: Notes, downloads, reference materials
+  </Card>
+</CardGroup>
 
-Install Node.js from [nodejs.org](https://nodejs.org) or via your package manager.
-
-### "Permission denied"
-
-Ensure you have read/write permissions on the target directory.
-
-### Server Not Starting
-
-Check that the directory path exists and is accessible:
-
-```bash
-ls -la /path/to/directory
-```
-
-## Security Considerations
-
-<Note>
-Local filesystem sources have direct access to your files. Consider these best practices:
-
-- **Scope narrowly**: Point to specific project directories, not your entire home folder
-- **Use Explore mode**: Set up read-only permissions for browsing
-- **Review guide.md**: Document what files your agent should and shouldn't modify
-</Note>
+**Rule of thumb:** Use Working Directory for coding. Use Local Folders for everything else.

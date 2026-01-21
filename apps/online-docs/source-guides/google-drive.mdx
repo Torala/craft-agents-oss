@@ -1,0 +1,65 @@
+---
+title: "Google Drive"
+description: "Connect Google Drive for file access and management in Craft Agents"
+---
+
+# Google Drive
+
+Access and manage Google Drive files.
+
+## API Reference
+
+This source provides a single flexible `api_google-drive` tool that accepts:
+- `path`: API endpoint (e.g., "/drive/v3/files")
+- `method`: HTTP method (GET, POST, PATCH, DELETE)
+- `params`: Request body or query parameters
+
+### Common Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| /drive/v3/files | GET | List files |
+| /drive/v3/files/{id} | GET | Get file metadata |
+| /drive/v3/files/{id}?alt=media | GET | Download file content |
+| /drive/v3/files | POST | Create file (metadata) |
+| /drive/v3/files/{id} | PATCH | Update file metadata |
+| /drive/v3/files/{id} | DELETE | Delete file |
+
+### Search Syntax
+
+Use the `q` parameter:
+- `name contains 'keyword'` - Name contains keyword
+- `mimeType = 'application/pdf'` - File type filter
+- `'folderId' in parents` - Files in folder
+- `modifiedTime > '2024-01-01'` - Modified after date
+
+## Guidelines
+
+- **Privacy**: This source accesses Google Drive files.
+- **File content**: Use `alt=media` query param to download actual file content.
+
+---
+
+## Setup Guide
+
+### Configuration
+
+**Required config.json:**
+```json
+{
+  "name": "Google Drive",
+  "slug": "google-drive",
+  "enabled": true,
+  "provider": "google",
+  "type": "api",
+  "api": {
+    "baseUrl": "https://www.googleapis.com/drive/v3/",
+    "authType": "bearer",
+    "googleService": "drive"
+  },
+  "iconUrl": "https://drive.google.com"
+}
+```
+
+### Authentication
+Use `source_google_oauth_trigger` to start the Google OAuth flow.

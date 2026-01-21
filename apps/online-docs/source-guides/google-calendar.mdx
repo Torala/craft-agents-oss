@@ -1,0 +1,65 @@
+---
+title: "Google Calendar"
+description: "Connect Google Calendar for event management in Craft Agents"
+---
+
+# Google Calendar
+
+Access and manage Google Calendar events.
+
+## API Reference
+
+This source provides a single flexible `api_google-calendar` tool that accepts:
+- `path`: API endpoint (e.g., "/calendar/v3/calendars/primary/events")
+- `method`: HTTP method (GET, POST, PUT, DELETE)
+- `params`: Request body or query parameters
+
+### Common Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| /calendar/v3/calendars/primary/events | GET | List events |
+| /calendar/v3/calendars/primary/events | POST | Create event |
+| /calendar/v3/calendars/primary/events/{id} | GET | Get event by ID |
+| /calendar/v3/calendars/primary/events/{id} | PUT | Update event |
+| /calendar/v3/calendars/primary/events/{id} | DELETE | Delete event |
+
+### Query Parameters
+
+- `timeMin`: Start of time range (RFC3339)
+- `timeMax`: End of time range
+- `q`: Free text search
+- `maxResults`: Max events to return
+- `singleEvents`: Expand recurring events (true/false)
+- `orderBy`: Sort order ("startTime" or "updated")
+
+## Guidelines
+
+- **Privacy**: This source accesses personal calendar data.
+- **Time zones**: Always include timezone info in date/time parameters.
+
+---
+
+## Setup Guide
+
+### Configuration
+
+**Required config.json:**
+```json
+{
+  "name": "Google Calendar",
+  "slug": "google-calendar",
+  "enabled": true,
+  "provider": "google",
+  "type": "api",
+  "api": {
+    "baseUrl": "https://www.googleapis.com/calendar/v3/",
+    "authType": "bearer",
+    "googleService": "calendar"
+  },
+  "iconUrl": "https://calendar.google.com"
+}
+```
+
+### Authentication
+Use `source_google_oauth_trigger` to start the Google OAuth flow.

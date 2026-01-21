@@ -1,0 +1,94 @@
+---
+title: "Microsoft Calendar"
+description: "Connect Microsoft Outlook Calendar for event management in Craft Agents"
+---
+
+# Microsoft Calendar
+
+Access to Microsoft Outlook Calendar via the Microsoft Graph API.
+
+## Scope
+
+- List and manage calendar events
+- Access multiple calendars
+- Create, update, and delete events
+- View free/busy information
+
+## Common Endpoints
+
+### List Calendars
+```
+GET /me/calendars
+```
+
+### List Events
+```
+GET /me/events
+```
+Query params: `$top`, `$skip`, `$filter`, `$orderby`, `$select`
+
+### List Events in Date Range
+```
+GET /me/calendarView?startDateTime={start}&endDateTime={end}
+```
+Use ISO 8601 format for dates (e.g., 2024-01-01T00:00:00Z)
+
+### Get Event
+```
+GET /me/events/{id}
+```
+
+### Create Event
+```
+POST /me/events
+Body: {
+  "subject": "...",
+  "start": { "dateTime": "...", "timeZone": "..." },
+  "end": { "dateTime": "...", "timeZone": "..." }
+}
+```
+
+### Update Event
+```
+PATCH /me/events/{id}
+```
+
+### Delete Event
+```
+DELETE /me/events/{id}
+```
+
+## Guidelines
+
+- Use the `api_microsoft-calendar` tool with `path`, `method`, and optional `params`
+- Base URL: `https://graph.microsoft.com/v1.0`
+
+---
+
+## Setup Guide
+
+### Configuration
+
+**Required config.json:**
+```json
+{
+  "name": "Microsoft Calendar",
+  "slug": "microsoft-calendar",
+  "enabled": true,
+  "provider": "microsoft",
+  "type": "api",
+  "api": {
+    "baseUrl": "https://graph.microsoft.com/v1.0/",
+    "authType": "bearer",
+    "microsoftService": "microsoft-calendar",
+    "testEndpoint": {
+      "method": "GET",
+      "path": "me/calendars?$top=1"
+    }
+  },
+  "iconUrl": "https://res.cdn.office.net/files/fabric-cdn-prod_20241209.001/assets/brand-icons/product/svg/outlook_48x1.svg"
+}
+```
+
+### Authentication
+Use `source_microsoft_oauth_trigger` to start the Microsoft OAuth flow.

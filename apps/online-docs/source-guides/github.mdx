@@ -1,0 +1,100 @@
+---
+title: "GitHub"
+description: "Connect GitHub repositories, issues, and pull requests to Craft Agents"
+---
+
+# GitHub
+
+GitHub organizes code and collaboration around:
+- **Repositories** - Code projects with version control
+- **Issues** - Bug reports, feature requests, tasks
+- **Pull Requests** - Code changes for review and merge
+- **Actions** - CI/CD workflows
+
+## Key Concepts
+
+### Repository Structure
+- Branches (main/master is default)
+- Commits and commit history
+- Tags and releases
+
+### Issues and PRs
+- Can be assigned, labeled, milestoned
+- Support markdown formatting
+- Have a state: open or closed
+
+### Organizations and Teams
+- Repos can belong to users or organizations
+- Teams provide access control within orgs
+
+---
+
+## Setup Guide
+
+### CRITICAL - Check for GitHub CLI First
+
+<Warning>
+Before creating ANY GitHub source, you **MUST** check if the `gh` CLI is installed.
+</Warning>
+
+1. Run `which gh` or `gh --version` to check
+2. If `gh` is installed, **ask the user before proceeding**
+
+**If `gh` is installed and authenticated:**
+- The user ALREADY has full GitHub access through the built-in Bash tool
+- `gh` commands work out of the box: `gh issue list`, `gh pr view`, `gh repo clone`, etc.
+- Creating a separate GitHub source is **redundant** in most cases
+
+**You MUST ask the user explicitly:**
+> "I noticed you have the GitHub CLI (`gh`) installed. You already have full GitHub access through `gh` commands. Do you still want me to create a separate GitHub MCP source?"
+
+**ONLY proceed with source creation if:**
+1. `gh` is NOT installed, OR
+2. User EXPLICITLY says yes after being asked
+
+### If Creating a GitHub Source
+
+#### Authentication - OAuth Will Fail
+
+GitHub's MCP server requires OAuth with a pre-registered client app. Craft Agents is NOT registered with GitHub, so OAuth authentication **will fail**. This is expected.
+
+**The ONLY solution is a Personal Access Token (PAT):**
+
+1. Ask the user to create a PAT at: GitHub Settings → Developer settings → Personal access tokens
+2. Required scopes: `repo`, `read:org` (optional)
+3. Set `authType: "bearer"` in config (NOT "oauth")
+4. Use `source_credential_prompt` to collect the PAT
+
+### Configuration
+
+**Required config.json:**
+```json
+{
+  "name": "GitHub",
+  "slug": "github",
+  "enabled": true,
+  "provider": "github",
+  "type": "mcp",
+  "mcp": {
+    "url": "https://api.githubcopilot.com/mcp/",
+    "authType": "bearer"
+  }
+}
+```
+
+**Alternative - Local MCP Server:**
+```json
+{
+  "type": "mcp",
+  "mcp": {
+    "transport": "stdio",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-github"],
+    "env": { "GITHUB_PERSONAL_ACCESS_TOKEN": "ghp_..." }
+  }
+}
+```
+
+### Rate Limits
+- 5000 requests per hour for authenticated users
+- Search API has separate lower limits

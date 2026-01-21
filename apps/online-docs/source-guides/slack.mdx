@@ -1,0 +1,92 @@
+---
+title: "Slack"
+description: "Connect Slack workspaces for messaging and channel access in Craft Agents"
+---
+
+# Slack
+
+Access Slack workspaces, channels, and messages through the Slack Web API.
+
+<Warning>
+**IMPORTANT:** Always use the native Slack API integration (`type: "api"`, `provider: "slack"`). Do NOT use third-party Slack MCP servers - they require manual credential management and don't support OAuth.
+</Warning>
+
+## API Reference
+
+This source provides a single flexible `api_slack` tool that accepts:
+- `path`: API endpoint (e.g., "conversations.list")
+- `method`: HTTP method (typically POST for Slack)
+- `params`: Request body parameters
+
+### Common Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| search.all | POST | Search channels, messages, files |
+| conversations.info | GET | Get channel details by ID |
+| conversations.list | POST | List channels, DMs, groups |
+| conversations.history | POST | Get messages from a channel |
+| chat.postMessage | POST | Send a message |
+| users.list | POST | List workspace users |
+
+### Key Guidelines
+
+- **Finding channels by name**: Use `search.all` instead of paginating `conversations.list`. Much faster.
+- **Two-step pattern**:
+  1. Use `search.all` to find channels by name → get channel ID
+  2. Use `conversations.info` (GET, not POST) with the channel ID for full details
+- **Channel IDs**: Use channel IDs (e.g., C01234567) not names for most operations
+
+---
+
+## Setup Guide
+
+### Configuration
+
+**Required config.json:**
+```json
+{
+  "name": "Slack",
+  "slug": "slack",
+  "enabled": true,
+  "provider": "slack",
+  "type": "api",
+  "api": {
+    "baseUrl": "https://slack.com/api/",
+    "authType": "bearer",
+    "testEndpoint": {
+      "method": "POST",
+      "path": "auth.test"
+    }
+  },
+  "iconUrl": "slack.com"
+}
+```
+
+<Note>
+Use `auth.test` (not `api.test`) as the testEndpoint - it validates the OAuth token. Use trailing slash on baseUrl and no leading slash on path.
+</Note>
+
+### Authentication
+Use `source_slack_oauth_trigger` to start the Slack OAuth flow. This is a native integration that handles token storage automatically.
+
+### Rate Limits
+
+Slack uses tiered rate limiting:
+- **Tier 1**: 1 request per second (e.g., chat.postMessage)
+- **Tier 2**: 20 requests per minute (e.g., conversations.list)
+- **Tier 3**: 50 requests per minute (e.g., users.info)
+
+Check `Retry-After` header when rate limited.
+
+### Permissions for Explore Mode
+```json
+{
+  "allowedApiEndpoints": [
+    { "method": "POST", "path": "conversations\\.list" },
+    { "method": "POST", "path": "conversations\\.history" },
+    { "method": "GET", "path": "conversations\\.info" },
+    { "method": "POST", "path": "users\\.list" }
+  ]
+}
+```

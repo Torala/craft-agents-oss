@@ -1,0 +1,91 @@
+---
+title: "Craft"
+description: "Connect Craft spaces for document management in Craft Agents"
+---
+
+# Craft
+
+Everything in Craft is scoped to a **Space**. Users may have multiple spaces, but you can only act within the current space.
+
+## Craft Environment
+
+Within a space, documents can be organized into folders. There are also smart folders:
+
+| Smart Folder | Purpose |
+|--------------|---------|
+| All Docs | All documents in the space |
+| Starred | Starred documents |
+| Unsorted | Documents not in any folder |
+| Tags | Documents filtered by tag |
+| Calendar | All daily notes |
+| Tasks | Task inbox, today, upcoming, all |
+
+## Documents
+
+Documents are the core of Craft. Each document has a unique ID.
+
+**Daily Notes** are special documents attached to calendar dates. Their titles follow the pattern `2025.01.31` but users see them in their regional date format.
+
+## Document Structure
+
+Documents are **not linear** - they are hierarchical structures made of blocks. Each block:
+- Has a unique shortened ID (integer)
+- Can contain nested child blocks (subblocks)
+- When a block has children, it's called a "Page" or "Subpage"
+
+### Block Types
+
+| Type | Description |
+|------|-------------|
+| text | Text content with styling |
+| url | Link/bookmark |
+| image | Image content |
+| video | Video content |
+| file | File attachment |
+| collection | Database-like structure |
+| table | Table content |
+| drawing | Drawing/sketch |
+| line | Divider line |
+
+### Text Blocks
+
+Text blocks can serve as:
+- **Headings**: Different text styles act like markdown #, ##, ###
+- **Pages**: Visual indicator of nested content
+- **Tasks**: Checkbox with optional schedule and due dates
+- **List items**: Numbered, bullet, or toggle lists
+- **Rich text**: Content styled with CommonMark markdown
+
+---
+
+## Setup Guide
+
+### Configuration
+
+**Required config.json:**
+```json
+{
+  "name": "Craft",
+  "slug": "craft",
+  "enabled": true,
+  "provider": "craft",
+  "type": "mcp",
+  "mcp": {
+    "url": "https://mcp.craft.do/my/mcp",
+    "authType": "oauth"
+  }
+}
+```
+
+### Authentication
+Use `source_oauth_trigger` to start the Craft OAuth flow.
+
+### Recommended Questions
+- What types of documents do you primarily work with?
+- Do you use daily notes?
+- Are there specific folders or documents you frequently access?
+
+### Caching Recommendations
+- Fetch and store folder structure (IDs + names)
+- If user mentions specific docs, store their IDs
+- Note any frequently used smart folders

@@ -1,0 +1,86 @@
+---
+title: "Google Sheets"
+description: "Connect Google Sheets for spreadsheet access and editing in Craft Agents"
+---
+
+# Google Sheets
+
+Access and manage Google Sheets spreadsheets.
+
+## API Reference
+
+This source provides a single flexible `api_google-sheets` tool that accepts:
+- `path`: API endpoint (e.g., "/v4/spreadsheets/{spreadsheetId}")
+- `method`: HTTP method (GET, POST, PUT)
+- `params`: Request body or query parameters
+
+### Common Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| /v4/spreadsheets | POST | Create a new spreadsheet |
+| /v4/spreadsheets/{spreadsheetId} | GET | Get spreadsheet metadata |
+| /v4/spreadsheets/{spreadsheetId}/values/{range} | GET | Read cell values |
+| /v4/spreadsheets/{spreadsheetId}/values/{range} | PUT | Write cell values |
+| /v4/spreadsheets/{spreadsheetId}/values:batchGet | GET | Read multiple ranges |
+| /v4/spreadsheets/{spreadsheetId}/values:batchUpdate | POST | Write multiple ranges |
+
+### A1 Notation
+
+Ranges use A1 notation:
+- `Sheet1!A1:B10` - Cells A1 to B10 on Sheet1
+- `Sheet1!A:A` - Entire column A on Sheet1
+- `Sheet1!1:1` - Entire row 1 on Sheet1
+- `'Sheet Name'!A1:B10` - Use quotes for sheets with spaces
+
+### Writing Values
+
+PUT `/v4/spreadsheets/{id}/values/{range}`
+
+Query parameters:
+- `valueInputOption`: RAW, USER_ENTERED (applies formatting/formulas)
+
+```json
+{
+  "values": [
+    ["Row1Col1", "Row1Col2"],
+    ["Row2Col1", "Row2Col2"]
+  ]
+}
+```
+
+## Guidelines
+
+- **Value input**: Use `valueInputOption=USER_ENTERED` for formulas and dates.
+- **Batch operations**: Use batch endpoints for efficiency with multiple ranges.
+- **Sheet names**: Quote sheet names with spaces in A1 notation.
+
+---
+
+## Setup Guide
+
+### Configuration
+
+**Required config.json:**
+```json
+{
+  "name": "Google Sheets",
+  "slug": "google-sheets",
+  "enabled": true,
+  "provider": "google",
+  "type": "api",
+  "api": {
+    "baseUrl": "https://sheets.googleapis.com/v4/",
+    "authType": "bearer",
+    "googleService": "sheets"
+  },
+  "iconUrl": "https://sheets.google.com"
+}
+```
+
+### Authentication
+Use `source_google_oauth_trigger` to start the Google OAuth flow.
+
+### Rate Limits
+- 300 read requests per minute per user
+- 60 write requests per minute per user

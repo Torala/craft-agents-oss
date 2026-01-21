@@ -1,0 +1,68 @@
+---
+title: "Brave Search"
+description: "Connect Brave Search API for web search in Craft Agents"
+---
+
+# Brave Search
+
+Web and news search using the Brave Search API via MCP.
+
+## Capabilities
+
+- **Web search** - General web search with ranking
+- **News search** - Recent news articles
+- **Local search** - Location-based results (if enabled)
+
+## Guidelines
+
+- Results include titles, URLs, and descriptions
+- Rate limits apply based on API plan
+- Respects Brave Search's content policies
+
+---
+
+## Setup Guide
+
+<Note>
+This is a **local stdio MCP server** that requires a Brave Search API key.
+</Note>
+
+### Configuration
+
+**Required config.json:**
+```json
+{
+  "name": "Brave Search",
+  "slug": "brave-search",
+  "enabled": true,
+  "provider": "brave",
+  "type": "mcp",
+  "mcp": {
+    "transport": "stdio",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-brave-search"],
+    "env": {
+      "BRAVE_API_KEY": "YOUR_API_KEY"
+    }
+  }
+}
+```
+
+### Getting an API Key
+1. Go to https://brave.com/search/api/
+2. Sign up for an API account
+3. Create an API key
+4. Use `source_credential_prompt` to securely store the key
+
+### Recommended Questions
+- Do you have a Brave Search API key?
+- What types of searches will you perform? (web, news, local)
+
+### Permissions for Explore Mode
+```json
+{
+  "allowedMcpPatterns": [
+    { "pattern": "search", "comment": "All search operations are read-only" }
+  ]
+}
+```

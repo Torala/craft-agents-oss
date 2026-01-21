@@ -1,0 +1,84 @@
+---
+title: "Microsoft Teams"
+description: "Connect Microsoft Teams for messaging and collaboration in Craft Agents"
+---
+
+# Microsoft Teams
+
+Access to Microsoft Teams via the Microsoft Graph API.
+
+## Scope
+
+- List joined teams and channels
+- Read and send channel messages
+- Access chat messages
+- View team members
+
+## Common Endpoints
+
+### List Joined Teams
+```
+GET /me/joinedTeams
+```
+
+### List Channels
+```
+GET /teams/{team-id}/channels
+```
+
+### Get Channel Messages
+```
+GET /teams/{team-id}/channels/{channel-id}/messages
+```
+Query params: `$top`, `$skip`
+
+### Send Channel Message
+```
+POST /teams/{team-id}/channels/{channel-id}/messages
+Body: { "body": { "content": "Hello!" } }
+```
+
+### List Chats
+```
+GET /me/chats
+```
+
+### Get Chat Messages
+```
+GET /me/chats/{chat-id}/messages
+```
+
+## Guidelines
+
+- Use the `api_teams` tool with `path`, `method`, and optional `params`
+- Base URL: `https://graph.microsoft.com/v1.0`
+
+---
+
+## Setup Guide
+
+### Configuration
+
+**Required config.json:**
+```json
+{
+  "name": "Microsoft Teams",
+  "slug": "teams",
+  "enabled": true,
+  "provider": "microsoft",
+  "type": "api",
+  "api": {
+    "baseUrl": "https://graph.microsoft.com/v1.0/",
+    "authType": "bearer",
+    "microsoftService": "teams",
+    "testEndpoint": {
+      "method": "GET",
+      "path": "me/chats?$top=1"
+    }
+  },
+  "iconUrl": "https://res.cdn.office.net/files/fabric-cdn-prod_20241209.001/assets/brand-icons/product/svg/teams_48x1.svg"
+}
+```
+
+### Authentication
+Use `source_microsoft_oauth_trigger` to start the Microsoft OAuth flow.

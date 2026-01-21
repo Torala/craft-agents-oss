@@ -1,0 +1,66 @@
+---
+title: "Memory"
+description: "Connect a persistent knowledge graph for cross-session context in Craft Agents"
+---
+
+# Memory
+
+Persistent key-value storage and knowledge graph for maintaining context across sessions.
+
+## Capabilities
+
+- **Store entities** - Save named entities with observations
+- **Create relations** - Link entities together
+- **Query knowledge** - Retrieve stored information
+- **Persistent storage** - Data persists between sessions
+
+## Guidelines
+
+- Useful for remembering user preferences, project context
+- Entities have names and lists of observations
+- Relations connect entities (e.g., "project X uses technology Y")
+- Storage is local to the machine
+
+---
+
+## Setup Guide
+
+<Note>
+This is a **local stdio MCP server** with no external dependencies.
+</Note>
+
+### Configuration
+
+**Required config.json:**
+```json
+{
+  "name": "Memory",
+  "slug": "memory",
+  "enabled": true,
+  "provider": "memory",
+  "type": "mcp",
+  "mcp": {
+    "transport": "stdio",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-memory"]
+  }
+}
+```
+
+### Recommended Questions
+- What kind of information do you want to persist? (preferences, project notes, etc.)
+- Should this be shared across workspaces or specific to one?
+
+### Permissions for Explore Mode
+```json
+{
+  "allowedMcpPatterns": [
+    { "pattern": "read", "comment": "Read stored entities" },
+    { "pattern": "search", "comment": "Search knowledge graph" },
+    { "pattern": "open", "comment": "Open knowledge graph nodes" }
+  ]
+}
+```
+
+### No Authentication Required
+This is a local server - no API keys or OAuth needed.

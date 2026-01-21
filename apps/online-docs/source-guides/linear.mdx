@@ -1,0 +1,67 @@
+---
+title: "Linear"
+description: "Connect Linear for issue tracking and project management in Craft Agents"
+---
+
+# Linear
+
+Linear organizes work into:
+- **Issues** - Individual work items with status, priority, assignee
+- **Projects** - Groups of related issues (like epics)
+- **Cycles** - Time-boxed sprints
+- **Teams** - Organizational units with their own backlogs
+
+Issues have a unique identifier like `ENG-123` (team prefix + number).
+
+## Key Concepts
+
+### Issue States
+Issues flow through workflow states: Backlog → Todo → In Progress → Done (or custom states).
+
+### Priority Levels
+- Urgent (P0)
+- High (P1)
+- Medium (P2)
+- Low (P3)
+- No priority
+
+### Labels and Filters
+Issues can be tagged with labels and filtered by any property.
+
+---
+
+## Setup Guide
+
+### Configuration
+
+**Required config.json:**
+```json
+{
+  "name": "Linear",
+  "slug": "linear",
+  "enabled": true,
+  "provider": "linear",
+  "type": "mcp",
+  "mcp": {
+    "url": "https://mcp.linear.app/sse",
+    "authType": "oauth"
+  }
+}
+```
+
+### Authentication
+Use `source_oauth_trigger` to start the Linear OAuth flow.
+
+### Recommended Questions
+- Which teams do you work with most?
+- Do you use cycles/sprints?
+- Read-only or full access?
+
+### Caching Recommendations
+- Fetch and store team IDs + names in guide.md
+- Fetch and store project IDs for user's teams
+- Cache workflow states (status options)
+
+### Rate Limits
+- 1500 requests per hour per user
+- Use pagination for large result sets

@@ -44,7 +44,6 @@ export const DOC_REFS = {
   skills: '~/.craft-agent/docs/skills.md',
   themes: '~/.craft-agent/docs/themes.md',
   statuses: '~/.craft-agent/docs/statuses.md',
-  sourceGuides: '~/.craft-agent/docs/source-guides/',
   docsDir: '~/.craft-agent/docs/',
 } as const;
 

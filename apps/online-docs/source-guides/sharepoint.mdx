@@ -1,0 +1,97 @@
+---
+title: "SharePoint"
+description: "Connect Microsoft SharePoint for document library access in Craft Agents"
+---
+
+# SharePoint
+
+Access to Microsoft SharePoint sites, document libraries, and files via the Microsoft Graph API.
+
+## Scope
+
+- List and search SharePoint sites
+- Access document libraries and folders
+- Read, upload, and manage files
+- Access site lists and list items
+
+## Common Endpoints
+
+### List All Sites
+```
+GET /sites?search=*
+```
+
+### Get Site by ID
+```
+GET /sites/{site-id}
+```
+
+### List Document Libraries (Drives)
+```
+GET /sites/{site-id}/drives
+```
+
+### List Files in Drive Root
+```
+GET /sites/{site-id}/drive/root/children
+```
+
+### List Files in Folder
+```
+GET /sites/{site-id}/drive/root:/{folder-path}:/children
+```
+
+### Download File Content
+```
+GET /sites/{site-id}/drive/items/{item-id}/content
+```
+
+### Search Files in Site
+```
+GET /sites/{site-id}/drive/root/search(q='{query}')
+```
+
+### Upload File
+```
+PUT /sites/{site-id}/drive/root:/{filename}:/content
+Body: [file content]
+```
+
+## Query Parameters
+
+Common OData query parameters:
+- `$select`: Choose specific fields
+- `$expand`: Include related entities
+- `$filter`: Filter results
+- `$orderby`: Sort results
+- `$top`: Limit number of results
+
+---
+
+## Setup Guide
+
+### Configuration
+
+**Required config.json:**
+```json
+{
+  "name": "SharePoint",
+  "slug": "sharepoint",
+  "enabled": true,
+  "provider": "microsoft",
+  "type": "api",
+  "api": {
+    "baseUrl": "https://graph.microsoft.com/v1.0/",
+    "authType": "bearer",
+    "microsoftService": "sharepoint",
+    "testEndpoint": {
+      "method": "GET",
+      "path": "sites?search=*"
+    }
+  },
+  "iconUrl": "https://res.cdn.office.net/files/fabric-cdn-prod_20241209.001/assets/brand-icons/product/svg/sharepoint_48x1.svg"
+}
+```
+
+### Authentication
+Use `source_microsoft_oauth_trigger` to start the Microsoft OAuth flow.

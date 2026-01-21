@@ -70,7 +70,9 @@ log "App path: $APP_PATH"
 # 1. Dialog owned by System Events can't be closed programmatically
 # 2. Notification is non-blocking and auto-dismisses
 # 3. No orphan windows if update completes quickly
-osascript -e 'display notification "Installing update, please wait..." with title "Craft Agents" subtitle "The app will restart automatically"' 2>/dev/null || true
+# Don't promise automatic restart - the relaunch may fail for various reasons.
+# Keep the notification simple and informational.
+osascript -e 'display notification "Installing update, please wait..." with title "Craft Agents"' 2>/dev/null || true
 log "Showed update notification"
 
 # Validate DMG path - must be non-empty, exist, and be a safe path
@@ -324,7 +326,7 @@ else
     fi
 
     # Also try to show an alert dialog as a last resort
-    if ! osascript -e 'display dialog "Craft Agents was updated but could not restart automatically.\n\nPlease launch it manually from Applications." buttons {"OK"} default button "OK" with title "Craft Agents Update" with icon caution' 2>&1; then
+    if ! osascript -e 'display dialog "Craft Agents was updated but failed to reopen.\n\nPlease launch it manually from Applications." buttons {"OK"} default button "OK" with title "Craft Agents Update" with icon caution' 2>&1; then
         log "WARNING: Failed to show dialog"
     fi
 fi

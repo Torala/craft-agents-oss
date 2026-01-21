@@ -23,7 +23,7 @@ The agent handles configuration, authentication, and validation automatically.
 A source is any external data connection your agent can use:
 - **MCP servers** - Standardized AI tool integrations
 - **REST APIs** - Any service with HTTP endpoints
-- **Local filesystems** - Files and folders on your machine
+- **Local folders** - Bookmarks to folders on your machine
 
 Each source gives your agent tools it can call during conversations. When you ask your agent to "check my GitHub issues" or "search the web," it's using sources behind the scenes.
 
@@ -40,10 +40,10 @@ Each source gives your agent tools it can call during conversations. When you as
 
     **Examples:** Exa Search, custom backends
   </Card>
-  <Card title="Local Filesystems" icon="folder" href="/sources/local-filesystems">
-    Access files and folders on your machine through the filesystem MCP server.
+  <Card title="Local Folders" icon="bookmark" href="/sources/local-filesystems">
+    Bookmark folders on your machine with documentation and quick access.
 
-    **Examples:** Project directories, notes, data files
+    **Examples:** Notes, downloads, reference directories
   </Card>
 </CardGroup>
 
@@ -153,8 +153,8 @@ Patterns are automatically scoped to the source, so `list` becomes `mcp__linear_
   <Card title="REST APIs" icon="code" href="/sources/apis/overview">
     Connect to any service with an API
   </Card>
-  <Card title="Local Filesystems" icon="folder" href="/sources/local-filesystems">
-    Access files on your machine
+  <Card title="Local Folders" icon="bookmark" href="/sources/local-filesystems">
+    Bookmark folders on your machine
   </Card>
   <Card title="Authentication" icon="key" href="/sources/mcp-servers/authentication">
     Set up secure credentials
