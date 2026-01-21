@@ -1333,6 +1333,13 @@ function AppShellContent({
             <PanelHeader
               title={isSidebarVisible ? listTitle : undefined}
               compensateForStoplight={!isSidebarVisible}
+              badge={
+                // Help icon next to the title for different views
+                isSourcesNavigation(navState) ? <HelpPopover feature="sources" side="bottom" /> :
+                isSkillsNavigation(navState) ? <HelpPopover feature="skills" side="bottom" /> :
+                isChatsNavigation(navState) ? <HelpPopover feature="statuses" side="bottom" /> :
+                undefined
+              }
               actions={
                 <>
                   {/* Filter dropdown - allows filtering by todo states (only in All Chats view) */}

@@ -216,22 +216,19 @@ export function LeftSidebar({ links, isCollapsed, getItemProps, focusedItemId, i
                 )}
               </span>
               {link.title}
+              {/* Help icon: Shows on hover right after title when helpFeature is set */}
+              {link.helpFeature && (
+                <span
+                  className="opacity-0 group-hover/section:opacity-100 transition-opacity"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <HelpPopover feature={link.helpFeature} side="right" align="start" />
+                </span>
+              )}
               {/* Label Badge: Shows count or status on the right */}
               {link.label && (
                 <span className="ml-auto text-xs text-foreground/30 opacity-0 group-hover/section:opacity-100 transition-opacity">
                   {link.label}
-                </span>
-              )}
-              {/* Help icon: Shows on hover when helpFeature is set */}
-              {link.helpFeature && (
-                <span
-                  className={cn(
-                    "opacity-0 group-hover/section:opacity-100 transition-opacity",
-                    !link.label && "ml-auto"
-                  )}
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <HelpPopover feature={link.helpFeature} side="right" align="start" />
                 </span>
               )}
             </button>
