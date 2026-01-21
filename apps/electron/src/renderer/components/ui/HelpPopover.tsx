@@ -10,7 +10,7 @@ import { CircleHelp, ExternalLink } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from './popover'
 import { Button } from './button'
 import { HeaderIconButton } from './HeaderIconButton'
-import { type DocFeature, getDocInfo, getDocUrl } from '@craft-agent/shared/docs'
+import { type DocFeature, getDocInfo, getDocUrl } from '@craft-agent/shared/docs/doc-links'
 
 interface HelpPopoverProps {
   /** The documentation feature to show help for */
