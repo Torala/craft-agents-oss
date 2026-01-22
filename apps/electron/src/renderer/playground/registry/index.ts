@@ -1,5 +1,4 @@
 import type { ComponentEntry, CategoryGroup, Category } from './types'
-import { sourcesComponents } from './sources'
 import { onboardingComponents } from './onboarding'
 import { chatComponents } from './chat'
 import { turnCardComponents, fullscreenOverlayComponents } from './turn-card'
@@ -14,7 +13,6 @@ import { toastsComponents } from './toasts'
 export * from './types'
 
 export const componentRegistry: ComponentEntry[] = [
-  ...sourcesComponents,
   ...onboardingComponents,
   ...chatComponents,
   ...turnCardComponents,
@@ -29,7 +27,7 @@ export const componentRegistry: ComponentEntry[] = [
 ]
 
 export function getCategories(): CategoryGroup[] {
-  const categoryOrder: Category[] = ['Sources', 'Onboarding', 'Chat', 'Turn Cards', 'Fullscreen', 'Chat Messages', 'Chat Inputs', 'Toast Messages', 'Markdown', 'Icons', 'OAuth']
+  const categoryOrder: Category[] = ['Onboarding', 'Chat', 'Turn Cards', 'Fullscreen', 'Chat Messages', 'Chat Inputs', 'Toast Messages', 'Markdown', 'Icons', 'OAuth']
   const categoryMap = new Map<Category, ComponentEntry[]>()
 
   for (const entry of componentRegistry) {
