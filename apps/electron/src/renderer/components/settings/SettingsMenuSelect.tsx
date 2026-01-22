@@ -3,10 +3,11 @@
  *
  * Menu-style dropdown select with support for option descriptions.
  * Uses Radix Popover for collision detection and accessibility.
+ * Includes search/filter when options exceed threshold.
  */
 
 import * as React from 'react'
-import { Check, ChevronDown } from 'lucide-react'
+import { Check, ChevronDown, Search } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { settingsUI } from './SettingsUIConstants'
@@ -37,6 +38,10 @@ export interface SettingsMenuSelectProps {
   menuWidth?: number
   /** Called when hovering over an option (for live preview). Pass null on leave. */
   onHover?: (value: string | null) => void
+  /** Enable search filter (auto-enabled when options > 8) */
+  searchable?: boolean
+  /** Placeholder for search input */
+  searchPlaceholder?: string
 }
 
 /**
@@ -44,6 +49,7 @@ export interface SettingsMenuSelectProps {
  *
  * Uses Radix Popover for automatic collision detection and positioning.
  * Trigger styled like the model selector in FreeFormInput.
+ * Includes search filter when options exceed 8 or searchable prop is true.
  */
 export function SettingsMenuSelect({
   value,
@@ -54,14 +60,34 @@ export function SettingsMenuSelect({
   className,
   menuWidth = 280,
   onHover,
+  searchable,
+  searchPlaceholder = 'Search...',
 }: SettingsMenuSelectProps) {
   const [isOpen, setIsOpen] = React.useState(false)
+  const [searchQuery, setSearchQuery] = React.useState('')
+  const searchInputRef = React.useRef<HTMLInputElement>(null)
 
   const selectedOption = options.find((o) => o.value === value)
+
+  // Show search when explicitly enabled or when there are many options
+  const showSearch = searchable ?? options.length > 8
+
+  // Filter options based on search query
+  const filteredOptions = React.useMemo(() => {
+    if (!searchQuery.trim()) return options
+    const query = searchQuery.toLowerCase()
+    return options.filter(
+      (option) =>
+        option.label.toLowerCase().includes(query) ||
+        option.value.toLowerCase().includes(query) ||
+        option.description?.toLowerCase().includes(query)
+    )
+  }, [options, searchQuery])
 
   const handleSelect = (optionValue: string) => {
     onValueChange(optionValue)
     setIsOpen(false)
+    setSearchQuery('')
     // Clear preview on selection since the actual value is now set
     onHover?.(null)
   }
@@ -71,6 +97,10 @@ export function SettingsMenuSelect({
     setIsOpen(open)
     if (!open) {
       onHover?.(null)
+      setSearchQuery('')
+    } else if (showSearch) {
+      // Focus search input when opening
+      setTimeout(() => searchInputRef.current?.focus(), 0)
     }
   }
 
@@ -100,35 +130,59 @@ export function SettingsMenuSelect({
         style={{ width: menuWidth }}
         onMouseLeave={() => onHover?.(null)}
       >
-        <div className="space-y-0.5">
-          {options.map((option) => {
-            const isSelected = value === option.value
-            return (
-              <button
-                key={option.value}
-                type="button"
-                onClick={() => handleSelect(option.value)}
-                onMouseEnter={() => onHover?.(option.value)}
-                className={cn(
-                  'w-full flex items-center justify-between px-2.5 py-2 rounded-lg',
-                  'hover:bg-foreground/5 transition-colors text-left',
-                  isSelected && 'bg-foreground/3'
-                )}
-              >
-                <div className="flex-1 min-w-0">
-                  <div className={settingsUI.label}>{option.label}</div>
-                  {option.description && (
-                    <div className={cn(settingsUI.descriptionSmall, settingsUI.labelDescriptionGap)}>
-                      {option.description}
-                    </div>
+        {showSearch && (
+          <div className="relative mb-1.5">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
+            <input
+              ref={searchInputRef}
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder={searchPlaceholder}
+              className={cn(
+                'w-full h-8 pl-8 pr-3 text-sm rounded-md',
+                'bg-foreground/5 border-0',
+                'placeholder:text-muted-foreground/50',
+                'focus:outline-none focus:ring-1 focus:ring-foreground/20'
+              )}
+            />
+          </div>
+        )}
+        <div className="space-y-0.5 max-h-64 overflow-auto">
+          {filteredOptions.length === 0 ? (
+            <div className="px-2.5 py-3 text-sm text-muted-foreground text-center">
+              No results found
+            </div>
+          ) : (
+            filteredOptions.map((option) => {
+              const isSelected = value === option.value
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => handleSelect(option.value)}
+                  onMouseEnter={() => onHover?.(option.value)}
+                  className={cn(
+                    'w-full flex items-center justify-between px-2.5 py-2 rounded-lg',
+                    'hover:bg-foreground/5 transition-colors text-left',
+                    isSelected && 'bg-foreground/3'
                   )}
-                </div>
-                {isSelected && (
-                  <Check className="size-4 text-foreground shrink-0 ml-3" />
-                )}
-              </button>
-            )
-          })}
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className={settingsUI.label}>{option.label}</div>
+                    {option.description && (
+                      <div className={cn(settingsUI.descriptionSmall, settingsUI.labelDescriptionGap)}>
+                        {option.description}
+                      </div>
+                    )}
+                  </div>
+                  {isSelected && (
+                    <Check className="size-4 text-foreground shrink-0 ml-3" />
+                  )}
+                </button>
+              )
+            })
+          )}
         </div>
       </PopoverContent>
     </Popover>
@@ -161,6 +215,10 @@ export interface SettingsMenuSelectRowProps {
   menuWidth?: number
   /** Called when hovering over an option (for live preview). Pass null on leave. */
   onHover?: (value: string | null) => void
+  /** Enable search filter (auto-enabled when options > 8) */
+  searchable?: boolean
+  /** Placeholder for search input */
+  searchPlaceholder?: string
 }
 
 export function SettingsMenuSelectRow({
@@ -175,6 +233,8 @@ export function SettingsMenuSelectRow({
   inCard = true,
   menuWidth = 280,
   onHover,
+  searchable,
+  searchPlaceholder,
 }: SettingsMenuSelectRowProps) {
   return (
     <div
@@ -199,6 +259,8 @@ export function SettingsMenuSelectRow({
           disabled={disabled}
           menuWidth={menuWidth}
           onHover={onHover}
+          searchable={searchable}
+          searchPlaceholder={searchPlaceholder}
         />
       </div>
     </div>

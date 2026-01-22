@@ -6,10 +6,10 @@ import { getSystemPrompt, getDateTimeContext, getWorkingDirectoryContext } from 
 // Plan types are used by UI components; not needed in craft-agent.ts since Safe Mode is user-controlled
 import { parseError, type AgentError } from './errors.ts';
 import { runErrorDiagnostics } from './diagnostics.ts';
-import { loadStoredConfig, loadConfigDefaults, resolveModelId, type Workspace } from '../config/storage.ts';
+import { loadStoredConfig, loadConfigDefaults, getAnthropicBaseUrl, type Workspace } from '../config/storage.ts';
 import { isLocalMcpEnabled } from '../workspaces/storage.ts';
 import { loadPlanFromPath, type SessionConfig as Session } from '../sessions/storage.ts';
-import { DEFAULT_MODEL } from '../config/models.ts';
+import { DEFAULT_MODEL, getModelForSdk } from '../config/models.ts';
 import { getCredentialManager } from '../credentials/index.ts';
 import { updatePreferences, loadPreferences, formatPreferencesForPrompt, type UserPreferences } from '../config/preferences.ts';
 import type { FileAttachment } from '../utils/files.ts';
@@ -422,12 +422,13 @@ export class CraftAgent {
   public onSourceActivationRequest: ((sourceSlug: string) => Promise<boolean>) | null = null;
 
   constructor(config: CraftAgentConfig) {
-    // Resolve model: prioritize session model > config model > global config > DEFAULT_MODEL
-    // Then apply custom model name mappings (for third-party APIs)
-    const baseModel = config.session?.model ?? config.model ?? loadStoredConfig()?.model ?? DEFAULT_MODEL;
-    const resolvedModel = resolveModelId(baseModel);
-    this.config = { ...config, model: resolvedModel };
+    // Resolve model: prioritize session model > config model > DEFAULT_MODEL
+    const model = config.session?.model ?? config.model ?? DEFAULT_MODEL;
+    this.config = { ...config, model };
     this.isHeadless = config.isHeadless ?? false;
+
+    // Log which model is being used (helpful for debugging custom models)
+    debug(`[CraftAgent] Using model: ${model}`);
 
     // Initialize thinking level from config (defaults to 'think' from class initialization)
     if (config.thinkingLevel) {
@@ -804,11 +805,13 @@ export class CraftAgent {
       };
       
       // Configure SDK options
-      const model = this.config.model || DEFAULT_MODEL;
+      // Resolve model: use tier name when using custom API (OpenRouter), else specific version
+      const modelConfig = this.config.model || DEFAULT_MODEL;
+      const model = getModelForSdk(modelConfig);
 
       // Determine effective thinking level: ultrathink override boosts to max for this message
       const effectiveThinkingLevel: ThinkingLevel = this.ultrathinkOverride ? 'max' : this.thinkingLevel;
-      const thinkingTokens = getThinkingTokens(effectiveThinkingLevel, model);
+      const thinkingTokens = getThinkingTokens(effectiveThinkingLevel, modelConfig);
       debug(`[chat] Thinking: level=${this.thinkingLevel}, override=${this.ultrathinkOverride}, effective=${effectiveThinkingLevel}, tokens=${thinkingTokens}`);
 
       // NOTE: Parent-child tracking for subagents is documented below (search for
@@ -816,6 +819,10 @@ export class CraftAgent {
 
       // Clear stderr buffer at start of each query
       this.lastStderrOutput = [];
+
+      // Check if using custom API provider (OpenRouter, etc.) - skip Anthropic-specific betas
+      const customBaseUrl = getAnthropicBaseUrl();
+      const useAnthropicBetas = !customBaseUrl;
 
       const options: Options = {
         ...getDefaultOptions(),
@@ -832,9 +839,9 @@ export class CraftAgent {
             this.lastStderrOutput.shift();
           }
         },
-        // Beta features:
+        // Beta features (only when using direct Anthropic API, not OpenRouter/etc.)
         // - advanced-tool-use-2025-11-20: Enhanced tool use capabilities
-        betas: ['advanced-tool-use-2025-11-20'] as any,
+        ...(useAnthropicBetas ? { betas: ['advanced-tool-use-2025-11-20'] as any } : {}),
         // Extended thinking: tokens based on effective thinking level (session level + ultrathink override)
         maxThinkingTokens: thinkingTokens,
         // Option A: Append to Claude Code's system prompt (recommended by docs)

@@ -17,6 +17,9 @@ export type ErrorCode =
   | 'mcp_auth_required'
   | 'mcp_unreachable'        // MCP server unreachable (from diagnostics)
   | 'billing_error'          // HTTP 402 Payment Required
+  | 'model_no_tool_support'  // Model doesn't support tool/function calling
+  | 'invalid_model'          // Model ID not found
+  | 'data_policy_error'      // OpenRouter data policy restriction
   | 'unknown_error';
 
 export interface RecoveryAction {
@@ -147,6 +150,30 @@ const ERROR_DEFINITIONS: Record<ErrorCode, Omit<AgentError, 'code' | 'originalEr
     ],
     canRetry: false,
   },
+  model_no_tool_support: {
+    title: 'Model Does Not Support Tools',
+    message: 'The selected model does not support tool/function calling, which is required for Craft Agent. Please choose a model with tool support (e.g., Claude, GPT-4, Gemini).',
+    actions: [
+      { key: 's', label: 'Change model', command: '/settings', action: 'settings' },
+    ],
+    canRetry: false,
+  },
+  invalid_model: {
+    title: 'Invalid Model',
+    message: 'The selected model was not found. Please check your model configuration in settings.',
+    actions: [
+      { key: 's', label: 'Change model', command: '/settings', action: 'settings' },
+    ],
+    canRetry: false,
+  },
+  data_policy_error: {
+    title: 'Data Policy Restriction',
+    message: 'OpenRouter blocked this request due to your data policy settings. Configure your privacy settings at openrouter.ai/settings/privacy to allow this model.',
+    actions: [
+      { key: 's', label: 'Open Settings', command: '/settings', action: 'settings' },
+    ],
+    canRetry: false,
+  },
   unknown_error: {
     title: 'Error',
     message: 'An unexpected error occurred.',
@@ -195,8 +222,28 @@ export function parseError(error: unknown): AgentError {
   // Detect error type from message/status
   let code: ErrorCode = 'unknown_error';
 
+  // Check for OpenRouter data policy errors first (these contain "no endpoints" which could confuse other checks)
+  if (lowerMessage.includes('data policy') || lowerMessage.includes('privacy')) {
+    code = 'data_policy_error';
+  // Check for model-specific errors (OpenRouter, etc.)
+  // Tool support errors must be checked BEFORE model errors since tool errors often contain "model"
+  } else if (
+    lowerMessage.includes('no endpoints found that support tool use') ||
+    lowerMessage.includes('does not support tool') ||
+    lowerMessage.includes('tool_use is not supported') ||
+    lowerMessage.includes('function calling not available') ||
+    lowerMessage.includes('tools are not supported') ||
+    lowerMessage.includes('doesn\'t support tool') ||
+    lowerMessage.includes('tool use is not supported') ||
+    (lowerMessage.includes('invalid_request_error') && lowerMessage.includes('tool')) ||
+    // Generic pattern: "tool" + "not" + "support" anywhere in message
+    (lowerMessage.includes('tool') && lowerMessage.includes('not') && lowerMessage.includes('support'))
+  ) {
+    code = 'model_no_tool_support';
+  } else if (lowerMessage.includes('is not a valid model') || lowerMessage.includes('model not found') || lowerMessage.includes('invalid model')) {
+    code = 'invalid_model';
   // Check for specific HTTP status codes or patterns
-  if (lowerMessage.includes('402') || lowerMessage.includes('payment required')) {
+  } else if (lowerMessage.includes('402') || lowerMessage.includes('payment required')) {
     code = 'billing_error';
   } else if (lowerMessage.includes('401') || lowerMessage.includes('unauthorized') || lowerMessage.includes('invalid api key') || lowerMessage.includes('invalid x-api-key') || lowerMessage.includes('authentication failed')) {
     // Distinguish between API key and OAuth errors
@@ -224,6 +271,22 @@ export function parseError(error: unknown): AgentError {
   }
 
   const definition = ERROR_DEFINITIONS[code];
+
+  // For model_no_tool_support errors, try to extract the model name for a more helpful message
+  if (code === 'model_no_tool_support') {
+    // Try to extract model name from various error message formats
+    // Common patterns: "model: xxx", "model 'xxx'", "model \"xxx\"", "model xxx does not"
+    const modelMatch = fullErrorText.match(/model[:\s]+["']?([a-zA-Z0-9\-_/:.]+)["']?/i) ||
+                       fullErrorText.match(/["']([a-zA-Z0-9\-_/:.]+)["']\s+does not support/i);
+    if (modelMatch?.[1]) {
+      return {
+        code,
+        ...definition,
+        message: `Model "${modelMatch[1]}" does not support tool/function calling, which is required for Craft Agent. Please choose a different model with tool support in Settings.`,
+        originalError: errorMessage,
+      };
+    }
+  }
 
   return {
     code,

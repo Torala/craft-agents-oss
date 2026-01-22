@@ -26,6 +26,8 @@ import {
   Moon,
   ExternalLink,
   CheckCircle2,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react'
 import { Spinner } from '@craft-agent/ui'
 import type { AuthType } from '../../../shared/types'
@@ -50,6 +52,7 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog'
 import { SettingsSecretInput, SettingsInput } from '@/components/settings'
+import { SearchableModelInput } from '@/components/settings/SearchableModelInput'
 
 export const meta: DetailsPageMeta = {
   navigator: 'settings',
@@ -265,22 +268,22 @@ function useApiKeyAutoSave({
 
     const trimmedKey = apiKey.trim()
 
+    // Build custom model names object (only include non-empty values)
+    const modelNames = {
+      opus: customModelNames.opus.trim() || undefined,
+      sonnet: customModelNames.sonnet.trim() || undefined,
+      haiku: customModelNames.haiku.trim() || undefined,
+    }
+    const hasModelNames = modelNames.opus || modelNames.sonnet || modelNames.haiku
+
     saveStartTimeRef.current = Date.now()
     onSaveStart?.()
     try {
-      const modelNames = (customModelNames.opus || customModelNames.sonnet || customModelNames.haiku)
-        ? {
-            opus: customModelNames.opus.trim() || undefined,
-            sonnet: customModelNames.sonnet.trim() || undefined,
-            haiku: customModelNames.haiku.trim() || undefined,
-          }
-        : null
-
       await window.electronAPI.updateBillingMethod(
         'api_key',
         trimmedKey,  // Pass empty string to clear credential
         baseUrl.trim() || null,
-        modelNames
+        hasModelNames ? modelNames : null
       )
       lastSavedRef.current = currentConfig
 
@@ -364,12 +367,16 @@ export default function AppSettingsPage() {
   // API Key state
   const [apiKeyValue, setApiKeyValue] = useState('')
   const [baseUrlValue, setBaseUrlValue] = useState('')
-  const [customModelNames, setCustomModelNames] = useState({
-    opus: '',
-    sonnet: '',
-    haiku: ''
-  })
+  // 3-tier model names for custom APIs (OpenRouter, Ollama, etc.)
+  const [opusModelValue, setOpusModelValue] = useState('')
+  const [sonnetModelValue, setSonnetModelValue] = useState('')
+  const [haikuModelValue, setHaikuModelValue] = useState('')
   const [apiKeyError, setApiKeyError] = useState<string | undefined>()
+  // Advanced settings expanded state
+  const [showAdvancedSettings, setShowAdvancedSettings] = useState(false)
+  // Model fetching state
+  const [availableModels, setAvailableModels] = useState<Array<{ id: string; name?: string }>>([])
+  const [isFetchingModels, setIsFetchingModels] = useState(false)
   // Test connection state
   const [isTestingConnection, setIsTestingConnection] = useState(false)
   const [testConnectionResult, setTestConnectionResult] = useState<{ success: boolean; error?: string; modelCount?: number } | null>(null)
@@ -401,7 +408,11 @@ export default function AppSettingsPage() {
   const { handleBlur } = useApiKeyAutoSave({
     apiKey: apiKeyValue,
     baseUrl: baseUrlValue,
-    customModelNames,
+    customModelNames: {
+      opus: opusModelValue,
+      sonnet: sonnetModelValue,
+      haiku: haikuModelValue,
+    },
     authType,
     hasCredential,
     onSaveSuccess: () => {
@@ -425,14 +436,14 @@ export default function AppSettingsPage() {
         setHasCredential(billing.hasCredential)
         setApiKeyValue(billing.apiKey || '')
         setBaseUrlValue(billing.anthropicBaseUrl || '')
-        if (billing.customModelNames) {
-          setCustomModelNames({
-            opus: billing.customModelNames.opus || '',
-            sonnet: billing.customModelNames.sonnet || '',
-            haiku: billing.customModelNames.haiku || '',
-          })
-        }
+        setOpusModelValue(billing.customModelNames?.opus || '')
+        setSonnetModelValue(billing.customModelNames?.sonnet || '')
+        setHaikuModelValue(billing.customModelNames?.haiku || '')
         setNotificationsEnabled(notificationsOn)
+
+        // Auto-expand advanced settings if any advanced field is configured
+        const hasAdvancedSettings = !!(billing.anthropicBaseUrl || billing.customModelNames?.opus || billing.customModelNames?.sonnet || billing.customModelNames?.haiku)
+        setShowAdvancedSettings(hasAdvancedSettings)
       } catch (error) {
         console.error('Failed to load settings:', error)
       }
@@ -482,19 +493,20 @@ export default function AppSettingsPage() {
         try {
           // Switch to api_key mode using current frontend state (don't reload from backend)
           const trimmedKey = apiKeyValue.trim() || undefined
-          const modelNames = (customModelNames.opus || customModelNames.sonnet || customModelNames.haiku)
-            ? {
-                opus: customModelNames.opus.trim() || undefined,
-                sonnet: customModelNames.sonnet.trim() || undefined,
-                haiku: customModelNames.haiku.trim() || undefined,
-              }
-            : null
+
+          // Build custom model names object
+          const modelNames = {
+            opus: opusModelValue.trim() || undefined,
+            sonnet: sonnetModelValue.trim() || undefined,
+            haiku: haikuModelValue.trim() || undefined,
+          }
+          const hasModelNames = modelNames.opus || modelNames.sonnet || modelNames.haiku
 
           await window.electronAPI.updateBillingMethod(
             'api_key',
             trimmedKey,
             baseUrlValue.trim() || null,
-            modelNames
+            hasModelNames ? modelNames : null
           )
           setAuthType('api_key')
           setHasCredential(!!trimmedKey)
@@ -514,7 +526,7 @@ export default function AppSettingsPage() {
     setApiKeyError(undefined)
     setClaudeOAuthStatus('idle')
     setClaudeOAuthError(undefined)
-  }, [authType, hasCredential, apiKeyValue])
+  }, [authType, hasCredential, apiKeyValue, baseUrlValue, opusModelValue, sonnetModelValue, haikuModelValue])
 
   // Use existing Claude token
   const handleUseExistingClaudeToken = useCallback(async () => {
@@ -701,7 +713,7 @@ export default function AppSettingsPage() {
                 <SettingsCard className="mt-2" divided>
                   <SettingsSecretInput
                     label="API Key"
-                    description="Pay-as-you-go with your Anthropic key"
+                    description="Your Anthropic API key for Claude"
                     value={apiKeyValue}
                     onChange={setApiKeyValue}
                     onBlur={handleBlur}
@@ -710,98 +722,188 @@ export default function AppSettingsPage() {
                     error={apiKeyError}
                   />
 
-                  <SettingsInput
-                    label="Anthropic Base URL"
-                    description="For third-party Claude-compatible APIs (optional)"
-                    value={baseUrlValue}
-                    onChange={setBaseUrlValue}
-                    onBlur={handleBlur}
-                    placeholder="https://api.anthropic.com"
-                    inCard
-                  />
-
-                  <div className="px-4 py-3.5 space-y-3">
-                    <div>
-                      <Label className="text-sm font-medium">Custom Model Names</Label>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Override model IDs for third-party APIs (optional)
-                      </p>
-                    </div>
-                    <div className="grid grid-cols-3 gap-3">
-                      <Input
-                        placeholder="Opus"
-                        value={customModelNames.opus}
-                        onChange={(e) => setCustomModelNames(prev => ({ ...prev, opus: e.target.value }))}
-                        onBlur={handleBlur}
-                      />
-                      <Input
-                        placeholder="Sonnet"
-                        value={customModelNames.sonnet}
-                        onChange={(e) => setCustomModelNames(prev => ({ ...prev, sonnet: e.target.value }))}
-                        onBlur={handleBlur}
-                      />
-                      <Input
-                        placeholder="Haiku"
-                        value={customModelNames.haiku}
-                        onChange={(e) => setCustomModelNames(prev => ({ ...prev, haiku: e.target.value }))}
-                        onBlur={handleBlur}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Test Connection Button */}
+                  {/* Advanced Settings Toggle */}
                   <div className="px-4 py-3 border-t border-border/50">
-                    <div className="flex items-center gap-3">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={async () => {
-                          setIsTestingConnection(true)
-                          setTestConnectionResult(null)
-                          try {
-                            const testModel = customModelNames.sonnet || customModelNames.opus || customModelNames.haiku || undefined
-                            const result = await window.electronAPI.testApiConnection(
-                              apiKeyValue,
-                              baseUrlValue || undefined,
-                              testModel
-                            )
-                            setTestConnectionResult(result)
-                          } catch (error) {
-                            setTestConnectionResult({
-                              success: false,
-                              error: error instanceof Error ? error.message : 'Connection failed'
-                            })
-                          } finally {
-                            setIsTestingConnection(false)
-                          }
-                        }}
-                        disabled={!apiKeyValue?.trim() || isTestingConnection}
-                      >
-                        {isTestingConnection ? (
-                          <>
-                            <Spinner className="size-3 mr-1.5" />
-                            Testing...
-                          </>
-                        ) : (
-                          'Test Connection'
-                        )}
-                      </Button>
-                      {testConnectionResult && (
-                        <span className={cn(
-                          'text-sm',
-                          testConnectionResult.success ? 'text-success' : 'text-destructive'
-                        )}>
-                          {testConnectionResult.success
-                            ? testConnectionResult.modelCount
-                              ? `✓ Connected (${testConnectionResult.modelCount} models)`
-                              : '✓ Connected'
-                            : `✗ ${testConnectionResult.error}`}
-                        </span>
+                    <button
+                      type="button"
+                      className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+                      onClick={() => setShowAdvancedSettings(!showAdvancedSettings)}
+                    >
+                      {showAdvancedSettings ? (
+                        <ChevronDown className="size-4" />
+                      ) : (
+                        <ChevronRight className="size-4" />
                       )}
-                    </div>
+                      Advanced Settings
+                      {(baseUrlValue || opusModelValue || sonnetModelValue || haikuModelValue) && (
+                        <span className="text-xs bg-accent px-1.5 py-0.5 rounded">configured</span>
+                      )}
+                    </button>
                   </div>
 
+                  {/* Advanced Settings Content */}
+                  {showAdvancedSettings && (
+                    <>
+                      <SettingsInput
+                        label="API Base URL"
+                        description="For OpenRouter, Ollama, or other compatible APIs"
+                        value={baseUrlValue}
+                        onChange={setBaseUrlValue}
+                        onBlur={handleBlur}
+                        placeholder="https://openrouter.ai/api"
+                        inCard
+                      />
 
+                      {/* 3-Tier Model Names */}
+                      <div className="px-4 py-3.5 space-y-4">
+                        <div>
+                          <Label className="text-sm font-medium">Model Names</Label>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Map each model tier to a custom model name for your API
+                          </p>
+                        </div>
+
+                        {/* Sonnet Model (primary) */}
+                        <div className="space-y-1.5">
+                          <Label className="text-xs text-muted-foreground">Sonnet (primary)</Label>
+                          <SearchableModelInput
+                            placeholder="e.g., anthropic/claude-3.5-sonnet"
+                            value={sonnetModelValue}
+                            onChange={setSonnetModelValue}
+                            onBlur={handleBlur}
+                            models={availableModels}
+                            isLoading={isFetchingModels}
+                            fetchDisabled={!baseUrlValue?.trim()}
+                            onFetchModels={async () => {
+                              if (!baseUrlValue?.trim()) return
+                              setIsFetchingModels(true)
+                              try {
+                                const models = await window.electronAPI.fetchModels(
+                                  baseUrlValue.trim(),
+                                  apiKeyValue.trim() || undefined
+                                )
+                                setAvailableModels(models)
+                              } catch (error) {
+                                console.error('Failed to fetch models:', error)
+                              } finally {
+                                setIsFetchingModels(false)
+                              }
+                            }}
+                          />
+                        </div>
+
+                        {/* Opus Model */}
+                        <div className="space-y-1.5">
+                          <Label className="text-xs text-muted-foreground">Opus (most capable)</Label>
+                          <SearchableModelInput
+                            placeholder="e.g., anthropic/claude-3-opus"
+                            value={opusModelValue}
+                            onChange={setOpusModelValue}
+                            onBlur={handleBlur}
+                            models={availableModels}
+                            isLoading={isFetchingModels}
+                            fetchDisabled={!baseUrlValue?.trim()}
+                            onFetchModels={async () => {
+                              if (!baseUrlValue?.trim()) return
+                              setIsFetchingModels(true)
+                              try {
+                                const models = await window.electronAPI.fetchModels(
+                                  baseUrlValue.trim(),
+                                  apiKeyValue.trim() || undefined
+                                )
+                                setAvailableModels(models)
+                              } catch (error) {
+                                console.error('Failed to fetch models:', error)
+                              } finally {
+                                setIsFetchingModels(false)
+                              }
+                            }}
+                          />
+                        </div>
+
+                        {/* Haiku Model */}
+                        <div className="space-y-1.5">
+                          <Label className="text-xs text-muted-foreground">Haiku (fast & efficient)</Label>
+                          <SearchableModelInput
+                            placeholder="e.g., anthropic/claude-3-haiku"
+                            value={haikuModelValue}
+                            onChange={setHaikuModelValue}
+                            onBlur={handleBlur}
+                            models={availableModels}
+                            isLoading={isFetchingModels}
+                            fetchDisabled={!baseUrlValue?.trim()}
+                            onFetchModels={async () => {
+                              if (!baseUrlValue?.trim()) return
+                              setIsFetchingModels(true)
+                              try {
+                                const models = await window.electronAPI.fetchModels(
+                                  baseUrlValue.trim(),
+                                  apiKeyValue.trim() || undefined
+                                )
+                                setAvailableModels(models)
+                              } catch (error) {
+                                console.error('Failed to fetch models:', error)
+                              } finally {
+                                setIsFetchingModels(false)
+                              }
+                            }}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Test Connection Button */}
+                      <div className="px-4 py-3 border-t border-border/50">
+                        <div className="flex items-center gap-3">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={async () => {
+                              setIsTestingConnection(true)
+                              setTestConnectionResult(null)
+                              try {
+                                // Use the sonnet model (primary) for testing
+                                const result = await window.electronAPI.testApiConnection(
+                                  apiKeyValue,
+                                  baseUrlValue || undefined,
+                                  sonnetModelValue || opusModelValue || haikuModelValue || undefined
+                                )
+                                setTestConnectionResult(result)
+                              } catch (error) {
+                                setTestConnectionResult({
+                                  success: false,
+                                  error: error instanceof Error ? error.message : 'Connection failed'
+                                })
+                              } finally {
+                                setIsTestingConnection(false)
+                              }
+                            }}
+                            disabled={(!apiKeyValue?.trim() && !baseUrlValue?.trim()) || isTestingConnection}
+                          >
+                            {isTestingConnection ? (
+                              <>
+                                <Spinner className="size-3 mr-1.5" />
+                                Testing...
+                              </>
+                            ) : (
+                              'Test Connection'
+                            )}
+                          </Button>
+                          {testConnectionResult && (
+                            <span className={cn(
+                              'text-sm',
+                              testConnectionResult.success ? 'text-success' : 'text-destructive'
+                            )}>
+                              {testConnectionResult.success
+                                ? testConnectionResult.modelCount
+                                  ? `✓ Connected (${testConnectionResult.modelCount} models)`
+                                  : '✓ Connected'
+                                : `✗ ${testConnectionResult.error}`}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </SettingsCard>
               )}
 

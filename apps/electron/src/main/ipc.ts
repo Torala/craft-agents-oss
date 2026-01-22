@@ -11,7 +11,7 @@ import { WindowManager } from './window-manager'
 import { registerOnboardingHandlers } from './onboarding'
 import { IPC_CHANNELS, type FileAttachment, type StoredAttachment, type AuthType, type BillingMethodInfo, type SendMessageOptions } from '../shared/types'
 import { readFileAttachment, perf, validateImageForClaudeAPI, IMAGE_LIMITS } from '@craft-agent/shared/utils'
-import { getAuthType, setAuthType, getPreferencesPath, getModel, setModel, getSessionDraft, setSessionDraft, deleteSessionDraft, getAllSessionDrafts, getWorkspaceByNameOrId, addWorkspace, setActiveWorkspace, getAnthropicBaseUrl, setAnthropicBaseUrl, getCustomModelNames, setCustomModelNames, type Workspace } from '@craft-agent/shared/config'
+import { getAuthType, setAuthType, getPreferencesPath, getCustomModelNames, setCustomModelNames, getSessionDraft, setSessionDraft, deleteSessionDraft, getAllSessionDrafts, getWorkspaceByNameOrId, addWorkspace, setActiveWorkspace, getAnthropicBaseUrl, setAnthropicBaseUrl, loadStoredConfig, saveConfig, type Workspace } from '@craft-agent/shared/config'
 import { getSessionAttachmentsPath } from '@craft-agent/shared/sessions'
 import { loadWorkspaceSources, getSourcesBySlugs, type LoadedSource } from '@craft-agent/shared/sources'
 import { isValidThinkingLevel } from '@craft-agent/shared/agent/thinking-levels'
@@ -908,7 +908,12 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
     if (customModelNames !== undefined) {
       setCustomModelNames(customModelNames)
       if (customModelNames) {
-        ipcLog.info('Custom model names updated:', customModelNames)
+        const names = [
+          customModelNames.opus && `Opus: ${customModelNames.opus}`,
+          customModelNames.sonnet && `Sonnet: ${customModelNames.sonnet}`,
+          customModelNames.haiku && `Haiku: ${customModelNames.haiku}`,
+        ].filter(Boolean)
+        ipcLog.info('Custom model names updated:', names.join(', ') || '(none)')
       } else {
         ipcLog.info('Custom model names cleared')
       }
@@ -960,32 +965,147 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
 
   // Test API connection (validates API key, base URL, and optionally custom model)
   ipcMain.handle(IPC_CHANNELS.SETTINGS_TEST_API_CONNECTION, async (_event, apiKey: string, baseUrl?: string, modelName?: string): Promise<{ success: boolean; error?: string; modelCount?: number }> => {
-    if (!apiKey?.trim()) {
-      return { success: false, error: 'API key is required' }
+    const trimmedKey = apiKey?.trim()
+    const trimmedUrl = baseUrl?.trim()
+
+    // If no API key but base URL provided, try direct fetch (for local APIs like Ollama)
+    if (!trimmedKey && trimmedUrl) {
+      try {
+        const { fetchModels } = await import('@craft-agent/shared/api/model-discovery')
+        const models = await fetchModels(trimmedUrl)
+        return { success: true, modelCount: models.length }
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error)
+        if (msg.includes('ECONNREFUSED') || msg.includes('ENOTFOUND')) {
+          return { success: false, error: 'Cannot connect to API server' }
+        }
+        return { success: false, error: `Connection failed: ${msg}` }
+      }
+    }
+
+    // Require API key if no base URL (connecting to default Anthropic API)
+    if (!trimmedKey) {
+      return { success: false, error: 'API key is required for Anthropic API' }
     }
 
     try {
+      // For custom base URLs (OpenRouter, etc.), use fetch with Bearer auth
+      // OpenRouter and most OpenAI-compatible APIs expect Authorization: Bearer, not x-api-key
+      if (trimmedUrl) {
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${trimmedKey}`
+        }
+
+        // If a custom model name is provided, try to send a minimal message to validate it
+        // Include a tool definition to also verify tool/function calling support
+        if (modelName?.trim()) {
+          const response = await fetch(`${trimmedUrl}/v1/messages`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+              model: modelName.trim(),
+              max_tokens: 1,
+              messages: [{ role: 'user', content: 'test' }],
+              // Include minimal tool to trigger tool support validation
+              tools: [{
+                name: 'test_tool',
+                description: 'Test tool for validation',
+                input_schema: { type: 'object', properties: {} }
+              }]
+            })
+          })
+
+          if (response.ok) {
+            return { success: true }
+          }
+
+          const errorText = await response.text()
+          const lowerErrorText = errorText.toLowerCase()
+          ipcLog.info(`Model test error response (${response.status}): ${errorText.slice(0, 500)}`)
+          if (response.status === 401) {
+            return { success: false, error: 'Invalid API key' }
+          }
+          // Check for OpenRouter data policy errors (must be before tool support check)
+          if (lowerErrorText.includes('data policy') || lowerErrorText.includes('privacy')) {
+            return { success: false, error: `OpenRouter data policy restriction. Configure your privacy settings at openrouter.ai/settings/privacy` }
+          }
+          // Check for tool support errors (OpenRouter and other providers)
+          // These patterns must be checked BEFORE "model not found" since tool errors often contain "model"
+          const isToolSupportError =
+            lowerErrorText.includes('no endpoints found that support tool use') ||
+            lowerErrorText.includes('does not support tool') ||
+            lowerErrorText.includes('tool_use is not supported') ||
+            lowerErrorText.includes('function calling not available') ||
+            lowerErrorText.includes('tools are not supported') ||
+            lowerErrorText.includes('doesn\'t support tool') ||
+            lowerErrorText.includes('tool use is not supported') ||
+            // Generic pattern: "tool" + "not" + "support" anywhere in message
+            (lowerErrorText.includes('tool') && lowerErrorText.includes('not') && lowerErrorText.includes('support'))
+          if (isToolSupportError) {
+            return { success: false, error: `Model "${modelName}" does not support tool/function calling. Craft Agent requires a model with tool support (e.g., Claude, GPT-4, Gemini).` }
+          }
+          // Check for model not found - but only if it's clearly about the model not existing
+          // Be careful not to match tool support errors that mention "model"
+          if (lowerErrorText.includes('model not found') ||
+              lowerErrorText.includes('is not a valid model') ||
+              lowerErrorText.includes('invalid model')) {
+            return { success: false, error: `Model "${modelName}" not found` }
+          }
+          return { success: false, error: `API error (${response.status}): ${errorText.slice(0, 200)}` }
+        }
+
+        // No model specified - try to list models
+        const { fetchModels } = await import('@craft-agent/shared/api/model-discovery')
+        const models = await fetchModels(trimmedUrl, trimmedKey)
+        return { success: true, modelCount: models.length }
+      }
+
+      // Standard Anthropic API - use SDK with x-api-key
       const Anthropic = (await import('@anthropic-ai/sdk')).default
-      const client = new Anthropic({
-        apiKey: apiKey.trim(),
-        ...(baseUrl?.trim() ? { baseURL: baseUrl.trim() } : {})
-      })
+      const client = new Anthropic({ apiKey: trimmedKey })
 
       // If a custom model name is provided, try to send a minimal message to validate it
+      // Include a tool definition to also verify tool/function calling support
       if (modelName?.trim()) {
         try {
           await client.messages.create({
             model: modelName.trim(),
             max_tokens: 1,
-            messages: [{ role: 'user', content: 'test' }]
+            messages: [{ role: 'user', content: 'test' }],
+            // Include minimal tool to trigger tool support validation
+            tools: [{
+              name: 'test_tool',
+              description: 'Test tool for validation',
+              input_schema: { type: 'object' as const, properties: {} }
+            }]
           })
           return { success: true }
         } catch (error) {
           const msg = error instanceof Error ? error.message : String(error)
-          if (msg.includes('401') || msg.includes('invalid') || msg.includes('Unauthorized')) {
+          const lowerMsg = msg.toLowerCase()
+          ipcLog.info(`Model test SDK error: ${msg.slice(0, 500)}`)
+          if (lowerMsg.includes('401') || lowerMsg.includes('unauthorized')) {
             return { success: false, error: 'Invalid API key' }
           }
-          if (msg.includes('model') || msg.includes('not found')) {
+          // Check for tool support errors (must be checked BEFORE model not found)
+          const isToolSupportError =
+            lowerMsg.includes('no endpoints found that support tool use') ||
+            lowerMsg.includes('does not support tool') ||
+            lowerMsg.includes('tool_use is not supported') ||
+            lowerMsg.includes('function calling not available') ||
+            lowerMsg.includes('tools are not supported') ||
+            lowerMsg.includes('doesn\'t support tool') ||
+            lowerMsg.includes('tool use is not supported') ||
+            (lowerMsg.includes('tool') && lowerMsg.includes('not') && lowerMsg.includes('support'))
+          if (isToolSupportError) {
+            return { success: false, error: `Model "${modelName}" does not support tool/function calling. Craft Agent requires a model with tool support (e.g., Claude, GPT-4, Gemini).` }
+          }
+          // Check for model not found - be specific to avoid matching tool errors
+          if (lowerMsg.includes('model not found') ||
+              lowerMsg.includes('is not a valid model') ||
+              lowerMsg.includes('invalid model') ||
+              lowerMsg.includes('404')) {
             return { success: false, error: `Model "${modelName}" not found` }
           }
           return { success: false, error: msg }
@@ -1008,20 +1128,15 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
     }
   })
 
-  // ============================================================
-  // Settings - Model
-  // ============================================================
-
-  // Get current model (returns stored model or null if not set)
-  ipcMain.handle(IPC_CHANNELS.SETTINGS_GET_MODEL, async (): Promise<string | null> => {
-    return getModel()
+  // Fetch available models from API provider
+  ipcMain.handle(IPC_CHANNELS.SETTINGS_FETCH_MODELS, async (_event, baseUrl: string, apiKey?: string): Promise<Array<{ id: string; name?: string }>> => {
+    const { fetchModels } = await import('@craft-agent/shared/api/model-discovery')
+    return fetchModels(baseUrl, apiKey)
   })
 
-  // Set model preference
-  ipcMain.handle(IPC_CHANNELS.SETTINGS_SET_MODEL, async (_event, model: string) => {
-    setModel(model)
-    ipcLog.info(`Model updated to: ${model}`)
-  })
+  // ============================================================
+  // Settings - Model (Session-Specific)
+  // ============================================================
 
   // Get session-specific model
   ipcMain.handle(IPC_CHANNELS.SESSION_GET_MODEL, async (_event, sessionId: string, _workspaceId: string): Promise<string | null> => {
