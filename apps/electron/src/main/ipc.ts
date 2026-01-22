@@ -1005,7 +1005,7 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
             headers,
             body: JSON.stringify({
               model: modelName.trim(),
-              max_tokens: 1,
+              max_tokens: 16,  // Some providers (Azure) require minimum 16 tokens
               messages: [{ role: 'user', content: 'test' }],
               // Include minimal tool to trigger tool support validation
               tools: [{
@@ -1071,7 +1071,7 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
         try {
           await client.messages.create({
             model: modelName.trim(),
-            max_tokens: 1,
+            max_tokens: 16,  // Some providers require minimum 16 tokens
             messages: [{ role: 'user', content: 'test' }],
             // Include minimal tool to trigger tool support validation
             tools: [{
