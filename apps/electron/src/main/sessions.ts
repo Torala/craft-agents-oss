@@ -1260,6 +1260,8 @@ export class SessionManager {
     const userDefaultWorkingDir = wsConfig?.defaults?.workingDirectory || undefined
     // Get default thinking level from workspace config, fallback to global defaults
     const defaultThinkingLevel = wsConfig?.defaults?.thinkingLevel ?? globalDefaults.workspaceDefaults.thinkingLevel
+    // Get default model from workspace config (used when no session-specific model is set)
+    const defaultModel = wsConfig?.defaults?.model
 
     // Resolve working directory from options:
     // - 'user_default' or undefined: Use workspace's configured default
@@ -1296,7 +1298,8 @@ export class SessionManager {
       permissionMode: defaultPermissionMode,
       workingDirectory: resolvedWorkingDir,
       sdkCwd: storedSession.sdkCwd,
-      model: storedSession.model,
+      // Session-specific model takes priority, then workspace default
+      model: storedSession.model || defaultModel,
       thinkingLevel: defaultThinkingLevel,
       messageQueue: [],
       backgroundShellCommands: new Map(),
@@ -1331,7 +1334,7 @@ export class SessionManager {
       const config = loadStoredConfig()
       managed.agent = new CraftAgent({
         workspace: managed.workspace,
-        // Session model takes priority, fallback to global config
+        // Model priority: session-specific > workspace default > global config
         model: managed.model || config?.model,
         // Initialize thinking level at construction to avoid race conditions
         thinkingLevel: managed.thinkingLevel,
@@ -2146,7 +2149,9 @@ export class SessionManager {
       updateSessionMetadata(managed.workspace.rootPath, sessionId, { model: model ?? undefined })
       // Update agent model if it already exists (takes effect on next query)
       if (managed.agent) {
-        const effectiveModel = model ?? loadStoredConfig()?.model ?? DEFAULT_MODEL
+        // Fallback chain: session model > workspace default > global config > DEFAULT_MODEL
+        const wsConfig = loadWorkspaceConfig(managed.workspace.rootPath)
+        const effectiveModel = model ?? wsConfig?.defaults?.model ?? loadStoredConfig()?.model ?? DEFAULT_MODEL
         const resolvedModel = resolveModelId(effectiveModel)
         managed.agent.setModel(resolvedModel)
       }
