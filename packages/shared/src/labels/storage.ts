@@ -3,35 +3,92 @@
  *
  * Filesystem-based storage for workspace label configurations.
  * Labels are stored at {workspaceRootPath}/labels/config.json
- * Icons are stored at labels/icons/{labelId}.{svg,png,jpg,jpeg}
  *
  * Hierarchy: Labels form a nested JSON tree. IDs are simple slugs.
- * Unlike statuses, labels have no defaults — workspaces start with an empty label set.
+ * New workspaces are seeded with default labels (Development + Content groups).
+ * Labels are visual by color only (colored circles in the UI).
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import type { WorkspaceLabelConfig, LabelConfig } from './types.ts';
 import { flattenLabels, findLabelById } from './tree.ts';
-import {
-  downloadIcon,
-  ICON_EXTENSIONS,
-} from '../utils/icon.ts';
 import { migrateLabelColors } from '../colors/migrate.ts';
 import { debug } from '../utils/debug.ts';
 
 const LABEL_CONFIG_DIR = 'labels';
 const LABEL_CONFIG_FILE = 'labels/config.json';
-// Icons stored flat in labels/icons/ subfolder, with labelId as filename
-const LABEL_ICONS_DIR = 'labels/icons';
 
 /**
- * Get default label configuration (empty — no built-in labels)
+ * Get default label configuration.
+ * Provides a starter set of labels organized into two complementary color families:
+ * - Development (blue family): Code, Bug, Automation
+ * - Content (purple family): Writing, Research, Design
+ * Plus flat valued labels: Priority (number), Project (string)
+ *
+ * Children use hue-shifted shades of their parent color to show visual hierarchy.
  */
 export function getDefaultLabelConfig(): WorkspaceLabelConfig {
   return {
     version: 1,
-    labels: [],
+    labels: [
+      {
+        id: 'development',
+        name: 'Development',
+        color: { light: '#3B82F6', dark: '#60A5FA' },
+        children: [
+          {
+            id: 'code',
+            name: 'Code',
+            color: { light: '#4F46E5', dark: '#818CF8' }, // indigo shift
+          },
+          {
+            id: 'bug',
+            name: 'Bug',
+            color: { light: '#0EA5E9', dark: '#38BDF8' }, // sky shift
+          },
+          {
+            id: 'automation',
+            name: 'Automation',
+            color: { light: '#06B6D4', dark: '#22D3EE' }, // cyan shift
+          },
+        ],
+      },
+      {
+        id: 'content',
+        name: 'Content',
+        color: { light: '#8B5CF6', dark: '#A78BFA' },
+        children: [
+          {
+            id: 'writing',
+            name: 'Writing',
+            color: { light: '#7C3AED', dark: '#C4B5FD' }, // deeper violet
+          },
+          {
+            id: 'research',
+            name: 'Research',
+            color: { light: '#A855F7', dark: '#C084FC' }, // lighter purple
+          },
+          {
+            id: 'design',
+            name: 'Design',
+            color: { light: '#D946EF', dark: '#E879F9' }, // fuchsia shift
+          },
+        ],
+      },
+      {
+        id: 'priority',
+        name: 'Priority',
+        color: { light: '#F59E0B', dark: '#FBBF24' },
+        valueType: 'number',
+      },
+      {
+        id: 'project',
+        name: 'Project',
+        color: 'foreground/50',
+        valueType: 'string',
+      },
+    ],
   };
 }
 
@@ -43,8 +100,13 @@ export function getDefaultLabelConfig(): WorkspaceLabelConfig {
 export function loadLabelConfig(workspaceRootPath: string): WorkspaceLabelConfig {
   const configPath = join(workspaceRootPath, LABEL_CONFIG_FILE);
 
+  // If no config file exists, seed with defaults and persist to disk.
+  // This ensures existing workspaces (created before default labels existed) get populated.
   if (!existsSync(configPath)) {
-    return getDefaultLabelConfig();
+    const defaults = getDefaultLabelConfig();
+    debug('[loadLabelConfig] No config found, seeding with default labels');
+    saveLabelConfig(workspaceRootPath, defaults);
+    return defaults;
   }
 
   try {
@@ -140,54 +202,4 @@ export function isValidLabelIdFormat(labelId: string): boolean {
   return SLUG_PATTERN.test(labelId);
 }
 
-// ============================================================
-// Icon Operations (uses shared utilities from utils/icon.ts)
-// ============================================================
 
-/**
- * Find icon file for a label.
- * Looks for labels/icons/{labelId}.{svg,png,jpg,jpeg}
- * Label IDs are simple slugs — always filesystem-safe.
- * Returns absolute path to icon file or undefined.
- */
-export function findLabelIcon(
-  workspaceRootPath: string,
-  labelId: string
-): string | undefined {
-  const iconsDir = join(workspaceRootPath, LABEL_ICONS_DIR);
-
-  for (const ext of ICON_EXTENSIONS) {
-    const iconPath = join(iconsDir, `${labelId}${ext}`);
-    if (existsSync(iconPath)) {
-      return iconPath;
-    }
-  }
-  return undefined;
-}
-
-/**
- * Download an icon from a URL and save it to labels/icons/{labelId}.{ext}.
- * Returns the path to the downloaded icon, or null on failure.
- */
-export async function downloadLabelIcon(
-  workspaceRootPath: string,
-  labelId: string,
-  iconUrl: string
-): Promise<string | null> {
-  const iconsDir = join(workspaceRootPath, LABEL_ICONS_DIR);
-
-  // Ensure icons directory exists
-  if (!existsSync(iconsDir)) {
-    mkdirSync(iconsDir, { recursive: true });
-  }
-
-  // Download icon with labelId as the filename prefix
-  const downloadedPath = await downloadIcon(iconsDir, iconUrl, 'Labels', labelId);
-  if (!downloadedPath) return null;
-
-  debug(`[downloadLabelIcon] Icon saved for ${labelId}: ${downloadedPath}`);
-  return downloadedPath;
-}
-
-// Re-export icon utilities for convenience
-export { isIconUrl } from '../utils/icon.ts';

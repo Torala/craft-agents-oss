@@ -13,6 +13,8 @@
  * - skill:{workspaceId}:{slug}
  * - status:{workspaceId}:{relativePath}
  *
+ * Note: Labels do NOT use icons — they are color-only (colored circles).
+ *
  * The useEntityIcon() hook is the single entry point for loading any entity's icon.
  * It handles cache lookup, IPC file loading, SVG theming, and emoji detection.
  */
@@ -423,10 +425,10 @@ const ICON_FILE_EXTENSIONS = ['.svg', '.png', '.jpg', '.jpeg']
 
 /**
  * Pre-compiled regex for extracting workspace-relative icon paths from absolute paths.
- * Matches any known entity directory prefix (skills/, sources/, statuses/, labels/)
+ * Matches any known entity directory prefix (skills/, sources/, statuses/)
  * followed by the rest of the path.
  */
-const ICON_PATH_PATTERN = /(?:skills|sources|statuses|labels)\/.+$/
+const ICON_PATH_PATTERN = /(?:skills|sources|statuses)\/.+$/
 
 /**
  * Options for the useEntityIcon hook.

@@ -16,8 +16,11 @@ import type { ParsedLabelEntry } from './types.ts';
 /** Separator between label ID and value in session label entries */
 const VALUE_SEPARATOR = '::';
 
-/** ISO date pattern: YYYY-MM-DD (no time component, strict format) */
+/** ISO date pattern: YYYY-MM-DD (date-only, strict format) */
 const ISO_DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+
+/** ISO datetime pattern: YYYY-MM-DDTHH:mm (date + time, no seconds) */
+const ISO_DATETIME_REGEX = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/;
 
 /** Simple decimal number: optional negative, digits, optional decimal portion */
 const DECIMAL_NUMBER_REGEX = /^-?\d+(\.\d+)?$/;
@@ -65,9 +68,14 @@ export function formatLabelEntry(id: string, value?: string | number | Date): st
     return id;
   }
 
-  // Serialize Date to ISO date string (date-only, no time)
+  // Serialize Date to ISO string — include time if not midnight UTC
   if (value instanceof Date) {
-    const serialized = value.toISOString().split('T')[0];
+    const hours = value.getUTCHours();
+    const minutes = value.getUTCMinutes();
+    const hasTime = hours !== 0 || minutes !== 0;
+    const serialized = hasTime
+      ? `${value.toISOString().split('T')[0]}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`
+      : value.toISOString().split('T')[0];
     return `${id}${VALUE_SEPARATOR}${serialized}`;
   }
 
@@ -97,7 +105,15 @@ export function extractLabelId(entry: string): string {
  * then number, then fallback to string.
  */
 function inferTypedValue(raw: string): string | number | Date {
-  // 1. Check ISO date format (YYYY-MM-DD)
+  // 1. Check ISO datetime format (YYYY-MM-DDTHH:mm) — must check before date-only
+  if (ISO_DATETIME_REGEX.test(raw)) {
+    const date = new Date(raw + ':00Z');
+    if (!isNaN(date.getTime())) {
+      return date;
+    }
+  }
+
+  // 2. Check ISO date format (YYYY-MM-DD)
   if (ISO_DATE_REGEX.test(raw)) {
     const date = new Date(raw + 'T00:00:00Z');
     // Validate the date is real by round-tripping: prevents JS Date clamping
@@ -108,11 +124,11 @@ function inferTypedValue(raw: string): string | number | Date {
     }
   }
 
-  // 2. Check if it's a simple decimal number (reject hex, octal, binary, scientific notation)
+  // 3. Check if it's a simple decimal number (reject hex, octal, binary, scientific notation)
   if (DECIMAL_NUMBER_REGEX.test(raw)) {
     return Number(raw);
   }
 
-  // 3. Fallback: plain string
+  // 4. Fallback: plain string
   return raw;
 }

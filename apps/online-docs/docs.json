@@ -72,11 +72,25 @@
             ]
           },
           {
+            "group": "Labels",
+            "pages": [
+              "labels/overview",
+              "labels/auto-rules"
+            ]
+          },
+          {
+            "group": "Customisation",
+            "pages": [
+              "customisation/themes",
+              "customisation/colors",
+              "customisation/icons"
+            ]
+          },
+          {
             "group": "Go Further",
             "pages": [
               "go-further/sharing",
               "go-further/workspaces",
-              "go-further/themes",
               "go-further/connect-to-anything",
               "go-further/deeplinks"
             ]

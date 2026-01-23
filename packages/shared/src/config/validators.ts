@@ -996,6 +996,8 @@ export function validateStatusesContent(jsonString: string): ValidationResult {
 // Labels Validators
 // ============================================================
 
+import { validateAutoLabelRule } from '../labels/auto/validation.ts';
+
 const LABEL_CONFIG_FILE = 'labels/config.json';
 
 /** Maximum nesting depth for label tree (prevents excessively deep hierarchies) */
@@ -1006,6 +1008,17 @@ const MAX_LABEL_DEPTH = 5;
  * Recursive: each label can have optional children forming a tree.
  * IDs are simple slugs (lowercase alphanumeric + hyphens).
  */
+/**
+ * Zod schema for auto-label rules (regex patterns for automatic label application).
+ * Validates pattern is non-empty; regex validity is checked semantically below.
+ */
+const AutoLabelRuleSchema = z.object({
+  pattern: z.string().min(1, 'Auto-label rule pattern is required'),
+  flags: z.string().optional(),
+  valueTemplate: z.string().optional(),
+  description: z.string().optional(),
+});
+
 const BaseLabelConfigSchema = z.object({
   id: z.string().regex(
     /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/,
@@ -1016,6 +1029,8 @@ const BaseLabelConfigSchema = z.object({
   icon: z.string().optional(),
   /** Optional hint: what type of value this label carries (omit for boolean labels) */
   valueType: z.enum(['string', 'number', 'date']).optional(),
+  /** Auto-label rules: regex patterns that scan messages and apply labels automatically */
+  autoRules: z.array(AutoLabelRuleSchema).optional(),
 });
 
 // Recursive schema: LabelConfig can have children which are also LabelConfigs.
@@ -1026,6 +1041,7 @@ type LabelConfigSchemaType = z.ZodType<{
   color?: unknown;
   icon?: string;
   valueType?: 'string' | 'number' | 'date';
+  autoRules?: Array<{ pattern: string; flags?: string; valueTemplate?: string; description?: string }>;
   children?: LabelConfigSchemaType[];
 }>;
 
@@ -1160,6 +1176,50 @@ export function validateLabelsContent(jsonString: string): ValidationResult {
     }
   }
   checkDepth(config.labels, 1, 'labels');
+
+  // 3. Validate auto-label rules (regex patterns on regular labels)
+  function checkAutoRules(labels: any[], path: string): void {
+    for (let i = 0; i < labels.length; i++) {
+      const label = labels[i];
+      if (label.autoRules && Array.isArray(label.autoRules)) {
+        for (let j = 0; j < label.autoRules.length; j++) {
+          const rule = label.autoRules[j];
+          if (rule.pattern) {
+            const ruleResult = validateAutoLabelRule(rule.pattern, rule.flags);
+            for (const err of ruleResult.errors) {
+              errors.push({
+                file,
+                path: `${path}[${i}].autoRules[${j}].pattern`,
+                message: err,
+                severity: 'error',
+                suggestion: 'Fix the regex pattern or remove the rule',
+              });
+            }
+            for (const warn of ruleResult.warnings) {
+              warnings.push({
+                file,
+                path: `${path}[${i}].autoRules[${j}].pattern`,
+                message: warn,
+                severity: 'warning',
+              });
+            }
+          } else {
+            errors.push({
+              file,
+              path: `${path}[${i}].autoRules[${j}]`,
+              message: 'Auto-label rule must have a "pattern" field',
+              severity: 'error',
+              suggestion: 'Add a regex pattern string to the rule',
+            });
+          }
+        }
+      }
+      if (label.children && label.children.length > 0) {
+        checkAutoRules(label.children, `${path}[${i}].children`);
+      }
+    }
+  }
+  checkAutoRules(config.labels, 'labels');
 
   return {
     valid: errors.length === 0,

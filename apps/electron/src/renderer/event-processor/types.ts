@@ -143,6 +143,37 @@ export interface LabelsChangedEvent {
 }
 
 /**
+ * Todo state changed event (external metadata change or agent tool)
+ */
+export interface TodoStateChangedEvent {
+  type: 'todo_state_changed'
+  sessionId: string
+  todoState?: string
+}
+
+/**
+ * Session flagged/unflagged events (external metadata change)
+ */
+export interface SessionFlaggedEvent {
+  type: 'session_flagged'
+  sessionId: string
+}
+
+export interface SessionUnflaggedEvent {
+  type: 'session_unflagged'
+  sessionId: string
+}
+
+/**
+ * Session name changed event (external metadata change)
+ */
+export interface NameChangedEvent {
+  type: 'name_changed'
+  sessionId: string
+  name?: string
+}
+
+/**
  * Plan submitted event
  */
 export interface PlanSubmittedEvent {
@@ -385,6 +416,10 @@ export type AgentEvent =
   | CredentialRequestEvent
   | SourcesChangedEvent
   | LabelsChangedEvent
+  | TodoStateChangedEvent
+  | SessionFlaggedEvent
+  | SessionUnflaggedEvent
+  | NameChangedEvent
   | PlanSubmittedEvent
   | StatusEvent
   | InfoEvent

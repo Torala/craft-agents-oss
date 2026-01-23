@@ -272,7 +272,9 @@ export function InlineMentionMenu({
       </div>
 
       <div ref={listRef} className={MENU_LIST_STYLE}>
-        {/* Flat list of all items */}
+        {flatItems.length === 0 && filter && (
+          <div className="px-3 py-2 text-[12px] text-muted-foreground/60">No results</div>
+        )}
         {flatItems.map((item, itemIndex) => {
           const isSelected = itemIndex === selectedIndex
 
@@ -445,6 +447,10 @@ export function useInlineMention({
 }: UseInlineMentionOptions): UseInlineMentionReturn {
   const [isOpen, setIsOpen] = React.useState(false)
   const [filter, setFilter] = React.useState('')
+  // committedFilter: only updates when IPC returns (or immediately when no IPC needed).
+  // Prevents visual jumps — the menu shows all items until results are ready,
+  // then applies filter + file results in a single frame.
+  const [committedFilter, setCommittedFilter] = React.useState('')
   const [position, setPosition] = React.useState({ x: 0, y: 0 })
   const [atStart, setAtStart] = React.useState(-1)
   const [fileResults, setFileResults] = React.useState<MentionItem[]>([])
@@ -531,36 +537,48 @@ export function useInlineMention({
       setAtStart(matchStart)
       setFilter(filterText)
 
-      // File search: debounce IPC call, update fileResults when it resolves.
-      // Skills/sources filter instantly via the raw `filter` value; file results
-      // appear asynchronously once IPC returns (menu stays visible meanwhile).
-      console.log('[mention] filterText:', filterText, 'basePath:', basePath)
+      // Cache-first file search: if cache has entries from a previous IPC call,
+      // filter client-side instantly (no IPC, no debounce). Otherwise fire a
+      // debounced IPC to populate the cache. Cache clears when menu closes.
+      window.electronAPI.debugLog('[mention] filterText:', filterText, 'basePath:', basePath, 'cacheSize:', fileCache.current.length)
       if (basePath && filterText.length >= 1) {
-        if (fileSearchTimeout.current) clearTimeout(fileSearchTimeout.current)
-
-        fileSearchTimeout.current = setTimeout(async () => {
-          try {
-            console.log('[mention] calling IPC searchFiles:', basePath, filterText)
-            const results = await window.electronAPI.searchFiles(basePath, filterText)
-            console.log('[mention] IPC returned:', results?.length, 'results', results?.slice(0, 3))
-            // Update cache with new results (merge unique by path)
-            const existingPaths = new Set(fileCache.current.map(f => f.path))
-            const newEntries = results.filter(f => !existingPaths.has(f.path))
-            fileCache.current = [...fileCache.current, ...newEntries]
-            const filtered = filterCacheResults(fileCache.current, filterText)
-            console.log('[mention] after cache filter:', filtered.length, 'items')
-            setFileResults(filtered)
-          } catch (err) {
-            console.error('[mention] IPC searchFiles error:', err)
+        if (fileCache.current.length > 0) {
+          // Cache exists — filter client-side instantly, no IPC needed
+          if (fileSearchTimeout.current) {
+            clearTimeout(fileSearchTimeout.current)
+            fileSearchTimeout.current = null
           }
-        }, 150)
+          const filtered = filterCacheResults(fileCache.current, filterText)
+          window.electronAPI.debugLog('[mention] cache hit:', filtered.length, 'items')
+          setFileResults(filtered)
+          setCommittedFilter(filterText)
+        } else {
+          // First search — fire debounced IPC to populate cache
+          if (fileSearchTimeout.current) clearTimeout(fileSearchTimeout.current)
+
+          fileSearchTimeout.current = setTimeout(async () => {
+            try {
+              window.electronAPI.debugLog('[mention] calling IPC searchFiles:', basePath, filterText)
+              const results = await window.electronAPI.searchFiles(basePath, filterText)
+              window.electronAPI.debugLog('[mention] IPC returned:', results?.length, 'results')
+              fileCache.current = results
+              const filtered = filterCacheResults(fileCache.current, filterText)
+              window.electronAPI.debugLog('[mention] after cache filter:', filtered.length, 'items')
+              setFileResults(filtered)
+              setCommittedFilter(filterText)
+            } catch (err) {
+              window.electronAPI.debugLog('[mention] IPC searchFiles error:', String(err))
+            }
+          }, 150)
+        }
       } else {
-        console.log('[mention] skipping file search (no basePath or empty filter)')
+        window.electronAPI.debugLog('[mention] skipping file search (no basePath or empty filter)')
         if (fileSearchTimeout.current) {
           clearTimeout(fileSearchTimeout.current)
           fileSearchTimeout.current = null
         }
         setFileResults([])
+        setCommittedFilter(filterText)
       }
 
       if (inputRef.current) {
@@ -589,6 +607,7 @@ export function useInlineMention({
     } else {
       setIsOpen(false)
       setFilter('')
+      setCommittedFilter('')
       setAtStart(-1)
       // Clear file search state and cache when menu closes
       if (fileSearchTimeout.current) {
@@ -634,6 +653,7 @@ export function useInlineMention({
 
     onSelect(item)
     setIsOpen(false)
+    setCommittedFilter('')
     // Clear file search state and cache to prevent stale results on next open
     if (fileSearchTimeout.current) {
       clearTimeout(fileSearchTimeout.current)
@@ -648,6 +668,7 @@ export function useInlineMention({
   const close = React.useCallback(() => {
     setIsOpen(false)
     setFilter('')
+    setCommittedFilter('')
     setAtStart(-1)
     // Clear file search state and cache to prevent stale results on next open
     if (fileSearchTimeout.current) {
@@ -660,7 +681,7 @@ export function useInlineMention({
 
   return {
     isOpen,
-    filter,
+    filter: committedFilter,
     position,
     sections,
     isSearching: false,

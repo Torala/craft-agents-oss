@@ -54,6 +54,7 @@ import { applySmartTypography } from '@/lib/smart-typography'
 import { AttachmentPreview } from '../AttachmentPreview'
 import { MODELS, getModelShortName, getModelContextWindow, isClaudeModel } from '@config/models'
 import { useOptionalAppShellContext } from '@/context/AppShellContext'
+import { EditPopover, getEditConfig } from '@/components/ui/EditPopover'
 import { SourceAvatar } from '@/components/ui/source-avatar'
 import { FreeFormInputContextBadge } from './FreeFormInputContextBadge'
 import type { FileAttachment, LoadedSource, LoadedSkill } from '../../../../shared/types'
@@ -84,6 +85,16 @@ const DEFAULT_PLACEHOLDERS = [
   'Type # to apply labels to this conversation',
   'Press Shift + Return to add a new line',
 ]
+
+/** Fisher-Yates shuffle — returns a new array in random order */
+function shuffleArray<T>(array: T[]): T[] {
+  const shuffled = [...array]
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
+  }
+  return shuffled
+}
 
 export interface FreeFormInputProps {
   /** Placeholder text(s) for the textarea - can be array for rotation */
@@ -142,7 +153,7 @@ export interface FreeFormInputProps {
   sessionLabels?: string[]
   /** Callback when a label is added via # menu */
   onLabelAdd?: (labelId: string) => void
-  /** Workspace ID for loading skill/label icons */
+  /** Workspace ID for loading skill icons */
   workspaceId?: string
   /** Current working directory path */
   workingDirectory?: string
@@ -214,9 +225,21 @@ export function FreeFormInput({
   isEmptySession = false,
   contextStatus,
 }: FreeFormInputProps) {
-  // Read custom model from context — when set, overrides the Anthropic model selector.
+  // Read custom model and workspace info from context.
   // Uses optional variant so playground (no provider) doesn't crash.
-  const customModel = useOptionalAppShellContext()?.customModel ?? null
+  const appShellCtx = useOptionalAppShellContext()
+  const customModel = appShellCtx?.customModel ?? null
+  // Resolve workspace rootPath for "Add New Label" deep link
+  const workspaceRootPath = React.useMemo(() => {
+    if (!appShellCtx || !workspaceId) return null
+    return appShellCtx.workspaces.find(w => w.id === workspaceId)?.rootPath ?? null
+  }, [appShellCtx, workspaceId])
+
+  // Shuffle placeholder order once per mount so each session feels fresh
+  const shuffledPlaceholder = React.useMemo(
+    () => Array.isArray(placeholder) ? shuffleArray(placeholder) : placeholder,
+    [] // eslint-disable-line react-hooks/exhaustive-deps -- intentionally shuffle only on mount
+  )
 
   // Performance optimization: Always use internal state for typing to avoid parent re-renders
   // Sync FROM parent on mount/change (for restoring drafts)
@@ -606,8 +629,29 @@ export function FreeFormInput({
     labels,
     sessionLabels,
     onSelect: handleLabelSelect,
-    workspaceId: workspaceId || '',
   })
+
+  // "Add New Label" handler: cleans up the #trigger text and opens a controlled
+  // EditPopover so the user can describe the label before the agent creates it.
+  const [addLabelPopoverOpen, setAddLabelPopoverOpen] = React.useState(false)
+  const handleAddLabel = React.useCallback((prefill: string) => {
+    if (!workspaceRootPath) return
+
+    // Remove the #trigger text from input
+    const cleaned = inlineLabel.handleSelect('')
+    setInput(cleaned)
+    syncToParent(cleaned)
+    inlineLabel.close()
+
+    // Open the EditPopover for label creation
+    setAddLabelPopoverOpen(true)
+  }, [workspaceRootPath, inlineLabel, syncToParent])
+
+  // Memoize the add-label config so the EditPopover doesn't recreate on every render
+  const addLabelEditConfig = React.useMemo(() => {
+    if (!workspaceRootPath) return null
+    return getEditConfig('add-label', workspaceRootPath)
+  }, [workspaceRootPath])
 
   // Report height changes to parent (for external animation sync)
   React.useLayoutEffect(() => {
@@ -1076,10 +1120,25 @@ export function FreeFormInput({
           onOpenChange={(open) => !open && inlineLabel.close()}
           items={inlineLabel.items}
           onSelect={handleInlineLabelSelect}
+          onAddLabel={handleAddLabel}
           filter={inlineLabel.filter}
           position={inlineLabel.position}
-          workspaceId={workspaceId || ''}
         />
+
+        {/* Controlled EditPopover for "Add New Label" — opens when user selects
+            the option from the # menu with no matches */}
+        {addLabelEditConfig && (
+          <EditPopover
+            trigger={<span className="absolute top-0 left-0 w-0 h-0 overflow-hidden" />}
+            open={addLabelPopoverOpen}
+            onOpenChange={setAddLabelPopoverOpen}
+            context={addLabelEditConfig.context}
+            example={addLabelEditConfig.example}
+            overridePlaceholder={addLabelEditConfig.overridePlaceholder}
+            side="top"
+            align="start"
+          />
+        )}
 
         {/* Attachment Preview */}
         <AttachmentPreview
@@ -1105,7 +1164,7 @@ export function FreeFormInput({
             setIsFocused(false)
             onFocusChange?.(false)
           }}
-          placeholder={placeholder}
+          placeholder={shuffledPlaceholder}
           disabled={disabled}
           skills={skills}
           sources={sources}

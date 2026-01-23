@@ -4,23 +4,12 @@
  * React hook to load and manage workspace labels.
  * Returns the label tree (nested structure with children) from config.
  * Also exposes a flattened version for components that need flat lookups.
- * Auto-refreshes when workspace changes or label config/icons change.
+ * Auto-refreshes when workspace changes or label config changes.
  */
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import type { LabelConfig } from '@craft-agent/shared/labels'
 import { flattenLabels } from '@craft-agent/shared/labels'
-import { iconCache } from '@/lib/icon-cache'
-
-/**
- * Clear label icon entries from the unified icon cache.
- * Called before refreshing labels to ensure updated icons are loaded.
- */
-function clearLabelIconCache(): void {
-  for (const key of iconCache.keys()) {
-    if (key.startsWith('label:')) iconCache.delete(key)
-  }
-}
 
 export interface UseLabelsResult {
   /** Label tree (root-level nodes with nested children) */
@@ -36,7 +25,7 @@ export interface UseLabelsResult {
  * Load labels for a workspace via IPC.
  * Returns the tree structure (labels with nested children).
  * Auto-refreshes when workspaceId changes.
- * Subscribes to live label config/icon changes via LABELS_CHANGED event.
+ * Subscribes to live label config changes via LABELS_CHANGED event.
  */
 export function useLabels(workspaceId: string | null): UseLabelsResult {
   const [labels, setLabels] = useState<LabelConfig[]>([])
@@ -71,14 +60,13 @@ export function useLabels(workspaceId: string | null): UseLabelsResult {
     refresh()
   }, [refresh])
 
-  // Subscribe to live label changes (config or icon file changes)
+  // Subscribe to live label changes (config file changes)
   useEffect(() => {
     if (!workspaceId) return
 
     const cleanup = window.electronAPI.onLabelsChanged((changedWorkspaceId) => {
       // Only refresh if this is our workspace
       if (changedWorkspaceId === workspaceId) {
-        clearLabelIconCache()  // Clear cached icon files before refreshing
         refresh()
       }
     })

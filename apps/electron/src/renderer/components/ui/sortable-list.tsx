@@ -2,10 +2,10 @@
  * Sortable List - Flat list drag-and-drop reordering
  *
  * Uses @dnd-kit for polished DnD with:
- * - PointerSensor (5px activation distance to prevent accidental drags)
+ * - SmartPointerSensor (5px activation distance, skips data-no-dnd elements)
  * - KeyboardSensor for accessibility
- * - DragOverlay portaled to document.body (prevents clipping by sidebar overflow)
- * - Two-phase drop animation: overlay fades out while ghost fades in at new position
+ * - DragOverlay (position:fixed) for proper z-index layering above all panels
+ * - Crossfade drop animation: overlay fades out while ghost fades in
  * - Smooth sibling reflow via CSS transforms
  *
  * Usage:
@@ -13,7 +13,6 @@
  */
 
 import * as React from 'react'
-import { createPortal } from 'react-dom'
 import {
   DndContext,
   closestCenter,
@@ -66,33 +65,26 @@ export class SmartPointerSensor extends PointerSensor {
 }
 
 // ============================================================
-// Drop Animation Config (dnd-kit tree collapsible style)
-// Two-phase: overlay fades out with slight offset, ghost fades in at new position.
-// This creates the "settle into place" effect.
+// Drop Animation Config
+// Crossfade: overlay fades out at final position while ghost fades in.
+// Creates a smooth "settle into place" feel.
 // ============================================================
 
-const DROP_ANIMATION_DURATION = 250
+const DROP_DURATION = 250
 
 const dropAnimationConfig: DropAnimation = {
   keyframes({ transform }) {
     return [
       { opacity: 1, transform: CSS.Transform.toString(transform.initial) },
-      {
-        opacity: 0,
-        transform: CSS.Transform.toString({
-          ...transform.final,
-          x: transform.final.x + 5,
-          y: transform.final.y + 5,
-        }),
-      },
+      { opacity: 0, transform: CSS.Transform.toString(transform.final) },
     ]
   },
-  duration: DROP_ANIMATION_DURATION,
-  easing: 'ease-out',
+  duration: DROP_DURATION,
+  easing: 'ease',
   sideEffects({ active }) {
-    // Ghost fades in at new position (the "settle into place" effect)
+    // Ghost fades in at new position simultaneously
     active.node.animate([{ opacity: 0 }, { opacity: 1 }], {
-      duration: DROP_ANIMATION_DURATION,
+      duration: DROP_DURATION,
       easing: 'ease',
     })
   },
@@ -119,9 +111,9 @@ interface SortableListProps<T extends SortableItemData> {
   items: T[]
   /** Called with the new ordered array after a drop */
   onReorder: (items: T[]) => void
-  /** Render function for each item. `isDragging` is true when this item is being dragged. */
+  /** Render function for each item. `isDragging` is true when this item is the ghost. */
   renderItem: (item: T, isDragging: boolean) => React.ReactNode
-  /** Render the drag overlay content (clone shown while dragging). Falls back to renderItem. */
+  /** Render the drag overlay content (floating clone). Falls back to renderItem. */
   renderOverlay?: (item: T) => React.ReactNode
   /** Additional className for the list container */
   className?: string
@@ -198,17 +190,23 @@ export function SortableList<T extends SortableItemData>({
         </div>
       </SortableContext>
 
-      {/* Drag overlay portaled to document.body — never clipped by sidebar overflow */}
-      {createPortal(
-        <DragOverlay dropAnimation={dropAnimationConfig}>
-          {activeItem ? (
-            <div className="sortable-overlay rounded-[6px] shadow-xl ring-1 ring-foreground/10 bg-background scale-[1.02] z-[9999]">
-              {(renderOverlay ?? renderItem)(activeItem, false)}
-            </div>
-          ) : null}
-        </DragOverlay>,
-        document.body
-      )}
+      {/* DragOverlay uses position:fixed — escapes all stacking contexts and overflow.
+         Inline boxShadow avoids Tailwind CSS variable scoping issues in portals. */}
+      <DragOverlay
+        dropAnimation={dropAnimationConfig}
+        style={{ zIndex: 9999 }}
+      >
+        {activeItem ? (
+          <div
+            className="sortable-overlay rounded-[6px] bg-background"
+            style={{
+              boxShadow: '0 0 0 1px rgba(63, 63, 68, 0.05), 0px 15px 15px 0 rgba(34, 33, 81, 0.25)',
+            }}
+          >
+            {(renderOverlay ?? renderItem)(activeItem, false)}
+          </div>
+        ) : null}
+      </DragOverlay>
     </DndContext>
   )
 }
@@ -233,11 +231,10 @@ function SortableItemWrapper({ id, isDragActive, children }: SortableItemWrapper
     isDragging,
   } = useSortable({ id })
 
-  // CSS transform for smooth reflow during drag (GPU-accelerated)
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
-    // Ghost: fully hidden while dragging (overlay shows the item instead)
+    // Ghost: hidden while dragging (DragOverlay shows the floating clone)
     opacity: isDragging ? 0 : 1,
     cursor: isDragActive ? 'grabbing' : 'grab',
   }

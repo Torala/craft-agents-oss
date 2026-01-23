@@ -1,4 +1,5 @@
 import * as React from 'react'
+import { Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { LabelIcon } from './label-icon'
 import type { LabelConfig } from '@craft-agent/shared/labels'
@@ -21,9 +22,10 @@ export interface InlineLabelMenuProps {
   onOpenChange: (open: boolean) => void
   items: LabelMenuItem[]
   onSelect: (labelId: string) => void
+  /** Called when user picks "Add New Label" (receives the current filter text as prefill) */
+  onAddLabel?: (prefill: string) => void
   filter?: string
   position: { x: number; y: number }
-  workspaceId: string
   className?: string
 }
 
@@ -40,13 +42,79 @@ const MENU_ITEM_SELECTED = 'bg-foreground/5'
 // Filter utilities
 // ============================================================================
 
+/**
+ * Score how well a segment matches a path part.
+ * 3 = starts with segment (best: "pri" → "Priority")
+ * 2 = word boundary match (after space/hyphen/underscore: "high" → "super-high")
+ * 1 = contains anywhere (mid-word: "ior" → "Priority")
+ * 0 = no match
+ */
+function segmentScore(part: string, segment: string): number {
+  const lower = part.toLowerCase()
+  if (lower.startsWith(segment)) return 3
+  if (new RegExp(`[\\s\\-_]${segment.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`).test(lower)) return 2
+  if (lower.includes(segment)) return 1
+  return 0
+}
+
+/**
+ * Unified hierarchical filter with scoring.
+ * Splits the filter by "/" into segments (single segment if no "/").
+ * Each segment is matched in order against the item's full path (parentPath parts + label).
+ * Results are sorted by total match score (starts-with > word-boundary > contains).
+ *
+ * Examples:
+ *   "pri"   → one segment, matches any part containing "pri" → shows parent + children
+ *   "pri/h" → two segments → "Priority / High" scores highest
+ *   "pa/b"  → matches "Parent / Balint"
+ */
 function filterItems(items: LabelMenuItem[], filter: string): LabelMenuItem[] {
   if (!filter) return items
-  const lowerFilter = filter.toLowerCase()
-  return items.filter(item =>
-    item.label.toLowerCase().includes(lowerFilter) ||
-    item.id.toLowerCase().includes(lowerFilter)
-  )
+
+  const segments = filter.toLowerCase().split('/').map(s => s.trim()).filter(Boolean)
+  if (segments.length === 0) return items
+
+  // Score each item: try to match segments against path parts in order
+  const scored: { item: LabelMenuItem; score: number }[] = []
+
+  for (const item of items) {
+    // Build full path: parentPath parts + item label
+    const parentParts = item.parentPath
+      ? item.parentPath.split(' / ').filter(Boolean)
+      : []
+    const fullParts = [...parentParts, item.label]
+
+    // Match segments against parts in order, accumulating score
+    let totalScore = 0
+    let partIndex = 0
+    let matched = true
+
+    for (const seg of segments) {
+      let bestScore = 0
+      let found = false
+      // Scan forward through remaining parts to find the best match for this segment
+      while (partIndex < fullParts.length) {
+        const s = segmentScore(fullParts[partIndex], seg)
+        if (s > 0) {
+          bestScore = s
+          found = true
+          partIndex++
+          break
+        }
+        partIndex++
+      }
+      if (!found) { matched = false; break }
+      totalScore += bestScore
+    }
+
+    if (matched) {
+      scored.push({ item, score: totalScore })
+    }
+  }
+
+  // Sort: higher score first, then alphabetical by label
+  scored.sort((a, b) => b.score - a.score || a.item.label.localeCompare(b.item.label))
+  return scored.map(s => s.item)
 }
 
 // ============================================================================
@@ -62,15 +130,18 @@ export function InlineLabelMenu({
   onOpenChange,
   items,
   onSelect,
+  onAddLabel,
   filter = '',
   position,
-  workspaceId,
   className,
 }: InlineLabelMenuProps) {
   const menuRef = React.useRef<HTMLDivElement>(null)
   const listRef = React.useRef<HTMLDivElement>(null)
   const [selectedIndex, setSelectedIndex] = React.useState(0)
   const filteredItems = filterItems(items, filter)
+
+  // When no filtered items exist but onAddLabel is provided, show the "Add New Label" row
+  const showAddLabel = filteredItems.length === 0 && !!onAddLabel
 
   // Reset selection when filter changes
   React.useEffect(() => {
@@ -88,22 +159,32 @@ export function InlineLabelMenu({
 
   // Keyboard navigation
   React.useEffect(() => {
-    if (!open || filteredItems.length === 0) return
+    if (!open) return
+    // Need at least filtered items or the "Add New Label" fallback to handle keys
+    if (filteredItems.length === 0 && !showAddLabel) return
 
     const handleKeyDown = (e: KeyboardEvent) => {
       switch (e.key) {
         case 'ArrowDown':
           e.preventDefault()
-          setSelectedIndex(prev => (prev < filteredItems.length - 1 ? prev + 1 : 0))
+          if (!showAddLabel) {
+            setSelectedIndex(prev => (prev < filteredItems.length - 1 ? prev + 1 : 0))
+          }
           break
         case 'ArrowUp':
           e.preventDefault()
-          setSelectedIndex(prev => (prev > 0 ? prev - 1 : filteredItems.length - 1))
+          if (!showAddLabel) {
+            setSelectedIndex(prev => (prev > 0 ? prev - 1 : filteredItems.length - 1))
+          }
           break
         case 'Enter':
         case 'Tab':
           e.preventDefault()
-          if (filteredItems[selectedIndex]) {
+          if (showAddLabel) {
+            // No matching labels — trigger "Add New Label" with the current filter as prefill
+            onAddLabel(filter)
+            onOpenChange(false)
+          } else if (filteredItems[selectedIndex]) {
             onSelect(filteredItems[selectedIndex].id)
             onOpenChange(false)
           }
@@ -117,7 +198,7 @@ export function InlineLabelMenu({
 
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [open, filteredItems, selectedIndex, onSelect, onOpenChange])
+  }, [open, filteredItems, selectedIndex, onSelect, onAddLabel, onOpenChange, showAddLabel, filter])
 
   // Close on click outside
   React.useEffect(() => {
@@ -133,8 +214,8 @@ export function InlineLabelMenu({
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [open, onOpenChange])
 
-  // Hide if no results or not open
-  if (!open || filteredItems.length === 0) return null
+  // Hide if not open, or if no items and no "Add New Label" fallback
+  if (!open || (filteredItems.length === 0 && !showAddLabel)) return null
 
   // Position menu above cursor
   const bottomPosition = typeof window !== 'undefined'
@@ -148,40 +229,56 @@ export function InlineLabelMenu({
       style={{ left: Math.round(position.x) - 10, bottom: bottomPosition, minWidth: 200, maxWidth: 260 }}
     >
       <div ref={listRef} className={MENU_LIST_STYLE}>
-        {filteredItems.map((item, index) => {
-          const isSelected = index === selectedIndex
-          return (
-            <div
-              key={item.id}
-              data-selected={isSelected}
-              onClick={() => {
-                onSelect(item.id)
-                onOpenChange(false)
-              }}
-              onMouseEnter={() => setSelectedIndex(index)}
-              className={cn(
-                MENU_ITEM_STYLE,
-                isSelected && MENU_ITEM_SELECTED
-              )}
-            >
-              {/* Label icon */}
-              <div className="shrink-0">
-                <LabelIcon
-                  label={item.config}
-                  workspaceId={workspaceId}
-                  size="sm"
-                />
-              </div>
-              {/* Label name with optional parent path */}
-              <div className="flex-1 min-w-0 truncate">
-                {item.parentPath && (
-                  <span className="text-muted-foreground">{item.parentPath}</span>
-                )}
-                <span>{item.label}</span>
-              </div>
+        {showAddLabel ? (
+          /* "Add New Label" fallback row when no labels match the filter */
+          <div
+            data-selected="true"
+            onClick={() => {
+              onAddLabel(filter)
+              onOpenChange(false)
+            }}
+            className={cn(MENU_ITEM_STYLE, MENU_ITEM_SELECTED)}
+          >
+            <div className="shrink-0 text-muted-foreground">
+              <Plus className="h-3.5 w-3.5" />
             </div>
-          )
-        })}
+            <span className="text-[13px]">Add New Label</span>
+          </div>
+        ) : (
+          filteredItems.map((item, index) => {
+            const isSelected = index === selectedIndex
+            return (
+              <div
+                key={item.id}
+                data-selected={isSelected}
+                onClick={() => {
+                  onSelect(item.id)
+                  onOpenChange(false)
+                }}
+                onMouseEnter={() => setSelectedIndex(index)}
+                className={cn(
+                  MENU_ITEM_STYLE,
+                  isSelected && MENU_ITEM_SELECTED
+                )}
+              >
+                {/* Label icon */}
+                <div className="shrink-0">
+                  <LabelIcon
+                    label={item.config}
+                    size="sm"
+                  />
+                </div>
+                {/* Label name with optional parent path */}
+                <div className="flex-1 min-w-0 truncate">
+                  {item.parentPath && (
+                    <span className="text-muted-foreground">{item.parentPath}</span>
+                  )}
+                  <span>{item.label}</span>
+                </div>
+              </div>
+            )
+          })
+        )}
       </div>
     </div>
   )
@@ -208,8 +305,6 @@ export interface UseInlineLabelMenuOptions {
   sessionLabels?: string[]
   /** Callback when a label is selected */
   onSelect: (labelId: string) => void
-  /** Workspace ID for icon loading */
-  workspaceId: string
 }
 
 export interface UseInlineLabelMenuReturn {
@@ -233,7 +328,6 @@ export function useInlineLabelMenu({
   labels,
   sessionLabels = [],
   onSelect,
-  workspaceId,
 }: UseInlineLabelMenuOptions): UseInlineLabelMenuReturn {
   const [isOpen, setIsOpen] = React.useState(false)
   const [filter, setFilter] = React.useState('')
@@ -280,18 +374,10 @@ export function useInlineLabelMenu({
 
     const textBeforeCursor = value.slice(0, cursorPosition)
     // Match # at start of input or after whitespace, followed by optional filter text
-    const hashMatch = textBeforeCursor.match(/(?:^|\s)#([\w\-]*)$/)
+    const hashMatch = textBeforeCursor.match(/(?:^|\s)#([\w\-\/]*)$/)
 
-    if (hashMatch && items.length > 0) {
+    if (hashMatch) {
       const filterText = hashMatch[1] || ''
-      // Check if there are any filtered results before opening
-      const filteredItems = filterItems(items, filterText)
-      if (filteredItems.length === 0) {
-        setIsOpen(false)
-        setFilter('')
-        setHashStart(-1)
-        return
-      }
 
       const matchStart = textBeforeCursor.lastIndexOf('#')
       setHashStart(matchStart)

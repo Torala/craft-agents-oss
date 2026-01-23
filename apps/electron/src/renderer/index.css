@@ -493,6 +493,11 @@ html[data-font="inter"] {
     -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 32px, black calc(100% - 32px), transparent 100%);
   }
 
+  .mask-fade-bottom {
+    mask-image: linear-gradient(to bottom, black 0%, black calc(100% - 32px), transparent 100%);
+    -webkit-mask-image: linear-gradient(to bottom, black 0%, black calc(100% - 32px), transparent 100%);
+  }
+
   /* Custom shadow utilities
      - Border layer (1px ring) uses foreground color with --shadow-border-opacity
      - Blur/spread layers use black with --shadow-blur-opacity
@@ -966,6 +971,11 @@ html.dark[data-scenic] .fullscreen-overlay-background {
 
 .animate-shake {
   animation: shake 0.4s ease-in-out;
+}
+
+@keyframes editPopoverFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 /* =============================================================================

@@ -1,19 +1,11 @@
 /**
- * LabelIcon - Renders a label's icon or a colored circle fallback.
+ * LabelIcon - Renders a colored circle representing a label.
  *
- * Unlike other entity icons (sources, skills), labels render WITHOUT a
- * background container — just the raw icon or a colored circle.
- *
- * Rendering:
- * - Emoji: plain text at appropriate size
- * - File (colorable SVG): inline SVG, color inherited via currentColor
- * - File (non-colorable): <img> at appropriate size
- * - No icon: small filled circle in the label's color
+ * Labels are color-only (no icons/emoji). The circle size scales
+ * with the icon size variant for consistent inline display.
  */
 
-import { useEntityIcon } from '@/lib/icon-cache'
 import type { IconSize } from '@craft-agent/shared/icons'
-import { ICON_SIZE_CLASSES, ICON_EMOJI_SIZES } from '@craft-agent/shared/icons'
 import type { EntityColor } from '@craft-agent/shared/colors'
 import { resolveEntityColor } from '@craft-agent/shared/colors'
 import { useTheme } from '@/context/ThemeContext'
@@ -23,14 +15,13 @@ interface LabelIconProps {
   /** Label configuration (matches LabelConfig from @craft-agent/shared/labels) */
   label: {
     id: string
-    icon?: string
     /** EntityColor: system color string or custom color object */
     color?: EntityColor
   }
-  /** Workspace ID for loading local icons */
-  workspaceId: string
   /** Size variant (default: 'sm' - labels are typically small inline elements) */
   size?: IconSize
+  /** When true, renders an inner circle (radio-button style) to indicate nested children */
+  hasChildren?: boolean
   /** Additional className */
   className?: string
 }
@@ -44,75 +35,41 @@ const CIRCLE_SIZES: Record<IconSize, number> = {
   xl: 14,
 }
 
-export function LabelIcon({ label, workspaceId, size = 'sm', className }: LabelIconProps) {
+export function LabelIcon({ label, size = 'sm', hasChildren, className }: LabelIconProps) {
   const { isDark } = useTheme()
-  const icon = useEntityIcon({
-    workspaceId,
-    entityType: 'label',
-    identifier: label.id,
-    iconDir: 'labels/icons',
-    iconFileName: label.id,
-    iconValue: label.icon,
-  })
 
   // Resolve the label's color for inline styling
   const resolvedColor = label.color
     ? resolveEntityColor(label.color, isDark)
     : undefined
 
-  // No icon: small colored circle
-  if (icon.kind === 'fallback') {
-    const diameter = CIRCLE_SIZES[size]
-    return (
-      <span
-        className={cn('inline-flex items-center justify-center shrink-0', className)}
-        style={{ width: diameter, height: diameter }}
-      >
-        <span
-          className="rounded-full w-full h-full"
-          style={{
-            backgroundColor: resolvedColor || 'currentColor',
-            opacity: resolvedColor ? 1 : 0.4,
-          }}
-        />
-      </span>
-    )
-  }
-
-  // Emoji: render as plain text, no background
-  if (icon.kind === 'emoji') {
-    return (
-      <span
-        className={cn(
-          'inline-flex items-center justify-center shrink-0 leading-none',
-          ICON_SIZE_CLASSES[size],
-          ICON_EMOJI_SIZES[size],
-          className,
-        )}
-        style={resolvedColor ? { color: resolvedColor } : undefined}
-      >
-        {icon.value}
-      </span>
-    )
-  }
-
-  // File icon: colorable SVG rendered inline, or <img> for raster/non-colorable
-  if (icon.colorable && icon.rawSvg) {
-    return (
-      <span
-        className={cn('inline-flex shrink-0', ICON_SIZE_CLASSES[size], className)}
-        style={resolvedColor ? { color: resolvedColor } : undefined}
-        dangerouslySetInnerHTML={{ __html: icon.rawSvg }}
-      />
-    )
-  }
-
-  // Non-colorable file (raster image or SVG with hardcoded colors)
+  // Parent labels get a slightly larger circle to accommodate the inner dot
+  const diameter = CIRCLE_SIZES[size] + (hasChildren ? 2 : 0)
   return (
-    <img
-      src={icon.value}
-      alt=""
-      className={cn('shrink-0 object-contain', ICON_SIZE_CLASSES[size], className)}
-    />
+    <span
+      className={cn('inline-flex items-center justify-center shrink-0', className)}
+      style={{ width: diameter, height: diameter }}
+    >
+      <span
+        className="relative rounded-full w-full h-full flex items-center justify-center"
+        style={{
+          backgroundColor: resolvedColor || 'currentColor',
+          opacity: resolvedColor ? 1 : 0.4,
+        }}
+      >
+        {/* Inner dot signals this label has nested children (radio-button style).
+            Color is 85% background + 15% label color via color-mix. */}
+        {hasChildren && (
+          <span
+            className="rounded-full shadow-minimal"
+            style={{
+              width: 4,
+              height: 4,
+              backgroundColor: `color-mix(in srgb, var(--background) 85%, ${resolvedColor || 'currentColor'} 15%)`,
+            }}
+          />
+        )}
+      </span>
+    </span>
   )
 }

@@ -118,8 +118,6 @@ export interface ConfigWatcherCallbacks {
   // Label callbacks
   /** Called when labels config.json changes */
   onLabelConfigChange?: (workspaceId: string) => void;
-  /** Called when a label icon file changes */
-  onLabelIconChange?: (workspaceId: string, labelSlug: string) => void;
 
   // Theme callbacks (app-level only)
   /** Called when app-level theme.json changes */
@@ -418,23 +416,6 @@ export class ConfigWatcher {
       // config.json change
       if (file === 'config.json') {
         this.debounce('labels-config', () => this.handleLabelConfigChange());
-        return;
-      }
-
-      // Icon file changes: labels/icons/{labelId}.{ext}
-      // Label IDs are simple slugs — always filesystem-safe
-      if (file === 'icons' && parts.length >= 3 && parts[2]) {
-        const iconFilename = parts[2];
-        const lastDot = iconFilename.lastIndexOf('.');
-        if (lastDot > 0) {
-          const ext = iconFilename.slice(lastDot);
-          if (/^\.(svg|png|jpg|jpeg)$/i.test(ext)) {
-            const labelId = iconFilename.slice(0, lastDot);
-            this.debounce(`labels-icon:${labelId}`, () => {
-              this.handleLabelIconChange(labelId);
-            });
-          }
-        }
         return;
       }
     }
@@ -860,44 +841,11 @@ export class ConfigWatcher {
 
   /**
    * Handle labels config.json change.
-   * Downloads icons for any label with URL icon and no local file.
+   * Labels are color-only (no icons to download).
    */
   private handleLabelConfigChange(): void {
     debug('[ConfigWatcher] Labels config.json changed:', this.workspaceId);
-
-    // Load config and check for icons that need downloading
-    import('@craft-agent/shared/labels/storage').then(({ loadLabelConfig, findLabelIcon, downloadLabelIcon, isIconUrl }) => {
-      const config = loadLabelConfig(this.workspaceDir);
-      for (const label of config.labels) {
-        // Check if label has a URL icon but no local file
-        if (label.icon && isIconUrl(label.icon) && !findLabelIcon(this.workspaceDir, label.id)) {
-          debug('[ConfigWatcher] Downloading label icon:', label.id);
-          downloadLabelIcon(this.workspaceDir, label.id, label.icon)
-            .then((iconPath) => {
-              if (iconPath) {
-                debug('[ConfigWatcher] Label icon downloaded:', label.id, iconPath);
-                // Re-emit config change to update UI with new icon
-                this.callbacks.onLabelConfigChange?.(this.workspaceId);
-              }
-            })
-            .catch((err) => {
-              debug('[ConfigWatcher] Label icon download failed:', label.id, err);
-            });
-        }
-      }
-    }).catch((err) => {
-      debug('[ConfigWatcher] Failed to import labels module:', err);
-    });
-
     this.callbacks.onLabelConfigChange?.(this.workspaceId);
-  }
-
-  /**
-   * Handle label icon file change
-   */
-  private handleLabelIconChange(labelSlug: string): void {
-    debug('[ConfigWatcher] Label icon changed:', this.workspaceId, labelSlug);
-    this.callbacks.onLabelIconChange?.(this.workspaceId, labelSlug);
   }
 
   // ============================================================

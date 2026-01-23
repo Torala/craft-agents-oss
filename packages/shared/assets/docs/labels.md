@@ -5,11 +5,14 @@ Labels are additive tags that can be applied to sessions. Unlike statuses (which
 ## Storage Locations
 
 - Config: `~/.craft-agent/workspaces/{id}/labels/config.json`
-- Icons: `~/.craft-agent/workspaces/{id}/labels/icons/{labelId}.{svg,png,jpg,jpeg}`
 
-## No Defaults
+## No Defaults (Regular Labels)
 
-Unlike statuses, labels start empty. Users create whatever labels they need. There are no built-in or required labels.
+Unlike statuses, regular labels start empty. Users create whatever labels they need. There are no built-in or required regular labels.
+
+## Visual Representation
+
+Labels are color-only — rendered as colored circles in the UI. No icons or emoji are supported.
 
 ## Hierarchical Labels (Nested Tree)
 
@@ -29,13 +32,13 @@ Labels form a nested JSON tree. Hierarchy is the structure itself — parent/chi
           "id": "frontend",
           "name": "Frontend",
           "children": [
-            { "id": "react", "name": "React", "icon": "⚛️" }
+            { "id": "react", "name": "React", "color": { "light": "#3B82F6", "dark": "#60A5FA" } }
           ]
         },
         { "id": "backend", "name": "Backend" }
       ]
     },
-    { "id": "bug", "name": "Bug", "icon": "🐛", "color": "error" }
+    { "id": "bug", "name": "Bug", "color": "destructive" }
   ]
 }
 ```
@@ -65,16 +68,15 @@ Bug
     {
       "id": "bug",
       "name": "Bug",
-      "color": "destructive",
-      "icon": "🐛"
+      "color": "destructive"
     },
     {
       "id": "feature",
       "name": "Feature",
       "color": "accent",
       "children": [
-        { "id": "ui", "name": "UI" },
-        { "id": "api", "name": "API" }
+        { "id": "ui", "name": "UI", "color": { "light": "#6366F1", "dark": "#818CF8" } },
+        { "id": "api", "name": "API", "color": { "light": "#10B981", "dark": "#34D399" } }
       ]
     }
   ]
@@ -87,8 +89,7 @@ Bug
 |----------|------|-------------|
 | `id` | string | Unique slug, globally unique across tree (e.g., `"bug"`, `"frontend"`). Lowercase alphanumeric + hyphens. |
 | `name` | string | Display name |
-| `color` | EntityColor? | Optional color. System color string (e.g., `"accent"`, `"info/80"`) or custom object (`{ "light": "#hex", "dark": "#hex" }`). Cascades into colorable SVGs via `currentColor`. |
-| `icon` | string? | Optional emoji (e.g., `"🐛"`), URL (auto-downloaded), or explicit local file path. Omit for no icon. |
+| `color` | EntityColor? | Optional color. System color string (e.g., `"accent"`, `"info/80"`) or custom object (`{ "light": "#hex", "dark": "#hex" }`). Rendered as a colored circle in the UI. |
 | `valueType` | `'string' \| 'number' \| 'date'`? | Optional value type hint. Tells UI what input widget to show and agents what format to write. Omit for boolean (presence-only) labels. |
 | `children` | LabelConfig[]? | Optional nested child labels. Array position = display order. |
 
@@ -99,28 +100,6 @@ Same as statuses — see [statuses documentation](./statuses.md#color-format) fo
 **System colors:** `"accent"`, `"info"`, `"success"`, `"destructive"`, `"foreground"` (with optional `/opacity` 0–100)
 
 **Custom colors:** `{ "light": "#EF4444", "dark": "#F87171" }` — supports hex, OKLCH, RGB, HSL formats
-
-## Icon Configuration
-
-Icons live in the `labels/icons/` subfolder with the label ID as the filename.
-
-**Emoji icons (quick and easy):**
-```json
-"icon": "🐛"
-```
-
-**URL icons (auto-downloaded):**
-```json
-"icon": "https://example.com/icon.svg"
-```
-URLs are automatically downloaded to `labels/icons/{id}.{ext}`.
-
-**Explicit local path:**
-```json
-"icon": "labels/icons/my-icon.svg"
-```
-
-**No icon:** Omit the `icon` field entirely. Many labels won't need an icon.
 
 ## Session Labels
 
@@ -165,22 +144,24 @@ Edit the workspace's `labels/config.json`:
     {
       "id": "bug",
       "name": "Bug",
-      "color": "destructive",
-      "icon": "🐛"
+      "color": "destructive"
     },
     {
       "id": "priority",
       "name": "Priority",
+      "color": "accent",
       "valueType": "number"
     },
     {
       "id": "due",
       "name": "Due Date",
+      "color": "info",
       "valueType": "date"
     },
     {
       "id": "project",
       "name": "Project",
+      "color": "foreground/60",
       "children": [
         { "id": "alpha", "name": "Alpha", "color": "info" },
         { "id": "beta", "name": "Beta", "color": "success" }
@@ -190,29 +171,22 @@ Edit the workspace's `labels/config.json`:
 }
 ```
 
-## Color and Icon Conventions
+## Color Conventions
 
 When creating or modifying labels, follow these conventions unless the user explicitly requests otherwise:
 
-1. **Always add colors, skip icons by default.** Every label should have a `color` — but do NOT add an `icon` unless the user specifically asks for one.
+1. **Always add colors.** Every label should have a `color` for visual identification (rendered as a colored circle).
 
 2. **Use complementary colors within a category.** Sibling labels (children of the same parent) should use colors from the same family or hue range, creating a cohesive visual group. For example, a "Backend" group might use greens/teals for its children (API, Database), while "Frontend" uses indigos/blues (React, CSS).
 
-3. **Match icon color to the emoji/icon.** When an icon IS added (because the user requested it), pick a `color` that visually complements the icon or emoji. For example:
-   - 🐛 Bug → red/destructive tones
-   - 🌐 Frontend → blue/indigo tones
-   - 🔒 Security → red/dark tones
-   - 📋 Meta → neutral/gray tones
+3. **Use semantic colors for semantic meanings:**
+   - Bugs/errors → `"destructive"` or red tones
+   - Features/enhancements → `"accent"` or blue/indigo tones
+   - Success/done → `"success"` or green tones
+   - Info/metadata → `"info"` or sky/cyan tones
+   - Neutral/misc → `"foreground/60"` or gray tones
 
 **Color format reminder:** Use custom `{ "light": "#hex", "dark": "#hex" }` objects for sub-labels to get precise color control. Reserve system colors (`"accent"`, `"info"`, `"destructive"`, etc.) for top-level parent categories.
-
-## SVG Icon Guidelines
-
-- Size: 24x24
-- Use `currentColor` for stroke/fill (theming support via color class)
-- stroke-width: 2
-- stroke-linecap: round
-- stroke-linejoin: round
 
 ## Validation
 
@@ -228,6 +202,134 @@ This validates:
 - Valid slug format (lowercase alphanumeric with hyphens)
 - Maximum nesting depth (5 levels)
 
+## Auto-Label Rules
+
+Auto-label rules automatically scan user messages and apply labels with extracted values. Configure regex patterns on any label to trigger automatic tagging.
+
+### Configuration
+
+Add `autoRules` to any label in `config.json`:
+
+```json
+{
+  "id": "linear-issue",
+  "name": "Linear Issue",
+  "color": "purple",
+  "valueType": "string",
+  "autoRules": [
+    {
+      "pattern": "linear\\.app/[\\w-]+/issue/([A-Z]+-\\d+)",
+      "valueTemplate": "$1",
+      "description": "Matches Linear issue URLs"
+    },
+    {
+      "pattern": "\\b([A-Z]{2,5}-\\d+)\\b",
+      "valueTemplate": "$1",
+      "description": "Matches bare issue keys like CRA-123"
+    }
+  ]
+}
+```
+
+### AutoLabelRule Properties
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `pattern` | string | **Required.** Regex with capture groups. Uses `flags` (default: `gi`). |
+| `flags` | string | Regex flags (default: `gi` — global, case-insensitive). `g` is always enforced. |
+| `valueTemplate` | string | Template using `$1`, `$2` for capture group substitution. If omitted, uses first capture group. |
+| `description` | string | Human-readable description of what this rule matches. |
+
+### Regex Patterns
+
+Rules use JavaScript regular expressions with capture groups:
+
+```json
+{
+  "pattern": "github\\.com/([\\w-]+/[\\w-]+)/pull/(\\d+)",
+  "valueTemplate": "$1#$2",
+  "description": "Matches GitHub PR URLs"
+}
+```
+
+- **Global matching**: The `g` flag is always enforced, so all occurrences in a message are found
+- **Capture groups**: `$1`, `$2`, etc. are replaced with matched groups in `valueTemplate`
+- **Multiple matches**: "CRA-1 and CRA-2" produces two label entries on the same label
+- **Code block stripping**: Content inside fenced code blocks and inline code is ignored
+
+### Value Normalization
+
+Extracted values are normalized based on the label's `valueType`:
+
+| valueType | Raw capture | Normalized |
+|-----------|-------------|------------|
+| `string` | `CRA-123` | `CRA-123` (pass-through) |
+| `number` | `$45,000` | `45000` (strip symbol + commas) |
+| `number` | `1.5M` | `1500000` (expand suffix) |
+| `number` | `50k` | `50000` (expand suffix) |
+| `date` | `2026-01-30` | `2026-01-30` (pass-through) |
+
+### Evaluation Behavior
+
+- **Timing**: Rules are evaluated when a user message is sent (both fresh and queued messages)
+- **User messages only**: Assistant output and tool results are not scanned
+- **Code stripping**: Fenced code blocks and inline code are stripped before evaluation
+- **Deduplication**: Same label+value won't be added twice to a session
+- **Match limit**: Maximum 10 matches per message (prevents label explosion from pasted data)
+- **Persistence**: Auto-applied labels are stored on the session
+- **Multiple rules**: All rules on a label are evaluated; all matches are collected
+- **Validation**: Patterns are validated at config-save time (invalid regex and ReDoS patterns are rejected)
+- **Error handling**: Invalid regex patterns are skipped at runtime (logged as warnings)
+
+### Full Example
+
+A workspace that auto-tags Linear issues, deadlines, contacts, and budgets:
+
+```json
+{
+  "version": 1,
+  "labels": [
+    {
+      "id": "linear-issue",
+      "name": "Linear Issue",
+      "color": "purple",
+      "valueType": "string",
+      "autoRules": [
+        { "pattern": "linear\\.app/[\\w-]+/issue/([A-Z]+-\\d+)", "valueTemplate": "$1", "description": "Linear URLs" },
+        { "pattern": "\\b([A-Z]{2,5}-\\d+)\\b", "valueTemplate": "$1", "description": "Bare issue keys" }
+      ]
+    },
+    {
+      "id": "deadline",
+      "name": "Deadline",
+      "color": "orange",
+      "valueType": "date",
+      "autoRules": [
+        { "pattern": "(\\d{4}-\\d{2}-\\d{2}(?:T\\d{2}:\\d{2})?)", "valueTemplate": "$1", "description": "ISO dates" }
+      ]
+    },
+    {
+      "id": "contact",
+      "name": "Contact",
+      "color": "blue",
+      "valueType": "string",
+      "autoRules": [
+        { "pattern": "([\\w.+-]+@[\\w.-]+\\.[a-zA-Z]{2,})", "valueTemplate": "$1", "description": "Email addresses" }
+      ]
+    },
+    {
+      "id": "budget",
+      "name": "Budget",
+      "color": "green",
+      "valueType": "number",
+      "autoRules": [
+        { "pattern": "\\$([\\d,.]+[kKmMbB]?)", "valueTemplate": "$1", "description": "Dollar amounts" }
+      ]
+    }
+  ]
+}
+```
+
 ## Sidebar Behavior
 
 Labels appear in the left sidebar as a multi-level expandable section:
@@ -236,7 +338,10 @@ Labels appear in the left sidebar as a multi-level expandable section:
 All Chats    (flat, total count)
 Flagged      (flat, flagged count)
 States       (expandable → status sub-items)
-Labels       (expandable → hierarchical tree)
+Labels       (expandable)
+  ├─ Views       (expandable → view sub-items)
+  ├─ Engineering (label)
+  └─ Bug         (label)
 ────────────
 Sources      (expandable → API/MCP/Local)
 Skills       (flat)
@@ -244,13 +349,14 @@ Skills       (flat)
 Settings     (flat)
 ```
 
-Clicking a label filters the session list to show sessions with that label. Clicking a parent label includes sessions tagged with any descendant.
+Clicking a label filters the session list. Clicking a parent label includes sessions tagged with any descendant.
 
 ## Design Decisions
 
 - **Nested JSON tree**: Hierarchy is the structure itself — no conventions to learn
 - **Array position = order**: No `order` field needed, array position determines display order
 - **Globally unique IDs**: Simple slugs, unique across the entire tree
+- **Color-only visual**: Labels use colored circles — no icons, keeping the UI clean and consistent
 - **No categories**: Labels don't affect inbox/archive filtering (that's what statuses are for)
 - **No defaults**: Workspaces start with zero labels
 - **No fixed labels**: All labels are fully user-controlled (deletable, renameable)
@@ -258,7 +364,6 @@ Clicking a label filters the session list to show sessions with that label. Clic
 - **Delete cascade**: Deleting a label removes it and all descendants from sessions
 - **Max depth 5**: Prevents excessively deep hierarchies
 - **Hierarchical filtering**: Parent label clicks include all descendant sessions
-- **Icons subfolder**: All icons in one `labels/icons/` dir — simpler than one folder per label
 - **Values via `::` separator**: Simple, flat string storage — no schema changes to session format
 - **Type inference at parse time**: Parser always infers (date → number → string), `valueType` is just a UI hint
 - **Date-only format**: ISO `YYYY-MM-DD` — no time component, avoids timezone complexity

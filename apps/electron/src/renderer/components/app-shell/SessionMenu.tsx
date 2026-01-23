@@ -226,23 +226,21 @@ export function SessionMenu({
             )
           })}
 
-          {/* Separator before Flag/Unflag */}
-          <Separator />
-
-          {/* Flag/Unflag at the bottom of status menu */}
-          {!isFlagged ? (
-            <MenuItem onClick={onFlag}>
-              <Flag className="h-3.5 w-3.5 text-info" />
-              <span className="flex-1">Flag</span>
-            </MenuItem>
-          ) : (
-            <MenuItem onClick={onUnflag}>
-              <FlagOff className="h-3.5 w-3.5" />
-              <span className="flex-1">Unflag</span>
-            </MenuItem>
-          )}
         </SubContent>
       </Sub>
+
+      {/* Flag/Unflag */}
+      {!isFlagged ? (
+        <MenuItem onClick={onFlag}>
+          <Flag className="h-3.5 w-3.5 text-info" />
+          <span className="flex-1">Flag</span>
+        </MenuItem>
+      ) : (
+        <MenuItem onClick={onUnflag}>
+          <FlagOff className="h-3.5 w-3.5" />
+          <span className="flex-1">Unflag</span>
+        </MenuItem>
+      )}
 
       {/* Mark as Unread - only show if session has been read */}
       {!hasUnreadMessages && hasMessages && (

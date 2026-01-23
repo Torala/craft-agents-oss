@@ -330,7 +330,16 @@ export function listSessions(workspaceRootPath: string): SessionMetadata[] {
   for (const entry of entries) {
     if (entry.isDirectory()) {
       const sessionId = entry.name;
-      const jsonlFile = join(sessionsDir, sessionId, 'session.jsonl');
+      const sessionDir = join(sessionsDir, sessionId);
+      const jsonlFile = join(sessionDir, 'session.jsonl');
+
+      // Clean up orphaned .tmp files from crashed atomic writes.
+      // These are harmless but waste disk space.
+      const tmpFile = jsonlFile + '.tmp';
+      if (existsSync(tmpFile)) {
+        try { unlinkSync(tmpFile); } catch { /* ignore */ }
+      }
+
       if (existsSync(jsonlFile)) {
         const header = readSessionHeader(jsonlFile);
         if (header) {
@@ -386,6 +395,8 @@ function headerToMetadata(header: SessionHeader, workspaceRootPath: string): Ses
       // Shared viewer state - must be included for persistence across app restarts
       sharedUrl: header.sharedUrl,
       sharedId: header.sharedId,
+      // Token usage from JSONL header (available without loading messages)
+      tokenUsage: header.tokenUsage,
       // Unread detection fields - pre-computed for session list display without loading messages
       lastReadMessageId: header.lastReadMessageId,
       lastFinalMessageId: header.lastFinalMessageId,

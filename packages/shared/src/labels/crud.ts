@@ -46,7 +46,6 @@ export function createLabel(
     id,
     name: input.name,
     color: input.color,
-    icon: input.icon,
     ...(input.valueType && { valueType: input.valueType }),
   };
 
@@ -68,7 +67,7 @@ export function createLabel(
 }
 
 /**
- * Update an existing label (name, color, icon, valueType).
+ * Update an existing label (name, color, valueType).
  * Cannot change the ID or hierarchy position.
  * @throws Error if label not found
  */
@@ -86,7 +85,6 @@ export function updateLabel(
 
   if (updates.name !== undefined) label.name = updates.name;
   if (updates.color !== undefined) label.color = updates.color;
-  if (updates.icon !== undefined) label.icon = updates.icon;
   // valueType: set to new value, or delete to revert to boolean label
   if (updates.valueType !== undefined) label.valueType = updates.valueType || undefined;
 

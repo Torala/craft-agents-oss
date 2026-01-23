@@ -79,9 +79,11 @@ import { skillsAtom } from "@/atoms/skills"
 import { type TodoStateId, type TodoState, statusConfigsToTodoStates } from "@/config/todo-states"
 import { useStatuses } from "@/hooks/useStatuses"
 import { useLabels } from "@/hooks/useLabels"
+import { useViews } from "@/hooks/useViews"
 import { LabelIcon } from "@/components/ui/label-icon"
 import { buildLabelTree, getDescendantIds, getLabelDisplayName, flattenLabels, extractLabelId } from "@craft-agent/shared/labels"
 import type { LabelConfig, LabelTreeNode } from "@craft-agent/shared/labels"
+import { resolveEntityColor } from "@craft-agent/shared/colors"
 import * as storage from "@/lib/local-storage"
 import { toast } from "sonner"
 import { navigate, routes } from "@/lib/navigate"
@@ -307,10 +309,12 @@ function AppShellContent({
   })
   const [focusedSidebarItemId, setFocusedSidebarItemId] = React.useState<string | null>(null)
   const sidebarItemRefs = React.useRef<Map<string, HTMLElement>>(new Map())
-  // Track which expandable sidebar items are collapsed (default: all expanded)
+  // Track which expandable sidebar items are collapsed
+  // Labels are collapsed by default; user preference is persisted once toggled
   const [collapsedItems, setCollapsedItems] = React.useState<Set<string>>(() => {
-    const saved = storage.get<string[]>(storage.KEYS.collapsedSidebarItems, [])
-    return new Set(saved)
+    const saved = storage.get<string[] | null>(storage.KEYS.collapsedSidebarItems, null)
+    if (saved !== null) return new Set(saved)
+    return new Set(['nav:labels'])
   })
   const isExpanded = React.useCallback((id: string) => !collapsedItems.has(id), [collapsedItems])
   const toggleExpanded = React.useCallback((id: string) => {
@@ -460,6 +464,9 @@ function AppShellContent({
 
   // Load labels from workspace config
   const { labels: labelConfigs } = useLabels(activeWorkspace?.id || null)
+
+  // Views: compiled once on config load, evaluated per session in list/chat
+  const { evaluateSession: evaluateViews, viewConfigs } = useViews(activeWorkspace?.id || null)
 
   // Build hierarchical label tree from nested config structure
   const labelTree = useMemo(() => buildLabelTree(labelConfigs), [labelConfigs])
@@ -752,6 +759,18 @@ function AppShellContent({
         }
         break
       }
+      case 'view': {
+        // Filter by view: __all__ shows any session matched by any view,
+        // otherwise filter to the specific view
+        result = workspaceSessionMetas.filter(s => {
+          const matched = evaluateViews(s)
+          if (chatFilter.viewId === '__all__') {
+            return matched.length > 0
+          }
+          return matched.some(v => v.id === chatFilter.viewId)
+        })
+        break
+      }
       default:
         result = workspaceSessionMetas
     }
@@ -874,6 +893,10 @@ function AppShellContent({
     navigate(routes.view.label(labelId))
   }, [])
 
+  const handleViewClick = useCallback((viewId: string) => {
+    navigate(routes.view.view(viewId))
+  }, [])
+
   // DnD handler: reorder statuses (flat list drag-and-drop)
   // Sets optimistic order immediately for instant UI feedback, then fires IPC.
   const handleStatusReorder = useCallback((orderedIds: string[]) => {
@@ -917,7 +940,7 @@ function AppShellContent({
   // We use controlled popovers instead of deep links so the user can type
   // their request in the popover UI before opening a new chat window.
   // add-source variants: add-source (generic), add-source-api, add-source-mcp, add-source-local
-  const [editPopoverOpen, setEditPopoverOpen] = useState<'statuses' | 'labels' | 'add-source' | 'add-source-api' | 'add-source-mcp' | 'add-source-local' | 'add-skill' | null>(null)
+  const [editPopoverOpen, setEditPopoverOpen] = useState<'statuses' | 'labels' | 'views' | 'add-source' | 'add-source-api' | 'add-source-mcp' | 'add-source-local' | 'add-skill' | 'add-label' | null>(null)
 
   // Stores the Y position of the last right-clicked sidebar item so the EditPopover
   // appears near it rather than at a fixed location. Updated synchronously before
@@ -969,6 +992,43 @@ function AppShellContent({
     captureContextMenuPosition()
     setTimeout(() => setEditPopoverOpen('labels'), 50)
   }, [captureContextMenuPosition])
+
+  // Handler for "Edit Views" context menu action
+  // Opens the EditPopover for view configuration
+  const openConfigureViews = useCallback(() => {
+    captureContextMenuPosition()
+    setTimeout(() => setEditPopoverOpen('views'), 50)
+  }, [captureContextMenuPosition])
+
+  // Handler for "Delete View" context menu action
+  // Removes the view from config by filtering it out and saving
+  const handleDeleteView = useCallback(async (viewId: string) => {
+    if (!activeWorkspace?.id) return
+    try {
+      const updated = viewConfigs.filter(v => v.id !== viewId)
+      await window.electronAPI.saveViews(activeWorkspace.id, updated)
+    } catch (err) {
+      console.error('[AppShell] Failed to delete view:', err)
+    }
+  }, [activeWorkspace?.id, viewConfigs])
+
+  // Handler for "Add New Label" context menu action
+  // Opens the EditPopover with 'add-label' context so the user can describe the label
+  const handleAddLabel = useCallback((_parentId?: string) => {
+    captureContextMenuPosition()
+    setTimeout(() => setEditPopoverOpen('add-label'), 50)
+  }, [captureContextMenuPosition])
+
+  // Handler for "Delete Label" context menu action
+  // Deletes the label and all its descendants, stripping from sessions
+  const handleDeleteLabel = useCallback(async (labelId: string) => {
+    if (!activeWorkspace?.id) return
+    try {
+      await window.electronAPI.deleteLabel(activeWorkspace.id, labelId)
+    } catch (err) {
+      console.error('[AppShell] Failed to delete label:', err)
+    }
+  }, [activeWorkspace?.id])
 
   // Handler for "Add Source" context menu action
   // Opens the EditPopover for adding a new source
@@ -1046,9 +1106,9 @@ function AppShellContent({
       result.push({ id: `nav:state:${state.id}`, type: 'nav', action: () => handleTodoStateClick(state.id) })
     }
 
-    // 2. Labels section header + flat list of all label nodes for keyboard nav
+    // 2. Labels section header + regular label tree for keyboard nav
     result.push({ id: 'nav:labels', type: 'nav', action: handleAllChatsClick })
-    // Flatten label tree for keyboard navigation (depth-first)
+    // Flatten regular label tree for keyboard navigation (depth-first)
     const flattenTree = (nodes: LabelTreeNode[]) => {
       for (const node of nodes) {
         if (node.label) {
@@ -1065,7 +1125,7 @@ function AppShellContent({
     result.push({ id: 'nav:settings', type: 'nav', action: () => handleSettingsClick('app') })
 
     return result
-  }, [handleAllChatsClick, handleFlaggedClick, handleTodoStateClick, effectiveTodoStates, handleLabelClick, labelConfigs, labelTree, handleSourcesClick, handleSkillsClick, handleSettingsClick])
+  }, [handleAllChatsClick, handleFlaggedClick, handleTodoStateClick, effectiveTodoStates, handleLabelClick, labelConfigs, labelTree, viewConfigs, handleViewClick, handleSourcesClick, handleSkillsClick, handleSettingsClick])
 
   // Toggle folder expanded state
   const handleToggleFolder = React.useCallback((path: string) => {
@@ -1199,16 +1259,24 @@ function AppShellContent({
       }
       case 'label':
         return chatFilter.labelId === '__all__' ? 'Labels' : getLabelDisplayName(labelConfigs, chatFilter.labelId)
+      case 'view':
+        return chatFilter.viewId === '__all__' ? 'Views' : viewConfigs.find(v => v.id === chatFilter.viewId)?.name || 'Views'
       default:
         return 'All Chats'
     }
-  }, [navState, chatFilter, effectiveTodoStates, labelConfigs])
+  }, [navState, chatFilter, effectiveTodoStates, labelConfigs, viewConfigs])
 
   // Build recursive sidebar items from label tree.
   // Each node renders with condensed height (compact: true) since many labels expected.
   // Clicking any label navigates to its filter view; the chevron toggles expand/collapse.
   const buildLabelSidebarItems = useCallback((nodes: LabelTreeNode[]): any[] => {
-    return nodes.map(node => {
+    // Sort labels alphabetically by display name at every level (parent + children)
+    const sorted = [...nodes].sort((a, b) => {
+      const nameA = (a.label?.name || a.segment).toLowerCase()
+      const nameB = (b.label?.name || b.segment).toLowerCase()
+      return nameA.localeCompare(nameB)
+    })
+    return sorted.map(node => {
       const hasChildren = node.children.length > 0
       const isActive = chatFilter?.kind === 'label' && chatFilter.labelId === node.fullId
       const count = labelCounts[node.fullId] || 0
@@ -1220,8 +1288,8 @@ function AppShellContent({
         icon: node.label && activeWorkspace?.id ? (
           <LabelIcon
             label={node.label}
-            workspaceId={activeWorkspace.id}
             size="sm"
+            hasChildren={hasChildren}
           />
         ) : <Tag className="h-3.5 w-3.5" />,
         variant: isActive ? "default" : "ghost",
@@ -1230,7 +1298,10 @@ function AppShellContent({
         onClick: () => handleLabelClick(node.fullId),
         contextMenu: {
           type: 'labels' as const,
+          labelId: node.fullId,
           onConfigureLabels: openConfigureLabels,
+          onAddLabel: handleAddLabel,
+          onDeleteLabel: handleDeleteLabel,
         },
       }
 
@@ -1244,7 +1315,7 @@ function AppShellContent({
 
       return item
     })
-  }, [chatFilter, labelCounts, activeWorkspace?.id, handleLabelClick, isExpanded, toggleExpanded, openConfigureLabels])
+  }, [chatFilter, labelCounts, activeWorkspace?.id, handleLabelClick, isExpanded, toggleExpanded, openConfigureLabels, handleAddLabel, handleDeleteLabel])
 
   return (
     <AppShellProvider value={appShellContextValue}>
@@ -1305,7 +1376,7 @@ function AppShellContent({
               {/* Sidebar Top Section */}
               <div className="flex-1 flex flex-col min-h-0">
                 {/* New Chat Button - Gmail-style, with context menu for "Open in New Window" */}
-                <div className="px-2 pt-1 pb-2">
+                <div className="px-2 pt-1 pb-2 shrink-0">
                   <ContextMenu modal={true}>
                     <ContextMenuTrigger asChild>
                       <Button
@@ -1326,6 +1397,7 @@ function AppShellContent({
                   </ContextMenu>
                 </div>
                 {/* Primary Nav: All Chats, Flagged, States, Labels | Sources, Skills | Settings */}
+                <div className="flex-1 overflow-y-auto min-h-0 mask-fade-bottom">
                 <LeftSidebar
                   isCollapsed={false}
                   getItemProps={getSidebarItemProps}
@@ -1395,6 +1467,7 @@ function AppShellContent({
                       contextMenu: {
                         type: 'labels' as const,
                         onConfigureLabels: openConfigureLabels,
+                        onAddLabel: handleAddLabel,
                       },
                       items: buildLabelSidebarItems(labelTree),
                     },
@@ -1484,6 +1557,7 @@ function AppShellContent({
                 />
                 {/* Agent Tree: Hierarchical list of agents */}
                 {/* Agents section removed */}
+                </div>
               </div>
 
               {/* Sidebar Bottom Section: WorkspaceSwitcher + Help icon */}
@@ -1782,6 +1856,8 @@ function AppShellContent({
                       navigate(routes.view.state(chatFilter.stateId, selectedMeta.id))
                     } else if (chatFilter.kind === 'label') {
                       navigate(routes.view.label(chatFilter.labelId, selectedMeta.id))
+                    } else if (chatFilter.kind === 'view') {
+                      navigate(routes.view.view(chatFilter.viewId, selectedMeta.id))
                     }
                   }}
                   onOpenInNewWindow={(selectedMeta) => {
@@ -1805,6 +1881,8 @@ function AppShellContent({
                     setSearchQuery('')
                   }}
                   todoStates={effectiveTodoStates}
+                  evaluateViews={evaluateViews}
+                  labels={labelConfigs}
                 />
               </>
             )}
@@ -1980,6 +2058,22 @@ function AppShellContent({
             align="start"
             {...getEditConfig('edit-labels', activeWorkspace.rootPath)}
           />
+          {/* Edit Views EditPopover - anchored near sidebar */}
+          <EditPopover
+            open={editPopoverOpen === 'views'}
+            onOpenChange={(isOpen) => setEditPopoverOpen(isOpen ? 'views' : null)}
+            modal={true}
+            trigger={
+              <div
+                className="fixed w-0 h-0 pointer-events-none"
+                style={{ left: sidebarWidth + 20, top: editPopoverAnchorY.current }}
+                aria-hidden="true"
+              />
+            }
+            side="bottom"
+            align="start"
+            {...getEditConfig('edit-views', activeWorkspace.rootPath)}
+          />
           {/* Add Source EditPopovers - one for each variant (generic + filter-specific)
            * editPopoverOpen can be: 'add-source', 'add-source-api', 'add-source-mcp', 'add-source-local'
            * Each variant uses its corresponding EditContextKey for filter-aware agent context */}
@@ -2016,6 +2110,22 @@ function AppShellContent({
             side="bottom"
             align="start"
             {...getEditConfig('add-skill', activeWorkspace.rootPath)}
+          />
+          {/* Add Label EditPopover - triggered from "Add New Label" context menu on labels */}
+          <EditPopover
+            open={editPopoverOpen === 'add-label'}
+            onOpenChange={(isOpen) => setEditPopoverOpen(isOpen ? 'add-label' : null)}
+            modal={true}
+            trigger={
+              <div
+                className="fixed w-0 h-0 pointer-events-none"
+                style={{ left: sidebarWidth + 20, top: editPopoverAnchorY.current }}
+                aria-hidden="true"
+              />
+            }
+            side="bottom"
+            align="start"
+            {...getEditConfig('add-label', activeWorkspace.rootPath)}
           />
         </>
       )}

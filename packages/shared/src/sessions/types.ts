@@ -230,4 +230,6 @@ export interface SessionMetadata {
    * Set to false when user views the session (and not processing).
    */
   hasUnread?: boolean;
+  /** Token usage statistics (from JSONL header, available without loading messages) */
+  tokenUsage?: SessionTokenUsage;
 }

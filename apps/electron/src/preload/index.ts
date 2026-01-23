@@ -307,8 +307,12 @@ const api: ElectronAPI = {
   // Label management
   listLabels: (workspaceId: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.LABELS_LIST, workspaceId),
+  createLabel: (workspaceId: string, input: any) =>
+    ipcRenderer.invoke(IPC_CHANNELS.LABELS_CREATE, workspaceId, input),
+  deleteLabel: (workspaceId: string, labelId: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.LABELS_DELETE, workspaceId, labelId),
 
-  // Labels change listener (live updates when labels config or icon files change)
+  // Labels change listener (live updates when labels config changes)
   onLabelsChanged: (callback: (workspaceId: string) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, workspaceId: string) => {
       callback(workspaceId)
@@ -318,6 +322,12 @@ const api: ElectronAPI = {
       ipcRenderer.removeListener(IPC_CHANNELS.LABELS_CHANGED, handler)
     }
   },
+
+  // Views (dynamic, expression-based filters stored in views.json)
+  listViews: (workspaceId: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.VIEWS_LIST, workspaceId),
+  saveViews: (workspaceId: string, views: any[]) =>
+    ipcRenderer.invoke(IPC_CHANNELS.VIEWS_SAVE, workspaceId, views),
 
   // Theme (app-level only)
   getAppTheme: () => ipcRenderer.invoke(IPC_CHANNELS.THEME_GET_APP),

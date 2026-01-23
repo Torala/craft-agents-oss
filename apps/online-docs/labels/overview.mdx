@@ -1,0 +1,223 @@
+---
+title: "Labels"
+description: "Organize sessions with colored tags and structured metadata"
+---
+
+Labels are additive, colored tags you can apply to sessions. Unlike statuses (which are exclusive — one per session), labels are multi-select — a session can have zero or many labels. They support hierarchical organization via nested trees.
+
+<Warning>
+**Label values are not yet fully implemented on the UI, coming soon.** The configuration and storage layer supports values, but the UI does not yet expose full value editing or display.
+</Warning>
+
+## How Labels Work
+
+Labels let you categorize conversations by project, topic, priority, or anything else — making it easy to filter and find related sessions later.
+
+| Feature | Description |
+|---------|-------------|
+| **Multi-select** | A session can have many labels simultaneously |
+| **Hierarchical** | Labels can be nested to form groups (up to 5 levels) |
+| **Color-coded** | Each label is rendered as a colored circle |
+| **Valued** | Labels can optionally carry a value (text, number, or date) |
+| **Auto-applied** | Regex rules can apply labels automatically from message content |
+
+## Workspace-Level Configuration
+
+Labels are configured per workspace. Each workspace starts with zero labels — you create whatever labels you need.
+
+Configuration is stored at:
+
+```
+~/.craft-agent/workspaces/{workspace-id}/labels/config.json
+```
+
+## Creating Labels
+
+<Tip>
+**Just ask your agent.** The easiest way to create labels is to describe what you need:
+- "Create a Bug label with a red color"
+- "Add project labels for Alpha and Beta under an Engineering group"
+- "Set up a Priority label with number values"
+
+The agent handles the configuration automatically.
+</Tip>
+
+You can also create labels manually by editing the configuration file.
+
+### Basic Example
+
+```json
+{
+  "version": 1,
+  "labels": [
+    {
+      "id": "bug",
+      "name": "Bug",
+      "color": "destructive"
+    },
+    {
+      "id": "feature",
+      "name": "Feature",
+      "color": "accent"
+    }
+  ]
+}
+```
+
+## Hierarchical Labels
+
+Labels form a nested tree. Parent/child relationships are expressed via the `children` array. Array position determines display order.
+
+```json
+{
+  "version": 1,
+  "labels": [
+    {
+      "id": "eng",
+      "name": "Engineering",
+      "color": "info",
+      "children": [
+        {
+          "id": "frontend",
+          "name": "Frontend",
+          "children": [
+            { "id": "react", "name": "React", "color": { "light": "#3B82F6", "dark": "#60A5FA" } }
+          ]
+        },
+        { "id": "backend", "name": "Backend" }
+      ]
+    },
+    { "id": "bug", "name": "Bug", "color": "destructive" }
+  ]
+}
+```
+
+This renders as a tree in the sidebar:
+
+```
+Engineering
+  |- Frontend
+  |    \- React
+  \- Backend
+Bug
+```
+
+### Hierarchy Rules
+
+- IDs are simple slugs (lowercase alphanumeric + hyphens)
+- IDs must be **globally unique** across the entire tree
+- Maximum nesting depth: **5 levels**
+- Array position = display order (no `order` field needed)
+- Filtering by a parent includes all descendant sessions
+
+## Label Properties
+
+Each label object supports these properties:
+
+| Property | Type | Required | Description |
+|----------|------|----------|-------------|
+| `id` | string | Yes | Unique slug (lowercase alphanumeric + hyphens) |
+| `name` | string | Yes | Display name |
+| `color` | EntityColor | No | Color for the label circle (see below) |
+| `valueType` | `"string"` \| `"number"` \| `"date"` | No | Value type hint. Omit for presence-only labels. |
+| `children` | Label[] | No | Nested child labels |
+| `autoRules` | AutoRule[] | No | Regex rules for auto-applying (see [Auto-Apply Rules](/labels/auto-rules)) |
+
+## Colors
+
+Labels are rendered as colored circles in the UI. You can use system colors or custom hex values.
+
+### System Colors
+
+Use semantic color names for common meanings:
+
+| Color | Use For |
+|-------|---------|
+| `"destructive"` | Bugs, errors, critical issues |
+| `"accent"` | Features, enhancements |
+| `"success"` | Completed, passing |
+| `"info"` | Informational, metadata |
+| `"foreground/60"` | Neutral, miscellaneous |
+
+System colors also support opacity: `"accent/80"`, `"info/50"`, etc.
+
+### Custom Colors
+
+For precise control, use light/dark mode pairs:
+
+```json
+{
+  "color": { "light": "#6366F1", "dark": "#818CF8" }
+}
+```
+
+Supports hex, OKLCH, RGB, and HSL formats.
+
+<Note>
+Use custom color objects for sub-labels to get precise color control. Reserve system colors for top-level categories.
+</Note>
+
+## Label Values
+
+Labels can optionally carry a **value** with a specific type. This turns labels into structured metadata — for example, a "priority" label with value `3`, or a "due" label with a date.
+
+### Storage Format
+
+Sessions store labels as an array of strings. Boolean labels are bare IDs; valued labels use the `::` separator:
+
+```json
+{
+  "labels": ["bug", "priority::3", "due::2026-01-30", "linear::CRA-456"]
+}
+```
+
+- **Boolean labels**: `"bug"` — presence-only, no value
+- **Valued labels**: `"priority::3"` — ID + value separated by `::`
+- The `::` split happens on the first occurrence only (values may contain `::`)
+
+### Value Types
+
+Values are inferred from the raw string at parse time:
+
+| Type | Format | Example |
+|------|--------|---------|
+| `number` | Finite number | `"priority::3"`, `"effort::0.5"` |
+| `date` | ISO date (YYYY-MM-DD) | `"due::2026-01-30"` |
+| `string` | Anything else | `"link::https://example.com"` |
+
+**Inference order:** ISO date check -> number check -> string fallback.
+
+The `valueType` in config is a hint for the UI — the parser always infers from the raw value.
+
+## Sidebar Behavior
+
+Labels appear in the left sidebar as a multi-level expandable section. Clicking a label filters the session list to show only matching sessions. Clicking a parent label includes sessions tagged with any descendant.
+
+## Validation
+
+<Warning>
+Always validate your configuration after making changes.
+</Warning>
+
+After editing the config file, validate it to catch errors:
+
+```
+config_validate({ target: "labels" })
+```
+
+The validator checks:
+- Valid JSON and recursive schema structure
+- Globally unique IDs across the entire tree
+- Valid slug format (lowercase alphanumeric with hyphens)
+- Maximum nesting depth (5 levels)
+
+## Key Differences from Statuses
+
+| | Labels | Statuses |
+|--|--------|----------|
+| **Cardinality** | Multi-select (many per session) | Exclusive (one per session) |
+| **Defaults** | None — start empty | Ships with 5 defaults |
+| **Visual** | Colored circles | Icons + colors |
+| **Hierarchy** | Nested tree (up to 5 levels) | Flat list |
+| **Values** | Optional typed values | No values |
+| **Filtering** | Multi-label intersection | Category-based (open/closed) |

@@ -40,7 +40,10 @@
     "./colors": "./src/colors/index.ts",
     "./utils/icon-constants": "./src/utils/icon-constants.ts",
     "./labels": "./src/labels/index.ts",
+    "./labels/auto": "./src/labels/auto/index.ts",
     "./labels/storage": "./src/labels/storage.ts",
+    "./views": "./src/views/index.ts",
+    "./views/storage": "./src/views/storage.ts",
     "./validation": "./src/validation/index.ts",
     "./version": "./src/version/index.ts",
     "./branding": "./src/branding.ts",
@@ -49,6 +52,7 @@
   "dependencies": {
     "@craft-agent/core": "workspace:*",
     "bash-parser": "^0.5.0",
+    "filtrex": "^3.1.0",
     "incr-regex-package": "^1.0.4",
     "shell-quote": "^1.8.3"
   },

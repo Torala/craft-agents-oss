@@ -19,16 +19,28 @@ export interface SidebarContextMenuConfig {
   type: SidebarMenuType
   /** Status ID for status items (e.g., 'todo', 'done') - not currently used but kept for future */
   statusId?: string
+  /** Label ID — when set, this is an individual label (enables Delete Label) */
+  labelId?: string
   /** Handler for "Configure Statuses" action - for allChats/status/flagged types */
   onConfigureStatuses?: () => void
   /** Handler for "Configure Labels" action - for labels type */
   onConfigureLabels?: () => void
+  /** Handler for "Add New Label" action - creates a label (parentId passed from labelId) */
+  onAddLabel?: (parentId?: string) => void
+  /** Handler for "Delete Label" action - deletes the label by labelId */
+  onDeleteLabel?: (labelId: string) => void
   /** Handler for "Add Source" action - for sources type */
   onAddSource?: () => void
   /** Handler for "Add Skill" action - for skills type */
   onAddSkill?: () => void
   /** Source type filter for "Learn More" link - determines which docs page to open */
   sourceType?: 'api' | 'mcp' | 'local'
+  /** Handler for "Edit Views" action - for views type */
+  onConfigureViews?: () => void
+  /** View ID — when set, this is an individual view (enables Delete) */
+  viewId?: string
+  /** Handler for "Delete View" action */
+  onDeleteView?: (id: string) => void
 }
 
 /**
@@ -217,11 +229,17 @@ export function LeftSidebar({ links, isCollapsed, getItemProps, focusedItemId, i
                       <SidebarMenu
                         type={link.contextMenu.type}
                         statusId={link.contextMenu.statusId}
+                        labelId={link.contextMenu.labelId}
                         onConfigureStatuses={link.contextMenu.onConfigureStatuses}
                         onConfigureLabels={link.contextMenu.onConfigureLabels}
+                        onAddLabel={link.contextMenu.onAddLabel}
+                        onDeleteLabel={link.contextMenu.onDeleteLabel}
                         onAddSource={link.contextMenu.onAddSource}
                         onAddSkill={link.contextMenu.onAddSkill}
                         sourceType={link.contextMenu.sourceType}
+                        onConfigureViews={link.contextMenu.onConfigureViews}
+                        viewId={link.contextMenu.viewId}
+                        onDeleteView={link.contextMenu.onDeleteView}
                       />
                     </ContextMenuProvider>
                   </StyledContextMenuContent>
@@ -343,7 +361,7 @@ function SortableStatusList({ items, onReorder, getItemProps, focusedItemId }: S
           items={sortableItems}
           onReorder={handleReorder}
           className="grid gap-0.5"
-          renderItem={(item, isDragging) => (
+          renderItem={(item) => (
             <div className="group/section">
               {item.contextMenu ? (
                 <ContextMenu modal={true}>
@@ -351,7 +369,6 @@ function SortableStatusList({ items, onReorder, getItemProps, focusedItemId }: S
                     <SidebarButton
                       link={item}
                       itemProps={getItemProps?.(item.id)}
-                      isDragGhost={isDragging}
                     />
                   </ContextMenuTrigger>
                   <StyledContextMenuContent>
@@ -359,11 +376,17 @@ function SortableStatusList({ items, onReorder, getItemProps, focusedItemId }: S
                       <SidebarMenu
                         type={item.contextMenu.type}
                         statusId={item.contextMenu.statusId}
+                        labelId={item.contextMenu.labelId}
                         onConfigureStatuses={item.contextMenu.onConfigureStatuses}
                         onConfigureLabels={item.contextMenu.onConfigureLabels}
+                        onAddLabel={item.contextMenu.onAddLabel}
+                        onDeleteLabel={item.contextMenu.onDeleteLabel}
                         onAddSource={item.contextMenu.onAddSource}
                         onAddSkill={item.contextMenu.onAddSkill}
                         sourceType={item.contextMenu.sourceType}
+                        onConfigureViews={item.contextMenu.onConfigureViews}
+                        viewId={item.contextMenu.viewId}
+                        onDeleteView={item.contextMenu.onDeleteView}
                       />
                     </ContextMenuProvider>
                   </StyledContextMenuContent>
@@ -372,7 +395,6 @@ function SortableStatusList({ items, onReorder, getItemProps, focusedItemId }: S
                 <SidebarButton
                   link={item}
                   itemProps={getItemProps?.(item.id)}
-                  isDragGhost={isDragging}
                 />
               )}
             </div>
@@ -400,8 +422,6 @@ interface SidebarButtonProps {
     'data-focused': boolean
     ref: (el: HTMLElement | null) => void
   }
-  /** True when this item is the ghost (still in list while being dragged) */
-  isDragGhost?: boolean
   /** True when rendering inside the DragOverlay (floating clone) */
   isOverlay?: boolean
 }
@@ -409,7 +429,7 @@ interface SidebarButtonProps {
 // forwardRef is required so Radix's ContextMenuTrigger (asChild) can attach its ref
 // and pass props like data-state="open" directly onto this button element.
 const SidebarButton = React.forwardRef<HTMLButtonElement, SidebarButtonProps & React.ButtonHTMLAttributes<HTMLButtonElement>>(
-  ({ link, itemProps, isDragGhost, isOverlay, className: extraClassName, ...radixProps }, forwardedRef) => {
+  ({ link, itemProps, isOverlay, className: extraClassName, ...radixProps }, forwardedRef) => {
     return (
       <button
         {...(isOverlay ? {} : (() => {
@@ -435,10 +455,8 @@ const SidebarButton = React.forwardRef<HTMLButtonElement, SidebarButtonProps & R
           "px-2",
           link.variant === "default"
             ? "bg-foreground/[0.07]"
-            // Ghost: highlight on hover, context menu open (data-state), or EditPopover active (data-edit-active)
+            // Highlight on hover, context menu open (data-state), or EditPopover active (data-edit-active)
             : "hover:bg-sidebar-hover data-[state=open]:bg-sidebar-hover data-[edit-active=true]:bg-sidebar-hover",
-          // Overlay styling: bg only (shadow is on the outer wrapper in sortable-list)
-          isOverlay && "bg-background",
           extraClassName,
         )}
       >

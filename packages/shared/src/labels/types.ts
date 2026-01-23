@@ -9,11 +9,7 @@
  * Array position determines display order (no separate order field).
  * IDs are simple slugs, globally unique across the entire tree.
  *
- * Icon format: emoji, URL, or explicit local file path.
- * - Emoji: "🏷️" - rendered as text
- * - URL: "https://..." - auto-downloaded to labels/icons/{labelId}.{ext}
- * - Local path: "labels/icons/my-icon.svg" - explicit relative path
- * - Omit for no icon (many labels won't have one)
+ * Visual: Labels are identified by color only (rendered as colored circles).
  *
  * Color format: EntityColor (system color string or custom color object)
  * - System: "accent", "foreground/50", "info/80" (uses CSS variables, auto light/dark)
@@ -21,6 +17,26 @@
  */
 
 import type { EntityColor } from '../colors/types.ts'
+
+/**
+ * Auto-label rule: regex pattern that scans user messages and automatically
+ * applies labels with extracted values.
+ *
+ * Uses capture groups ($1, $2, etc.) in the pattern and substitutes them
+ * into the valueTemplate. Rules are evaluated in order. Multiple rules on
+ * the same label means multiple ways to trigger it (e.g., URL regex + bare
+ * key regex for issue IDs).
+ */
+export interface AutoLabelRule {
+  /** Regex pattern with capture groups for value extraction */
+  pattern: string
+  /** Regex flags (default: 'gi' for global, case-insensitive). 'g' is always enforced. */
+  flags?: string
+  /** Template for the label value using $1, $2, etc. for capture group substitution */
+  valueTemplate?: string
+  /** Human-readable description of what this rule matches */
+  description?: string
+}
 
 /**
  * Label configuration (stored in labels/config.json).
@@ -34,14 +50,8 @@ export interface LabelConfig {
   /** Display name */
   name: string;
 
-  /** Optional color. Cascades into colorable SVGs via currentColor. */
+  /** Optional color. Rendered as a colored circle in the UI. */
   color?: EntityColor;
-
-  /**
-   * Icon: emoji, URL (auto-downloaded), or explicit local file path.
-   * Omit for no icon.
-   */
-  icon?: string;
 
   /** Child labels forming a sub-tree. Array position = display order. */
   children?: LabelConfig[];
@@ -54,6 +64,13 @@ export interface LabelConfig {
    * Omit for boolean (presence-only) labels.
    */
   valueType?: 'string' | 'number' | 'date';
+
+  /**
+   * Auto-label rules: regex patterns that scan user messages and automatically
+   * apply this label with extracted values.
+   * Multiple rules = multiple ways to trigger (evaluated in order, all matches collected).
+   */
+  autoRules?: AutoLabelRule[];
 }
 
 /**
@@ -74,18 +91,16 @@ export interface WorkspaceLabelConfig {
 export interface CreateLabelInput {
   name: string;
   color?: EntityColor;
-  icon?: string; // Emoji, URL, or local path
   parentId?: string; // Target parent label ID (null = root)
   valueType?: 'string' | 'number' | 'date';
 }
 
 /**
- * Input for updating an existing label (name, color, icon, valueType — cannot change ID or hierarchy)
+ * Input for updating an existing label (name, color, valueType — cannot change ID or hierarchy)
  */
 export interface UpdateLabelInput {
   name?: string;
   color?: EntityColor;
-  icon?: string; // Emoji, URL, or local path
   valueType?: 'string' | 'number' | 'date';
 }
 

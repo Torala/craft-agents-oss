@@ -3,7 +3,7 @@
  *
  * Shared type definitions for the centralised icon system.
  * Used by EntityIcon base component and all entity-specific wrappers
- * (SourceAvatar, SkillAvatar, StatusIcon, LabelIcon).
+ * (SourceAvatar, SkillAvatar, StatusIcon).
  *
  * This module is browser-safe (no Node.js dependencies).
  */

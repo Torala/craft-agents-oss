@@ -1,0 +1,183 @@
+---
+title: "Auto-Apply Rules"
+description: "Automatically tag sessions with labels using regex patterns"
+---
+
+Auto-apply rules automatically scan user messages and apply labels with extracted values. Configure regex patterns on any label to trigger automatic tagging — no manual work needed.
+
+For example, paste a Linear issue URL and the session gets auto-tagged with the issue key. Mention a dollar amount and a budget label appears.
+
+## Configuration
+
+Add `autoRules` to any label in your `labels/config.json`:
+
+```json
+{
+  "id": "linear-issue",
+  "name": "Linear Issue",
+  "color": "purple",
+  "valueType": "string",
+  "autoRules": [
+    {
+      "pattern": "linear\\.app/[\\w-]+/issue/([A-Z]+-\\d+)",
+      "valueTemplate": "$1",
+      "description": "Matches Linear issue URLs"
+    },
+    {
+      "pattern": "\\b([A-Z]{2,5}-\\d+)\\b",
+      "valueTemplate": "$1",
+      "description": "Matches bare issue keys like CRA-123"
+    }
+  ]
+}
+```
+
+## Rule Properties
+
+| Property | Type | Required | Description |
+|----------|------|----------|-------------|
+| `pattern` | string | Yes | Regex with capture groups. Uses JavaScript regex syntax. |
+| `flags` | string | No | Regex flags (default: `gi` — global, case-insensitive). `g` is always enforced. |
+| `valueTemplate` | string | No | Template using `$1`, `$2` for capture group substitution. If omitted, uses first capture group. |
+| `description` | string | No | Human-readable description of what this rule matches. |
+
+## Regex Patterns
+
+Rules use JavaScript regular expressions with capture groups:
+
+```json
+{
+  "pattern": "github\\.com/([\\w-]+/[\\w-]+)/pull/(\\d+)",
+  "valueTemplate": "$1#$2",
+  "description": "Matches GitHub PR URLs → repo#number"
+}
+```
+
+- **Capture groups**: `$1`, `$2`, etc. are replaced with matched groups in `valueTemplate`
+- **Global matching**: The `g` flag is always enforced, so all occurrences in a message are found
+- **Multiple matches**: `"CRA-1 and CRA-2"` produces two label entries on the same label
+
+## Evaluation Behavior
+
+<AccordionGroup>
+  <Accordion title="When are rules evaluated?">
+    Rules run when a user message is sent (both fresh messages and queued messages). Only user messages are scanned — assistant output and tool results are not.
+  </Accordion>
+
+  <Accordion title="Code block stripping">
+    Content inside fenced code blocks (` ``` `) and inline code (`` ` ``) is stripped before evaluation. This prevents false matches on code examples.
+  </Accordion>
+
+  <Accordion title="Deduplication">
+    The same label+value combination won't be added twice to a session. If `"linear-issue::CRA-123"` already exists, mentioning `CRA-123` again is a no-op.
+  </Accordion>
+
+  <Accordion title="Match limit">
+    Maximum 10 matches per message to prevent label explosion from pasted data (e.g., a log file with hundreds of issue keys).
+  </Accordion>
+
+  <Accordion title="Multiple rules per label">
+    All rules on a label are evaluated. All matches across all rules are collected and applied.
+  </Accordion>
+
+  <Accordion title="Error handling">
+    Invalid regex patterns are skipped at runtime and logged as warnings. Patterns are also validated at config-save time.
+  </Accordion>
+</AccordionGroup>
+
+## Value Normalization
+
+Extracted values are normalized based on the label's `valueType`:
+
+| valueType | Raw Capture | Normalized |
+|-----------|-------------|------------|
+| `string` | `CRA-123` | `CRA-123` (pass-through) |
+| `number` | `$45,000` | `45000` (strip symbol + commas) |
+| `number` | `1.5M` | `1500000` (expand suffix) |
+| `number` | `50k` | `50000` (expand suffix) |
+| `date` | `2026-01-30` | `2026-01-30` (pass-through) |
+
+## Full Example
+
+A workspace that auto-tags Linear issues, deadlines, contacts, and budgets:
+
+```json
+{
+  "version": 1,
+  "labels": [
+    {
+      "id": "linear-issue",
+      "name": "Linear Issue",
+      "color": "purple",
+      "valueType": "string",
+      "autoRules": [
+        {
+          "pattern": "linear\\.app/[\\w-]+/issue/([A-Z]+-\\d+)",
+          "valueTemplate": "$1",
+          "description": "Linear URLs"
+        },
+        {
+          "pattern": "\\b([A-Z]{2,5}-\\d+)\\b",
+          "valueTemplate": "$1",
+          "description": "Bare issue keys"
+        }
+      ]
+    },
+    {
+      "id": "deadline",
+      "name": "Deadline",
+      "color": "orange",
+      "valueType": "date",
+      "autoRules": [
+        {
+          "pattern": "(\\d{4}-\\d{2}-\\d{2})",
+          "valueTemplate": "$1",
+          "description": "ISO dates (YYYY-MM-DD)"
+        }
+      ]
+    },
+    {
+      "id": "contact",
+      "name": "Contact",
+      "color": "blue",
+      "valueType": "string",
+      "autoRules": [
+        {
+          "pattern": "([\\w.+-]+@[\\w.-]+\\.[a-zA-Z]{2,})",
+          "valueTemplate": "$1",
+          "description": "Email addresses"
+        }
+      ]
+    },
+    {
+      "id": "budget",
+      "name": "Budget",
+      "color": "green",
+      "valueType": "number",
+      "autoRules": [
+        {
+          "pattern": "\\$([\\d,.]+[kKmMbB]?)",
+          "valueTemplate": "$1",
+          "description": "Dollar amounts"
+        }
+      ]
+    }
+  ]
+}
+```
+
+With this config:
+- Pasting `https://linear.app/team/issue/CRA-456` adds `linear-issue::CRA-456`
+- Typing `deadline is 2026-03-15` adds `deadline::2026-03-15`
+- Mentioning `reach out to alice@example.com` adds `contact::alice@example.com`
+- Writing `budget is $50k` adds `budget::50000`
+
+## Validation
+
+<Warning>
+Always validate after creating or editing auto-rules. Invalid regex patterns (including ReDoS-vulnerable patterns) are rejected at save time.
+</Warning>
+
+```
+config_validate({ target: "labels" })
+```

@@ -13,6 +13,10 @@ import type {
   TypedErrorEvent,
   SourcesChangedEvent,
   LabelsChangedEvent,
+  TodoStateChangedEvent,
+  SessionFlaggedEvent,
+  SessionUnflaggedEvent,
+  NameChangedEvent,
   PermissionRequestEvent,
   CredentialRequestEvent,
   PlanSubmittedEvent,
@@ -514,6 +518,74 @@ export function handleLabelsChanged(
         ...session,
         labels: event.labels,
       },
+      streaming,
+    },
+    effects: [],
+  }
+}
+
+/**
+ * Handle todo_state_changed - update session's todoState (external metadata change or agent tool)
+ */
+export function handleTodoStateChanged(
+  state: SessionState,
+  event: TodoStateChangedEvent
+): ProcessResult {
+  const { session, streaming } = state
+  return {
+    state: {
+      session: { ...session, todoState: event.todoState },
+      streaming,
+    },
+    effects: [],
+  }
+}
+
+/**
+ * Handle session_flagged - mark session as flagged
+ */
+export function handleSessionFlagged(
+  state: SessionState,
+  _event: SessionFlaggedEvent
+): ProcessResult {
+  const { session, streaming } = state
+  return {
+    state: {
+      session: { ...session, isFlagged: true },
+      streaming,
+    },
+    effects: [],
+  }
+}
+
+/**
+ * Handle session_unflagged - mark session as unflagged
+ */
+export function handleSessionUnflagged(
+  state: SessionState,
+  _event: SessionUnflaggedEvent
+): ProcessResult {
+  const { session, streaming } = state
+  return {
+    state: {
+      session: { ...session, isFlagged: false },
+      streaming,
+    },
+    effects: [],
+  }
+}
+
+/**
+ * Handle name_changed - update session name (external metadata change)
+ */
+export function handleNameChanged(
+  state: SessionState,
+  event: NameChangedEvent
+): ProcessResult {
+  const { session, streaming } = state
+  return {
+    state: {
+      session: { ...session, name: event.name },
       streaming,
     },
     effects: [],

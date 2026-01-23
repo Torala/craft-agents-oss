@@ -44,6 +44,7 @@ import { ActiveOptionBadges } from "./ActiveOptionBadges"
 import { InputContainer, type StructuredInputState, type StructuredResponse, type PermissionResponse } from "./input"
 import type { RichTextInputHandle } from "@/components/ui/rich-text-input"
 import { useBackgroundTasks } from "@/hooks/useBackgroundTasks"
+import type { SessionMeta } from "@/atoms/sessions"
 import { CHAT_LAYOUT } from "@/config/layout"
 
 // ============================================================================
@@ -124,7 +125,7 @@ interface ChatDisplayProps {
   labels?: import('@craft-agent/shared/labels').LabelConfig[]
   /** Callback when labels change */
   onLabelsChange?: (labels: string[]) => void
-  /** Workspace ID for loading skill/label icons */
+  /** Workspace ID for loading skill icons */
   workspaceId?: string
   // Working directory (per session)
   /** Current working directory for this session */
@@ -862,7 +863,6 @@ export function ChatDisplay({
               onInsertMessage={onInputChange}
               sessionLabels={session.labels}
               labels={labels}
-              workspaceId={workspaceId}
               onRemoveLabel={(labelId) => {
                 // Remove label from session and persist
                 const newLabels = (session.labels || []).filter(id => id !== labelId)

@@ -316,6 +316,10 @@ export interface Session {
     message: string
     statusType?: string
   }
+  // When the session was first created (ms timestamp)
+  createdAt?: number
+  // Total message count (pre-computed in JSONL header)
+  messageCount?: number
   // Token usage for context tracking
   tokenUsage?: {
     inputTokens: number
@@ -620,7 +624,13 @@ export const IPC_CHANNELS = {
 
   // Label management (workspace-scoped)
   LABELS_LIST: 'labels:list',
+  LABELS_CREATE: 'labels:create',
+  LABELS_DELETE: 'labels:delete',
   LABELS_CHANGED: 'labels:changed',  // Broadcast event
+
+  // Views management (workspace-scoped, stored in views.json)
+  VIEWS_LIST: 'views:list',
+  VIEWS_SAVE: 'views:save',
 
   // Theme management (cascading: app → workspace)
   THEME_APP_CHANGED: 'theme:appChanged',        // Broadcast event
@@ -848,8 +858,14 @@ export interface ElectronAPI {
 
   // Labels (workspace-scoped)
   listLabels(workspaceId: string): Promise<import('@craft-agent/shared/labels').LabelConfig[]>
-  // Labels change listener (live updates when labels config or icon files change)
+  createLabel(workspaceId: string, input: import('@craft-agent/shared/labels').CreateLabelInput): Promise<import('@craft-agent/shared/labels').LabelConfig>
+  deleteLabel(workspaceId: string, labelId: string): Promise<{ stripped: number }>
+  // Labels change listener (live updates when labels config changes)
   onLabelsChanged(callback: (workspaceId: string) => void): () => void
+
+  // Views (workspace-scoped, stored in views.json)
+  listViews(workspaceId: string): Promise<import('@craft-agent/shared/views').ViewConfig[]>
+  saveViews(workspaceId: string, views: import('@craft-agent/shared/views').ViewConfig[]): Promise<void>
 
   // Generic workspace image loading/saving (returns data URL for images, raw string for SVG)
   readWorkspaceImage(workspaceId: string, relativePath: string): Promise<string>
@@ -983,11 +999,12 @@ export type ChatFilter =
   | { kind: 'flagged' }
   | { kind: 'state'; stateId: string }
   | { kind: 'label'; labelId: string }
+  | { kind: 'view'; viewId: string }
 
 /**
  * Settings subpage options
  */
-export type SettingsSubpage = 'app' | 'workspace' | 'permissions' | 'shortcuts' | 'preferences'
+export type SettingsSubpage = 'app' | 'workspace' | 'permissions' | 'labels' | 'shortcuts' | 'preferences'
 
 /**
  * Chats navigation state - shows SessionList in navigator
@@ -1119,6 +1136,7 @@ export const getNavigationStateKey = (state: NavigationState): string => {
   let base: string
   if (f.kind === 'state') base = `state:${f.stateId}`
   else if (f.kind === 'label') base = `label:${f.labelId}`
+  else if (f.kind === 'view') base = `view:${f.viewId}`
   else base = f.kind
   if (state.details) {
     return `${base}/chat/${state.details.sessionId}`
@@ -1155,7 +1173,7 @@ export const parseNavigationStateKey = (key: string): NavigationState | null => 
   if (key === 'settings') return { navigator: 'settings', subpage: 'app' }
   if (key.startsWith('settings:')) {
     const subpage = key.slice(9) as SettingsSubpage
-    if (['app', 'workspace', 'shortcuts', 'preferences'].includes(subpage)) {
+    if (['app', 'workspace', 'permissions', 'labels', 'shortcuts', 'preferences'].includes(subpage)) {
       return { navigator: 'settings', subpage }
     }
   }
@@ -1173,6 +1191,10 @@ export const parseNavigationStateKey = (key: string): NavigationState | null => 
       const labelId = filterKey.slice(6)
       if (!labelId) return null
       filter = { kind: 'label', labelId }
+    } else if (filterKey.startsWith('view:')) {
+      const viewId = filterKey.slice(5)
+      if (!viewId) return null
+      filter = { kind: 'view', viewId }
     } else {
       return null
     }

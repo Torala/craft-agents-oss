@@ -700,15 +700,14 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
   })
 
   // Filesystem search for @ mention file selection.
-  // Uses a single recursive readdir call (native, fast) then filters in-memory.
-  // Much faster than sequential per-directory async walks.
+  // Parallel BFS walk that skips ignored directories BEFORE entering them,
+  // avoiding reading node_modules/etc. contents entirely. Uses withFileTypes
+  // to get entry types without separate stat calls.
   ipcMain.handle(IPC_CHANNELS.FS_SEARCH, async (_event, basePath: string, query: string) => {
     ipcLog.info('[FS_SEARCH] called:', basePath, query)
     const MAX_RESULTS = 50
-    // Safety cap: stop processing after this many entries to bound work on huge trees
-    const MAX_ENTRIES = 10_000
 
-    // Path segments to skip (node_modules, .git, etc.)
+    // Directories to never recurse into
     const SKIP_DIRS = new Set([
       'node_modules', '.git', '.svn', '.hg', 'dist', 'build',
       '.next', '.nuxt', '.cache', '__pycache__', 'vendor',
@@ -716,48 +715,61 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
     ])
 
     const lowerQuery = query.toLowerCase()
+    const results: Array<{ name: string; path: string; type: 'file' | 'directory'; relativePath: string }> = []
 
     try {
-      // Single native call — returns all relative paths in the tree.
-      // This is implemented in libuv (C++) and is significantly faster than
-      // thousands of individual JS-level async readdir + await calls.
-      const allEntries = await readdir(basePath, { recursive: true })
-      ipcLog.info('[FS_SEARCH] readdir returned', allEntries.length, 'entries')
+      // BFS queue: each entry is a relative path prefix ('' for root)
+      let queue = ['']
 
-      const results: Array<{ name: string; path: string; type: 'file' | 'directory'; relativePath: string }> = []
+      while (queue.length > 0 && results.length < MAX_RESULTS) {
+        // Process current level: read all directories in parallel
+        const nextQueue: string[] = []
 
-      for (let i = 0; i < Math.min(allEntries.length, MAX_ENTRIES); i++) {
-        if (results.length >= MAX_RESULTS) break
-
-        const relativePath = allEntries[i]
-
-        // Skip entries inside ignored directories
-        const segments = relativePath.split('/')
-        if (segments.some(seg => SKIP_DIRS.has(seg) || seg.startsWith('.'))) continue
-
-        const fileName = segments[segments.length - 1]
-        const lowerName = fileName.toLowerCase()
-        const lowerRelative = relativePath.toLowerCase()
-
-        // Match if name or relative path contains the query
-        if (lowerName.includes(lowerQuery) || lowerRelative.includes(lowerQuery)) {
-          const fullPath = join(basePath, relativePath)
-          // Determine file vs directory from stat (only called for matches, max 50)
-          let entryType: 'file' | 'directory' = 'file'
-          try {
-            const s = await stat(fullPath)
-            if (s.isDirectory()) entryType = 'directory'
-          } catch {
-            // Default to file if stat fails
-          }
-
-          results.push({
-            name: fileName,
-            path: fullPath,
-            type: entryType,
-            relativePath,
+        const dirResults = await Promise.all(
+          queue.map(async (relDir) => {
+            const absDir = relDir ? join(basePath, relDir) : basePath
+            try {
+              return { relDir, entries: await readdir(absDir, { withFileTypes: true }) }
+            } catch {
+              // Skip dirs we can't read (permissions, broken symlinks, etc.)
+              return { relDir, entries: [] as import('fs').Dirent[] }
+            }
           })
+        )
+
+        for (const { relDir, entries } of dirResults) {
+          if (results.length >= MAX_RESULTS) break
+
+          for (const entry of entries) {
+            if (results.length >= MAX_RESULTS) break
+
+            const name = entry.name
+            // Skip hidden files/dirs and ignored directories
+            if (name.startsWith('.') || SKIP_DIRS.has(name)) continue
+
+            const relativePath = relDir ? `${relDir}/${name}` : name
+            const isDir = entry.isDirectory()
+
+            // Queue subdirectories for next BFS level
+            if (isDir) {
+              nextQueue.push(relativePath)
+            }
+
+            // Check if name or path matches the query
+            const lowerName = name.toLowerCase()
+            const lowerRelative = relativePath.toLowerCase()
+            if (lowerName.includes(lowerQuery) || lowerRelative.includes(lowerQuery)) {
+              results.push({
+                name,
+                path: join(basePath, relativePath),
+                type: isDir ? 'directory' : 'file',
+                relativePath,
+              })
+            }
+          }
         }
+
+        queue = nextQueue
       }
 
       // Sort: directories first, then by name length (shorter = better match)
@@ -1883,6 +1895,48 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
 
     const { listLabels } = await import('@craft-agent/shared/labels/storage')
     return listLabels(workspace.rootPath)
+  })
+
+  // Create a new label in a workspace
+  ipcMain.handle(IPC_CHANNELS.LABELS_CREATE, async (_event, workspaceId: string, input: import('@craft-agent/shared/labels').CreateLabelInput) => {
+    const workspace = getWorkspaceByNameOrId(workspaceId)
+    if (!workspace) throw new Error('Workspace not found')
+
+    const { createLabel } = await import('@craft-agent/shared/labels/crud')
+    const label = createLabel(workspace.rootPath, input)
+    windowManager.broadcastToAll(IPC_CHANNELS.LABELS_CHANGED, workspaceId)
+    return label
+  })
+
+  // Delete a label (and descendants) from a workspace
+  ipcMain.handle(IPC_CHANNELS.LABELS_DELETE, async (_event, workspaceId: string, labelId: string) => {
+    const workspace = getWorkspaceByNameOrId(workspaceId)
+    if (!workspace) throw new Error('Workspace not found')
+
+    const { deleteLabel } = await import('@craft-agent/shared/labels/crud')
+    const result = deleteLabel(workspace.rootPath, labelId)
+    windowManager.broadcastToAll(IPC_CHANNELS.LABELS_CHANGED, workspaceId)
+    return result
+  })
+
+  // List views for a workspace (dynamic expression-based filters stored in views.json)
+  ipcMain.handle(IPC_CHANNELS.VIEWS_LIST, async (_event, workspaceId: string) => {
+    const workspace = getWorkspaceByNameOrId(workspaceId)
+    if (!workspace) throw new Error('Workspace not found')
+
+    const { listViews } = await import('@craft-agent/shared/views/storage')
+    return listViews(workspace.rootPath)
+  })
+
+  // Save views (replaces full array)
+  ipcMain.handle(IPC_CHANNELS.VIEWS_SAVE, async (_event, workspaceId: string, views: import('@craft-agent/shared/views').ViewConfig[]) => {
+    const workspace = getWorkspaceByNameOrId(workspaceId)
+    if (!workspace) throw new Error('Workspace not found')
+
+    const { saveViews } = await import('@craft-agent/shared/views/storage')
+    saveViews(workspace.rootPath, views)
+    // Broadcast labels changed since views are used alongside labels in sidebar
+    windowManager.broadcastToAll(IPC_CHANNELS.LABELS_CHANGED, workspaceId)
   })
 
   // Generic workspace image loading (for source icons, status icons, etc.)

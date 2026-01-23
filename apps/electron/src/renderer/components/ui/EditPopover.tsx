@@ -67,6 +67,9 @@ export type EditContextKey =
   | 'add-skill'
   | 'edit-statuses'
   | 'edit-labels'
+  | 'edit-auto-rules'
+  | 'add-label'
+  | 'edit-views'
 
 /**
  * Full edit configuration including context for agent and example for UI.
@@ -331,14 +334,67 @@ const EDIT_CONFIGS: Record<EditContextKey, (location: string) => EditConfig> = {
       context:
         'The user wants to customize session labels (tagging/categorization). ' +
         'Labels are stored in labels/config.json as a hierarchical tree. ' +
-        'Each label has: id (slug, globally unique), name (display), color (optional EntityColor), icon (optional emoji/URL/file path), children (sub-labels array). ' +
+        'Each label has: id (slug, globally unique), name (display), color (optional EntityColor), children (sub-labels array). ' +
         'Colors use EntityColor format: string shorthand (e.g. "blue") or { light, dark } object for theme-aware colors. ' +
-        'Icons can be emoji characters, URLs (auto-downloaded), or local file paths in labels/icons/. ' +
+        'Labels are color-only (no icons) — rendered as colored circles in the UI. ' +
         'Children form a recursive tree structure — array position determines display order. ' +
         'Read ~/.craft-agent/docs/labels.md for full format reference. ' +
         'Confirm clearly when done.',
     },
     example: 'Add a "Bug" label with red color',
+  }),
+
+  // Auto-label rules context (focused on regex patterns within labels)
+  'edit-auto-rules': (location) => ({
+    context: {
+      label: 'Auto-Apply Rules',
+      filePath: `${location}/labels/config.json`,
+      context:
+        'The user wants to edit auto-apply rules (regex patterns that auto-tag sessions). ' +
+        'Rules live inside the autoRules array on individual labels in labels/config.json. ' +
+        'Each rule has: pattern (regex with capture groups), flags (default "gi"), valueTemplate ($1/$2 substitution), description. ' +
+        'Multiple rules on the same label = multiple ways to trigger. The "g" flag is always enforced. ' +
+        'Avoid catastrophic backtracking patterns (e.g., (a+)+). ' +
+        'Read ~/.craft-agent/docs/labels.md for full format reference. ' +
+        'Confirm clearly when done.',
+    },
+    example: 'Add a rule to detect GitHub issue URLs',
+  }),
+
+  // Add new label context (triggered from the # menu when no labels match)
+  'add-label': (location) => ({
+    context: {
+      label: 'Add Label',
+      filePath: `${location}/labels/config.json`,
+      context:
+        'The user wants to create a new label from the # inline menu. ' +
+        'Labels are stored in labels/config.json as a hierarchical tree. ' +
+        'Each label has: id (slug, globally unique), name (display), color (optional EntityColor), children (sub-labels array). ' +
+        'Colors use EntityColor format: string shorthand (e.g. "blue") or { light, dark } object for theme-aware colors. ' +
+        'Labels are color-only (no icons) — rendered as colored circles in the UI. ' +
+        'Read ~/.craft-agent/docs/labels.md for full format reference. ' +
+        'Confirm clearly when done.',
+    },
+    example: 'A red "Bug" label',
+    overridePlaceholder: 'What label would you like to create?',
+  }),
+
+  // Views configuration context
+  'edit-views': (location) => ({
+    context: {
+      label: 'Views Configuration',
+      filePath: `${location}/views.json`,
+      context:
+        'The user wants to edit views (dynamic, expression-based filters). ' +
+        'Views are stored in views.json at the workspace root under a "views" array. ' +
+        'Each view has: id (unique slug), name (display text), description (optional), color (optional EntityColor), expression (Filtrex string). ' +
+        'Expressions are evaluated against session context fields: name, preview, todoState, permissionMode, model, lastMessageRole, ' +
+        'lastUsedAt, createdAt, messageCount, labelCount, isFlagged, hasUnread, isProcessing, hasPendingPlan, tokenUsage.*, labels. ' +
+        'Available functions: daysSince(timestamp), contains(array, value). ' +
+        'Colors use EntityColor format: string shorthand (e.g. "orange") or { light, dark } object. ' +
+        'Confirm clearly when done.',
+    },
+    example: 'Add a "Stale" view for sessions inactive > 7 days',
   }),
 }
 
@@ -565,71 +621,78 @@ export function EditPopover({
   }
 
   return (
-    <Popover open={open} onOpenChange={setOpen} modal={modal}>
-      <PopoverTrigger asChild className={triggerClassName}>
-        {trigger}
-      </PopoverTrigger>
-      {/* Subtle backdrop when popover is open — dims the background to draw focus */}
+    <>
+      {/* Subtle backdrop when popover is open — rendered outside Popover to avoid
+        * stacking context issues. Uses CSS @keyframes for reliable fade-in on mount. */}
       {open && (
         <div
-          className="fixed inset-0 bg-black/10 z-[99] pointer-events-none animate-in fade-in-0 duration-200"
+          className="fixed inset-0 z-[99] pointer-events-none"
+          style={{
+            backgroundColor: 'rgba(0, 0, 0, 0.1)',
+            animation: 'editPopoverFadeIn 100ms ease-out forwards',
+          }}
           aria-hidden="true"
         />
       )}
-      <PopoverContent
-        side={side}
-        align={align}
-        className="p-4"
-        style={{ width, borderRadius: 16 }}
-      >
-        {/* Textarea */}
-        <textarea
-          ref={textareaRef}
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder={placeholder}
-          autoFocus
-          className={cn(
-            'w-full min-h-[100px] resize-none px-0 py-0 text-sm leading-relaxed',
-            'bg-transparent border-none',
-            'placeholder:text-muted-foreground placeholder:leading-relaxed',
-            'focus:outline-none focus-visible:outline-none focus-visible:ring-0',
-            'field-sizing-content'
-          )}
-        />
+      <Popover open={open} onOpenChange={setOpen} modal={modal}>
+        <PopoverTrigger asChild className={triggerClassName}>
+          {trigger}
+        </PopoverTrigger>
+        <PopoverContent
+          side={side}
+          align={align}
+          className="p-4"
+          style={{ width, borderRadius: 16 }}
+        >
+          {/* Textarea */}
+          <textarea
+            ref={textareaRef}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder={placeholder}
+            autoFocus
+            className={cn(
+              'w-full min-h-[100px] resize-none px-0 py-0 text-sm leading-relaxed',
+              'bg-transparent border-none',
+              'placeholder:text-muted-foreground placeholder:leading-relaxed',
+              'focus:outline-none focus-visible:outline-none focus-visible:ring-0',
+              'field-sizing-content'
+            )}
+          />
 
-        {/* Footer row: secondary action on left, send button on right */}
-        <div className="flex items-center justify-between mt-2">
-          {/* Secondary action - plain text link */}
-          {secondaryAction ? (
-            <button
+          {/* Footer row: secondary action on left, send button on right */}
+          <div className="flex items-center justify-between mt-2">
+            {/* Secondary action - plain text link */}
+            {secondaryAction ? (
+              <button
+                type="button"
+                onClick={() => {
+                  secondaryAction.onClick()
+                  setOpen(false)
+                }}
+                className="text-sm text-muted-foreground hover:underline"
+              >
+                {secondaryAction.label}
+              </button>
+            ) : (
+              <div />
+            )}
+
+            {/* Send button */}
+            <Button
               type="button"
-              onClick={() => {
-                secondaryAction.onClick()
-                setOpen(false)
-              }}
-              className="text-sm text-muted-foreground hover:underline"
+              size="icon"
+              className="h-7 w-7 rounded-full shrink-0"
+              onClick={handleSubmit}
+              disabled={!input.trim()}
             >
-              {secondaryAction.label}
-            </button>
-          ) : (
-            <div />
-          )}
-
-          {/* Send button */}
-          <Button
-            type="button"
-            size="icon"
-            className="h-7 w-7 rounded-full shrink-0"
-            onClick={handleSubmit}
-            disabled={!input.trim()}
-          >
-            <ArrowUp className="h-4 w-4" />
-          </Button>
-        </div>
-      </PopoverContent>
-    </Popover>
+              <ArrowUp className="h-4 w-4" />
+            </Button>
+          </div>
+        </PopoverContent>
+      </Popover>
+    </>
   )
 }
 

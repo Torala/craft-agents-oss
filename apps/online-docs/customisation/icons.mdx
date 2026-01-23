@@ -1,0 +1,164 @@
+---
+title: "Icons"
+description: "Configure icons for sources, skills, and statuses"
+---
+
+Craft Agent supports icons on sources, skills, and statuses. Icons can be emojis, SVG files, or raster images (PNG, JPG).
+
+<Note>
+Labels do **not** use icons — they display as colored circles. See [Colors](/customisation/colors) for label color configuration.
+</Note>
+
+## Supported Formats
+
+| Format | Extensions | Best For |
+|--------|-----------|----------|
+| SVG | `.svg` | Scalable icons, theme-adaptive via `currentColor` |
+| PNG | `.png` | Raster icons with transparency |
+| JPG | `.jpg`, `.jpeg` | Photos or complex artwork |
+| Emoji | Unicode | Quick visual identity without files |
+
+## Setting Icons
+
+### Emoji
+
+Set the `icon` field in your entity's `config.json` to any Unicode emoji:
+
+```json
+{
+  "icon": "🔧"
+}
+```
+
+Multi-codepoint emojis and ZWJ sequences are supported (e.g. `👨‍💻`, `🇭🇺`).
+
+### Icon Files
+
+Place an icon file in your entity's directory. Craft Agent auto-discovers files named `icon.{svg,png,jpg,jpeg}`:
+
+```
+sources/
+  linear/
+    config.json
+    icon.svg        ← auto-discovered
+```
+
+Priority order when multiple formats exist: **SVG > PNG > JPG > JPEG**.
+
+### Explicit Path
+
+Point to a specific file using a relative path in `config.json`:
+
+```json
+{
+  "icon": "./my-custom-icon.svg"
+}
+```
+
+### URL (Sources Only)
+
+For sources with a URL-based `icon` field, Craft Agent downloads the image to a local `icon.{ext}` file (max 50KB). After download, the local file is used for rendering.
+
+## Resolution Priority
+
+When rendering an entity's icon, Craft Agent resolves it in this order:
+
+1. **Emoji** — if `icon` field is an emoji string, render as text
+2. **Explicit path** — if `icon` is a relative path (e.g. `./icon.svg`), load that file
+3. **Auto-discovery** — probe for `icon.svg`, `icon.png`, `icon.jpg` in the entity directory
+4. **Favicon fallback** (sources only) — resolve from the service URL (MCP url or API baseUrl)
+5. **Fallback icon** — a generic placeholder icon is shown
+
+## SVG Theming
+
+SVGs that use `currentColor` automatically adapt to the current theme:
+
+```xml
+<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <path d="M12 2L2 7l10 5 10-5-10-5z" fill="currentColor"/>
+</svg>
+```
+
+**How it works:**
+
+- SVGs with `currentColor` are detected as **colorable** — they inherit color from their parent context (e.g. a status icon takes its status color)
+- SVGs without `currentColor` render with their hardcoded colors
+- SVGs with no `fill` attribute on the root `<svg>` element get the theme foreground color injected automatically
+
+<Tip>
+Use `currentColor` in your SVGs for icons that should match the entity's color (e.g. statuses) or adapt to light/dark mode.
+</Tip>
+
+## Entity-Specific Details
+
+### Sources
+
+```
+~/.craft-agent/workspaces/{id}/sources/{slug}/
+  config.json     ← "icon": "🔧" or "./icon.svg"
+  icon.svg        ← auto-discovered
+```
+
+Sources have favicon fallback: if no local icon exists, Craft Agent resolves one from the MCP URL or API base URL.
+
+### Skills
+
+```
+~/.craft-agent/workspaces/{id}/skills/{slug}/
+  SKILL.md
+  icon.svg        ← auto-discovered
+```
+
+Skills use the same auto-discovery pattern. The resolved icon path is stored in the skill's metadata as `iconPath`.
+
+### Statuses
+
+```
+~/.craft-agent/workspaces/{id}/statuses/
+  config.json     ← status definitions with optional "icon" field
+  {status-id}.svg ← icon file named after the status ID
+```
+
+Status icons use the status ID as the filename instead of `icon`:
+
+```
+statuses/
+  config.json
+  in-progress.svg   ← discovered for status id "in-progress"
+  done.svg          ← discovered for status id "done"
+```
+
+## Icon Sizes
+
+Icons render at standard sizes across the UI:
+
+| Size | Dimensions | Usage |
+|------|-----------|-------|
+| `xs` | 14px | Inline mentions, compact lists |
+| `sm` | 16px | Sidebar items, badges |
+| `md` | 20px | Default size, list items |
+| `lg` | 24px | Headers, prominent placements |
+| `xl` | 28px | Large displays |
+
+## Tips
+
+<AccordionGroup>
+  <Accordion title="Use SVG for best results">
+    SVGs scale perfectly at all sizes and can adapt to theme colors via `currentColor`. They're the recommended format for custom icons.
+  </Accordion>
+
+  <Accordion title="Keep SVGs simple">
+    Remove unnecessary metadata, editor artifacts, and inline styles. A clean `viewBox`, paths with `fill="currentColor"`, and no `width`/`height` attributes work best.
+  </Accordion>
+
+  <Accordion title="Emoji for quick setup">
+    Emojis require no files and render natively. They're perfect for getting started or when a file icon isn't needed.
+  </Accordion>
+
+  <Accordion title="Icon not showing?">
+    - Check the file is in the correct directory for your entity type
+    - Verify the filename matches (`icon.svg` for sources/skills, `{id}.svg` for statuses)
+    - Ensure SVG content is valid XML
+    - For URL icons, check the file was downloaded (look for `icon.{ext}` in the entity directory)
+  </Accordion>
+</AccordionGroup>

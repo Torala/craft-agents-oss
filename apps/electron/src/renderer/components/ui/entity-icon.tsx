@@ -6,7 +6,7 @@
  * - file: Renders via CrossfadeAvatar with smooth loading transition
  * - fallback: Renders the fallbackIcon (Lucide component) with proper sizing
  *
- * Entity-specific wrappers (SourceAvatar, SkillAvatar, StatusIcon, LabelIcon)
+ * Entity-specific wrappers (SourceAvatar, SkillAvatar, StatusIcon)
  * call this with their own fallbackIcon and any extra chrome (status dots, color, etc.)
  *
  * The fallbackIcon prop is the primary customisation point for subclasses.
