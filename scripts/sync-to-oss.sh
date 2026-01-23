@@ -122,7 +122,7 @@ check_oss_contributions() {
     local subject="${rest#* }"
 
     # Skip sync commits
-    if [[ "$subject" == *"Sync from internal repository"* ]] || [[ "$subject" == "Initial commit" ]]; then
+    if [[ "$subject" == *"Sync latest changes"* ]] || [[ "$subject" == *"Sync from internal repository"* ]] || [[ "$subject" == "Initial commit" ]]; then
       continue
     fi
 
@@ -385,7 +385,7 @@ main() {
 
   if [[ $REPLY =~ ^[Yy]$ ]]; then
     git add -A
-    git commit -m "Sync from internal repository
+    git commit -m "Sync latest changes
 
 Synced $(date -u +%Y-%m-%dT%H:%M:%SZ)" || {
       echo -e "${YELLOW}Nothing to commit - already in sync${NC}"
