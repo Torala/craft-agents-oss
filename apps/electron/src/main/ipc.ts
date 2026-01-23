@@ -1068,6 +1068,24 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
   })
 
   // ============================================================
+  // Settings - Model (Global Default)
+  // ============================================================
+
+  // Get global default model
+  ipcMain.handle(IPC_CHANNELS.SETTINGS_GET_MODEL, async (): Promise<string | null> => {
+    const config = loadStoredConfig()
+    return config?.model ?? null
+  })
+
+  // Set global default model
+  ipcMain.handle(IPC_CHANNELS.SETTINGS_SET_MODEL, async (_event, model: string) => {
+    const config = loadStoredConfig() || { authType: 'api_key', workspaces: [], activeWorkspaceId: null, activeSessionId: null }
+    config.model = model
+    saveConfig(config)
+    ipcLog.info(`Global default model updated to: ${model}`)
+  })
+
+  // ============================================================
   // Settings - Model (Session-Specific)
   // ============================================================
 
