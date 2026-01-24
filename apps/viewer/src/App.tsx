@@ -265,6 +265,7 @@ export function App() {
           onClose={handleCloseOverlay}
           content={overlayData.content}
           title={overlayData.title}
+          theme={theme}
         />
       )}
     </div>

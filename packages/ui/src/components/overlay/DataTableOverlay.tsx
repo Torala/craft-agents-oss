@@ -20,6 +20,8 @@ export interface DataTableOverlayProps {
   title: string
   /** Optional subtitle (e.g., row count) */
   subtitle?: string
+  /** Theme mode for dark/light styling (defaults to 'light') */
+  theme?: 'light' | 'dark'
   /** Badge variant for the header (default: gray) */
   badgeVariant?: BadgeVariant
   /** The data table content to render */
@@ -31,6 +33,7 @@ export function DataTableOverlay({
   onClose,
   title,
   subtitle,
+  theme,
   badgeVariant = 'gray',
   children,
 }: DataTableOverlayProps) {
@@ -38,6 +41,7 @@ export function DataTableOverlay({
     <PreviewOverlay
       isOpen={isOpen}
       onClose={onClose}
+      theme={theme}
       badge={{
         icon: Table2,
         label: 'Table',

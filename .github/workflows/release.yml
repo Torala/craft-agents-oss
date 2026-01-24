@@ -331,6 +331,8 @@ jobs:
     if: github.event_name == 'push' || inputs.sync_oss != false
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    outputs:
+      changelog: ${{ steps.changelog.outputs.changelog }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -348,27 +350,10 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Sync to OSS
-        run: |
-          TARGET="https://x-access-token:${{ secrets.OSS_REPO_TOKEN }}@github.com/lukilabs/craft-agents-oss.git"
-          bun run scripts/oss-sync.ts --target "$TARGET" --yes --force
-
-  # Create OSS release with changelog
-  oss-release:
-    needs: [prepare, oss-sync]
-    # Run for tag pushes (always) or manual dispatch (if not disabled)
-    if: github.event_name == 'push' || (inputs.create_release != false && inputs.sync_oss != false)
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
+      # Generate changelog before sync so it can be used as the commit message
       - name: Get commits since last release
-        id: commits
         run: |
-          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || git rev-list --max-parents=0 HEAD)
+          LAST_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || git rev-list --max-parents=0 HEAD)
           git log "$LAST_TAG"..HEAD --pretty=format:"- %s" --no-merges | head -50 > /tmp/commits.txt
 
       - name: Generate changelog
@@ -391,11 +376,39 @@ jobs:
                 max_tokens: 1024,
                 messages: [{
                   role: "user",
-                  content: "Write a changelog for version \($version) of Craft Agents. Commits:\n\($commits)\n\nInclude only user-facing changes. Group into Features, Improvements, Bug Fixes. Keep it brief (5-10 items max). Start directly with content."
+                  content: "Write a changelog for version \($version) of Craft Agents. Commits:\n\($commits)\n\nInclude only user-facing changes. Group into Features, Improvements, Bug Fixes. Keep it brief (5-10 items max). Start directly with content, no title needed."
                 }]
               }')")
 
-          echo "$RESPONSE" | jq -r '.content[0].text // "No changelog generated"' > /tmp/changelog.md
+          CHANGELOG=$(echo "$RESPONSE" | jq -r '.content[0].text // "No changelog generated"')
+          echo "$CHANGELOG" > /tmp/changelog.md
+
+          # Build commit message: version as title, changelog as body
+          printf "v%s\n\n%s" "$VERSION" "$CHANGELOG" > /tmp/commit-message.md
+
+          # Export changelog as job output for reuse in oss-release
+          echo "changelog<<CHANGELOG_EOF" >> $GITHUB_OUTPUT
+          echo "$CHANGELOG" >> $GITHUB_OUTPUT
+          echo "CHANGELOG_EOF" >> $GITHUB_OUTPUT
+
+      - name: Sync to OSS
+        run: |
+          TARGET="https://x-access-token:${{ secrets.OSS_REPO_TOKEN }}@github.com/lukilabs/craft-agents-oss.git"
+          bun run scripts/oss-sync.ts --target "$TARGET" --yes --force --message-file /tmp/commit-message.md
+
+  # Create OSS release with changelog
+  oss-release:
+    needs: [prepare, oss-sync]
+    # Run for tag pushes (always) or manual dispatch (if not disabled)
+    if: github.event_name == 'push' || (inputs.create_release != false && inputs.sync_oss != false)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # Reuse changelog from oss-sync job (already generated for the commit message)
+      - name: Get changelog
+        env:
+          CHANGELOG: ${{ needs.oss-sync.outputs.changelog }}
+        run: echo "$CHANGELOG" > /tmp/changelog.md
 
       - name: Download binaries
         run: |

@@ -36,6 +36,7 @@ interface SyncOptions {
   dryRun: boolean;
   autoConfirm: boolean;
   force: boolean;
+  messageFile: string | undefined;
 }
 
 function showHelp(): void {
@@ -46,12 +47,13 @@ Usage:
   bun run scripts/oss-sync.ts [options]
 
 Options:
-  --target <url>   Target repository URL (default: ${DEFAULT_TARGET})
-  --branch <name>  Target branch (default: main)
-  --dry-run        Show what would be synced without pushing
-  --yes, -y        Auto-confirm push (for CI)
-  --force          Skip unmerged contribution check
-  --help           Show this help message
+  --target <url>          Target repository URL (default: ${DEFAULT_TARGET})
+  --branch <name>         Target branch (default: main)
+  --message-file <path>   Use file contents as commit message (for CI-generated changelogs)
+  --dry-run               Show what would be synced without pushing
+  --yes, -y               Auto-confirm push (for CI)
+  --force                 Skip unmerged contribution check
+  --help                  Show this help message
 `);
 }
 
@@ -269,6 +271,7 @@ async function main(): Promise<void> {
     options: {
       target: { type: 'string', default: DEFAULT_TARGET },
       branch: { type: 'string', default: 'main' },
+      'message-file': { type: 'string' },
       'dry-run': { type: 'boolean', default: false },
       yes: { type: 'boolean', short: 'y', default: false },
       force: { type: 'boolean', default: false },
@@ -287,6 +290,7 @@ async function main(): Promise<void> {
     dryRun: values['dry-run'] ?? false,
     autoConfirm: values.yes ?? false,
     force: values.force ?? false,
+    messageFile: values['message-file'],
   };
 
   console.log(colors.green('OSS Sync Script'));
@@ -411,8 +415,17 @@ async function main(): Promise<void> {
     if (shouldPush) {
       await $`cd ${targetDir} && git add -A`;
 
-      const commitDate = new Date().toISOString();
-      const commitResult = await $`cd ${targetDir} && git commit -m ${"Sync from internal repository\n\nSynced " + commitDate}`.nothrow();
+      // Use custom commit message from file (e.g. AI-generated changelog) or fall back to generic message
+      let commitMessage: string;
+      if (options.messageFile && existsSync(options.messageFile)) {
+        commitMessage = readFileSync(options.messageFile, 'utf-8').trim();
+        console.log('Using commit message from:', options.messageFile);
+      } else {
+        const commitDate = new Date().toISOString();
+        commitMessage = `Sync from internal repository\n\nSynced ${commitDate}`;
+      }
+
+      const commitResult = await $`cd ${targetDir} && git commit -m ${commitMessage}`.nothrow();
 
       if (commitResult.exitCode !== 0) {
         console.log(colors.yellow('Nothing to commit - already in sync'));

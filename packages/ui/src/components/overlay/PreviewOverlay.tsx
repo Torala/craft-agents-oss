@@ -95,8 +95,11 @@ export function PreviewOverlay({
 
   if (!isOpen) return null
 
-  const defaultBg = theme === 'dark' ? '#1e1e1e' : '#ffffff'
-  const defaultText = theme === 'dark' ? '#e4e4e4' : '#1a1a1a'
+  // Use CSS variables so custom themes are respected.
+  // Overlays that need hardcoded colors (code viewers with Shiki themes)
+  // explicitly pass backgroundColor/textColor props, bypassing these defaults.
+  const defaultBg = 'var(--background)'
+  const defaultText = 'var(--foreground)'
   const bgColor = backgroundColor ?? defaultBg
   const txtColor = textColor ?? defaultText
 

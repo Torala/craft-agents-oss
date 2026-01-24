@@ -15,6 +15,7 @@ import { Info_Badge } from './Info_Badge'
 import { DataTableOverlay } from '@craft-agent/ui'
 import { LabelIcon } from '@/components/ui/label-icon'
 import { cn } from '@/lib/utils'
+import { useTheme } from '@/hooks/useTheme'
 import type { LabelConfig } from '@craft-agent/shared/labels'
 
 interface LabelsDataTableProps {
@@ -130,6 +131,7 @@ export function LabelsDataTable({
   className,
 }: LabelsDataTableProps) {
   const [isFullscreen, setIsFullscreen] = useState(false)
+  const { isDark } = useTheme()
 
   // Fullscreen button (shown on hover via group class)
   const fullscreenButton = fullscreen ? (
@@ -173,6 +175,7 @@ export function LabelsDataTable({
           onClose={() => setIsFullscreen(false)}
           title={fullscreenTitle}
           subtitle={`${totalCount} ${totalCount === 1 ? 'label' : 'labels'}`}
+          theme={isDark ? 'dark' : 'light'}
         >
           <Info_DataTable
             columns={columns}

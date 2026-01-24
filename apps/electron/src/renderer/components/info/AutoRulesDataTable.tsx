@@ -19,6 +19,7 @@ import { Tooltip, TooltipTrigger, TooltipContent } from '@craft-agent/ui'
 import { DataTableOverlay } from '@craft-agent/ui'
 import { LabelIcon } from '@/components/ui/label-icon'
 import { cn } from '@/lib/utils'
+import { useTheme } from '@/hooks/useTheme'
 import { toast } from 'sonner'
 import type { LabelConfig, AutoLabelRule } from '@craft-agent/shared/labels'
 
@@ -185,6 +186,7 @@ export function AutoRulesDataTable({
   className,
 }: AutoRulesDataTableProps) {
   const [isFullscreen, setIsFullscreen] = useState(false)
+  const { isDark } = useTheme()
 
   // Flatten label tree into auto-rule rows
   const rows = useMemo(() => collectAutoRules(data), [data])
@@ -225,6 +227,7 @@ export function AutoRulesDataTable({
           onClose={() => setIsFullscreen(false)}
           title={fullscreenTitle}
           subtitle={`${rows.length} ${rows.length === 1 ? 'rule' : 'rules'}`}
+          theme={isDark ? 'dark' : 'light'}
         >
           <Info_DataTable
             columns={columns}
