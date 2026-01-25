@@ -11,8 +11,10 @@
 import * as React from 'react'
 import { useState, useMemo, useCallback, useEffect } from 'react'
 import { PencilLine, FilePlus, ChevronDown, Check } from 'lucide-react'
-import { ShikiDiffViewer } from '../code-viewer/ShikiDiffViewer'
-import { truncateFilePath } from '../code-viewer/language-map'
+import { parseDiffFromFile, type FileContents } from '@pierre/diffs'
+import { ShikiDiffViewer, getDiffStats } from '../code-viewer/ShikiDiffViewer'
+import { DiffViewerControls } from '../code-viewer/DiffViewerControls'
+import { truncateFilePath, LANGUAGE_MAP } from '../code-viewer/language-map'
 import { PreviewOverlay, type BadgeVariant } from './PreviewOverlay'
 
 /**
@@ -33,6 +35,15 @@ export interface FileChange {
   error?: string
 }
 
+/**
+ * Diff viewer display preferences
+ * Passed from parent to avoid localStorage usage - all settings stored in preferences.json
+ */
+export interface DiffViewerSettings {
+  diffStyle: 'unified' | 'split'
+  disableBackground: boolean
+}
+
 export interface MultiDiffPreviewOverlayProps {
   /** Whether the overlay is visible */
   isOpen: boolean
@@ -50,6 +61,10 @@ export interface MultiDiffPreviewOverlayProps {
   onOpenFile?: (filePath: string) => void
   /** Render inline without dialog (for playground) */
   embedded?: boolean
+  /** Initial diff viewer settings (from user preferences) */
+  diffViewerSettings?: Partial<DiffViewerSettings>
+  /** Callback when diff viewer settings change (to persist to preferences) */
+  onDiffViewerSettingsChange?: (settings: DiffViewerSettings) => void
 }
 
 // ============================================
@@ -279,6 +294,8 @@ export function MultiDiffPreviewOverlay({
   theme = 'light',
   onOpenFile,
   embedded,
+  diffViewerSettings,
+  onDiffViewerSettingsChange,
 }: MultiDiffPreviewOverlayProps) {
   // Create sidebar entries
   const sidebarEntries = useMemo(() => {
@@ -306,6 +323,26 @@ export function MultiDiffPreviewOverlay({
   // Note: Full file mode requires reading from filesystem which isn't available in overlay
   // So we only support snippet mode in the overlay version
   const [viewMode] = useState<'snippet' | 'full'>('snippet')
+
+  // Diff viewer controls state - initialized from props (user preferences)
+  // Settings are persisted via onDiffViewerSettingsChange callback to preferences.json
+  const [diffStyle, setDiffStyleInternal] = useState<'unified' | 'split'>(
+    diffViewerSettings?.diffStyle ?? 'unified'
+  )
+  const [disableBackground, setDisableBackgroundInternal] = useState(
+    diffViewerSettings?.disableBackground ?? false
+  )
+
+  // Wrap setters to also call the persistence callback
+  const setDiffStyle = useCallback((style: 'unified' | 'split') => {
+    setDiffStyleInternal(style)
+    onDiffViewerSettingsChange?.({ diffStyle: style, disableBackground })
+  }, [disableBackground, onDiffViewerSettingsChange])
+
+  const setDisableBackground = useCallback((disabled: boolean) => {
+    setDisableBackgroundInternal(disabled)
+    onDiffViewerSettingsChange?.({ diffStyle, disableBackground: disabled })
+  }, [diffStyle, onDiffViewerSettingsChange])
 
   // Reset selection when focusedChangeId changes (user clicked a specific change)
   // Note: We intentionally don't include selectedKey to avoid resetting user selections
@@ -364,6 +401,31 @@ export function MultiDiffPreviewOverlay({
     }
   }, [selectedEntry])
 
+  // Calculate diff stats for the header controls
+  // Uses the same diff parsing logic as ShikiDiffViewer
+  const diffStats = useMemo(() => {
+    if (!selectedEntry || !combinedDiff.original && !combinedDiff.modified) {
+      return { additions: 0, deletions: 0 }
+    }
+
+    const ext = selectedEntry.filePath.split('.').pop()?.toLowerCase() || ''
+    const lang = LANGUAGE_MAP[ext] || 'text'
+
+    const oldFile: FileContents = {
+      name: selectedEntry.filePath,
+      contents: combinedDiff.original,
+      lang: lang as any,
+    }
+    const newFile: FileContents = {
+      name: selectedEntry.filePath,
+      contents: combinedDiff.modified,
+      lang: lang as any,
+    }
+
+    const fileDiff = parseDiffFromFile(oldFile, newFile)
+    return getDiffStats(fileDiff)
+  }, [selectedEntry, combinedDiff])
+
   const handleSelectEntry = useCallback((key: string) => {
     setSelectedKey(key)
   }, [])
@@ -393,6 +455,18 @@ export function MultiDiffPreviewOverlay({
     ? () => onOpenFile(selectedEntry.filePath)
     : undefined
 
+  // Header actions with diff controls
+  const headerActions = selectedEntry ? (
+    <DiffViewerControls
+      additions={diffStats.additions}
+      deletions={diffStats.deletions}
+      diffStyle={diffStyle}
+      onDiffStyleChange={setDiffStyle}
+      disableBackground={disableBackground}
+      onBackgroundChange={setDisableBackground}
+    />
+  ) : null
+
   return (
     <PreviewOverlay
       isOpen={isOpen}
@@ -401,6 +475,7 @@ export function MultiDiffPreviewOverlay({
       badge={badge}
       title={headerTitle}
       onTitleClick={headerTitleClick}
+      headerActions={headerActions}
       embedded={embedded}
     >
       {/* Sidebar + diff content fills the available space */}
@@ -423,11 +498,12 @@ export function MultiDiffPreviewOverlay({
         <div className="flex-1 min-w-0 h-full">
           {selectedEntry ? (
             <ShikiDiffViewer
-              key={selectedKey}
+              key={`${selectedKey}-${diffStyle}-${disableBackground}`}
               original={combinedDiff.original}
               modified={combinedDiff.modified}
               filePath={selectedEntry.filePath}
-              diffStyle="unified"
+              diffStyle={diffStyle}
+              disableBackground={disableBackground}
               theme={theme}
             />
           ) : (

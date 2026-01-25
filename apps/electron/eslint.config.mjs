@@ -10,6 +10,7 @@ import tsPlugin from '@typescript-eslint/eslint-plugin'
 import reactPlugin from 'eslint-plugin-react'
 import reactHooksPlugin from 'eslint-plugin-react-hooks'
 import noDirectNavigationState from './eslint-rules/no-direct-navigation-state.cjs'
+import noLocalStorage from './eslint-rules/no-localstorage.cjs'
 
 export default [
   // Ignore patterns
@@ -40,10 +41,11 @@ export default [
       '@typescript-eslint': tsPlugin,
       react: reactPlugin,
       'react-hooks': reactHooksPlugin,
-      // Custom plugin for navigation rules
-      'craft-navigation': {
+      // Custom plugin for Craft Agent rules
+      'craft-agent': {
         rules: {
           'no-direct-navigation-state': noDirectNavigationState,
+          'no-localstorage': noLocalStorage,
         },
       },
     },
@@ -57,8 +59,9 @@ export default [
       'react-hooks/rules-of-hooks': 'error',
       'react-hooks/exhaustive-deps': 'warn',
 
-      // Custom navigation rule
-      'craft-navigation/no-direct-navigation-state': 'error',
+      // Custom Craft Agent rules
+      'craft-agent/no-direct-navigation-state': 'error',
+      'craft-agent/no-localstorage': 'warn',
     },
   },
 ]

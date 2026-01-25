@@ -93,7 +93,7 @@ export function PreviewOverlay({
   if (!isOpen && !embedded) return null
 
   const header = (
-    <PreviewHeader onClose={onClose} height={isModal ? 48 : 54}>
+    <PreviewHeader onClose={onClose} height={isModal ? 48 : 54} rightActions={headerActions}>
       <PreviewHeaderBadge
         icon={badge.icon}
         label={badge.label}
@@ -101,7 +101,6 @@ export function PreviewOverlay({
       />
       <PreviewHeaderBadge label={title} onClick={onTitleClick} shrinkable />
       {subtitle && <PreviewHeaderBadge label={String(subtitle)} />}
-      {headerActions}
     </PreviewHeader>
   )
 

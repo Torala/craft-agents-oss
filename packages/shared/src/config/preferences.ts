@@ -9,6 +9,17 @@ export interface UserLocation {
   country?: string;
 }
 
+/**
+ * Diff viewer display preferences
+ * Persisted to preferences.json as a user-level setting
+ */
+export interface DiffViewerPreferences {
+  /** Diff layout: 'unified' (stacked) or 'split' (side-by-side) */
+  diffStyle?: 'unified' | 'split';
+  /** Whether to disable background highlighting on changed lines */
+  disableBackground?: boolean;
+}
+
 export interface UserPreferences {
   name?: string;
   timezone?: string;
@@ -16,6 +27,8 @@ export interface UserPreferences {
   language?: string;
   // Free-form notes the agent learns about the user
   notes?: string;
+  // Diff viewer display preferences
+  diffViewer?: DiffViewerPreferences;
   // When the preferences were last updated
   updatedAt?: number;
 }
@@ -49,6 +62,10 @@ export function updatePreferences(updates: Partial<UserPreferences>): UserPrefer
     location: updates.location
       ? { ...current.location, ...updates.location }
       : current.location,
+    // Merge diffViewer if provided
+    diffViewer: updates.diffViewer
+      ? { ...current.diffViewer, ...updates.diffViewer }
+      : current.diffViewer,
   };
   savePreferences(updated);
   return updated;

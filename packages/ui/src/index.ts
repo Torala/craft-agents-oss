@@ -89,12 +89,18 @@ export {
 export {
   ShikiCodeViewer,
   ShikiDiffViewer,
+  getDiffStats,
+  DiffViewerControls,
+  DiffSplitIcon,
+  DiffUnifiedIcon,
+  DiffBackgroundIcon,
   LANGUAGE_MAP,
   getLanguageFromPath,
   formatFilePath,
   truncateFilePath,
   type ShikiCodeViewerProps,
   type ShikiDiffViewerProps,
+  type DiffViewerControlsProps,
 } from './components/code-viewer'
 
 // Terminal components
@@ -133,6 +139,7 @@ export {
   type CodePreviewOverlayProps,
   type MultiDiffPreviewOverlayProps,
   type FileChange,
+  type DiffViewerSettings,
   type TerminalPreviewOverlayProps,
   type GenericOverlayProps,
   type JSONPreviewOverlayProps,

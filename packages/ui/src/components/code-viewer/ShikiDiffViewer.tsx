@@ -56,10 +56,26 @@ export interface ShikiDiffViewerProps {
   /** Shiki theme name (e.g., 'dracula', 'github-dark'). When provided, uses the matching
    *  Shiki theme natively. Falls back to craft-dark/craft-light (transparent bg) if not set. */
   shikiTheme?: string
+  /** Disable background highlighting on changed lines */
+  disableBackground?: boolean
   /** Callback when ready */
   onReady?: () => void
   /** Additional class names */
   className?: string
+}
+
+/**
+ * Calculate addition/deletion stats from a FileDiffMetadata
+ * Useful for displaying change counts in headers
+ */
+export function getDiffStats(fileDiff: FileDiffMetadata): { additions: number; deletions: number } {
+  let additions = 0
+  let deletions = 0
+  for (const hunk of fileDiff.hunks) {
+    additions += hunk.additionCount
+    deletions += hunk.deletionCount
+  }
+  return { additions, deletions }
 }
 
 function getLanguageFromPath(filePath: string, explicit?: string): string {
@@ -79,6 +95,7 @@ export function ShikiDiffViewer({
   diffStyle = 'unified',
   theme = 'light',
   shikiTheme,
+  disableBackground = false,
   onReady,
   className,
 }: ShikiDiffViewerProps) {
@@ -115,12 +132,12 @@ export function ShikiDiffViewer({
     theme: resolvedThemeName,
     diffStyle,
     diffIndicators: 'bars',
-    disableBackground: true,
+    disableBackground,
     lineDiffType: 'word',
     overflow: 'scroll',
     disableFileHeader: true,
     themeType: theme === 'dark' ? 'dark' : 'light',
-  }), [resolvedThemeName, theme, diffStyle])
+  }), [resolvedThemeName, theme, diffStyle, disableBackground])
 
   // Call onReady after first render
   useEffect(() => {

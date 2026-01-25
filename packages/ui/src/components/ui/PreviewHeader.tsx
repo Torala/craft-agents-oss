@@ -103,6 +103,8 @@ export interface PreviewHeaderProps {
   children?: React.ReactNode
   /** Close handler - when provided, shows X button on right */
   onClose?: () => void
+  /** Actions to render on the right, just before the close button */
+  rightActions?: React.ReactNode
   /** Height of the header (default: 50px for windows, 44px for overlays) */
   height?: number
   /** Additional className for the header */
@@ -122,6 +124,7 @@ export interface PreviewHeaderProps {
 export function PreviewHeader({
   children,
   onClose,
+  rightActions,
   height = 50,
   className,
   style,
@@ -129,27 +132,28 @@ export function PreviewHeader({
   return (
     <div
       className={cn(
-        'shrink-0 flex items-center justify-between px-5 border-b border-foreground/5',
+        'shrink-0 flex items-center justify-between px-3 border-b border-foreground/5',
         className
       )}
       style={{ height, ...style }}
     >
-      {/* Left side - space for traffic lights on macOS */}
-      <div className="w-[70px] shrink-0" />
+      {/* Left side - space for traffic lights on macOS, flex-1 to balance with right side */}
+      <div className="flex-1 min-w-[70px]" />
 
       {/* Center - badges row */}
       <div className="flex items-center gap-2 min-w-0">
         {children}
       </div>
 
-      {/* Right side - close button or spacer */}
-      {onClose ? (
-        <div className="w-[76px] shrink-0 flex justify-end">
+      {/* Right side - actions + close button, flex-1 to balance with left side */}
+      <div className="flex-1 min-w-[70px] flex items-center gap-2 justify-end">
+        {rightActions}
+        {onClose && (
           <button
             onClick={onClose}
             className={cn(
-              'p-1.5 rounded-[6px] bg-background shadow-minimal transition-colors',
-              'text-foreground/70 hover:text-foreground',
+              'p-1.5 rounded-[6px] bg-background shadow-minimal cursor-pointer',
+              'opacity-70 hover:opacity-100 transition-opacity',
               'focus:outline-none focus-visible:ring-1 focus-visible:ring-ring'
             )}
             style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
@@ -157,10 +161,8 @@ export function PreviewHeader({
           >
             <X className="w-4 h-4" />
           </button>
-        </div>
-      ) : (
-        <div className="w-[76px] shrink-0" />
-      )}
+        )}
+      </div>
     </div>
   )
 }

@@ -2974,6 +2974,17 @@ Please continue the conversation naturally from where we left off.
               parentToolUseId: message.parent_tool_use_id || undefined,
             });
 
+            // Clean up activeParentTools when a Task completes.
+            // This is critical: Task results arrive with parent_tool_use_id=null (main agent level),
+            // so they enter Case 3 (FIFO matching), not Case 1 where cleanup normally happens.
+            // Without this, the Task stays in activeParentTools and subsequent main-agent tools
+            // get incorrectly assigned as children of the completed Task.
+            if (toolUse?.name === 'Task' && toolUseId) {
+              activeParentTools.delete(toolUseId);
+              parentToChildren.delete(toolUseId);
+              console.log(`[CraftAgent] PARENT CLEANED UP (task-result): ${toolUseId}`);
+            }
+
             // Detect background task start - Task tool with agent_id in result
             if (toolUse?.name === 'Task' && !isError && resultStr) {
               const agentIdMatch = resultStr.match(/agentId:\s*([a-zA-Z0-9_-]+)/);

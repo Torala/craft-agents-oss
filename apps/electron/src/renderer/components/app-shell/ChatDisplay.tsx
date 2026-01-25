@@ -31,6 +31,7 @@ import {
   type ActivityItem,
   type OverlayData,
   type FileChange,
+  type DiffViewerSettings,
 } from "@craft-agent/ui"
 import { useFocusZone } from "@/hooks/keyboard"
 import { useTheme } from "@/hooks/useTheme"
@@ -407,6 +408,41 @@ export function ChatDisplay({
 
   // Overlay state - controls which overlay is shown (if any)
   const [overlayState, setOverlayState] = useState<OverlayState>(null)
+
+  // Diff viewer settings - loaded from user preferences on mount, persisted on change
+  // These settings are stored in ~/.craft-agent/preferences.json (not localStorage)
+  const [diffViewerSettings, setDiffViewerSettings] = useState<Partial<DiffViewerSettings>>({})
+
+  // Load diff viewer settings from preferences on mount
+  useEffect(() => {
+    window.electronAPI.readPreferences().then(({ content }) => {
+      try {
+        const prefs = JSON.parse(content)
+        if (prefs.diffViewer) {
+          setDiffViewerSettings(prefs.diffViewer)
+        }
+      } catch {
+        // Ignore parse errors, use defaults
+      }
+    })
+  }, [])
+
+  // Persist diff viewer settings to preferences when changed
+  const handleDiffViewerSettingsChange = useCallback((settings: DiffViewerSettings) => {
+    setDiffViewerSettings(settings)
+    // Read current preferences, merge in new settings, write back
+    window.electronAPI.readPreferences().then(({ content }) => {
+      try {
+        const prefs = JSON.parse(content)
+        prefs.diffViewer = settings
+        prefs.updatedAt = Date.now()
+        window.electronAPI.writePreferences(JSON.stringify(prefs, null, 2))
+      } catch {
+        // If preferences malformed, create fresh with just diffViewer
+        window.electronAPI.writePreferences(JSON.stringify({ diffViewer: settings, updatedAt: Date.now() }, null, 2))
+      }
+    })
+  }, [])
 
   // Close overlay handler
   const handleCloseOverlay = useCallback(() => {
@@ -964,6 +1000,8 @@ export function ChatDisplay({
           focusedChangeId={overlayState.focusedChangeId}
           theme={isDark ? 'dark' : 'light'}
           onOpenFile={onOpenFile}
+          diffViewerSettings={diffViewerSettings}
+          onDiffViewerSettingsChange={handleDiffViewerSettingsChange}
         />
       )}
 
