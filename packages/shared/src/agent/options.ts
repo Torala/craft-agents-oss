@@ -1,6 +1,7 @@
 import type { Options } from "@anthropic-ai/claude-agent-sdk";
 import { join, dirname } from "path";
 import { homedir } from "os";
+import { existsSync, readFileSync, writeFileSync } from "fs";
 import { debug } from "../utils/debug";
 
 declare const CRAFT_AGENT_CLI_VERSION: string | undefined;
@@ -9,6 +10,44 @@ let optionsEnv: Record<string, string> = {};
 let customPathToClaudeCodeExecutable: string | null = null;
 let customInterceptorPath: string | null = null;
 let customExecutable: string | null = null;
+let claudeConfigChecked = false;
+
+/**
+ * Ensure ~/.claude.json is valid JSON before the SDK subprocess starts.
+ *
+ * The SDK's cli.js reads this file on startup. If it exists but contains
+ * invalid JSON (e.g. empty file → "Unexpected EOF"), the CLI writes a
+ * plain-text error to stdout. The SDK expects only JSON on stdout, so it
+ * crashes with "CLI output was not valid JSON".
+ *
+ * Previously, onboarding ran `claude setup-token` which would repair this
+ * file. With native OAuth, we never invoke the CLI during onboarding, so
+ * corrupted files persist and break every session start (especially on Windows).
+ *
+ * This runs once per process lifetime — not on every message.
+ */
+function ensureClaudeConfig(): void {
+    if (claudeConfigChecked) return;
+    claudeConfigChecked = true;
+
+    const configPath = join(homedir(), '.claude.json');
+    if (!existsSync(configPath)) return; // CLI handles missing files fine
+
+    try {
+        const content = readFileSync(configPath, 'utf-8');
+        JSON.parse(content);
+        // File is valid JSON — nothing to do
+    } catch {
+        // File exists but is corrupted/empty — write minimal valid JSON
+        // so the SDK subprocess doesn't crash on startup
+        debug('[options] ~/.claude.json is corrupted, resetting to {}');
+        try {
+            writeFileSync(configPath, '{}', 'utf-8');
+        } catch (writeErr) {
+            debug(`[options] Failed to repair ~/.claude.json: ${writeErr}`);
+        }
+    }
+}
 
 export function setAnthropicOptionsEnv(env: Record<string, string>) {
     optionsEnv = env;
@@ -39,6 +78,9 @@ export function setExecutable(path: string) {
 }
 
 export function getDefaultOptions(): Partial<Options> {
+    // Repair corrupted ~/.claude.json before the SDK subprocess reads it
+    ensureClaudeConfig();
+
     // SECURITY: Disable Bun's automatic .env file loading in the SDK subprocess.
     // Without this, Bun loads .env from the subprocess cwd (user's working directory),
     // which can inject ANTHROPIC_API_KEY and override our OAuth auth — silently charging
