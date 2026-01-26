@@ -41,6 +41,9 @@ apps/electron/resources/**/*
 # Electron ESLint rules
 apps/electron/eslint-rules/**/*
 
+# Electron build hook (macOS Liquid Glass icon, referenced by electron-builder.yml)
+apps/electron/scripts/afterPack.cjs
+
 
 # =============================================================================
 # APPS - VIEWER (Session Viewer Web App)
@@ -81,5 +84,6 @@ scripts/electron-build-main.ts
 scripts/electron-build-preload.ts
 scripts/electron-build-renderer.ts
 scripts/electron-build-resources.ts
+scripts/electron-build-assets.ts
 scripts/electron-clean.ts
 scripts/electron-dev.ts

@@ -859,7 +859,7 @@ export class SessionManager {
             agent: null,  // Lazy-load agent when needed
             messages: [],  // Lazy-load messages when needed
             isProcessing: false,
-            lastMessageAt: meta.lastUsedAt,
+            lastMessageAt: meta.lastMessageAt ?? meta.lastUsedAt,  // Fallback for sessions saved before lastMessageAt was persisted
             streamingText: '',
             processingGeneration: 0,
             pendingTools: new Map(),
@@ -920,6 +920,7 @@ export class SessionManager {
         name: managed.name,
         createdAt: managed.lastMessageAt,  // Approximate, will be overwritten if already exists
         lastUsedAt: Date.now(),
+        lastMessageAt: managed.lastMessageAt,  // Preserve actual message time (not persist time)
         sdkSessionId: managed.sdkSessionId,
         isFlagged: managed.isFlagged,
         permissionMode: managed.permissionMode,
@@ -1406,7 +1407,7 @@ export class SessionManager {
       agent: null,  // Lazy-load agent on first message
       messages: [],
       isProcessing: false,
-      lastMessageAt: storedSession.lastUsedAt,
+      lastMessageAt: storedSession.lastMessageAt ?? storedSession.lastUsedAt,  // Fallback for sessions saved before lastMessageAt was persisted
       streamingText: '',
       processingGeneration: 0,
       pendingTools: new Map(),
