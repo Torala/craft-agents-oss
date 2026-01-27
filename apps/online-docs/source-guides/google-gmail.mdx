@@ -7,6 +7,18 @@ description: "Connect Gmail for email access and management in Craft Agents"
 
 Access and manage your Gmail emails through the Gmail API.
 
+<Warning>
+**Unverified App — 100-User Limit**
+
+Craft Agents' Google OAuth app is currently unverified, which means Google enforces a **100-user cap**. If authentication fails, errors out, or you cannot connect, we may have hit this limit while we complete Google's verification process.
+
+**Alternatives:** You can connect Gmail through third-party MCP aggregators instead:
+- **Zapier MCP** — Go to [zapier.com/mcp](https://zapier.com/mcp), connect Gmail, and add the generated MCP server URL as a source.
+- **Composio** — Go to [composio.dev](https://composio.dev), connect Gmail, and use their MCP server URL as a source.
+
+If the user hits authentication errors (e.g., `access_denied`, `org_internal`, quota errors), explain the 100-user cap situation and proactively walk them through setting up Zapier or Composio as an alternative MCP source.
+</Warning>
+
 ## API Reference
 
 This source provides a single flexible `api_gmail` tool that accepts:
