@@ -100,6 +100,53 @@ Craft Agents is open source under the Apache 2.0 license - so you are free to re
 We built Craft Agents because we wanted a better, more opinionated (and preferably non-CLI way) of working with the most powerful agents in the world. We'll continue to improve it, based on our experiences and intuition.
 `
 
+// FAQ items — conversational tone, skeptic getting progressively won over
+const faqItems = [
+  {
+    question: 'How do I connect to Linear, Gmail, Slack...?',
+    answer: 'Just tell the agent "add Linear as a source." Really. It finds public APIs and MCP servers, reads their documentation, fetches credentials, and sets everything up. Sources become instantly available. No config files, no setup wizards.',
+    links: [
+      { text: 'Check out how I just connected to Slack', url: 'https://agents.craft.do/s/DRNQEiy8w2e1v5LPgKl8b' },
+      { text: 'Or watch it set up Gmail in one go', url: 'https://agents.craft.do/s/yUVFb8zrlFaaGuw7mjoke' },
+    ],
+  },
+  {
+    question: 'But I already have my MCP config JSON...',
+    answer: 'Great. Paste it. The agent handles the rest.',
+  },
+  {
+    question: 'What about local MCPs? I need those.',
+    answer: 'Fully supported. Stdio-based MCP servers run as local subprocesses right on your machine. Point it at an npx command, a Python script, or any local binary. It just works.',
+  },
+  {
+    question: "Surely it can't handle custom APIs?",
+    answer: "It can. Paste an OpenAPI spec, some endpoint URLs, screenshots of docs, whatever you have. It will figure it out and guide you through the rest.",
+  },
+  {
+    question: "But I meant APIs. Not MCPs. Are you sure?",
+    answer: "Yes. Craft Agents is built to connect to anything. We have it hooked up to a direct Postgres DB behind a jumpbox. Skills + Sources = magic.",
+  },
+  {
+    question: 'How do I import my Claude Code skills and MCPs?',
+    answer: 'Ask it. Tell the agent you want to use your skills from Claude Code. It imports them. Done.',
+    links: [
+      { text: 'Here I imported all my skills in one go', url: 'https://agents.craft.do/s/gWCFqwhObFWaNJIEJmd6j' },
+    ],
+  },
+  {
+    question: 'How do I create a new skill?',
+    answer: 'Ask it. Describe what the skill should do, give it context. It takes care of the rest.',
+  },
+  {
+    question: 'And then, restart the app, right?',
+    answer: 'No. Everything is available instantly. Mention skills or sources with @, even from within the same conversation you created them in.',
+  },
+  {
+    question: 'So I can just... ask it anything?',
+    answer: "Yes. That's the core idea. Agent-native software means you describe what you want, and it figures out how. That's a good use of tokens. The agent doing the work for you.",
+  },
+]
+
 // Platform download links with icons
 const downloads = [
   {
@@ -253,6 +300,38 @@ export default function App() {
           <Markdown onUrlClick={handleUrlClick}>
             {article}
           </Markdown>
+        </div>
+
+        {/* FAQ section — conversational Q&A list */}
+        <div className="max-w-4xl w-full py-8 mt-16">
+          <h2 className="text-2xl font-extrabold leading-tight mb-16 text-center">
+            Things that are hard to believe
+          </h2>
+          <div className="flex flex-col gap-6">
+            {faqItems.map((item, index) => (
+              <div key={index}>
+                <h3 className="font-semibold text-[15px] mb-1">{item.question}</h3>
+                <p className="text-[14px] text-foreground/70 leading-relaxed">
+                  {item.answer}
+                </p>
+                {item.links && (
+                  <span className="flex gap-4 mt-2">
+                    {item.links.map((link) => (
+                      <a
+                        key={link.url}
+                        href={link.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="underline hover:text-foreground transition-colors text-[13px] text-foreground/50"
+                      >
+                        {link.text} &rarr;
+                      </a>
+                    ))}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
 
         {/* Connect section */}
