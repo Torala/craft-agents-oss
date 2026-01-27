@@ -305,7 +305,7 @@ export default function App() {
         {/* FAQ section — conversational Q&A list */}
         <div className="max-w-[720px] w-full py-8 mt-16">
           <h2 className="text-2xl font-extrabold leading-tight mb-16 text-center">
-            Things that are hard to believe
+            Things that are hard to believe "just work"
           </h2>
           <div className="flex flex-col gap-6">
             {faqItems.map((item, index) => (
