@@ -461,16 +461,13 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
     }
   }, [session?.id, isFocused])
 
-  // Reset match index and enable scroll when session or search query changes
+  // Reset match index when session or search query changes
+  // NOTE: We intentionally do NOT auto-scroll on session change to avoid jarring UX.
+  // User can use chevron navigation to jump to matches if desired.
   useEffect(() => {
-    const sessionChanged = prevSessionIdForScrollRef.current !== session?.id
     prevSessionIdForScrollRef.current = session?.id ?? null
-
     setCurrentMatchIndex(0)
-    // Enable scroll when session changes with active search
-    if (sessionChanged && isSearchActive) {
-      shouldScrollToMatchRef.current = true
-    }
+    // Don't set shouldScrollToMatchRef - only scroll on explicit chevron click
   }, [session?.id, searchQuery, isSearchActive])
 
   // Helper to count occurrences of a substring
@@ -840,19 +837,10 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   // Notify parent when match info (count and index) changes
   // The useMemos calculate matches synchronously, so we always have accurate count
   useEffect(() => {
-    console.log('[ChatDisplay MatchInfo] Reporting matches:', matchingOccurrences.length, 'index:', currentMatchIndex)
-    // If we have matches, report immediately
-    if (matchingOccurrences.length > 0) {
-      onMatchInfoChange?.({ count: matchingOccurrences.length, index: currentMatchIndex })
-    } else if (!searchQuery.trim()) {
-      // Search is cleared - report 0
-      onMatchInfoChange?.({ count: 0, index: 0 })
-    } else if (session?.messages && session.messages.length > 0) {
-      // Messages are loaded but no matches - this is a genuine 0
-      onMatchInfoChange?.({ count: 0, index: 0 })
-    }
-    // If count is 0, search is active, but messages aren't loaded yet - don't report (loading state)
-  }, [matchingOccurrences.length, currentMatchIndex, searchQuery, session?.id, session?.messages, onMatchInfoChange])
+    console.log('[ChatDisplay MatchInfo] Reporting matches:', matchingOccurrences.length, 'index:', currentMatchIndex, 'sessionId:', session?.id)
+    // Always report current match state - this prevents stale data from previous session
+    onMatchInfoChange?.({ count: matchingOccurrences.length, index: currentMatchIndex })
+  }, [matchingOccurrences.length, currentMatchIndex, session?.id, onMatchInfoChange])
 
   // ============================================================================
   // Overlay State Management

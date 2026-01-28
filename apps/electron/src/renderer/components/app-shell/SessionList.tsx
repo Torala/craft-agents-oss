@@ -296,6 +296,7 @@ function SessionItem({
     <div
       className="session-item"
       data-selected={isSelected || undefined}
+      data-session-id={item.id}
     >
       {/* Separator - only show if not first in group */}
       {!isFirstInGroup && (
@@ -958,6 +959,10 @@ export function SessionList({
     }
   }, [navigate, currentFilter])
 
+  // NOTE: We intentionally do NOT auto-select sessions while typing in search.
+  // Auto-selecting causes: 1) ChatDisplay to scroll, 2) focus loss from search input
+  // Selection only changes via: arrow key navigation or explicit click
+
   // Handle Enter to focus chat input
   const handleEnter = useCallback(() => {
     onFocusChatInput?.()
@@ -1014,6 +1019,43 @@ export function SessionList({
     enabled: isFocused,
   })
 
+  // Global keyboard listener for arrow keys during search mode
+  // Works anywhere in the app while search is active (not just when input is focused)
+  useEffect(() => {
+    if (!searchActive) return
+
+    const handleArrowKeys = (e: KeyboardEvent) => {
+      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
+
+      // Prevent ALL default behavior (scrolling) immediately
+      e.preventDefault()
+      e.stopPropagation()
+
+      if (flatItems.length === 0) return
+
+      const newIndex = e.key === 'ArrowDown'
+        ? (activeIndex < flatItems.length - 1 ? activeIndex + 1 : 0)
+        : (activeIndex > 0 ? activeIndex - 1 : flatItems.length - 1)
+
+      setActiveIndex(newIndex)
+      handleActiveChange(flatItems[newIndex])
+
+      // Scroll the selected item into view and re-focus search input
+      requestAnimationFrame(() => {
+        const selectedItem = flatItems[newIndex]
+        if (selectedItem) {
+          const element = document.querySelector(`[data-session-id="${selectedItem.id}"]`)
+          element?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+        }
+        searchInputRef.current?.focus()
+      })
+    }
+
+    // Use capture phase on window to intercept before any scroll handlers
+    window.addEventListener('keydown', handleArrowKeys, { capture: true })
+    return () => window.removeEventListener('keydown', handleArrowKeys, { capture: true })
+  }, [searchActive, flatItems, activeIndex, setActiveIndex, handleActiveChange])
+
   // Sync activeIndex when selection changes externally
   useEffect(() => {
     const newIndex = flatItems.findIndex(item => item.id === session.selected)
@@ -1062,14 +1104,22 @@ export function SessionList({
     setRenameName("")
   }
 
-  // Handle search input key events
-  const handleSearchKeyDown = (e: React.KeyboardEvent) => {
-    // Stop propagation to prevent roving tabindex from intercepting keys (e.g. Backspace as Delete)
+  // Handle search input key events (Arrow keys handled by native listener above)
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    // Stop propagation to prevent roving tabindex from intercepting keys
     e.stopPropagation()
 
     if (e.key === 'Escape') {
       e.preventDefault()
       onSearchClose?.()
+      return
+    }
+
+    // Enter: Focus the chat input (same as pressing Enter on a selected session)
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      onFocusChatInput?.()
+      return
     }
   }
 
@@ -1105,38 +1155,38 @@ export function SessionList({
   }
 
   return (
-    <>
-      {/* ScrollArea with mask-fade-top-short - shorter fade to avoid header overlap */}
-      <ScrollArea className="h-screen select-none mask-fade-top-short">
-        {/* Search input - sticky at top */}
-        {searchActive && (
-          <div className="sticky top-0 z-sticky px-2 py-2 border-b border-border/50">
-            <div className="relative">
-              {/* Show spinner while searching content, otherwise show search icon */}
-              {isSearchingContent ? (
-                <Spinner className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[10px] text-info" />
-              ) : (
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-              )}
-              <input
-                ref={searchInputRef}
-                type="text"
-                value={searchQuery}
-                onChange={(e) => onSearchChange?.(e.target.value)}
-                onKeyDown={handleSearchKeyDown}
-                placeholder="Search titles and content..."
-                className="w-full h-8 pl-8 pr-8 text-sm bg-foreground/5 border-0 rounded-[8px] outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50"
-              />
-              <button
-                onClick={onSearchClose}
-                className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 hover:bg-foreground/10 rounded"
-                title="Close search"
-              >
-                <X className="h-3.5 w-3.5 text-muted-foreground" />
-              </button>
-            </div>
+    <div className="flex flex-col h-screen">
+      {/* Search input - OUTSIDE ScrollArea to prevent arrow key capture */}
+      {searchActive && (
+        <div className="shrink-0 px-2 py-2 border-b border-border/50">
+          <div className="relative">
+            {/* Show spinner while searching content, otherwise show search icon */}
+            {isSearchingContent ? (
+              <Spinner className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[10px] text-info" />
+            ) : (
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+            )}
+            <input
+              ref={searchInputRef}
+              type="text"
+              value={searchQuery}
+              onChange={(e) => onSearchChange?.(e.target.value)}
+              onKeyDown={handleSearchKeyDown}
+              placeholder="Search titles and content..."
+              className="w-full h-8 pl-8 pr-8 text-sm bg-foreground/5 border-0 rounded-[8px] outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50"
+            />
+            <button
+              onClick={onSearchClose}
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 hover:bg-foreground/10 rounded"
+              title="Close search"
+            >
+              <X className="h-3.5 w-3.5 text-muted-foreground" />
+            </button>
           </div>
-        )}
+        </div>
+      )}
+      {/* ScrollArea with mask-fade-top-short - shorter fade to avoid header overlap */}
+      <ScrollArea className="flex-1 select-none mask-fade-top-short">
         <div
           ref={zoneRef}
           className="flex flex-col pb-14 min-w-0"
@@ -1232,7 +1282,7 @@ export function SessionList({
         onSubmit={handleRenameSubmit}
         placeholder="Enter a name..."
       />
-    </>
+    </div>
   )
 }
 

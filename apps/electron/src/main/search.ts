@@ -102,21 +102,30 @@ function escapeRegex(str: string): string {
 }
 
 /**
- * Extract text content from a JSONL line (user or assistant message).
+ * Extract text content from a JSONL line (user, assistant, or system message).
  * Returns the text content that should be searchable, or null if not a searchable message.
  *
- * For user messages: returns the text content
- * For assistant messages: returns only text blocks, NOT tool_use inputs
+ * This matches what ChatDisplay searches, ensuring consistency between
+ * session list search results and navigable matches in ChatDisplay.
  *
- * Session JSONL format uses "type" field for message type:
- * - "user" for user messages
- * - "assistant" for assistant messages
- * - "tool_use", "tool_result" for tool calls (excluded)
+ * Included:
+ * - User messages: text content
+ * - Assistant messages: text blocks only (NOT tool_use inputs)
+ * - System messages: text content
+ *
+ * Excluded:
+ * - Intermediate messages (isIntermediate: true) - not shown as final response
+ * - tool_use, tool_result messages - tool outputs not searchable in ChatDisplay
  */
 function extractSearchableTextContent(rawLine: string): string | null {
   try {
     const parsed = JSON.parse(rawLine);
     const messageType = parsed.type;
+
+    // Skip intermediate messages - ChatDisplay only shows final responses
+    if (parsed.isIntermediate) {
+      return null;
+    }
 
     if (messageType === 'user') {
       // User messages - extract text content
@@ -150,7 +159,16 @@ function extractSearchableTextContent(rawLine: string): string | null {
       return null;
     }
 
-    // Not a user or assistant message (tool_result, etc.)
+    if (messageType === 'system') {
+      // System messages - extract text content (ChatDisplay searches these too)
+      const content = parsed.content;
+      if (typeof content === 'string') {
+        return content;
+      }
+      return null;
+    }
+
+    // Not a user, assistant, or system message (tool_result, tool_use, etc.)
     return null;
   } catch {
     return null;
