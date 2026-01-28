@@ -50,10 +50,6 @@ export type { LoadedSource, FolderSourceConfig, SourceConnectionStatus };
 import type { LoadedSkill, SkillMetadata } from '@craft-agent/shared/skills/types';
 export type { LoadedSkill, SkillMetadata };
 
-// Import gallery types (for skills.sh registry)
-import type { GallerySkill, GalleryResponse, GallerySort } from '@craft-agent/shared/skills/gallery';
-export type { GallerySkill, GalleryResponse, GallerySort };
-
 
 /**
  * File/directory entry in a skill folder
@@ -653,12 +649,6 @@ export const IPC_CHANNELS = {
   SKILLS_OPEN_FINDER: 'skills:openFinder',
   SKILLS_CHANGED: 'skills:changed',
 
-  // Skills Gallery (fetch from skills.sh registry)
-  GALLERY_FETCH_SKILLS: 'gallery:fetchSkills',
-  GALLERY_SEARCH_SKILLS: 'gallery:searchSkills',
-  GALLERY_FETCH_SKILL_CONTENT: 'gallery:fetchSkillContent',
-  GALLERY_INSTALL_SKILL: 'gallery:installSkill',
-
   // Status management (workspace-scoped)
   STATUSES_LIST: 'statuses:list',
   STATUSES_REORDER: 'statuses:reorder',  // Reorder statuses (drag-and-drop)
@@ -925,12 +915,6 @@ export interface ElectronAPI {
   // Skills change listener (live updates when skills are added/removed/modified)
   onSkillsChanged(callback: (skills: LoadedSkill[]) => void): () => void
 
-  // Skills Gallery (skills.sh registry)
-  galleryFetchSkills(sort?: GallerySort, offset?: number): Promise<GalleryResponse>
-  gallerySearchSkills(query: string, limit?: number): Promise<GalleryResponse>
-  galleryFetchSkillContent(topSource: string, skillId: string): Promise<string | null>
-  galleryInstallSkill(workspaceId: string, skillId: string, topSource: string): Promise<void>
-
   // Statuses (workspace-scoped)
   listStatuses(workspaceId: string): Promise<import('@craft-agent/shared/statuses').StatusConfig[]>
   reorderStatuses(workspaceId: string, orderedIds: string[]): Promise<void>
@@ -1160,8 +1144,8 @@ export interface SettingsNavigationState {
  */
 export interface SkillsNavigationState {
   navigator: 'skills'
-  /** Selected skill details, gallery view, gallery skill detail, or null for empty state */
-  details: { type: 'skill'; skillSlug: string } | { type: 'gallery' } | { type: 'gallery-skill'; skillId: string; topSource: string } | null
+  /** Selected skill details or null for empty state */
+  details: { type: 'skill'; skillSlug: string } | null
   /** Optional right sidebar panel state */
   rightSidebar?: RightSidebarPanel
 }
@@ -1228,12 +1212,6 @@ export const getNavigationStateKey = (state: NavigationState): string => {
     return 'sources'
   }
   if (state.navigator === 'skills') {
-    if (state.details?.type === 'gallery') {
-      return 'skills/gallery'
-    }
-    if (state.details?.type === 'gallery-skill') {
-      return `skills/gallery-skill/${state.details.topSource}/${state.details.skillId}`
-    }
     if (state.details?.type === 'skill') {
       return `skills/skill/${state.details.skillSlug}`
     }
@@ -1272,19 +1250,6 @@ export const parseNavigationStateKey = (key: string): NavigationState | null => 
 
   // Handle skills
   if (key === 'skills') return { navigator: 'skills', details: null }
-  if (key === 'skills/gallery') return { navigator: 'skills', details: { type: 'gallery' } }
-  // Gallery skill detail: skills/gallery-skill/{owner}/{repo}/{skillId}
-  if (key.startsWith('skills/gallery-skill/')) {
-    const rest = key.slice('skills/gallery-skill/'.length)
-    // topSource is owner/repo (2 segments), skillId is the rest
-    const parts = rest.split('/')
-    if (parts.length >= 3) {
-      const topSource = `${parts[0]}/${parts[1]}`
-      const skillId = parts.slice(2).join('/')
-      return { navigator: 'skills', details: { type: 'gallery-skill', skillId, topSource } }
-    }
-    return { navigator: 'skills', details: { type: 'gallery' } }
-  }
   if (key.startsWith('skills/skill/')) {
     const skillSlug = key.slice(13)
     if (skillSlug) {

@@ -289,13 +289,13 @@ describe('renderMermaid – ER label positioning (straight lines)', () => {
 })
 
 // ─── Multi-entity diagrams with orthogonal routing ──────────────────────────
-// ELK produces multi-segment paths when entities are on different layers.
+// Dagre produces multi-segment paths when entities are on different layers.
 // Labels must sit ON the bent path, not float at the geometric center of
 // start/end (which would be off-path for L-shaped or Z-shaped routes).
 
 describe('renderMermaid – ER label positioning (multi-segment paths)', () => {
   it('all labels in a multi-relationship diagram sit near a polyline', async () => {
-    // This is sample 73: ORDER and PRODUCT have relationships that ELK routes
+    // This is sample 73: ORDER and PRODUCT have relationships that dagre routes
     // with bends. "contains" and "receives" had labels floating off-path before fix.
     const svg = await renderMermaid(`erDiagram
       ORDER ||--|{ LINE_ITEM : contains

@@ -5,7 +5,7 @@ import { estimateTextWidth, FONT_SIZES, FONT_WEIGHTS } from '../styles.ts'
 // ============================================================================
 // Sequence diagram layout engine
 //
-// Custom timeline-based layout (no elkjs — sequence diagrams aren't graphs).
+// Custom timeline-based layout (no dagre — sequence diagrams aren't graphs).
 //
 // Layout strategy:
 //   1. Space actors horizontally based on label widths + min gap
@@ -211,11 +211,43 @@ export function layoutSequenceDiagram(
 
     // Position dividers — offset from message Y so the divider label text
     // (rendered at divider.y + 14 in the renderer) clears the message label
-    // (rendered at msg.y - 6). Offset of 28 gives ~8px clearance.
-    const dividers = block.dividers.map(d => ({
-      y: (messages[d.index]?.y ?? messageY) - 28,
-      label: d.label,
-    }))
+    // (rendered at msg.y - 6).
+    //
+    // Default offset 28 gives ~8px baseline clearance, which is sufficient
+    // when the divider label (left-aligned at block edge) and message label
+    // (centered between actors) don't share horizontal space. When they DO
+    // overlap horizontally (e.g. long divider labels like "[Account locked]"
+    // next to centered message labels like "403 Forbidden"), we increase the
+    // offset to 36 so text bounding boxes have ~5px visual clearance.
+    const dividers = block.dividers.map(d => {
+      const msg = messages[d.index]
+      const msgY = msg?.y ?? messageY
+      let offset = 28
+
+      // Dynamic overlap detection: increase offset when the divider label
+      // and message label occupy the same horizontal region, which would
+      // cause vertical text overlap at the default 8px baseline gap.
+      if (d.label && msg?.label) {
+        const divLabelText = `[${d.label}]`
+        const divLabelW = estimateTextWidth(divLabelText, FONT_SIZES.edgeLabel, FONT_WEIGHTS.edgeLabel)
+        const divLabelLeft = blockLeft + 8
+        const divLabelRight = divLabelLeft + divLabelW
+
+        const msgLabelW = estimateTextWidth(msg.label, FONT_SIZES.edgeLabel, FONT_WEIGHTS.edgeLabel)
+        // Self-messages render labels at x1 + 36 (left-aligned); normal
+        // messages center the label between the two actor lifelines.
+        const msgLabelLeft = msg.isSelf
+          ? msg.x1 + 36
+          : (msg.x1 + msg.x2) / 2 - msgLabelW / 2
+        const msgLabelRight = msgLabelLeft + msgLabelW
+
+        if (divLabelRight > msgLabelLeft && divLabelLeft < msgLabelRight) {
+          offset = 36
+        }
+      }
+
+      return { y: msgY - offset, label: d.label }
+    })
 
     return {
       type: block.type,

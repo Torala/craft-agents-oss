@@ -2,7 +2,7 @@
  * Tests for the SVG renderer.
  *
  * Uses hand-crafted PositionedGraph data to test SVG output without
- * depending on the layout engine (which is async and uses elkjs).
+ * depending on the layout engine.
  */
 import { describe, it, expect } from 'bun:test'
 import { renderSvg } from '../renderer.ts'

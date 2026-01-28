@@ -12,12 +12,6 @@ export interface MermaidGraph {
   classAssignments: Map<string, string>
   /** Maps node IDs to inline styles (from `style X fill:#f00,stroke:#333`) */
   nodeStyles: Map<string, Record<string, string>>
-  /**
-   * Order of top-level elements (root-level subgraphs and nodes not in any subgraph)
-   * as they first appear in the source. Used by the layout engine to preserve the
-   * author's intended visual ordering.
-   */
-  sourceOrder: Array<{ type: 'node'; id: string } | { type: 'subgraph'; id: string }>
 }
 
 export type Direction = 'TD' | 'TB' | 'LR' | 'BT' | 'RL'
@@ -70,7 +64,7 @@ export interface MermaidSubgraph {
 }
 
 // ============================================================================
-// Positioned graph — after elkjs layout, ready for SVG rendering
+// Positioned graph — after dagre layout, ready for SVG rendering
 // ============================================================================
 
 export interface PositionedGraph {
@@ -89,8 +83,7 @@ export interface PositionedNode {
   y: number
   width: number
   height: number
-  cssClass?: string
-  /** Inline styles from `style` statements — override theme defaults */
+  /** Inline styles resolved from classDef + explicit `style` statements — override theme defaults */
   inlineStyle?: Record<string, string>
 }
 
@@ -103,7 +96,7 @@ export interface PositionedEdge {
   hasArrowEnd: boolean
   /** Full path including bends — array of {x, y} points */
   points: Point[]
-  /** ELK-computed label center position (avoids label-label collisions) */
+  /** Layout-computed label center position (avoids label-label collisions) */
   labelPosition?: Point
 }
 

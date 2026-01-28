@@ -1,14 +1,15 @@
-import type { ElkNode, ElkExtendedEdge } from 'elkjs'
+// @ts-expect-error — dagre types are declared for the package root, not the dist path;
+// importing the pre-built browser bundle avoids Bun.build hanging on 30+ CJS file resolution
+import dagre from '@dagrejs/dagre/dist/dagre.js'
 import type { ClassDiagram, ClassNode, ClassMember, PositionedClassDiagram, PositionedClassNode, PositionedClassRelationship } from './types.ts'
 import type { RenderOptions } from '../types.ts'
 import { estimateTextWidth, estimateMonoTextWidth, FONT_SIZES, FONT_WEIGHTS } from '../styles.ts'
-
-import { getElk } from '../elk-instance.ts'
+import { centerToTopLeft, snapToOrthogonal, clipEndpointsToNodes } from '../dagre-adapter.ts'
 
 // ============================================================================
 // Class diagram layout engine
 //
-// Uses elkjs for positioning class boxes, then sizes each box based on
+// Uses dagre for positioning class boxes, then sizes each box based on
 // the number of attributes and methods it contains.
 //
 // Each class box has 3 compartments:
@@ -22,7 +23,7 @@ export const CLS = {
   /** Padding around the diagram */
   padding: 40,
   /** Horizontal padding inside class boxes — used by both layout and renderer */
-  boxPadX: 16,
+  boxPadX: 12,
   /** Header height (class name + annotation) */
   headerBaseHeight: 32,
   /** Extra height when annotation is present */
@@ -44,8 +45,10 @@ export const CLS = {
 } as const
 
 /**
- * Lay out a parsed class diagram using elkjs.
+ * Lay out a parsed class diagram using dagre.
  * Returns positioned class nodes and relationship paths.
+ *
+ * Kept async for API compatibility — dagre itself is synchronous.
  */
 export async function layoutClassDiagram(
   diagram: ClassDiagram,
@@ -82,88 +85,93 @@ export async function layoutClassDiagram(
     classSizes.set(cls.id, { width, height, headerHeight, attrHeight, methodHeight })
   }
 
-  // 2. Build ELK graph
-  const elkNodes: ElkNode[] = diagram.classes.map(cls => {
+  // 2. Build dagre graph
+  const g = new dagre.graphlib.Graph({ directed: true })
+  g.setGraph({
+    rankdir: 'TB',
+    acyclicer: 'greedy', // break cycles before ranking to prevent infinite loop on bidirectional edges
+    nodesep: CLS.nodeSpacing,
+    ranksep: CLS.layerSpacing,
+    marginx: CLS.padding,
+    marginy: CLS.padding,
+  })
+  g.setDefaultEdgeLabel(() => ({}))
+
+  for (const cls of diagram.classes) {
     const size = classSizes.get(cls.id)!
-    return { id: cls.id, width: size.width, height: size.height }
-  })
-
-  // Attach label dimensions to edges so ELK can compute collision-free label positions
-  // (same approach used by the flowchart layout in layout.ts)
-  const elkEdges: ElkExtendedEdge[] = diagram.relationships.map((rel, i) => {
-    const edge: ElkExtendedEdge = {
-      id: `e${i}`,
-      sources: [rel.from],
-      targets: [rel.to],
-    }
-    if (rel.label) {
-      edge.labels = [{
-        text: rel.label,
-        width: estimateTextWidth(rel.label, FONT_SIZES.edgeLabel, FONT_WEIGHTS.edgeLabel) + 8,
-        height: FONT_SIZES.edgeLabel + 6,
-      }]
-    }
-    return edge
-  })
-
-  const elkGraph: ElkNode = {
-    id: 'root',
-    layoutOptions: {
-      'elk.algorithm': 'layered',
-      'elk.direction': 'DOWN',
-      'elk.edgeRouting': 'ORTHOGONAL',
-      'elk.spacing.nodeNode': String(CLS.nodeSpacing),
-      'elk.layered.spacing.nodeNodeBetweenLayers': String(CLS.layerSpacing),
-      'elk.padding': `[top=${CLS.padding},left=${CLS.padding},bottom=${CLS.padding},right=${CLS.padding}]`,
-      'elk.hierarchyHandling': 'INCLUDE_CHILDREN',
-      // Let ELK place edge labels to avoid overlaps between nearby edges
-      'elk.edgeLabels.placement': 'CENTER',
-    },
-    children: elkNodes,
-    edges: elkEdges,
+    g.setNode(cls.id, { width: size.width, height: size.height })
   }
 
-  // 3. Run ELK layout
-  const layoutResult = await getElk().layout(elkGraph)
+  // Add edges with label dimensions for collision-free label placement
+  for (let i = 0; i < diagram.relationships.length; i++) {
+    const rel = diagram.relationships[i]!
+    const edgeLabel: Record<string, unknown> = { _index: i }
+    if (rel.label) {
+      edgeLabel.label = rel.label
+      edgeLabel.width = estimateTextWidth(rel.label, FONT_SIZES.edgeLabel, FONT_WEIGHTS.edgeLabel) + 8
+      edgeLabel.height = FONT_SIZES.edgeLabel + 6
+      edgeLabel.labelpos = 'c'
+    }
+    g.setEdge(rel.from, rel.to, edgeLabel)
+  }
+
+  // 3. Run dagre layout (synchronous).
+  // Wrapped in try-catch to surface clear errors on malformed class diagrams.
+  try {
+    dagre.layout(g)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    throw new Error(`Dagre layout failed (class diagram): ${message}`)
+  }
 
   // 4. Extract positioned classes
   const classLookup = new Map<string, ClassNode>()
   for (const cls of diagram.classes) classLookup.set(cls.id, cls)
 
-  const positionedClasses: PositionedClassNode[] = (layoutResult.children ?? []).map(elkNode => {
-    const cls = classLookup.get(elkNode.id)!
-    const size = classSizes.get(elkNode.id)!
+  const positionedClasses: PositionedClassNode[] = diagram.classes.map(cls => {
+    const dagreNode = g.node(cls.id)
+    const size = classSizes.get(cls.id)!
+    const topLeft = centerToTopLeft(dagreNode.x, dagreNode.y, dagreNode.width, dagreNode.height)
     return {
       id: cls.id,
       label: cls.label,
       annotation: cls.annotation,
       attributes: cls.attributes,
       methods: cls.methods,
-      x: elkNode.x ?? 0,
-      y: elkNode.y ?? 0,
-      width: elkNode.width ?? size.width,
-      height: elkNode.height ?? size.height,
+      x: topLeft.x,
+      y: topLeft.y,
+      width: dagreNode.width ?? size.width,
+      height: dagreNode.height ?? size.height,
       headerHeight: size.headerHeight,
       attrHeight: size.attrHeight,
       methodHeight: size.methodHeight,
     }
   })
 
-  // 5. Extract relationship paths and ELK-computed label positions
-  const relationships: PositionedClassRelationship[] = (layoutResult.edges ?? []).map((elkEdge, i) => {
-    const rel = diagram.relationships[i]!
-    const points = extractEdgePoints(elkEdge as ElkExtendedEdge)
+  // 5. Extract relationship paths and label positions
+  const relationships: PositionedClassRelationship[] = g.edges().map(edgeObj => {
+    const dagreEdge = g.edge(edgeObj)
+    const rel = diagram.relationships[dagreEdge._index as number]!
+    const rawPoints = dagreEdge.points ?? []
+    // TB layout → vertical-first bends
+    const orthoPoints = snapToOrthogonal(rawPoints, true)
 
-    // Extract ELK-computed label center position if available.
-    // ELK returns label (x, y) as the top-left corner of the label bounding box.
-    // Convert to center so the renderer can place text with text-anchor="middle".
+    // Clip endpoints to the correct side of source/target class boxes.
+    // After orthogonalization the approach direction may differ from dagre's
+    // original boundary intersection — e.g. a horizontal last segment should
+    // connect to the side of the target at its vertical center, not the top.
+    const srcNode = g.node(edgeObj.v)
+    const tgtNode = g.node(edgeObj.w)
+    const points = clipEndpointsToNodes(
+      orthoPoints,
+      srcNode ? { cx: srcNode.x, cy: srcNode.y, hw: srcNode.width / 2, hh: srcNode.height / 2 } : null,
+      tgtNode ? { cx: tgtNode.x, cy: tgtNode.y, hw: tgtNode.width / 2, hh: tgtNode.height / 2 } : null,
+    )
+
+    // Dagre returns edge label center position directly as edge.x, edge.y
     let labelPosition: { x: number; y: number } | undefined
-    const elkLabel = (elkEdge as ElkExtendedEdge).labels?.[0]
-    if (elkLabel && elkLabel.x != null && elkLabel.y != null) {
-      labelPosition = {
-        x: elkLabel.x + (elkLabel.width ?? 0) / 2,
-        y: elkLabel.y + (elkLabel.height ?? 0) / 2,
-      }
+    if (rel.label && dagreEdge.x != null && dagreEdge.y != null) {
+      labelPosition = { x: dagreEdge.x, y: dagreEdge.y }
     }
 
     return {
@@ -180,8 +188,8 @@ export async function layoutClassDiagram(
   })
 
   return {
-    width: layoutResult.width ?? 600,
-    height: layoutResult.height ?? 400,
+    width: g.graph().width ?? 600,
+    height: g.graph().height ?? 400,
     classes: positionedClasses,
     relationships,
   }
@@ -205,17 +213,4 @@ export function memberToString(m: ClassMember): string {
   const vis = m.visibility ? `${m.visibility} ` : ''
   const type = m.type ? `: ${m.type}` : ''
   return `${vis}${m.name}${type}`
-}
-
-/** Extract points from an ELK edge */
-function extractEdgePoints(elkEdge: ElkExtendedEdge): Array<{ x: number; y: number }> {
-  const points: Array<{ x: number; y: number }> = []
-  for (const section of elkEdge.sections ?? []) {
-    points.push({ x: section.startPoint.x, y: section.startPoint.y })
-    for (const bp of section.bendPoints ?? []) {
-      points.push({ x: bp.x, y: bp.y })
-    }
-    points.push({ x: section.endPoint.x, y: section.endPoint.y })
-  }
-  return points
 }

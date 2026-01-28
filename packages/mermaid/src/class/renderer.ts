@@ -267,7 +267,7 @@ function renderRelationshipLabels(rel: PositionedClassRelationship): string {
 
   const parts: string[] = []
 
-  // Label — prefer ELK-computed position (collision-aware), fall back to midpoint
+  // Label — prefer dagre-computed position (collision-aware), fall back to midpoint
   if (rel.label) {
     const pos = rel.labelPosition ?? midpoint(rel.points)
     parts.push(

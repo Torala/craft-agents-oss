@@ -20,7 +20,7 @@ import { parseMermaid } from '../parser.ts'
 import { convertToAsciiGraph } from './converter.ts'
 import { createMapping } from './grid.ts'
 import { drawGraph } from './draw.ts'
-import { canvasToString } from './canvas.ts'
+import { canvasToString, flipCanvasVertically } from './canvas.ts'
 import { renderSequenceAscii } from './sequence.ts'
 import { renderClassAscii } from './class-diagram.ts'
 import { renderErAscii } from './er-diagram.ts'
@@ -107,8 +107,9 @@ export function renderMermaidAscii(
       // Flowchart + state diagram pipeline (original)
       const parsed = parseMermaid(text)
 
-      // Normalize direction: TD/TB → "TD", LR → "LR"
-      // BT and RL are treated as TD and LR respectively.
+      // Normalize direction for grid layout.
+      // BT is laid out as TD then flipped vertically after drawing.
+      // RL is treated as LR (full RL support not yet implemented).
       if (parsed.direction === 'LR' || parsed.direction === 'RL') {
         config.graphDirection = 'LR'
       } else {
@@ -118,6 +119,13 @@ export function renderMermaidAscii(
       const graph = convertToAsciiGraph(parsed, config)
       createMapping(graph)
       drawGraph(graph)
+
+      // BT: flip the finished canvas vertically so the flow runs bottom→top.
+      // The grid layout ran as TD; flipping + character remapping produces BT.
+      if (parsed.direction === 'BT') {
+        flipCanvasVertically(graph.canvas)
+      }
+
       return canvasToString(graph.canvas)
     }
   }

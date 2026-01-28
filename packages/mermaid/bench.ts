@@ -61,7 +61,7 @@ for (let i = 0; i < samples.length; i++) {
   let svgError: string | null = null
   let asciiError: string | null = null
 
-  // Render SVG (async — uses elkjs layout for flowcharts/state/class/ER)
+  // Render SVG (async — uses dagre layout for flowcharts/state/class/ER)
   try {
     const t0 = performance.now()
     await renderMermaid(sample.source, sample.options)
@@ -71,7 +71,7 @@ for (let i = 0; i < samples.length; i++) {
     svgMs = -1
   }
 
-  // Render ASCII (sync — custom text layout, no elkjs)
+  // Render ASCII (sync — custom text layout, no dagre)
   try {
     const t0 = performance.now()
     renderMermaidAscii(sample.source)

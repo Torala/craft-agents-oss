@@ -1,14 +1,15 @@
-import type { ElkNode, ElkExtendedEdge } from 'elkjs'
+// @ts-expect-error — dagre types are declared for the package root, not the dist path;
+// importing the pre-built browser bundle avoids Bun.build hanging on 30+ CJS file resolution
+import dagre from '@dagrejs/dagre/dist/dagre.js'
 import type { ErDiagram, ErEntity, PositionedErDiagram, PositionedErEntity, PositionedErRelationship } from './types.ts'
 import type { RenderOptions } from '../types.ts'
 import { estimateTextWidth, estimateMonoTextWidth, FONT_SIZES, FONT_WEIGHTS } from '../styles.ts'
-
-import { getElk } from '../elk-instance.ts'
+import { centerToTopLeft, snapToOrthogonal, clipEndpointsToNodes } from '../dagre-adapter.ts'
 
 // ============================================================================
 // ER diagram layout engine
 //
-// Uses elkjs for positioning entity boxes, then sizes each box based on
+// Uses dagre for positioning entity boxes, then sizes each box based on
 // the entity name and number of attributes.
 //
 // Each entity box has:
@@ -30,8 +31,10 @@ const ER = {
 } as const
 
 /**
- * Lay out a parsed ER diagram using elkjs.
+ * Lay out a parsed ER diagram using dagre.
  * Returns positioned entity boxes and relationship paths.
+ *
+ * Kept async for API compatibility — dagre itself is synchronous.
  */
 export async function layoutErDiagram(
   diagram: ErDiagram,
@@ -63,63 +66,83 @@ export async function layoutErDiagram(
     entitySizes.set(entity.id, { width, height })
   }
 
-  // 2. Build ELK graph
-  const elkNodes: ElkNode[] = diagram.entities.map(entity => {
-    const size = entitySizes.get(entity.id)!
-    return { id: entity.id, width: size.width, height: size.height }
+  // 2. Build dagre graph
+  const g = new dagre.graphlib.Graph({ directed: true })
+  g.setGraph({
+    rankdir: 'LR',
+    acyclicer: 'greedy', // break cycles before ranking to prevent infinite loop on bidirectional edges
+    nodesep: ER.nodeSpacing,
+    ranksep: ER.layerSpacing,
+    marginx: ER.padding,
+    marginy: ER.padding,
   })
+  g.setDefaultEdgeLabel(() => ({}))
 
-  const elkEdges: ElkExtendedEdge[] = diagram.relationships.map((rel, i) => ({
-    id: `e${i}`,
-    sources: [rel.entity1],
-    targets: [rel.entity2],
-    labels: [{
-      text: rel.label,
-      width: estimateTextWidth(rel.label, FONT_SIZES.edgeLabel, FONT_WEIGHTS.edgeLabel) + 8,
-      height: FONT_SIZES.edgeLabel + 6,
-    }],
-  }))
-
-  const elkGraph: ElkNode = {
-    id: 'root',
-    layoutOptions: {
-      'elk.algorithm': 'layered',
-      'elk.direction': 'RIGHT',
-      'elk.edgeRouting': 'ORTHOGONAL',
-      'elk.spacing.nodeNode': String(ER.nodeSpacing),
-      'elk.layered.spacing.nodeNodeBetweenLayers': String(ER.layerSpacing),
-      'elk.padding': `[top=${ER.padding},left=${ER.padding},bottom=${ER.padding},right=${ER.padding}]`,
-    },
-    children: elkNodes,
-    edges: elkEdges,
+  for (const entity of diagram.entities) {
+    const size = entitySizes.get(entity.id)!
+    g.setNode(entity.id, { width: size.width, height: size.height })
   }
 
-  // 3. Run ELK layout
-  const layoutResult = await getElk().layout(elkGraph)
+  for (let i = 0; i < diagram.relationships.length; i++) {
+    const rel = diagram.relationships[i]!
+    g.setEdge(rel.entity1, rel.entity2, {
+      _index: i,
+      label: rel.label,
+      width: estimateTextWidth(rel.label, FONT_SIZES.edgeLabel, FONT_WEIGHTS.edgeLabel) + 8,
+      height: FONT_SIZES.edgeLabel + 6,
+      labelpos: 'c',
+    })
+  }
+
+  // 3. Run dagre layout (synchronous).
+  // Wrapped in try-catch to surface clear errors on malformed ER diagrams.
+  try {
+    dagre.layout(g)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    throw new Error(`Dagre layout failed (ER diagram): ${message}`)
+  }
 
   // 4. Extract positioned entities
   const entityLookup = new Map<string, ErEntity>()
   for (const entity of diagram.entities) entityLookup.set(entity.id, entity)
 
-  const positionedEntities: PositionedErEntity[] = (layoutResult.children ?? []).map(elkNode => {
-    const entity = entityLookup.get(elkNode.id)!
+  const positionedEntities: PositionedErEntity[] = diagram.entities.map(entity => {
+    const dagreNode = g.node(entity.id)
+    const topLeft = centerToTopLeft(dagreNode.x, dagreNode.y, dagreNode.width, dagreNode.height)
     return {
       id: entity.id,
       label: entity.label,
       attributes: entity.attributes,
-      x: elkNode.x ?? 0,
-      y: elkNode.y ?? 0,
-      width: elkNode.width ?? entitySizes.get(entity.id)!.width,
-      height: elkNode.height ?? entitySizes.get(entity.id)!.height,
+      x: topLeft.x,
+      y: topLeft.y,
+      width: dagreNode.width ?? entitySizes.get(entity.id)!.width,
+      height: dagreNode.height ?? entitySizes.get(entity.id)!.height,
       headerHeight: ER.headerHeight,
       rowHeight: ER.rowHeight,
     }
   })
 
   // 5. Extract relationship paths
-  const relationships: PositionedErRelationship[] = (layoutResult.edges ?? []).map((elkEdge, i) => {
-    const rel = diagram.relationships[i]!
-    const points = extractEdgePoints(elkEdge as ElkExtendedEdge)
+  const relationships: PositionedErRelationship[] = g.edges().map(edgeObj => {
+    const dagreEdge = g.edge(edgeObj)
+    const rel = diagram.relationships[dagreEdge._index as number]!
+    const rawPoints = dagreEdge.points ?? []
+    // LR layout → horizontal-first bends
+    const orthoPoints = snapToOrthogonal(rawPoints, false)
+
+    // Clip endpoints to the correct side of source/target entity boxes.
+    // After orthogonalization the approach direction may differ from dagre's
+    // original boundary intersection — e.g. a vertical last segment should
+    // connect to the top/bottom of the target at its horizontal center.
+    const srcNode = g.node(edgeObj.v)
+    const tgtNode = g.node(edgeObj.w)
+    const points = clipEndpointsToNodes(
+      orthoPoints,
+      srcNode ? { cx: srcNode.x, cy: srcNode.y, hw: srcNode.width / 2, hh: srcNode.height / 2 } : null,
+      tgtNode ? { cx: tgtNode.x, cy: tgtNode.y, hw: tgtNode.width / 2, hh: tgtNode.height / 2 } : null,
+    )
+
     return {
       entity1: rel.entity1,
       entity2: rel.entity2,
@@ -132,22 +155,9 @@ export async function layoutErDiagram(
   })
 
   return {
-    width: layoutResult.width ?? 600,
-    height: layoutResult.height ?? 400,
+    width: g.graph().width ?? 600,
+    height: g.graph().height ?? 400,
     entities: positionedEntities,
     relationships,
   }
-}
-
-/** Extract points from an ELK edge */
-function extractEdgePoints(elkEdge: ElkExtendedEdge): Array<{ x: number; y: number }> {
-  const points: Array<{ x: number; y: number }> = []
-  for (const section of elkEdge.sections ?? []) {
-    points.push({ x: section.startPoint.x, y: section.startPoint.y })
-    for (const bp of section.bendPoints ?? []) {
-      points.push({ x: bp.x, y: bp.y })
-    }
-    points.push({ x: section.endPoint.x, y: section.endPoint.y })
-  }
-  return points
 }

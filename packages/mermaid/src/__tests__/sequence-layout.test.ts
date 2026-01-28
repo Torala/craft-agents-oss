@@ -414,6 +414,57 @@ describe('sequence layout – render clearance', () => {
     expect(block.dividers[0]!.y).toBeGreaterThan(result.messages[1]!.y)
     expect(block.dividers[1]!.y).toBeGreaterThan(result.messages[2]!.y)
   })
+
+  it('long divider labels get extra offset to avoid overlapping message labels', () => {
+    // "Account locked" is long enough that "[Account locked]" (left-aligned at
+    // the block edge) overlaps horizontally with "403 Forbidden" (centered
+    // between actors). The layout should detect this and use a larger vertical
+    // offset so the two text elements don't collide.
+    const result = layout(`sequenceDiagram
+      participant C as Client
+      participant S as Server
+      C->>S: Login
+      alt Valid credentials
+        S-->>C: 200 OK
+      else Account locked
+        S-->>C: 403 Forbidden
+      end`)
+
+    const block = result.blocks[0]!
+    expect(block.dividers).toHaveLength(1)
+
+    const divider = block.dividers[0]!
+    const msgAfter = result.messages[2]! // "403 Forbidden"
+
+    // With the overlap-aware offset (36 instead of default 28), the divider
+    // label baseline (divider.y + 14) should be further from the message
+    // label baseline (msg.y - 6), giving at least 14px baseline clearance.
+    const divLabelBaseline = divider.y + 14
+    const msgLabelBaseline = msgAfter.y - 6
+    const baselineClearance = msgLabelBaseline - divLabelBaseline
+
+    expect(baselineClearance).toBeGreaterThanOrEqual(14)
+  })
+
+  it('short divider labels keep the default offset (no unnecessary extra space)', () => {
+    // "No" is short enough that "[No]" doesn't reach the centered message
+    // label — no overlap, so the default offset (28) is used.
+    const result = layout(`sequenceDiagram
+      A->>B: Login
+      alt Yes
+        B->>A: 200
+      else No
+        B->>A: 500
+      end`)
+
+    const block = result.blocks[0]!
+    const divider = block.dividers[0]!
+    const msgAfter = result.messages[2]!
+
+    // Default offset 28: baseline clearance = (msg.y - 6) - (msg.y - 28 + 14) = 8
+    const baselineClearance = (msgAfter.y - 6) - (divider.y + 14)
+    expect(baselineClearance).toBe(8)
+  })
 })
 
 // ============================================================================

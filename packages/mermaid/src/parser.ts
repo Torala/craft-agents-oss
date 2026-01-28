@@ -55,7 +55,6 @@ function parseFlowchart(lines: string[]): MermaidGraph {
     classDefs: new Map(),
     classAssignments: new Map(),
     nodeStyles: new Map(),
-    sourceOrder: [],
   }
 
   // Subgraph stack for nested subgraphs.
@@ -133,8 +132,6 @@ function parseFlowchart(lines: string[]): MermaidGraph {
           subgraphStack[subgraphStack.length - 1]!.children.push(completed)
         } else {
           graph.subgraphs.push(completed)
-          // Track root-level subgraph in source order
-          graph.sourceOrder.push({ type: 'subgraph', id: completed.id })
         }
       }
       continue
@@ -171,7 +168,6 @@ function parseStateDiagram(lines: string[]): MermaidGraph {
     classDefs: new Map(),
     classAssignments: new Map(),
     nodeStyles: new Map(),
-    sourceOrder: [],
   }
 
   // Track composite state nesting (like subgraphs)
@@ -212,8 +208,6 @@ function parseStateDiagram(lines: string[]): MermaidGraph {
           compositeStack[compositeStack.length - 1]!.children.push(completed)
         } else {
           graph.subgraphs.push(completed)
-          // Track root-level composite state in source order
-          graph.sourceOrder.push({ type: 'subgraph', id: completed.id })
         }
       }
       continue
@@ -285,10 +279,6 @@ function registerStateNode(
   const isNew = !graph.nodes.has(node.id)
   if (isNew) {
     graph.nodes.set(node.id, node)
-    // Track new top-level state nodes (not inside any composite state) in source order
-    if (compositeStack.length === 0) {
-      graph.sourceOrder.push({ type: 'node', id: node.id })
-    }
   }
   if (compositeStack.length > 0) {
     const current = compositeStack[compositeStack.length - 1]!
@@ -547,10 +537,6 @@ function registerNode(
   const isNew = !graph.nodes.has(node.id)
   if (isNew) {
     graph.nodes.set(node.id, node)
-    // Track new top-level nodes (not inside any subgraph) in source order
-    if (subgraphStack.length === 0) {
-      graph.sourceOrder.push({ type: 'node', id: node.id })
-    }
   }
   trackInSubgraph(subgraphStack, node.id)
 }

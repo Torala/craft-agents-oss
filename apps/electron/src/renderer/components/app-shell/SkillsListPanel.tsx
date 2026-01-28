@@ -7,7 +7,7 @@
 
 import * as React from 'react'
 import { useState } from 'react'
-import { MoreHorizontal, Zap, Store } from 'lucide-react'
+import { MoreHorizontal, Zap } from 'lucide-react'
 import { SkillAvatar } from '@/components/ui/skill-avatar'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription, EmptyContent } from '@/components/ui/empty'
@@ -37,10 +37,6 @@ export interface SkillsListPanelProps {
   workspaceId?: string
   /** Workspace root path for EditPopover context */
   workspaceRootPath?: string
-  /** Whether the gallery page is currently selected */
-  isGallerySelected?: boolean
-  /** Callback when the gallery button is clicked */
-  onGalleryClick?: () => void
   className?: string
 }
 
@@ -51,33 +47,12 @@ export function SkillsListPanel({
   selectedSkillSlug,
   workspaceId,
   workspaceRootPath,
-  isGallerySelected,
-  onGalleryClick,
   className,
 }: SkillsListPanelProps) {
-  // Gallery button — shown at the top of both empty and non-empty states
-  const galleryButton = onGalleryClick ? (
-    <div className="px-2 pt-2 pb-1">
-      <button
-        onClick={onGalleryClick}
-        className={cn(
-          'flex w-full items-center gap-2 px-3 py-2 text-sm font-medium rounded-[8px] transition-colors',
-          isGallerySelected
-            ? 'bg-foreground/5 hover:bg-foreground/7'
-            : 'hover:bg-foreground/2'
-        )}
-      >
-        <Store className="h-4 w-4 text-foreground/50" />
-        <span>Skill Gallery</span>
-      </button>
-    </div>
-  ) : null
-
   // Empty state - rendered outside ScrollArea for proper vertical centering
   if (skills.length === 0) {
     return (
       <div className={cn('flex flex-col flex-1', className)}>
-        {galleryButton}
         <Empty className="flex-1">
           <EmptyHeader>
             <EmptyMedia variant="icon">
@@ -114,10 +89,9 @@ export function SkillsListPanel({
 
   return (
     <div className={cn('flex flex-col flex-1 min-h-0', className)}>
-      {galleryButton}
       <ScrollArea className="flex-1">
         <div className="pb-2">
-          <div className={galleryButton ? '' : 'pt-2'}>
+          <div className="pt-2">
             {skills.map((skill, index) => (
               <SkillItem
                 key={skill.slug}

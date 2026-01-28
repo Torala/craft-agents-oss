@@ -17,10 +17,11 @@ export function estimateTextWidth(text: string, fontSize: number, fontWeight: nu
 
 /** Average character width in px for monospace fonts (uniform glyph width) */
 export function estimateMonoTextWidth(text: string, fontSize: number): number {
-  // Monospace fonts have uniform character width — 0.55 of fontSize is calibrated
-  // for JetBrains Mono at small sizes (11px). Conservative enough to avoid clipping
-  // with system fallback fonts (SF Mono, Fira Code, etc.)
-  return text.length * fontSize * 0.55
+  // Monospace fonts have uniform character width — 0.6 of fontSize matches actual
+  // glyph widths for JetBrains Mono / SF Mono / Fira Code at small sizes (11px).
+  // Previous value of 0.55 underestimated widths, causing class member labels to
+  // extend beyond their box boundaries.
+  return text.length * fontSize * 0.6
 }
 
 /** Monospace font family used for code-like text (class members, types) */
@@ -49,6 +50,10 @@ export const FONT_WEIGHTS = {
 // ============================================================================
 // Spacing & sizing constants
 // ============================================================================
+
+/** Vertical gap between a subgraph header band and the content area below it (px).
+ * Without this, nested subgraph headers sit flush against their parent's header band. */
+export const GROUP_HEADER_CONTENT_PAD = 8
 
 /** Padding inside node shapes */
 export const NODE_PADDING = {

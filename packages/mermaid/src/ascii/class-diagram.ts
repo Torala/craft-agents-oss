@@ -6,7 +6,7 @@
 // Relationships are drawn as lines between classes with UML markers.
 //
 // Layout: level-based top-down. "From" classes are placed above "to" classes
-// for all relationship types, matching ELK/mermaid.com behavior.
+// for all relationship types, matching dagre/mermaid.com behavior.
 // Relationship lines use simple Manhattan routing (vertical + horizontal).
 // ============================================================================
 
@@ -152,8 +152,12 @@ export function renderClassAscii(text: string, config: AsciiConfig): string {
 
   // --- Assign levels: topological sort based on directed relationships ---
   // All relationship types place "from" above "to" in the layout, matching
-  // ELK's layered algorithm and the official mermaid.com renderer behavior.
+  // dagre's layered algorithm and the official mermaid.com renderer behavior.
   // For "Animal <|-- Dog": from="Animal", to="Dog" → Animal above Dog.
+  //
+  // Every relationship type (including association and dependency) forces nodes
+  // to different levels. Same-row routing for mixed diagrams causes collisions:
+  // detour lines overlap with cross-level routing, and labels overwrite box borders.
 
   const classById = new Map<string, ClassNode>()
   for (const cls of diagram.classes) classById.set(cls.id, cls)
@@ -161,23 +165,23 @@ export function renderClassAscii(text: string, config: AsciiConfig): string {
   const parents = new Map<string, Set<string>>()  // child → set of parent IDs
   const children = new Map<string, Set<string>>() // parent → set of child IDs
 
-  // Only hierarchical relationships affect level assignment.
-  // Association (-->) and dependency (..>) are non-hierarchical in UML and
-  // should not force nodes to different levels — they render as same-row connections.
   for (const rel of diagram.relationships) {
-    if (rel.type === 'association' || rel.type === 'dependency') continue
     if (!parents.has(rel.to)) parents.set(rel.to, new Set())
     parents.get(rel.to)!.add(rel.from)
     if (!children.has(rel.from)) children.set(rel.from, new Set())
     children.get(rel.from)!.add(rel.to)
   }
 
-  // BFS from roots (classes that have no parents) to assign levels
+  // BFS from roots (classes that have no parents) to assign levels.
+  // Cap at classes.length - 1 to prevent infinite loops on cyclic graphs
+  // (e.g. View --> Model and Model ..> View would otherwise push levels
+  // upward forever). In a DAG the longest path has at most N-1 edges.
   const level = new Map<string, number>()
   const roots = diagram.classes.filter(c => !parents.has(c.id) || parents.get(c.id)!.size === 0)
   const queue: string[] = roots.map(c => c.id)
   for (const id of queue) level.set(id, 0)
 
+  const levelCap = diagram.classes.length - 1
   let qi = 0
   while (qi < queue.length) {
     const id = queue[qi++]!
@@ -185,6 +189,7 @@ export function renderClassAscii(text: string, config: AsciiConfig): string {
     if (!childSet) continue
     for (const childId of childSet) {
       const newLevel = (level.get(id) ?? 0) + 1
+      if (newLevel > levelCap) continue // cycle detected — skip to prevent infinite loop
       if (!level.has(childId) || level.get(childId)! < newLevel) {
         level.set(childId, newLevel)
         queue.push(childId)

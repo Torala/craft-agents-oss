@@ -285,16 +285,6 @@ const api: ElectronAPI = {
   openSkillInFinder: (workspaceId: string, skillSlug: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.SKILLS_OPEN_FINDER, workspaceId, skillSlug),
 
-  // Skills Gallery (skills.sh registry)
-  galleryFetchSkills: (sort?: string, offset?: number) =>
-    ipcRenderer.invoke(IPC_CHANNELS.GALLERY_FETCH_SKILLS, sort, offset),
-  gallerySearchSkills: (query: string, limit?: number) =>
-    ipcRenderer.invoke(IPC_CHANNELS.GALLERY_SEARCH_SKILLS, query, limit),
-  galleryFetchSkillContent: (topSource: string, skillId: string) =>
-    ipcRenderer.invoke(IPC_CHANNELS.GALLERY_FETCH_SKILL_CONTENT, topSource, skillId),
-  galleryInstallSkill: (workspaceId: string, skillId: string, topSource: string) =>
-    ipcRenderer.invoke(IPC_CHANNELS.GALLERY_INSTALL_SKILL, workspaceId, skillId, topSource),
-
   // Skills change listener (live updates when skills are added/removed/modified)
   onSkillsChanged: (callback: (skills: import('@craft-agent/shared/skills').LoadedSkill[]) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, skills: import('@craft-agent/shared/skills').LoadedSkill[]) => {

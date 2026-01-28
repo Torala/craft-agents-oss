@@ -2084,52 +2084,6 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
   })
 
   // ============================================================
-  // Skills Gallery (skills.sh registry)
-  // ============================================================
-
-  // Fetch paginated gallery skills from skills.sh
-  ipcMain.handle(IPC_CHANNELS.GALLERY_FETCH_SKILLS, async (_event, sort?: string, offset?: number) => {
-    const { fetchGallerySkills } = await import('@craft-agent/shared/skills')
-    return fetchGallerySkills(sort as 'alltime' | 'trending' | 'hot', offset)
-  })
-
-  // Search gallery skills
-  ipcMain.handle(IPC_CHANNELS.GALLERY_SEARCH_SKILLS, async (_event, query: string, limit?: number) => {
-    const { searchGallerySkills } = await import('@craft-agent/shared/skills')
-    return searchGallerySkills(query, limit)
-  })
-
-  // Fetch SKILL.md content from GitHub for preview
-  ipcMain.handle(IPC_CHANNELS.GALLERY_FETCH_SKILL_CONTENT, async (_event, topSource: string, skillId: string) => {
-    const { fetchSkillContent } = await import('@craft-agent/shared/skills')
-    return fetchSkillContent(topSource, skillId)
-  })
-
-  // Install a gallery skill into the workspace
-  ipcMain.handle(IPC_CHANNELS.GALLERY_INSTALL_SKILL, async (_event, workspaceId: string, skillId: string, topSource: string) => {
-    const workspace = getWorkspaceByNameOrId(workspaceId)
-    if (!workspace) throw new Error('Workspace not found')
-
-    const { resolveAndFetchSkillMd, installGallerySkill, loadWorkspaceSkills } = await import('@craft-agent/shared/skills')
-
-    // Resolve the correct SKILL.md from GitHub using tree API if needed.
-    // This handles cases where skillId doesn't match the GitHub directory name
-    // (e.g., skillId "vercel-react-best-practices" → directory "react-best-practices").
-    const content = await resolveAndFetchSkillMd(topSource, skillId)
-    if (!content) {
-      throw new Error(`Could not fetch SKILL.md for ${skillId} from ${topSource}`)
-    }
-
-    // Install to workspace
-    await installGallerySkill(workspace.rootPath, skillId, content)
-    ipcLog.info(`Gallery: Installed skill ${skillId} from ${topSource}`)
-
-    // Broadcast skills changed so the UI updates
-    const skills = loadWorkspaceSkills(workspace.rootPath)
-    windowManager.broadcastToAll(IPC_CHANNELS.SKILLS_CHANGED, skills)
-  })
-
-  // ============================================================
   // Status Management (Workspace-scoped)
   // ============================================================
 

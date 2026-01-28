@@ -162,7 +162,7 @@ function pointsToPolylinePath(points: Point[]): string {
 }
 
 function renderEdgeLabel(edge: PositionedEdge, font: string): string {
-  // Use ELK-computed label position when available (layout-aware, avoids collisions).
+  // Use dagre-computed label position when available (layout-aware, avoids collisions).
   // Fall back to geometric midpoint of the edge polyline.
   const mid = edge.labelPosition ?? edgeMidpoint(edge.points)
   const label = edge.label!

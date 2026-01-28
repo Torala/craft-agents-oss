@@ -144,15 +144,10 @@ export const routes = {
         ? `sources/local/source/${sourceSlug}` as const
         : 'sources/local' as const,
 
-    /** Skills view (skills navigator). Pass 'gallery' for browse, a slug string for local skill, or an object for gallery skill detail. */
-    skills: (param?: string | { gallerySkillId: string; topSource: string }) => {
-      if (!param) return 'skills' as const
-      if (typeof param === 'object') {
-        // Gallery skill detail: skills/gallery-skill/{owner}/{repo}/{skillId}
-        return `skills/gallery-skill/${param.topSource}/${param.gallerySkillId}` as const
-      }
-      if (param === 'gallery') return 'skills/gallery' as const
-      return `skills/skill/${param}` as const
+    /** Skills view (skills navigator). Pass a slug string for a local skill detail view. */
+    skills: (skillSlug?: string) => {
+      if (!skillSlug) return 'skills' as const
+      return `skills/skill/${skillSlug}` as const
     },
 
     /** Settings view (settings navigator) */

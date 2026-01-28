@@ -1,9 +1,14 @@
 classDiagram
   Student --> Course : enrolls
 ---
-+---------+    +--------+     
-| Studentenrolls Course |     
-+---------+    +--------+     
-     |              >         
-     ----------------         
-                              
++---------+
+| Student |
++---------+
+     |
+  enrolls
+     >
++--------+
+| Course |
++--------+
+
+

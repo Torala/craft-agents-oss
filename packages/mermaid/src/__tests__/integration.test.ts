@@ -2,7 +2,7 @@
  * Integration tests for the full renderMermaid pipeline.
  *
  * These tests exercise parse → layout → render end-to-end.
- * They're async because elkjs layout runs asynchronously.
+ * They're async because layout functions return promises.
  *
  * Covers: original features, Batch 1 (new shapes), Batch 2 (edges, styles),
  * and Batch 3 (state diagrams).
@@ -377,7 +377,7 @@ describe('renderMermaid – source order', () => {
 
   it('renders subgraph-first diagrams with subgraph at top in TD layout', async () => {
     // When a subgraph is defined first in the source, it should influence
-    // ELK's layering to place it near the top in a TD (top-down) graph.
+    // dagre's layering to place it near the top in a TD (top-down) graph.
     const svg = await renderMermaid(`graph TD
       subgraph ci [CI Pipeline]
         A[Push Code] --> B{Tests Pass?}
@@ -392,6 +392,109 @@ describe('renderMermaid – source order', () => {
     expect(svg).toContain('>Push Code</text>')
     expect(svg).toContain('>Deploy</text>')
     expect(svg).toContain('>Production</text>')
+  })
+})
+
+// ============================================================================
+// Edge cases: self-loops, empty subgraphs, nesting depth
+// ============================================================================
+
+describe('renderMermaid – edge cases', () => {
+  it('renders a self-loop (source === target)', async () => {
+    const svg = await renderMermaid(`graph TD
+      A[Node] --> A`)
+
+    expect(svg).toContain('<svg')
+    expect(svg).toContain('>Node</text>')
+    // Should have at least one edge polyline
+    expect(svg).toContain('<polyline')
+  })
+
+  it('renders a self-loop with label', async () => {
+    const svg = await renderMermaid(`graph TD
+      A[Retry] -->|again| A`)
+
+    expect(svg).toContain('>Retry</text>')
+    expect(svg).toContain('>again</text>')
+  })
+
+  it('renders an empty subgraph without crashing', async () => {
+    const svg = await renderMermaid(`graph TD
+      subgraph Empty
+      end
+      A --> B`)
+
+    expect(svg).toContain('<svg')
+    expect(svg).toContain('>Empty</text>')
+    expect(svg).toContain('>A</text>')
+    expect(svg).toContain('>B</text>')
+  })
+
+  it('renders edges targeting an empty subgraph', async () => {
+    // Empty subgraph with edges pointing to it.
+    // Since the subgraph has no children, dagre treats it as a regular node
+    // and the edge redirects map it to itself.
+    const svg = await renderMermaid(`graph TD
+      subgraph S [Empty Group]
+      end
+      A --> S
+      S --> B`)
+
+    expect(svg).toContain('<svg')
+    expect(svg).toContain('>Empty Group</text>')
+    expect(svg).toContain('>A</text>')
+    expect(svg).toContain('>B</text>')
+  })
+
+  it('renders a single-node subgraph', async () => {
+    const svg = await renderMermaid(`graph TD
+      subgraph Single
+        A[Only Node]
+      end
+      B --> A`)
+
+    expect(svg).toContain('>Single</text>')
+    expect(svg).toContain('>Only Node</text>')
+    expect(svg).toContain('>B</text>')
+  })
+
+  it('renders 3-level nested subgraphs', async () => {
+    const svg = await renderMermaid(`graph TD
+      subgraph Level1 [Outer]
+        subgraph Level2 [Middle]
+          subgraph Level3 [Inner]
+            A[Deep Node] --> B[Also Deep]
+          end
+        end
+      end
+      C[Outside] --> A`)
+
+    expect(svg).toContain('>Outer</text>')
+    expect(svg).toContain('>Middle</text>')
+    expect(svg).toContain('>Inner</text>')
+    expect(svg).toContain('>Deep Node</text>')
+    expect(svg).toContain('>Also Deep</text>')
+    expect(svg).toContain('>Outside</text>')
+  })
+
+  it('renders 3-level nested composite states', async () => {
+    const svg = await renderMermaid(`stateDiagram-v2
+      [*] --> Active
+      state Active {
+        state Processing {
+          state Validating {
+            check --> verify
+          }
+        }
+      }
+      Active --> [*]`)
+
+    expect(svg).toContain('<svg')
+    expect(svg).toContain('>Active</text>')
+    expect(svg).toContain('>Processing</text>')
+    expect(svg).toContain('>Validating</text>')
+    expect(svg).toContain('>check</text>')
+    expect(svg).toContain('>verify</text>')
   })
 })
 

@@ -165,6 +165,59 @@ export function canvasToString(canvas: Canvas): string {
   return lines.join('\n')
 }
 
+// ============================================================================
+// Canvas vertical flip — used for BT (bottom-to-top) direction support.
+//
+// The ASCII renderer lays out graphs top-down (TD). For BT direction, we
+// flip the finished canvas vertically and remap directional characters so
+// arrows point upward and corners are mirrored correctly.
+// ============================================================================
+
+/**
+ * Characters that change meaning when the Y-axis is flipped.
+ * Symmetric characters (─, │, ├, ┤, ┼) are unchanged.
+ */
+const VERTICAL_FLIP_MAP: Record<string, string> = {
+  // Unicode arrows
+  '▲': '▼', '▼': '▲',
+  '◤': '◣', '◣': '◤',
+  '◥': '◢', '◢': '◥',
+  // ASCII arrows
+  '^': 'v', 'v': '^',
+  // Unicode corners
+  '┌': '└', '└': '┌',
+  '┐': '┘', '┘': '┐',
+  // Unicode junctions (T-pieces flip vertically)
+  '┬': '┴', '┴': '┬',
+  // Box-start junctions (exit points from node boxes)
+  '╵': '╷', '╷': '╵',
+}
+
+/**
+ * Flip the canvas vertically (mirror across the horizontal center).
+ * Reverses row order within each column and remaps directional characters
+ * (arrows, corners, junctions) so they point the correct way after flip.
+ *
+ * Used to transform a TD-rendered canvas into BT output.
+ * Mutates the canvas in place and returns it.
+ */
+export function flipCanvasVertically(canvas: Canvas): Canvas {
+  // Reverse each column array (Y-axis flip in column-major layout)
+  for (const col of canvas) {
+    col.reverse()
+  }
+
+  // Remap directional characters that change meaning after vertical flip
+  for (const col of canvas) {
+    for (let y = 0; y < col.length; y++) {
+      const flipped = VERTICAL_FLIP_MAP[col[y]!]
+      if (flipped) col[y] = flipped
+    }
+  }
+
+  return canvas
+}
+
 /** Draw text string onto the canvas starting at the given coordinate. */
 export function drawText(canvas: Canvas, start: DrawingCoord, text: string): void {
   increaseSize(canvas, start.x + text.length, start.y)

@@ -26,8 +26,6 @@ import {
 } from '@/contexts/NavigationContext'
 import { AppSettingsPage, AppearanceSettingsPage, WorkspaceSettingsPage, PermissionsSettingsPage, LabelsSettingsPage, PreferencesPage, ShortcutsPage, SourceInfoPage, ChatPage } from '@/pages'
 import SkillInfoPage from '@/pages/SkillInfoPage'
-import SkillGalleryPage from '@/pages/SkillGalleryPage'
-import GallerySkillDetailPage from '@/pages/GallerySkillDetailPage'
 
 export interface MainContentPanelProps {
   /** Whether the app is in focused mode (single chat, no sidebar) */
@@ -121,26 +119,8 @@ export function MainContentPanel({
     )
   }
 
-  // Skills navigator - show gallery, skill info, or empty state
+  // Skills navigator - show skill info or empty state
   if (isSkillsNavigation(navState)) {
-    if (navState.details?.type === 'gallery') {
-      return wrapWithStoplight(
-        <Panel variant="grow" className={className}>
-          <SkillGalleryPage workspaceId={activeWorkspaceId || ''} />
-        </Panel>
-      )
-    }
-    if (navState.details?.type === 'gallery-skill') {
-      return wrapWithStoplight(
-        <Panel variant="grow" className={className}>
-          <GallerySkillDetailPage
-            skillId={navState.details.skillId}
-            topSource={navState.details.topSource}
-            workspaceId={activeWorkspaceId || ''}
-          />
-        </Panel>
-      )
-    }
     if (navState.details?.type === 'skill') {
       return wrapWithStoplight(
         <Panel variant="grow" className={className}>
