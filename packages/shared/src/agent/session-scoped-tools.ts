@@ -1757,6 +1757,17 @@ After successful authentication, the tokens are stored and the source is marked 
           service = inferMicrosoftServiceFromUrl(api?.baseUrl);
         }
 
+        // Require explicit service configuration if it can't be inferred
+        if (!service) {
+          return {
+            content: [{
+              type: 'text' as const,
+              text: `Cannot determine Microsoft service for source '${args.sourceSlug}'. Set microsoftService ('outlook', 'microsoft-calendar', 'onedrive', 'teams', or 'sharepoint') in api config.`,
+            }],
+            isError: true,
+          };
+        }
+
         // Get session callbacks
         const callbacks = getSessionScopedToolCallbacks(sessionId);
 
