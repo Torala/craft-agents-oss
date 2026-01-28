@@ -1451,14 +1451,14 @@ export class CraftAgent {
           SubagentStart: [{
             hooks: [async (input, _hookToolUseID) => {
               const typedInput = input as { agent_id?: string; agent_type?: string };
-              console.log(`[CraftAgent] SubagentStart: agent_id=${typedInput.agent_id}, type=${typedInput.agent_type}`);
+              debug(`[CraftAgent] SubagentStart: agent_id=${typedInput.agent_id}, type=${typedInput.agent_type}`);
               return { continue: true };
             }],
           }],
           SubagentStop: [{
             hooks: [async (input, _toolUseID) => {
               const typedInput = input as { agent_id?: string };
-              console.log(`[CraftAgent] SubagentStop: agent_id=${typedInput.agent_id}`);
+              debug(`[CraftAgent] SubagentStop: agent_id=${typedInput.agent_id}`);
               return { continue: true };
             }],
           }],
@@ -2555,7 +2555,7 @@ Please continue the conversation naturally from where we left off.
             type: 'tool_use' as const,
             id: toolBlock.id,
             name: toolBlock.name,
-            input: toolBlock.input ?? {},
+            input: (toolBlock.input ?? {}) as Record<string, unknown>,
           }];
           const streamEvents = extractToolStarts(
             streamBlocks,

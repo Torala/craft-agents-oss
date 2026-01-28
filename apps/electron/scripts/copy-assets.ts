@@ -51,16 +51,4 @@ if (existsSync('resources/config-defaults.json')) {
   cpSync('resources/config-defaults.json', 'dist/assets/config-defaults.json');
 }
 
-// ============================================================
-// 3. PDF.js worker for react-pdf
-// ============================================================
-const pdfjsWorkerSrc = '../../node_modules/pdfjs-dist/build/pdf.worker.min.mjs';
-const pdfjsWorkerDest = 'dist/renderer/pdf.worker.min.mjs';
-
-if (existsSync(pdfjsWorkerSrc)) {
-  cpSync(pdfjsWorkerSrc, pdfjsWorkerDest);
-  console.log('✓ Copied pdf.worker.min.mjs');
-} else {
-  console.error('✗ Failed to copy pdf.worker.min.mjs: source file not found');
-  process.exit(1);
-}
+// Note: PDF.js worker is handled by Vite via ?url import in PDFPreviewOverlay.tsx
