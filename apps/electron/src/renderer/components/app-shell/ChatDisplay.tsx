@@ -464,10 +464,11 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
     }
   }, [session?.id, isFocused, isSearchActive])
 
-  // Reset match index when session or search query changes
+  // Reset match state when session or search query changes
   useEffect(() => {
     prevSessionIdForScrollRef.current = session?.id ?? null
     setCurrentMatchIndex(0)
+    setActualMatchIds(new Set()) // Clear stale match IDs to prevent incorrect counts
   }, [session?.id, searchQuery, isSearchActive])
 
   // Helper to count occurrences of a substring
@@ -544,7 +545,9 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
 
   // Filter to only valid matches that exist in DOM (actualMatchIds is updated after highlighting)
   const validMatches = useMemo(() => {
-    if (actualMatchIds.size === 0) return matchingOccurrences // Before highlighting, show all
+    // Wait for highlighting to complete before showing count
+    // This prevents flashing high numbers then dropping (e.g., 126 -> 1)
+    if (actualMatchIds.size === 0) return []
     const startTime = performance.now()
     const filtered = matchingOccurrences.filter(m => actualMatchIds.has(m.matchId))
     console.log('[ChatDisplay Perf] validMatches filter:', (performance.now() - startTime).toFixed(2), 'ms,', matchingOccurrences.length, '->', filtered.length)
