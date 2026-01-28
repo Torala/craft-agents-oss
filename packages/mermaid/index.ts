@@ -1,7 +1,7 @@
 /**
- * Generates samples.html showcasing all @craft-agent/mermaid rendering capabilities.
+ * Generates index.html showcasing all @craft-agent/mermaid rendering capabilities.
  *
- * Usage: bun run packages/mermaid/samples.ts
+ * Usage: bun run packages/mermaid/index.ts
  *
  * This file doubles as a **visual test suite** — every supported feature,
  * shape, edge type, block construct, and theme variant is exercised by at
@@ -33,6 +33,11 @@ function escapeHtml(text: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
+}
+
+/** Convert markdown-style backtick spans to <code> tags in description text. */
+function formatDescription(text: string): string {
+  return text.replace(/`([^`]+)`/g, '<code>$1</code>')
 }
 
 /** Human-readable labels for theme keys */
@@ -123,14 +128,36 @@ async function generateHtml(): Promise<string> {
   }).join('\n')
 
   // Step 3b: Build theme selector pills (build-time so we include swatches)
-  const themePills = [
-    '<button class="theme-pill active" data-theme=""><span class="theme-swatch" style="background:#FFFFFF;box-shadow:inset 0 0 0 1px rgba(0,0,0,0.1)"></span>Default</button>',
-    ...Object.entries(THEMES).map(([key, colors]) => {
-      const isDark = parseInt(colors.bg.replace('#', '').slice(0, 2), 16) < 0x80
-      const shadow = isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.1)'
-      const label = THEME_LABELS[key] ?? key
-      return `<button class="theme-pill" data-theme="${key}"><span class="theme-swatch" style="background:${colors.bg};box-shadow:inset 0 0 0 1px ${shadow}"></span>${escapeHtml(label)}</button>`
-    }),
+  // Only show Default, Dracula, and Solarized inline; rest go in "More" dropdown
+  const VISIBLE_THEMES = new Set(['dracula', 'solarized-light'])
+
+  function buildThemePill(key: string, colors: { bg: string; fg: string }, active = false): string {
+    const isDark = parseInt(colors.bg.replace('#', '').slice(0, 2), 16) < 0x80
+    const shadow = isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.1)'
+    const label = THEME_LABELS[key] ?? key
+    const activeClass = active ? ' active' : ''
+    return `<button class="theme-pill shadow-minimal${activeClass}" data-theme="${key}"><span class="theme-swatch" style="background:${colors.bg};box-shadow:inset 0 0 0 1px ${shadow}"></span>${escapeHtml(label)}</button>`
+  }
+
+  const themeEntries = Object.entries(THEMES)
+  const visiblePills = [
+    '<button class="theme-pill shadow-minimal active" data-theme=""><span class="theme-swatch" style="background:#FFFFFF;box-shadow:inset 0 0 0 1px rgba(0,0,0,0.1)"></span>Default</button>',
+    ...themeEntries
+      .filter(([key]) => VISIBLE_THEMES.has(key))
+      .map(([key, colors]) => buildThemePill(key, colors)),
+  ]
+  const overflowPills = themeEntries
+    .filter(([key]) => !VISIBLE_THEMES.has(key))
+    .map(([key, colors]) => buildThemePill(key, colors))
+
+  const themePillsHtml = [
+    ...visiblePills,
+    `<div class="theme-more-wrapper">
+      <button class="theme-pill shadow-minimal" id="theme-more-btn">${overflowPills.length} More Themes</button>
+      <div class="theme-more-dropdown shadow-minimal" id="theme-more-dropdown">
+        ${overflowPills.join('\n        ')}
+      </div>
+    </div>`,
   ].join('\n        ')
 
   // Step 4: Build sample card HTML shells (SVG + ASCII are empty, filled client-side)
@@ -140,23 +167,20 @@ async function generateHtml(): Promise<string> {
     return `
     <section class="sample" id="sample-${i}">
       <div class="sample-header">
-        <h2>${i + 1}. ${escapeHtml(sample.title)}</h2>
-        <p class="description">${escapeHtml(sample.description)}</p>
+        <h2>${escapeHtml(sample.title)}</h2>
+        <p class="description">${formatDescription(sample.description)}</p>
       </div>
       <div class="sample-content">
         <div class="source-panel">
-          <h3>Mermaid Source</h3>
           <pre><code>${escapeHtml(sample.source.trim())}</code></pre>
           ${sample.options ? `<div class="options"><strong>Options:</strong> <code>${escapeHtml(JSON.stringify(sample.options))}</code></div>` : ''}
         </div>
         <div class="svg-panel" id="svg-panel-${i}" data-sample-bg="${bg}">
-          <h3>Rendered SVG</h3>
           <div class="svg-container" id="svg-${i}">
             <div class="loading-spinner"></div>
           </div>
         </div>
         <div class="ascii-panel" id="ascii-panel-${i}">
-          <h3>ASCII Output</h3>
           <pre class="ascii-output"><code id="ascii-${i}">Rendering\u2026</code></pre>
         </div>
       </div>
@@ -173,6 +197,9 @@ async function generateHtml(): Promise<string> {
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>@craft-agent/mermaid — Visual Test Suite</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <style>
     /* -- Reset & base -- */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -189,24 +216,53 @@ async function generateHtml(): Promise<string> {
       --t-bg: #FFFFFF;
       --t-fg: #27272A;
       --t-accent: #3b82f6;
+      --foreground-rgb: 39, 39, 42;
+      --accent-rgb: 59, 130, 246;
+      --shadow-border-opacity: 0.08;
+      --shadow-blur-opacity: 0.06;
 
-      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      font-family: 'Geist', system-ui, -apple-system, sans-serif;
       background: color-mix(in srgb, var(--t-fg) 3%, var(--t-bg));
       color: var(--t-fg);
       line-height: 1.6;
-      padding: 2rem;
-      padding-top: 3.5rem; /* space for sticky theme bar */
-      max-width: 1800px;
-      margin: 0 auto;
+      margin: 0;
       transition: background 0.2s, color 0.2s;
+    }
+    .content-wrapper {
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: 2rem;
+      padding-top: 0;
+    }
+
+    /* -- Scroll fade gradients (GPU accelerated) -- */
+    body::before,
+    body::after {
+      content: '';
+      position: fixed;
+      left: 0;
+      right: 0;
+      height: 64px;
+      pointer-events: none;
+      z-index: 1000;
+      will-change: transform;
+    }
+    body::before {
+      top: 0;
+      background: linear-gradient(to bottom, color-mix(in srgb, var(--t-fg) 3%, var(--t-bg)) 0%, transparent 100%);
+    }
+    body::after {
+      bottom: 0;
+      background: linear-gradient(to top, color-mix(in srgb, var(--t-fg) 3%, var(--t-bg)) 0%, transparent 100%);
     }
 
     /* -- Header -- */
     .page-header {
       text-align: center;
       margin-bottom: 2rem;
+      padding-top: 48px;
       padding-bottom: 2rem;
-      border-bottom: 1px solid color-mix(in srgb, var(--t-fg) 12%, var(--t-bg));
+      background: transparent;
     }
     .page-header h1 {
       font-size: 2rem;
@@ -243,20 +299,17 @@ async function generateHtml(): Promise<string> {
       padding: 0.25rem 0.75rem;
     }
 
-    /* -- Theme selector bar -- */
+    /* -- Theme selector bar (full-width, sits outside .content-wrapper) -- */
     .theme-bar {
       position: sticky;
       top: 0;
-      z-index: 999;
-      background: var(--t-bg);
-      border-bottom: 1px solid color-mix(in srgb, var(--t-fg) 10%, var(--t-bg));
-      padding: 0.5rem 1.5rem;
-      margin: -3.5rem -2rem 2rem;
+      z-index: 1001;
+      background: transparent;
+      padding: 0.5rem 2rem;
       display: flex;
       align-items: center;
       gap: 0.75rem;
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
+      overflow: visible;
     }
     .theme-label {
       font-size: 0.7rem;
@@ -270,69 +323,129 @@ async function generateHtml(): Promise<string> {
       display: flex;
       gap: 0.3rem;
       overflow-x: auto;
+      overflow-y: visible;
       scrollbar-width: none;
       -ms-overflow-style: none;
+      padding: 4px;
+      margin: -4px;
+      margin-left: auto;
     }
     .theme-pills::-webkit-scrollbar { display: none; }
     .theme-pill {
       display: flex;
       align-items: center;
-      gap: 0.3rem;
-      padding: 0.2rem 0.55rem;
-      border: 1.5px solid color-mix(in srgb, var(--t-fg) 10%, var(--t-bg));
-      border-radius: 999px;
-      background: transparent;
-      color: color-mix(in srgb, var(--t-fg) 50%, var(--t-bg));
-      font-size: 0.65rem;
+      height: 30px;
+      gap: 6px;
+      padding: 0 12px;
+      border: none;
+      border-radius: 8px;
+      background: color-mix(in srgb, var(--t-bg) 97%, var(--t-fg));
+      color: color-mix(in srgb, var(--t-fg) 80%, var(--t-bg));
+      font-size: 12px;
       font-weight: 500;
       font-family: inherit;
       cursor: pointer;
       white-space: nowrap;
-      transition: border-color 0.15s, color 0.15s, background 0.15s;
+      transition: color 0.15s, background 0.15s, box-shadow 0.2s, transform 0.1s;
     }
     .theme-pill:hover {
-      border-color: color-mix(in srgb, var(--t-fg) 25%, var(--t-bg));
       color: var(--t-fg);
+      background: color-mix(in srgb, var(--t-bg) 92%, var(--t-fg));
     }
     .theme-pill.active {
-      border-color: var(--t-accent);
       color: var(--t-fg);
-      background: color-mix(in srgb, var(--t-accent) 8%, var(--t-bg));
+      background: var(--t-bg);
       font-weight: 600;
+    }
+    .theme-pill:active {
+      transform: translateY(0.5px);
     }
     .theme-swatch {
       display: inline-block;
-      width: 10px;
-      height: 10px;
+      width: 14px;
+      height: 14px;
       border-radius: 50%;
       flex-shrink: 0;
     }
 
-    /* -- Contents button in theme bar -- */
+    /* -- "More" dropdown for overflow themes -- */
+    .theme-more-wrapper {
+      position: relative;
+    }
+    .theme-more-dropdown {
+      display: none;
+      position: absolute;
+      top: calc(100% + 6px);
+      right: 0;
+      background: var(--t-bg);
+      border-radius: 12px;
+      padding: 6px;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 160px;
+      z-index: 1002;
+    }
+    .theme-more-dropdown.open {
+      display: flex;
+    }
+    .theme-more-dropdown .theme-pill {
+      width: 100%;
+      justify-content: flex-start;
+    }
+
+    /* -- Contents button in theme bar (matches .theme-pill styling) -- */
     .contents-btn {
-      padding: 0.2rem 0.6rem;
-      border: 1.5px solid color-mix(in srgb, var(--t-fg) 15%, var(--t-bg));
-      background: transparent;
-      color: color-mix(in srgb, var(--t-fg) 60%, var(--t-bg));
-      font-size: 0.7rem;
-      font-weight: 600;
+      display: flex;
+      align-items: center;
+      height: 30px;
+      gap: 6px;
+      padding: 0 12px;
+      border: none;
+      border-radius: 8px;
+      background: color-mix(in srgb, var(--t-bg) 97%, var(--t-fg));
+      color: color-mix(in srgb, var(--t-fg) 80%, var(--t-bg));
+      font-size: 12px;
+      font-weight: 500;
       font-family: inherit;
       cursor: pointer;
       white-space: nowrap;
-      transition: border-color 0.15s, color 0.15s;
+      transition: color 0.15s, background 0.15s, box-shadow 0.2s, transform 0.1s;
     }
     .contents-btn:hover {
-      border-color: color-mix(in srgb, var(--t-fg) 30%, var(--t-bg));
       color: var(--t-fg);
+      background: color-mix(in srgb, var(--t-bg) 92%, var(--t-fg));
     }
     .contents-btn.active {
-      border-color: var(--t-accent);
       color: var(--t-fg);
+      background: var(--t-bg);
     }
-    .bar-separator {
-      width: 1px;
-      height: 16px;
-      background: color-mix(in srgb, var(--t-fg) 12%, var(--t-bg));
+    .contents-btn:active {
+      transform: translateY(0.5px);
+    }
+    .contents-btn svg {
+      width: 14px;
+      height: 14px;
+      flex-shrink: 0;
+    }
+    /* -- Craft shadow + radius utilities -- */
+    .rounded-6px { border-radius: 6px; }
+    .shadow-minimal {
+      box-shadow:
+        rgba(0, 0, 0, 0) 0px 0px 0px 0px,
+        rgba(0, 0, 0, 0) 0px 0px 0px 0px,
+        rgba(var(--foreground-rgb), 0.06) 0px 0px 0px 1px,
+        rgba(0, 0, 0, var(--shadow-blur-opacity)) 0px 1px 1px -0.5px,
+        rgba(0, 0, 0, var(--shadow-blur-opacity)) 0px 3px 3px -1.5px;
+    }
+    .shadow-tinted {
+      --shadow-color: 0, 0, 0;
+      box-shadow:
+        rgba(var(--shadow-color), 0) 0px 0px 0px 0px,
+        rgba(var(--shadow-color), 0) 0px 0px 0px 0px,
+        rgba(var(--shadow-color), calc(var(--shadow-border-opacity) * 1.5)) 0px 0px 0px 1px,
+        rgba(var(--shadow-color), var(--shadow-border-opacity)) 0px 1px 1px -0.5px,
+        rgba(var(--shadow-color), var(--shadow-blur-opacity)) 0px 3px 3px -1.5px,
+        rgba(var(--shadow-color), calc(var(--shadow-blur-opacity) * 0.67)) 0px 6px 6px -3px;
     }
 
     /* -- Mega menu dropdown -- */
@@ -388,23 +501,32 @@ async function generateHtml(): Promise<string> {
     /* -- Sample card -- */
     .sample {
       background: var(--t-bg);
-      border: 1px solid color-mix(in srgb, var(--t-fg) 12%, var(--t-bg));
       margin-bottom: 2rem;
       overflow: hidden;
     }
     .sample-header {
       padding: 1.25rem 1.5rem;
+      max-width: 48rem;
       border-bottom: 1px solid color-mix(in srgb, var(--t-fg) 5%, var(--t-bg));
     }
     .sample-header h2 {
-      font-size: 1.15rem;
-      font-weight: 600;
+      font-size: 1.5rem;
+      font-weight: 500;
       color: var(--t-fg);
     }
     .description {
       color: color-mix(in srgb, var(--t-fg) 50%, var(--t-bg));
-      font-size: 0.9rem;
-      margin-top: 0.25rem;
+      font-size: 1rem;
+      font-weight: 400;
+      margin-top: 0.1rem;
+    }
+    .description code {
+      font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+      font-size: 0.875em;
+      color: color-mix(in srgb, var(--t-fg) 85%, var(--t-bg));
+      background: color-mix(in srgb, var(--t-fg) 6%, var(--t-bg));
+      padding: 0.15rem 0.4rem;
+      border-radius: 3px;
     }
 
     .sample-content {
@@ -413,7 +535,7 @@ async function generateHtml(): Promise<string> {
         minmax(200px, 1fr)
         minmax(250px, 2fr)
         minmax(250px, 2fr);
-      min-height: 200px;
+      min-height: 420px;
     }
     @media (max-width: 900px) {
       .sample-content { grid-template-columns: 1fr; }
@@ -424,6 +546,8 @@ async function generateHtml(): Promise<string> {
     .source-panel {
       padding: 1.25rem 1.5rem;
       border-right: 1px solid color-mix(in srgb, var(--t-fg) 5%, var(--t-bg));
+      min-width: 0;      /* grid child: allow shrinking below content width */
+      overflow-y: auto;
     }
     .source-panel h3 {
       font-size: 0.8rem;
@@ -461,6 +585,7 @@ async function generateHtml(): Promise<string> {
       padding: 1.25rem 1.5rem;
       display: flex;
       flex-direction: column;
+      min-width: 0;      /* grid child: allow shrinking below content width */
       /* Background set dynamically: matches the SVG --bg in default mode,
          or the global theme bg when a theme is active. */
     }
@@ -477,10 +602,11 @@ async function generateHtml(): Promise<string> {
       display: flex;
       align-items: center;
       justify-content: center;
-      overflow: auto;
+      min-height: 0;     /* flex child: allow shrinking to fit */
     }
     .svg-container svg {
       max-width: 100%;
+      max-height: 100%;  /* scale down to fit both axes */
       height: auto;
     }
 
@@ -490,6 +616,9 @@ async function generateHtml(): Promise<string> {
       border-left: 1px solid color-mix(in srgb, var(--t-fg) 5%, var(--t-bg));
       display: flex;
       flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-width: 0;      /* grid child: allow shrinking below content width */
     }
     .ascii-panel h3 {
       font-size: 0.8rem;
@@ -503,9 +632,11 @@ async function generateHtml(): Promise<string> {
       padding: 1rem;
       font-size: 0.7rem;
       line-height: 1.3;
-      overflow-x: auto;
+      overflow-x: auto;   /* horizontal scroll only */
+      overflow-y: hidden;  /* scale to height, no vertical scroll */
       white-space: pre;
       flex: 1;
+      max-width: 100%;
       font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
     }
 
@@ -545,11 +676,9 @@ async function generateHtml(): Promise<string> {
 <body>
   <!-- Navigation + theme bar -->
   <div class="theme-bar" id="theme-bar">
-    <button class="contents-btn" id="contents-btn">Contents</button>
-    <span class="bar-separator"></span>
-    <span class="theme-label">Theme</span>
+    <button class="contents-btn shadow-minimal" id="contents-btn"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="3" y1="4" x2="13" y2="4"/><line x1="3" y1="8" x2="13" y2="8"/><line x1="3" y1="12" x2="10" y2="12"/></svg>Contents</button>
     <div class="theme-pills" id="theme-pills">
-      ${themePills}
+      ${themePillsHtml}
     </div>
     <div class="mega-menu" id="mega-menu">
       <div class="toc-grid">
@@ -558,6 +687,7 @@ async function generateHtml(): Promise<string> {
     </div>
   </div>
 
+  <div class="content-wrapper">
   <header class="page-header">
     <h1>@craft-agent/mermaid — Visual Test Suite</h1>
     <p>Mermaid diagram renderer — SVG with CSS custom property theming + ASCII/Unicode text output</p>
@@ -592,6 +722,40 @@ ${bundleJs}
   // so we can restore per-sample colors when switching back to "Default".
   var originalSvgStyles = [];
 
+  function hexToRgb(hex) {
+    if (!hex || typeof hex !== 'string') return null;
+    var value = hex.trim();
+    if (value[0] === '#') value = value.slice(1);
+    if (value.length === 3) {
+      value = value[0] + value[0] + value[1] + value[1] + value[2] + value[2];
+    }
+    if (value.length !== 6) return null;
+    var intValue = parseInt(value, 16);
+    if (Number.isNaN(intValue)) return null;
+    return {
+      r: (intValue >> 16) & 255,
+      g: (intValue >> 8) & 255,
+      b: intValue & 255,
+    };
+  }
+
+  function setShadowVars(theme) {
+    var body = document.body;
+    var fg = theme ? theme.fg : '#27272A';
+    var bg = theme ? theme.bg : '#FFFFFF';
+    var accent = theme ? (theme.accent || '#3b82f6') : '#3b82f6';
+    var fgRgb = hexToRgb(fg) || { r: 39, g: 39, b: 42 };
+    var bgRgb = hexToRgb(bg) || { r: 255, g: 255, b: 255 };
+    var accentRgb = hexToRgb(accent) || { r: 59, g: 130, b: 246 };
+    var brightness = (bgRgb.r * 299 + bgRgb.g * 587 + bgRgb.b * 114) / 1000;
+    var darkMode = brightness < 140;
+
+    body.style.setProperty('--foreground-rgb', fgRgb.r + ', ' + fgRgb.g + ', ' + fgRgb.b);
+    body.style.setProperty('--accent-rgb', accentRgb.r + ', ' + accentRgb.g + ', ' + accentRgb.b);
+    body.style.setProperty('--shadow-border-opacity', darkMode ? '0.15' : '0.08');
+    body.style.setProperty('--shadow-blur-opacity', darkMode ? '0.12' : '0.06');
+  }
+
   // ----------------------------------------------------------------
   // Apply a named theme (or '' for Default) to the entire page.
   //
@@ -613,6 +777,7 @@ ${bundleJs}
       body.style.setProperty('--t-fg', '#27272A');
       body.style.setProperty('--t-accent', '#3b82f6');
     }
+    setShadowVars(theme);
 
     // 2. Update all rendered SVG elements' CSS variables
     var svgs = document.querySelectorAll('.svg-container svg');
@@ -654,7 +819,9 @@ ${bundleJs}
     // 4. Update active pill
     var pills = document.querySelectorAll('.theme-pill');
     for (var j = 0; j < pills.length; j++) {
-      pills[j].classList.toggle('active', pills[j].getAttribute('data-theme') === themeKey);
+      var isActive = pills[j].getAttribute('data-theme') === themeKey;
+      pills[j].classList.toggle('active', isActive);
+      pills[j].classList.toggle('shadow-tinted', isActive);
     }
 
     // 5. Persist selection
@@ -669,8 +836,42 @@ ${bundleJs}
   document.getElementById('theme-pills').addEventListener('click', function(e) {
     var pill = e.target.closest('.theme-pill');
     if (!pill) return;
+    // Ignore clicks on the "More" toggle button itself
+    if (pill.id === 'theme-more-btn') return;
     applyTheme(pill.getAttribute('data-theme') || '');
+    // Close dropdown if a theme was picked from it
+    var dropdown = document.getElementById('theme-more-dropdown');
+    if (dropdown && dropdown.classList.contains('open')) {
+      dropdown.classList.remove('open');
+    }
   });
+
+  // -- "More" themes dropdown --
+  var moreBtn = document.getElementById('theme-more-btn');
+  var moreDropdown = document.getElementById('theme-more-dropdown');
+
+  if (moreBtn && moreDropdown) {
+    // Toggle dropdown on click
+    moreBtn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      moreDropdown.classList.toggle('open');
+    });
+
+    // Close on outside click
+    document.addEventListener('click', function(e) {
+      if (!moreDropdown.classList.contains('open')) return;
+      if (!e.target.closest('.theme-more-wrapper')) {
+        moreDropdown.classList.remove('open');
+      }
+    });
+
+    // Close on Escape
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape' && moreDropdown.classList.contains('open')) {
+        moreDropdown.classList.remove('open');
+      }
+    });
+  }
 
   // -- Mega menu (Contents dropdown) --
   var contentsBtn = document.getElementById('contents-btn');
@@ -680,6 +881,7 @@ ${bundleJs}
     e.stopPropagation();
     var isOpen = megaMenu.classList.toggle('open');
     contentsBtn.classList.toggle('active', isOpen);
+    contentsBtn.classList.toggle('shadow-tinted', isOpen);
   });
 
   // Close on clicking a ToC link (smooth scroll to target)
@@ -689,6 +891,7 @@ ${bundleJs}
     e.preventDefault();
     megaMenu.classList.remove('open');
     contentsBtn.classList.remove('active');
+    contentsBtn.classList.remove('shadow-tinted');
     var target = document.querySelector(link.getAttribute('href'));
     if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
@@ -699,6 +902,7 @@ ${bundleJs}
     if (!e.target.closest('.mega-menu') && !e.target.closest('.contents-btn')) {
       megaMenu.classList.remove('open');
       contentsBtn.classList.remove('active');
+      contentsBtn.classList.remove('shadow-tinted');
     }
   });
 
@@ -707,6 +911,7 @@ ${bundleJs}
     if (e.key === 'Escape' && megaMenu.classList.contains('open')) {
       megaMenu.classList.remove('open');
       contentsBtn.classList.remove('active');
+      contentsBtn.classList.remove('shadow-tinted');
     }
   });
 
@@ -717,11 +922,16 @@ ${bundleJs}
     document.body.style.setProperty('--t-bg', THEMES[savedTheme].bg);
     document.body.style.setProperty('--t-fg', THEMES[savedTheme].fg);
     document.body.style.setProperty('--t-accent', THEMES[savedTheme].accent || '#3b82f6');
+    setShadowVars(THEMES[savedTheme]);
     // Mark the correct pill as active
     var pills = document.querySelectorAll('.theme-pill');
     for (var j = 0; j < pills.length; j++) {
-      pills[j].classList.toggle('active', pills[j].getAttribute('data-theme') === savedTheme);
+      var isActive = pills[j].getAttribute('data-theme') === savedTheme;
+      pills[j].classList.toggle('active', isActive);
+      pills[j].classList.toggle('shadow-tinted', isActive);
     }
+  } else {
+    setShadowVars(null);
   }
 
   // ============================================================================
@@ -790,6 +1000,7 @@ ${bundleJs}
     return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
   </script>
+  </div><!-- .content-wrapper -->
 </body>
 </html>`
 }
@@ -799,6 +1010,6 @@ ${bundleJs}
 // ============================================================================
 
 const html = await generateHtml()
-const outPath = new URL('./samples.html', import.meta.url).pathname
+const outPath = new URL('./index.html', import.meta.url).pathname
 await Bun.write(outPath, html)
 console.log(`Written to ${outPath} (${(html.length / 1024).toFixed(1)} KB)`)

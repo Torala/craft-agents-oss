@@ -28,16 +28,18 @@ import { FONT_SIZES, FONT_WEIGHTS, STROKE_WIDTHS, ARROW_HEAD, estimateTextWidth,
  * @param colors - DiagramColors with bg/fg and optional enrichment variables.
  *                 These are set as CSS custom properties on the <svg> tag.
  *                 All element colors reference derived --_xxx variables.
+ * @param transparent - If true, renders with transparent background.
  */
 export function renderSvg(
   graph: PositionedGraph,
   colors: DiagramColors,
-  font: string = 'Inter'
+  font: string = 'Inter',
+  transparent: boolean = false
 ): string {
   const parts: string[] = []
 
   // SVG root with CSS variables + style block + defs
-  parts.push(svgOpenTag(graph.width, graph.height, colors))
+  parts.push(svgOpenTag(graph.width, graph.height, colors, transparent))
   parts.push(buildStyleBlock(font, false))
   parts.push('<defs>')
   parts.push(arrowMarkerDefs())

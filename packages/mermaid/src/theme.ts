@@ -275,11 +275,14 @@ export function buildStyleBlock(font: string, hasMonoFont: boolean): string {
  * Build the SVG opening tag with CSS variables set as inline styles.
  * Only includes optional variables that are actually provided — unset ones
  * will fall back to the color-mix() derivations in the <style> block.
+ *
+ * @param transparent - If true, omits the background style for transparent SVGs
  */
 export function svgOpenTag(
   width: number,
   height: number,
   colors: DiagramColors,
+  transparent?: boolean,
 ): string {
   // Build the style string with only the provided color variables
   const vars = [
@@ -292,8 +295,10 @@ export function svgOpenTag(
     colors.border  ? `--border:${colors.border}` : '',
   ].filter(Boolean).join(';')
 
+  const bgStyle = transparent ? '' : ';background:var(--bg)'
+
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" ` +
-    `width="${width}" height="${height}" style="${vars};background:var(--bg)">`
+    `width="${width}" height="${height}" style="${vars}${bgStyle}">`
   )
 }

@@ -11,7 +11,7 @@
   },
   "scripts": {
     "test": "bun test src/__tests__/",
-    "samples": "bun run samples.ts",
+    "samples": "bun run index.ts",
     "dev": "bun run dev.ts",
     "bench": "bun run bench.ts"
   },
