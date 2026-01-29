@@ -38,13 +38,15 @@ import { AcceptPlanDropdown } from './AcceptPlanDropdown'
 
 /**
  * Simple markdown stripping for preview text.
- * Removes common markdown syntax to show plain text preview.
+ * Removes markdown syntax to show plain text preview.
+ * Code block content is preserved as plain text.
  */
 function stripMarkdown(text: string): string {
   return text
-    // Remove code blocks
-    .replace(/```[\s\S]*?```/g, '')
-    .replace(/`[^`]*`/g, '')
+    // Extract content from fenced code blocks (remove ``` and optional language)
+    .replace(/```(?:\w+)?\n?([\s\S]*?)```/g, '$1')
+    // Extract content from inline code
+    .replace(/`([^`]+)`/g, '$1')
     // Remove headers
     .replace(/^#{1,6}\s+/gm, '')
     // Remove bold/italic
@@ -112,7 +114,8 @@ function computeEditWriteDiffStats(
  * Global size configuration for TurnCard components.
  * Adjust these values to scale the entire component uniformly.
  */
-const SIZE_CONFIG = {
+/** Shared size configuration for activity UI - exported for reuse in inline execution */
+export const SIZE_CONFIG = {
   /** Base font size class for all text */
   fontSize: 'text-[13px]',
   /** Icon size class (width and height) */
@@ -587,11 +590,11 @@ function getPreviewText(
 // ============================================================================
 
 /**
- * Status icon for an activity.
+ * Status icon for an activity - exported for reuse in inline execution.
  * Supports custom icons from skill/source metadata when completed.
  * Edit/Write tools show tool-specific icons; others show checkmark or custom icon.
  */
-function ActivityStatusIcon({
+export function ActivityStatusIcon({
   status,
   toolName,
   customIcon

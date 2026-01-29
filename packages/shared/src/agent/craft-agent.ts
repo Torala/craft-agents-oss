@@ -121,6 +121,8 @@ export interface CraftAgentConfig {
     enabled: boolean;          // Whether debug mode is active
     logFilePath?: string;      // Path to the log file for querying
   };
+  /** System prompt preset for mini agents ('default' | 'mini' or custom string) */
+  systemPromptPreset?: 'default' | 'mini' | string;
 }
 
 // Permission request tracking
@@ -805,33 +807,47 @@ export class CraftAgent {
         return;
       }
 
+      // Detect mini agent mode early (needed for tool/MCP restrictions)
+      const isMiniAgent = this.config.systemPromptPreset === 'mini';
+
       // Block SDK tools that require UI we don't have:
       // - EnterPlanMode/ExitPlanMode: We use safe mode instead (user-controlled via UI)
       // - AskUserQuestion: Requires interactive UI to show question options to user
+      // Note: Mini agents use a minimal tool list directly, so no additional blocking needed
       const disallowedTools: string[] = ['EnterPlanMode', 'ExitPlanMode', 'AskUserQuestion'];
 
-      // Build MCP servers config - always use HTTP (SDK handles sources efficiently)
-      // Filter out stdio servers if local MCP is disabled
+      // Build MCP servers config
+      // Mini agents: only session tools (config_validate) to minimize token usage
+      // Regular agents: full set including preferences, docs, and user sources
       const sourceMcpResult = this.getSourceMcpServersFiltered();
 
       debug('[chat] sourceMcpServers:', sourceMcpResult.servers);
       debug('[chat] sourceApiServers:', this.sourceApiServers);
 
-      const mcpServers: Options['mcpServers'] = {
-        preferences: getPreferencesServer(false),
-        // Session-scoped tools (SubmitPlan, source_test, etc.)
-        session: getSessionScopedTools(sessionId, this.workspaceRootPath),
-        // Craft Agents documentation - always available for searching setup guides
-        // This is a public Mintlify MCP server, no auth needed
-        'craft-agents-docs': {
-          type: 'http',
-          url: 'https://agents.craft.do/docs/mcp',
-        },
-        // Add user-defined source servers (MCP and API, filtered by local MCP setting)
-        // Note: Craft MCP server is now added via sources system
-        ...sourceMcpResult.servers,
-        ...this.sourceApiServers,
-      };
+      const mcpServers: Options['mcpServers'] = isMiniAgent
+        ? {
+            // Mini agents need session tools (config_validate) and docs for reference
+            session: getSessionScopedTools(sessionId, this.workspaceRootPath),
+            'craft-agents-docs': {
+              type: 'http',
+              url: 'https://agents.craft.do/docs/mcp',
+            },
+          }
+        : {
+            preferences: getPreferencesServer(false),
+            // Session-scoped tools (SubmitPlan, source_test, etc.)
+            session: getSessionScopedTools(sessionId, this.workspaceRootPath),
+            // Craft Agents documentation - always available for searching setup guides
+            // This is a public Mintlify MCP server, no auth needed
+            'craft-agents-docs': {
+              type: 'http',
+              url: 'https://agents.craft.do/docs/mcp',
+            },
+            // Add user-defined source servers (MCP and API, filtered by local MCP setting)
+            // Note: Craft MCP server is now added via sources system
+            ...sourceMcpResult.servers,
+            ...this.sourceApiServers,
+          };
       
       // Configure SDK options
       // Resolve model: use tier name when using custom API (OpenRouter), else specific version
@@ -860,6 +876,18 @@ export class CraftAgent {
       const isClaude = isClaudeModel(model);
       const useAnthropicBetas = isClaude;
 
+      // Log mini agent mode details
+      if (isMiniAgent) {
+        debug('[CraftAgent] 🤖 MINI AGENT mode - optimized for quick config edits');
+        debug('[CraftAgent] Mini agent optimizations:', {
+          model,
+          tools: ['Read', 'Edit', 'Write', 'Glob', 'Grep', 'Bash'],
+          mcpServers: ['session', 'craft-agents-docs'],
+          thinking: 'disabled',
+          systemPrompt: 'lean (no Claude Code preset)',
+        });
+      }
+
       const options: Options = {
         ...getDefaultOptions(),
         model,
@@ -880,28 +908,40 @@ export class CraftAgent {
         ...(useAnthropicBetas ? { betas: ['advanced-tool-use-2025-11-20'] as any } : {}),
         // Extended thinking: tokens based on effective thinking level (session level + ultrathink override)
         // Non-Claude models don't support extended thinking, so pass 0 to disable
-        maxThinkingTokens: isClaude ? thinkingTokens : 0,
-        // Option A: Append to Claude Code's system prompt (recommended by docs)
-        // Use pinned values for consistency after compaction (SDK expects stable system prompt)
-        systemPrompt: {
-          type: 'preset',
-          preset: 'claude_code',
-          // Working directory included for monorepo context file discovery
-          append: getSystemPrompt(
-            this.pinnedPreferencesPrompt ?? undefined,
-            this.config.debugMode,
-            this.workspaceRootPath,
-            this.config.session?.workingDirectory
-          ),
-        },
+        // Mini agents also disable thinking for efficiency (quick config edits don't need deep reasoning)
+        maxThinkingTokens: isMiniAgent ? 0 : (isClaude ? thinkingTokens : 0),
+        // System prompt configuration:
+        // - Mini agents: Use custom (lean) system prompt without Claude Code preset
+        // - Normal agents: Append to Claude Code's system prompt (recommended by docs)
+        systemPrompt: this.config.systemPromptPreset === 'mini'
+          ? getSystemPrompt(undefined, undefined, this.workspaceRootPath, undefined, 'mini')
+          : {
+              type: 'preset' as const,
+              preset: 'claude_code' as const,
+              // Working directory included for monorepo context file discovery
+              append: getSystemPrompt(
+                this.pinnedPreferencesPrompt ?? undefined,
+                this.config.debugMode,
+                this.workspaceRootPath,
+                this.config.session?.workingDirectory
+              ),
+            },
         // Use sdkCwd for SDK session storage - this is set once at session creation and never changes.
         // This ensures SDK can always find session transcripts regardless of workingDirectory changes.
         // Note: workingDirectory is still used for context injection and shown to the agent.
         cwd: this.config.session?.sdkCwd ??
           (sessionId ? getSessionPath(this.workspaceRootPath, sessionId) : this.workspaceRootPath),
         includePartialMessages: true,
-        // Enable the full Claude Code toolset
-        tools: { type: 'preset', preset: 'claude_code' },
+        // Tools configuration:
+        // - Mini agents: minimal set for quick config edits (reduces token count ~70%)
+        // - Regular agents: full Claude Code toolset
+        tools: (() => {
+          const toolsValue = isMiniAgent
+            ? ['Read', 'Edit', 'Write', 'Glob', 'Grep', 'Bash']
+            : { type: 'preset' as const, preset: 'claude_code' as const };
+          debug('[CraftAgent] 🔧 Tools configuration:', JSON.stringify(toolsValue));
+          return toolsValue;
+        })(),
         // Bypass SDK's built-in permission system - we handle all permissions via PreToolUse hook
         // This allows Safe Mode to properly allow read-only bash commands without SDK interference
         permissionMode: 'bypassPermissions',
