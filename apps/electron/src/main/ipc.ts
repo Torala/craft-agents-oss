@@ -2386,6 +2386,30 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
     }
   })
 
+  // Get auto-capitalisation setting
+  ipcMain.handle(IPC_CHANNELS.INPUT_GET_AUTO_CAPITALISATION, async () => {
+    const { getAutoCapitalisation } = await import('@craft-agent/shared/config/storage')
+    return getAutoCapitalisation()
+  })
+
+  // Set auto-capitalisation setting
+  ipcMain.handle(IPC_CHANNELS.INPUT_SET_AUTO_CAPITALISATION, async (_event, enabled: boolean) => {
+    const { setAutoCapitalisation } = await import('@craft-agent/shared/config/storage')
+    setAutoCapitalisation(enabled)
+  })
+
+  // Get send message key setting
+  ipcMain.handle(IPC_CHANNELS.INPUT_GET_SEND_MESSAGE_KEY, async () => {
+    const { getSendMessageKey } = await import('@craft-agent/shared/config/storage')
+    return getSendMessageKey()
+  })
+
+  // Set send message key setting
+  ipcMain.handle(IPC_CHANNELS.INPUT_SET_SEND_MESSAGE_KEY, async (_event, key: 'enter' | 'cmd-enter') => {
+    const { setSendMessageKey } = await import('@craft-agent/shared/config/storage')
+    setSendMessageKey(key)
+  })
+
   // Update app badge count
   ipcMain.handle(IPC_CHANNELS.BADGE_UPDATE, async (_event, count: number) => {
     const { updateBadgeCount } = await import('./notifications')

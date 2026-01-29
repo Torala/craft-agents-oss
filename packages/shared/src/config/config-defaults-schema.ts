@@ -14,6 +14,8 @@ export interface ConfigDefaults {
     authType: AuthType;
     notificationsEnabled: boolean;
     colorTheme: string;
+    autoCapitalisation: boolean;
+    sendMessageKey: 'enter' | 'cmd-enter';
   };
   workspaceDefaults: {
     thinkingLevel: ThinkingLevel;
@@ -36,6 +38,8 @@ export const BUNDLED_CONFIG_DEFAULTS: ConfigDefaults = {
     authType: 'api_key',
     notificationsEnabled: true,
     colorTheme: 'default',
+    autoCapitalisation: true,
+    sendMessageKey: 'enter',
   },
   workspaceDefaults: {
     thinkingLevel: 'think',

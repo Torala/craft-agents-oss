@@ -670,6 +670,12 @@ export const IPC_CHANNELS = {
   NOTIFICATION_GET_ENABLED: 'notification:getEnabled',
   NOTIFICATION_SET_ENABLED: 'notification:setEnabled',
 
+  // Input settings
+  INPUT_GET_AUTO_CAPITALISATION: 'input:getAutoCapitalisation',
+  INPUT_SET_AUTO_CAPITALISATION: 'input:setAutoCapitalisation',
+  INPUT_GET_SEND_MESSAGE_KEY: 'input:getSendMessageKey',
+  INPUT_SET_SEND_MESSAGE_KEY: 'input:setSendMessageKey',
+
   BADGE_UPDATE: 'badge:update',
   BADGE_CLEAR: 'badge:clear',
   BADGE_SET_ICON: 'badge:setIcon',
@@ -929,6 +935,12 @@ export interface ElectronAPI {
   getNotificationsEnabled(): Promise<boolean>
   setNotificationsEnabled(enabled: boolean): Promise<void>
 
+  // Input settings
+  getAutoCapitalisation(): Promise<boolean>
+  setAutoCapitalisation(enabled: boolean): Promise<void>
+  getSendMessageKey(): Promise<'enter' | 'cmd-enter'>
+  setSendMessageKey(key: 'enter' | 'cmd-enter'): Promise<void>
+
   updateBadgeCount(count: number): Promise<void>
   clearBadgeCount(): Promise<void>
   setDockIconWithBadge(dataUrl: string): Promise<void>
@@ -1064,7 +1076,7 @@ export type ChatFilter =
 /**
  * Settings subpage options
  */
-export type SettingsSubpage = 'app' | 'appearance' | 'workspace' | 'permissions' | 'labels' | 'shortcuts' | 'preferences'
+export type SettingsSubpage = 'app' | 'appearance' | 'input' | 'workspace' | 'permissions' | 'labels' | 'shortcuts' | 'preferences'
 
 /**
  * Chats navigation state - shows SessionList in navigator
@@ -1233,7 +1245,7 @@ export const parseNavigationStateKey = (key: string): NavigationState | null => 
   if (key === 'settings') return { navigator: 'settings', subpage: 'app' }
   if (key.startsWith('settings:')) {
     const subpage = key.slice(9) as SettingsSubpage
-    if (['app', 'appearance', 'workspace', 'permissions', 'labels', 'shortcuts', 'preferences'].includes(subpage)) {
+    if (['app', 'appearance', 'input', 'workspace', 'permissions', 'labels', 'shortcuts', 'preferences'].includes(subpage)) {
       return { navigator: 'settings', subpage }
     }
   }

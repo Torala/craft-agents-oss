@@ -317,6 +317,28 @@ export function FreeFormInput({
   const [inputMaxHeight, setInputMaxHeight] = React.useState(540)
   const [modelDropdownOpen, setModelDropdownOpen] = React.useState(false)
 
+  // Input settings (loaded from config)
+  const [autoCapitalisation, setAutoCapitalisation] = React.useState(true)
+  const [sendMessageKey, setSendMessageKey] = React.useState<'enter' | 'cmd-enter'>('enter')
+
+  // Load input settings on mount
+  React.useEffect(() => {
+    const loadInputSettings = async () => {
+      if (!window.electronAPI) return
+      try {
+        const [autoCapEnabled, sendKey] = await Promise.all([
+          window.electronAPI.getAutoCapitalisation(),
+          window.electronAPI.getSendMessageKey(),
+        ])
+        setAutoCapitalisation(autoCapEnabled)
+        setSendMessageKey(sendKey)
+      } catch (error) {
+        console.error('Failed to load input settings:', error)
+      }
+    }
+    loadInputSettings()
+  }, [])
+
   // Double-Esc interrupt: show warning overlay on first Esc, interrupt on second
   const { showEscapeOverlay } = useEscapeInterrupt()
 
@@ -969,15 +991,27 @@ export function FreeFormInput({
     }
 
     // Skip submission during IME composition - user is confirming composed characters, not sending
-    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-      e.preventDefault()
-      // Submit message - backend handles interruption if processing
-      submitMessage()
-    }
-    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !e.nativeEvent.isComposing) {
-      e.preventDefault()
-      // Submit message - backend handles interruption if processing
-      submitMessage()
+    // Handle send key based on user preference:
+    // - 'enter': Enter sends (Shift+Enter for newline)
+    // - 'cmd-enter': ⌘/Ctrl+Enter sends (Enter for newline)
+    if (sendMessageKey === 'enter') {
+      // Enter sends, Shift+Enter adds newline
+      if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+        e.preventDefault()
+        submitMessage()
+      }
+      // Also allow Cmd/Ctrl+Enter to send (power user shortcut)
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !e.nativeEvent.isComposing) {
+        e.preventDefault()
+        submitMessage()
+      }
+    } else {
+      // cmd-enter mode: ⌘/Ctrl+Enter sends, plain Enter adds newline
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !e.nativeEvent.isComposing) {
+        e.preventDefault()
+        submitMessage()
+      }
+      // Plain Enter is allowed to pass through (adds newline)
     }
     if (e.key === 'Escape') {
       // Skip blur if a popover/overlay is open — let the overlay handle ESC instead.
@@ -1028,11 +1062,14 @@ export function FreeFormInput({
     inlineLabel.handleInputChange(value, cursorPosition)
 
     // Auto-capitalize first letter (but not for slash commands, @mentions, or #labels)
+    // Only if autoCapitalisation setting is enabled
     let newValue = value
-    if (value.length > 0 && value.charAt(0) !== '/' && value.charAt(0) !== '@' && value.charAt(0) !== '#') {
+    if (autoCapitalisation && value.length > 0 && value.charAt(0) !== '/' && value.charAt(0) !== '@' && value.charAt(0) !== '#') {
       const capitalizedFirst = value.charAt(0).toUpperCase()
       if (capitalizedFirst !== value.charAt(0)) {
         newValue = capitalizedFirst + value.slice(1)
+        // Set cursor position BEFORE state update so it's used when useEffect syncs the value
+        richInputRef.current?.setSelectionRange(cursorPosition, cursorPosition)
         setInput(newValue)
         syncToParent(newValue)
         return
@@ -1043,14 +1080,12 @@ export function FreeFormInput({
     const typography = applySmartTypography(value, cursorPosition)
     if (typography.replaced) {
       newValue = typography.text
+      // Set cursor position BEFORE state update so it's used when useEffect syncs the value
+      richInputRef.current?.setSelectionRange(typography.cursor, typography.cursor)
       setInput(newValue)
       syncToParent(newValue)
-      // Restore cursor position after React re-render
-      requestAnimationFrame(() => {
-        richInputRef.current?.setSelectionRange(typography.cursor, typography.cursor)
-      })
     }
-  }, [inlineSlash, inlineMention, inlineLabel, syncToParent])
+  }, [inlineSlash, inlineMention, inlineLabel, syncToParent, autoCapitalisation])
 
   // Handle inline slash command selection (removes the /command text)
   const handleInlineSlashCommandSelect = React.useCallback((commandId: SlashCommandId) => {
