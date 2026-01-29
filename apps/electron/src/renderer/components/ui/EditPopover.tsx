@@ -2,18 +2,20 @@
  * EditPopover
  *
  * A popover with title, subtitle, and multiline textarea for editing settings.
- * On submit, opens a new focused window with a chat session containing explicit
- * context for fast execution.
+ * Supports two modes:
+ * - Legacy: Opens a new focused window with a chat session
+ * - Inline: Executes mini agent inline within the popover (for mini agent configs)
  */
 
 import * as React from 'react'
-import { useState, useRef, useEffect } from 'react'
-import { ArrowUp } from 'lucide-react'
+import { useState, useRef, useEffect, useCallback } from 'react'
+import { ArrowUp, GripHorizontal } from 'lucide-react'
 import { Popover, PopoverTrigger, PopoverContent } from './popover'
 import { Button } from './button'
 import { cn } from '@/lib/utils'
-import { usePlatform } from '@craft-agent/ui'
-import type { ContentBadge } from '../../../shared/types'
+import { usePlatform, InlineExecution, mapToolEventToActivity, type InlineActivityItem, type InlineExecutionStatus } from '@craft-agent/ui'
+import type { ContentBadge, SessionEvent } from '../../../shared/types'
+import { useActiveWorkspace } from '@/context/AppShellContext'
 
 /**
  * Context passed to the new chat session so the agent knows exactly
@@ -88,6 +90,8 @@ export interface EditConfig {
   model?: string
   /** Optional system prompt preset for mini agent (e.g., 'mini' for focused edits) */
   systemPromptPreset?: 'default' | 'mini'
+  /** When true, executes inline within the popover instead of opening a new window */
+  inlineExecution?: boolean
 }
 
 /**
@@ -330,8 +334,9 @@ const EDIT_CONFIGS: Record<EditContextKey, (location: string) => EditConfig> = {
         'Confirm clearly when done.',
     },
     example: 'Add a "Blocked" status',
-    model: 'haiku',           // Use fast model for quick config edits
-    systemPromptPreset: 'mini',     // Use focused mini prompt
+    model: 'haiku',               // Use fast model for quick config edits
+    systemPromptPreset: 'mini',   // Use focused mini prompt
+    inlineExecution: true,        // Execute inline in popover
   }),
 
   // Label configuration context
@@ -350,8 +355,9 @@ const EDIT_CONFIGS: Record<EditContextKey, (location: string) => EditConfig> = {
         'Confirm clearly when done.',
     },
     example: 'Add a "Bug" label with red color',
-    model: 'haiku',           // Use fast model for quick config edits
-    systemPromptPreset: 'mini',     // Use focused mini prompt
+    model: 'haiku',               // Use fast model for quick config edits
+    systemPromptPreset: 'mini',   // Use focused mini prompt
+    inlineExecution: true,        // Execute inline in popover
   }),
 
   // Auto-label rules context (focused on regex patterns within labels)
@@ -369,8 +375,9 @@ const EDIT_CONFIGS: Record<EditContextKey, (location: string) => EditConfig> = {
         'Confirm clearly when done.',
     },
     example: 'Add a rule to detect GitHub issue URLs',
-    model: 'haiku',           // Use fast model for quick config edits
-    systemPromptPreset: 'mini',     // Use focused mini prompt
+    model: 'haiku',               // Use fast model for quick config edits
+    systemPromptPreset: 'mini',   // Use focused mini prompt
+    inlineExecution: true,        // Execute inline in popover
   }),
 
   // Add new label context (triggered from the # menu when no labels match)
@@ -389,8 +396,9 @@ const EDIT_CONFIGS: Record<EditContextKey, (location: string) => EditConfig> = {
     },
     example: 'A red "Bug" label',
     overridePlaceholder: 'What label would you like to create?',
-    model: 'haiku',           // Use fast model for quick config edits
-    systemPromptPreset: 'mini',     // Use focused mini prompt
+    model: 'haiku',               // Use fast model for quick config edits
+    systemPromptPreset: 'mini',   // Use focused mini prompt
+    inlineExecution: true,        // Execute inline in popover
   }),
 
   // Views configuration context
@@ -409,8 +417,9 @@ const EDIT_CONFIGS: Record<EditContextKey, (location: string) => EditConfig> = {
         'Confirm clearly when done.',
     },
     example: 'Add a "Stale" view for sessions inactive > 7 days',
-    model: 'haiku',           // Use fast model for quick config edits
-    systemPromptPreset: 'mini',     // Use focused mini prompt
+    model: 'haiku',               // Use fast model for quick config edits
+    systemPromptPreset: 'mini',   // Use focused mini prompt
+    inlineExecution: true,        // Execute inline in popover
   }),
 
   // Tool icons configuration context
@@ -429,8 +438,9 @@ const EDIT_CONFIGS: Record<EditContextKey, (location: string) => EditConfig> = {
         'Confirm clearly when done.',
     },
     example: 'Add an icon for my custom CLI tool "deploy"',
-    model: 'haiku',           // Use fast model for quick config edits
-    systemPromptPreset: 'mini',     // Use focused mini prompt
+    model: 'haiku',               // Use fast model for quick config edits
+    systemPromptPreset: 'mini',   // Use focused mini prompt
+    inlineExecution: true,        // Execute inline in popover
   }),
 }
 
@@ -512,6 +522,11 @@ export interface EditPopoverProps {
    * the input can be pre-filled with "Add new label Test".
    */
   defaultValue?: string
+  /**
+   * When true, executes the mini agent inline within the popover instead of
+   * opening a new window. Best for quick config edits with mini agents.
+   */
+  inlineExecution?: boolean
 }
 
 /**
@@ -589,9 +604,11 @@ export function EditPopover({
   onOpenChange: controlledOnOpenChange,
   modal = false,
   defaultValue = '',
+  inlineExecution = false,
 }: EditPopoverProps) {
   // Open files externally (bypasses link interceptor) for "Edit File" secondary actions
   const { onOpenFileExternal } = usePlatform()
+  const workspace = useActiveWorkspace()
 
   // Build placeholder: use override if provided, otherwise default to "change" wording
   // overridePlaceholder allows contexts like add-source/add-skill to say "add" instead of "change"
@@ -615,6 +632,63 @@ export function EditPopover({
   const [input, setInput] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
+  // Inline execution state
+  type PopoverMode = 'input' | 'executing' | 'success' | 'error'
+  const [popoverMode, setPopoverMode] = useState<PopoverMode>('input')
+  const [inlineSessionId, setInlineSessionId] = useState<string | null>(null)
+  const [activities, setActivities] = useState<InlineActivityItem[]>([])
+  const [executionResult, setExecutionResult] = useState<string | undefined>()
+  const [executionError, setExecutionError] = useState<string | undefined>()
+
+  // Drag state for movable popover
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 })
+  const [isDragging, setIsDragging] = useState(false)
+  const dragStartRef = useRef({ x: 0, y: 0, offsetX: 0, offsetY: 0 })
+  const popoverRef = useRef<HTMLDivElement>(null)
+
+  // Reset drag position when popover opens
+  useEffect(() => {
+    if (open) {
+      setDragOffset({ x: 0, y: 0 })
+    }
+  }, [open])
+
+  // Handle drag events
+  const handleDragStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    setIsDragging(true)
+    dragStartRef.current = {
+      x: e.clientX,
+      y: e.clientY,
+      offsetX: dragOffset.x,
+      offsetY: dragOffset.y,
+    }
+  }, [dragOffset])
+
+  useEffect(() => {
+    if (!isDragging) return
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const deltaX = e.clientX - dragStartRef.current.x
+      const deltaY = e.clientY - dragStartRef.current.y
+      setDragOffset({
+        x: dragStartRef.current.offsetX + deltaX,
+        y: dragStartRef.current.offsetY + deltaY,
+      })
+    }
+
+    const handleMouseUp = () => {
+      setIsDragging(false)
+    }
+
+    document.addEventListener('mousemove', handleMouseMove)
+    document.addEventListener('mouseup', handleMouseUp)
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('mouseup', handleMouseUp)
+    }
+  }, [isDragging])
+
   // Auto-focus textarea when popover opens
   useEffect(() => {
     if (open) {
@@ -626,19 +700,128 @@ export function EditPopover({
     }
   }, [open])
 
-  // Reset input when popover closes, set defaultValue when it opens
+  // Reset state when popover closes
   useEffect(() => {
     if (open) {
       setInput(defaultValue)
+      setPopoverMode('input')
+      setInlineSessionId(null)
+      setActivities([])
+      setExecutionResult(undefined)
+      setExecutionError(undefined)
     } else {
       setInput('')
     }
   }, [open, defaultValue])
 
+  // Subscribe to session events for inline execution
+  useEffect(() => {
+    if (!inlineSessionId || !inlineExecution) return
+
+    const cleanup = window.electronAPI.onSessionEvent((event: SessionEvent) => {
+      if (event.sessionId !== inlineSessionId) return
+
+      switch (event.type) {
+        case 'tool_start': {
+          // Derive description from toolIntent or toolInput
+          let description = event.toolIntent
+          if (!description && event.toolInput) {
+            // Fallback to meaningful info from toolInput for built-in tools
+            const input = event.toolInput
+            if (input.file_path) {
+              // Read, Edit, Write - show full path
+              description = input.file_path as string
+            } else if (input.description) {
+              // Bash - use the description field
+              description = input.description as string
+            } else if (input.pattern) {
+              // Grep/Glob - show pattern
+              description = input.pattern as string
+            }
+          }
+          // Only add activity if we have meaningful description
+          if (description) {
+            setActivities(prev => [
+              ...prev,
+              mapToolEventToActivity(
+                event.toolDisplayName || event.toolName,
+                event.toolUseId,
+                'running',
+                description
+              )
+            ])
+          }
+          break
+        }
+
+        case 'tool_result':
+          setActivities(prev =>
+            prev.map(a =>
+              a.id === event.toolUseId
+                ? { ...a, status: event.isError ? 'error' : 'completed' }
+                : a
+            )
+          )
+          break
+
+        case 'text_complete':
+          // Capture final non-intermediate text as result
+          if (!event.isIntermediate && event.text) {
+            setExecutionResult(event.text)
+          }
+          break
+
+        case 'complete':
+          setPopoverMode('success')
+          break
+
+        case 'error':
+          setExecutionError(event.error)
+          setPopoverMode('error')
+          break
+
+        case 'interrupted':
+          setExecutionError('Execution was interrupted')
+          setPopoverMode('error')
+          break
+      }
+    })
+
+    return cleanup
+  }, [inlineSessionId, inlineExecution])
+
   const handleSubmit = async () => {
     if (!input.trim()) return
 
     const { prompt, badges } = buildEditPrompt(context, input.trim())
+
+    // Inline execution mode: create session and send message via IPC
+    if (inlineExecution && workspace) {
+      setPopoverMode('executing')
+      setActivities([])
+
+      try {
+        // Create session with mini agent options
+        const session = await window.electronAPI.createSession(workspace.id, {
+          model: model || 'haiku',
+          systemPromptPreset: systemPromptPreset || 'mini',
+          permissionMode: permissionMode,
+          workingDirectory: workingDirectory,
+        })
+
+        setInlineSessionId(session.id)
+
+        // Send the message to start execution
+        await window.electronAPI.sendMessage(session.id, prompt, [], [], { badges })
+      } catch (error) {
+        console.error('[EditPopover] Inline execution failed:', error)
+        setExecutionError(error instanceof Error ? error.message : 'Failed to start execution')
+        setPopoverMode('error')
+      }
+      return
+    }
+
+    // Legacy mode: open new focused window
     const encodedInput = encodeURIComponent(prompt)
     // Encode badges as JSON for passing through deep link
     const encodedBadges = encodeURIComponent(JSON.stringify(badges))
@@ -665,6 +848,31 @@ export function EditPopover({
     // Close the popover
     setOpen(false)
   }
+
+  // Inline execution callbacks
+  const handleCancel = useCallback(async () => {
+    if (inlineSessionId) {
+      try {
+        await window.electronAPI.cancelProcessing(inlineSessionId)
+      } catch (error) {
+        console.error('[EditPopover] Failed to cancel:', error)
+      }
+    }
+    setPopoverMode('input')
+    setActivities([])
+  }, [inlineSessionId])
+
+  const handleDismiss = useCallback(() => {
+    setOpen(false)
+  }, [setOpen])
+
+  const handleRetry = useCallback(() => {
+    setPopoverMode('input')
+    setActivities([])
+    setExecutionError(undefined)
+    // Focus the textarea for retry
+    setTimeout(() => textareaRef.current?.focus(), 0)
+  }, [])
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // Enter submits, Shift+Enter inserts newline
@@ -697,56 +905,90 @@ export function EditPopover({
           {trigger}
         </PopoverTrigger>
         <PopoverContent
+          ref={popoverRef}
           side={side}
           align={align}
-          className="p-4"
-          style={{ width, borderRadius: 16 }}
+          className="p-0"
+          style={{
+            width,
+            borderRadius: 16,
+            transform: `translate(${dragOffset.x}px, ${dragOffset.y}px)`,
+          }}
         >
-          {/* Textarea */}
-          <textarea
-            ref={textareaRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={placeholder}
-            autoFocus
+          {/* Drag handle */}
+          <div
+            onMouseDown={handleDragStart}
             className={cn(
-              'w-full min-h-[100px] resize-none px-0 py-0 text-sm leading-relaxed',
-              'bg-transparent border-none',
-              'placeholder:text-muted-foreground placeholder:leading-relaxed',
-              'focus:outline-none focus-visible:outline-none focus-visible:ring-0',
-              'field-sizing-content'
+              "flex items-center justify-center py-1.5 cursor-grab border-b border-border/30",
+              isDragging && "cursor-grabbing"
             )}
-          />
+          >
+            <GripHorizontal className="w-4 h-4 text-muted-foreground/50" />
+          </div>
 
-          {/* Footer row: secondary action on left, send button on right */}
-          <div className="flex items-center justify-between mt-2">
-            {/* Secondary action - plain text link */}
-            {secondaryAction ? (
-              <button
-                type="button"
-                onClick={() => {
-                  onOpenFileExternal?.(secondaryAction.filePath)
-                  setOpen(false)
-                }}
-                className="text-sm text-muted-foreground hover:underline"
-              >
-                {secondaryAction.label}
-              </button>
-            ) : (
-              <div />
-            )}
+          {/* Content wrapper with padding */}
+          <div className="p-4 pt-2">
+          {/* Inline Execution Mode */}
+          {inlineExecution && popoverMode !== 'input' ? (
+            <InlineExecution
+              status={popoverMode as InlineExecutionStatus}
+              activities={activities}
+              result={executionResult}
+              error={executionError}
+              onCancel={handleCancel}
+              onDismiss={handleDismiss}
+              onRetry={handleRetry}
+            />
+          ) : (
+            <>
+              {/* Textarea */}
+              <textarea
+                ref={textareaRef}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder={placeholder}
+                autoFocus
+                className={cn(
+                  'w-full min-h-[100px] resize-none px-0 py-0 text-sm leading-relaxed',
+                  'bg-transparent border-none',
+                  'placeholder:text-muted-foreground placeholder:leading-relaxed',
+                  'focus:outline-none focus-visible:outline-none focus-visible:ring-0',
+                  'field-sizing-content'
+                )}
+              />
 
-            {/* Send button */}
-            <Button
-              type="button"
-              size="icon"
-              className="h-7 w-7 rounded-full shrink-0"
-              onClick={handleSubmit}
-              disabled={!input.trim()}
-            >
-              <ArrowUp className="h-4 w-4" />
-            </Button>
+              {/* Footer row: secondary action on left, send button on right */}
+              <div className="flex items-center justify-between mt-2">
+                {/* Secondary action - plain text link */}
+                {secondaryAction ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onOpenFileExternal?.(secondaryAction.filePath)
+                      setOpen(false)
+                    }}
+                    className="text-sm text-muted-foreground hover:underline"
+                  >
+                    {secondaryAction.label}
+                  </button>
+                ) : (
+                  <div />
+                )}
+
+                {/* Send button */}
+                <Button
+                  type="button"
+                  size="icon"
+                  className="h-7 w-7 rounded-full shrink-0"
+                  onClick={handleSubmit}
+                  disabled={!input.trim()}
+                >
+                  <ArrowUp className="h-4 w-4" />
+                </Button>
+              </div>
+            </>
+          )}
           </div>
         </PopoverContent>
       </Popover>
