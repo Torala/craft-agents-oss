@@ -156,6 +156,8 @@ interface ChatDisplayProps {
   // Search highlighting (from session list search)
   /** Search query for highlighting matches - passed from session list */
   searchQuery?: string
+  /** Whether search mode is active (prevents focus stealing to chat input) */
+  isSearchModeActive?: boolean
   /** Callback when match count changes - used by session list for navigation */
   onMatchCountChange?: (count: number) => void
   /** Callback when match info (count and index) changes - for immediate UI updates */
@@ -322,15 +324,18 @@ function ProcessingIndicator({ startTime, statusMessage }: ProcessingIndicatorPr
  */
 function ScrollOnMount({
   targetRef,
-  onScroll
+  onScroll,
+  skip = false
 }: {
   targetRef: React.RefObject<HTMLDivElement | null>
   onScroll?: () => void
+  skip?: boolean
 }) {
   React.useLayoutEffect(() => {
+    if (skip) return
     targetRef.current?.scrollIntoView({ behavior: 'instant' })
     onScroll?.()
-  }, [])
+  }, [skip])
   return null
 }
 
@@ -391,6 +396,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   disableSend = false,
   // Search highlighting
   searchQuery: externalSearchQuery,
+  isSearchModeActive = false,
   onMatchCountChange,
   onMatchInfoChange,
 }, ref) {
@@ -460,17 +466,27 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   const searchQuery = externalSearchQuery || ''
   const isSearchActive = Boolean(searchQuery.trim())
 
-  // Focus textarea when session changes (tab switch) or zone gains focus via keyboard
-  // But NOT when search is active (to avoid stealing focus from search input)
+  // Focus textarea when zone gains focus via keyboard (Tab, Cmd+3, ArrowRight)
+  // Requires isFocused to be true - respects zone architecture
+  // Does NOT auto-focus just because session changed (that would steal focus from SessionList)
+  // Uses isSearchModeActive (prop) instead of isSearchActive (query-based) to prevent
+  // focus stealing when search is open but query is empty
   useEffect(() => {
-    if (session && !isSearchActive) {
+    if (session && !isSearchModeActive && isFocused) {
       textareaRef.current?.focus()
     }
-  }, [session?.id, isFocused, isSearchActive])
+  }, [session?.id, isFocused, isSearchModeActive])
 
   // Reset match state when session or search query changes
   useEffect(() => {
+    const isSessionSwitch = prevSessionIdForScrollRef.current !== null && prevSessionIdForScrollRef.current !== session?.id
     prevSessionIdForScrollRef.current = session?.id ?? null
+
+    // If session switched with search active, trigger scroll to first match
+    if (isSessionSwitch && isSearchActive) {
+      shouldScrollToMatchRef.current = true
+    }
+
     setCurrentMatchIndex(0)
     setActualMatchIds(new Set()) // Clear stale match IDs to prevent incorrect counts
   }, [session?.id, searchQuery, isSearchActive])
@@ -537,7 +553,6 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
         })
       }
     }
-    console.log('[ChatDisplay Perf] matchingOccurrences:', (performance.now() - startTime).toFixed(2), 'ms, found', matches.length, 'matches in', turns.length, 'turns')
     return matches
   }, [searchQuery, session?.messages, countOccurrences])
 
@@ -555,7 +570,6 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
     const requiredVisibleCount = totalTurns - earliestMatchTurnIndex + 5 // +5 buffer for context
 
     if (requiredVisibleCount > visibleTurnCount) {
-      console.log('[ChatDisplay Search] Expanding pagination to show all matches, from', visibleTurnCount, 'to', requiredVisibleCount)
       setVisibleTurnCount(requiredVisibleCount)
     }
   }, [isSearchActive, matchingOccurrences, session?.messages, visibleTurnCount])
@@ -571,10 +585,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
     // Before highlighting runs, show all potential matches
     // After highlighting, filter to only matches that exist in DOM
     if (actualMatchIds.size === 0) return matchingOccurrences
-    const startTime = performance.now()
-    const filtered = matchingOccurrences.filter(m => actualMatchIds.has(m.matchId))
-    console.log('[ChatDisplay Perf] validMatches filter:', (performance.now() - startTime).toFixed(2), 'ms,', matchingOccurrences.length, '->', filtered.length)
-    return filtered
+    return matchingOccurrences.filter(m => actualMatchIds.has(m.matchId))
   }, [matchingOccurrences, actualMatchIds])
 
   // Auto-scroll to match ONLY when there's exactly one match
@@ -588,8 +599,6 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   // Scroll to current match (with delay to wait for DOM rendering)
   // Only scrolls when shouldScrollToMatchRef is true (single match auto-scroll or nav button click)
   useEffect(() => {
-    console.log('[ChatDisplay Scroll] Effect triggered, validMatchCount:', validMatches.length, 'currentIndex:', currentMatchIndex, 'shouldScroll:', shouldScrollToMatchRef.current)
-
     // Only scroll if explicitly requested (session change or navigation click)
     if (!shouldScrollToMatchRef.current) return
 
@@ -600,13 +609,11 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
 
       // Calculate current visible range
       const currentStartIndex = Math.max(0, totalTurns - visibleTurnCount)
-      console.log('[ChatDisplay Scroll] Match turnIndex:', turnIndex, 'currentStartIndex:', currentStartIndex, 'visibleTurnCount:', visibleTurnCount)
 
       // Check if the match is outside the visible range
       if (turnIndex < currentStartIndex) {
         // Expand visible turns to include this match (with some buffer)
         const newVisibleCount = totalTurns - turnIndex + 5 // Add 5 turns buffer
-        console.log('[ChatDisplay Scroll] Expanding visible turns from', visibleTurnCount, 'to', newVisibleCount)
         setVisibleTurnCount(newVisibleCount)
         // Keep shouldScroll true - will scroll on next effect run after DOM updates
         return
@@ -617,15 +624,23 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
       const maxAttempts = 5
 
       const tryScroll = () => {
-        const matchEl = document.getElementById(matchId)
-        console.log('[ChatDisplay Scroll] Try scroll to match:', matchId, 'element found:', !!matchEl)
+        const matchEl = document.getElementById(matchId) as HTMLElement | null
         if (matchEl) {
           matchEl.scrollIntoView({ behavior: 'smooth', block: 'center' })
-          // Add visual emphasis to current match
-          matchEl.classList.add('ring-2', 'ring-info')
-          // Remove emphasis from other matches
-          document.querySelectorAll('mark.search-highlight.ring-2').forEach(el => {
-            if (el.id !== matchId) el.classList.remove('ring-2', 'ring-info')
+          // Subtle pop-out: scale + shadow + brighter bg
+          matchEl.classList.add('current-match')
+          matchEl.style.transform = 'scale(1.05)'
+          matchEl.style.boxShadow = '0 2px 8px rgba(234, 179, 8, 0.6)'
+          matchEl.style.backgroundColor = '#fde047' // yellow-300 (brighter than base yellow-400)
+          // Remove pop-out from other matches
+          document.querySelectorAll('mark.search-highlight.current-match').forEach(el => {
+            if (el.id !== matchId) {
+              el.classList.remove('current-match')
+              const htmlEl = el as HTMLElement
+              htmlEl.style.transform = ''
+              htmlEl.style.boxShadow = '0 1px 3px rgba(234, 179, 8, 0.4)'
+              htmlEl.style.backgroundColor = '' // Reset to default yellow-400
+            }
           })
           shouldScrollToMatchRef.current = false
         } else if (attempts < maxAttempts) {
@@ -633,7 +648,6 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
           setTimeout(tryScroll, 50)
         } else {
           // Give up - validMatches should only contain valid matches, but timing can cause this
-          console.log('[ChatDisplay Scroll] Match not found after retries')
           shouldScrollToMatchRef.current = false
         }
       }
@@ -667,9 +681,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
     // Only clear highlights and reset state when search/session changes
     // When just pagination changes, we accumulate new highlights
     if (contextChanged) {
-      const clearStartTime = performance.now()
       clearHighlights()
-      console.log('[ChatDisplay Perf] clearHighlights:', (performance.now() - clearStartTime).toFixed(2), 'ms')
       setActualMatchIds(new Set())
       highlightedTurnIdsRef.current = new Set()
     }
@@ -784,8 +796,10 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
             const matchIdIndex = reverseCounter - (nodeMatches.length - 1 - j)
             const markId = `${turnId}-match-${matchIdIndex}`
             mark.id = markId
-            mark.className = 'search-highlight px-1 py-0.5 bg-yellow-300 rounded-[4px] text-black/90'
+            mark.className = 'search-highlight px-1 py-0.5 bg-yellow-400 rounded-[4px] text-black/90'
             mark.style.boxShadow = '0 1px 3px rgba(234, 179, 8, 0.4)'
+            mark.style.transition = 'transform 0.2s ease-out, box-shadow 0.2s ease-out, background-color 0.2s ease-out'
+            mark.style.display = 'inline-block' // Required for transform to work
             mark.textContent = text.slice(matchStart, matchEnd)
             fragments.unshift(mark)
             createdMatchIds.push(markId)
@@ -825,33 +839,25 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
     const tryHighlight = () => {
       // If no turns to highlight, don't retry - there's nothing to wait for
       if (matchingTurnIds.length === 0) {
-        console.log('[ChatDisplay Highlight] No turns to highlight, skipping')
         return
       }
 
-      const refCount = turnRefs.current.size
       // Only count turns that are in refs AND not already highlighted
       const unhighlightedMatchingInRefs = matchingTurnIds.filter(id =>
         turnRefs.current.has(id) && !highlightedTurnIdsRef.current.has(id)
       ).length
-      console.log('[ChatDisplay Highlight] Try highlight, attempt:', attempts, 'refCount:', refCount, 'matchingTurns:', matchingTurnIds.length, 'unhighlightedInRefs:', unhighlightedMatchingInRefs, 'alreadyHighlighted:', highlightedTurnIdsRef.current.size)
       if (unhighlightedMatchingInRefs > 0) {
-        const highlightStartTime = performance.now()
         applyHighlights()
-        const highlightTime = performance.now() - highlightStartTime
         // Accumulate match IDs (for pagination - adds new matches to existing)
         setActualMatchIds(prev => {
           const merged = new Set(prev)
           createdMatchIds.forEach(id => merged.add(id))
           return merged
         })
-        console.log('[ChatDisplay Perf] applyHighlights:', highlightTime.toFixed(2), 'ms, created', createdMatchIds.length, 'marks in', unhighlightedMatchingInRefs, 'turns')
       } else if (attempts < maxAttempts) {
         // Refs not ready yet - retry with increasing delay
         attempts++
         highlightTimeoutId = setTimeout(tryHighlight, 100)
-      } else {
-        console.log('[ChatDisplay Highlight] Gave up after', maxAttempts, 'attempts')
       }
     }
 
@@ -903,7 +909,6 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
 
   // Notify parent when match info (count and index) changes
   useEffect(() => {
-    console.log('[ChatDisplay MatchInfo] Reporting matches:', validMatches.length, 'index:', currentMatchIndex, 'sessionId:', session?.id)
     onMatchInfoChange?.({ count: validMatches.length, index: currentMatchIndex })
   }, [validMatches.length, currentMatchIndex, session?.id, onMatchInfoChange])
 
@@ -1154,6 +1159,11 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   const turns = allTurns.slice(startIndex)
   const hasMoreAbove = startIndex > 0
 
+  // Compute if we should skip scroll-to-bottom (when search is active on session switch)
+  // At render time, prevSessionIdForScrollRef still has the OLD session ID, so we can detect the switch
+  const isSessionSwitchForScroll = prevSessionIdForScrollRef.current !== null && prevSessionIdForScrollRef.current !== session?.id
+  const skipScrollToBottom = isSessionSwitchForScroll && isSearchActive
+
   return (
     <div ref={zoneRef} className="flex h-full flex-col min-w-0" data-focus-zone="chat">
       {session ? (
@@ -1206,8 +1216,10 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                       transition={{ duration: 0.1, ease: 'easeOut' }}
                     >
                   {/* Scroll to bottom before paint - fires via useLayoutEffect */}
+                  {/* Skip when search is active on session switch - scroll to first match instead */}
                   <ScrollOnMount
                     targetRef={messagesEndRef}
+                    skip={skipScrollToBottom}
                     onScroll={() => {
                       skipSmoothScrollUntilRef.current = Date.now() + 500
                     }}

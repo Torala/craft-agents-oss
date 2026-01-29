@@ -787,6 +787,8 @@ export function SessionList({
   // Content search state (full-text search via ripgrep)
   const [contentSearchResults, setContentSearchResults] = useState<Map<string, { matchCount: number; snippet: string }>>(new Map())
   const [isSearchingContent, setIsSearchingContent] = useState(false)
+  // Track if search input has actual DOM focus (for proper keyboard navigation gating)
+  const [isSearchInputFocused, setIsSearchInputFocused] = useState(false)
 
   // Debounced content search - triggers when search query changes and length >= 2
   useEffect(() => {
@@ -821,13 +823,10 @@ export function SessionList({
     }
   }, [workspaceId, searchActive, searchQuery])
 
-  // Focus search input when search becomes active (with delay to let dropdown close)
+  // Focus search input when search becomes active
   useEffect(() => {
     if (searchActive) {
-      const timer = setTimeout(() => {
-        searchInputRef.current?.focus()
-      }, 50)
-      return () => clearTimeout(timer)
+      searchInputRef.current?.focus()
     }
   }, [searchActive])
 
@@ -956,6 +955,11 @@ export function SessionList({
     } else if (currentFilter.kind === 'state') {
       navigate(routes.view.state(currentFilter.stateId, item.id))
     }
+    // Scroll the selected item into view
+    requestAnimationFrame(() => {
+      const element = document.querySelector(`[data-session-id="${item.id}"]`)
+      element?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+    })
   }, [navigate, currentFilter])
 
   // NOTE: We intentionally do NOT auto-select sessions while typing in search.
@@ -1002,10 +1006,14 @@ export function SessionList({
   }, [onDelete])
 
   // Roving tabindex for keyboard navigation
+  // During search: enabled but moveFocus=false so focus stays on search input
+  const rovingEnabled = isFocused || (searchActive && isSearchInputFocused)
+
   const {
     activeIndex,
     setActiveIndex,
     getItemProps,
+    getContainerProps,
     focusActiveItem,
   } = useRovingTabIndex({
     items: flatItems,
@@ -1015,45 +1023,9 @@ export function SessionList({
     onActiveChange: handleActiveChange,
     onEnter: handleEnter,
     initialIndex: selectedIndex >= 0 ? selectedIndex : 0,
-    enabled: isFocused,
+    enabled: rovingEnabled,
+    moveFocus: !searchActive, // Keep focus on search input during search
   })
-
-  // Global keyboard listener for arrow keys during search mode
-  // Works anywhere in the app while search is active (not just when input is focused)
-  useEffect(() => {
-    if (!searchActive) return
-
-    const handleArrowKeys = (e: KeyboardEvent) => {
-      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
-
-      // Prevent ALL default behavior (scrolling) immediately
-      e.preventDefault()
-      e.stopPropagation()
-
-      if (flatItems.length === 0) return
-
-      const newIndex = e.key === 'ArrowDown'
-        ? (activeIndex < flatItems.length - 1 ? activeIndex + 1 : 0)
-        : (activeIndex > 0 ? activeIndex - 1 : flatItems.length - 1)
-
-      setActiveIndex(newIndex)
-      handleActiveChange(flatItems[newIndex])
-
-      // Scroll the selected item into view and re-focus search input
-      requestAnimationFrame(() => {
-        const selectedItem = flatItems[newIndex]
-        if (selectedItem) {
-          const element = document.querySelector(`[data-session-id="${selectedItem.id}"]`)
-          element?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
-        }
-        searchInputRef.current?.focus()
-      })
-    }
-
-    // Use capture phase on window to intercept before any scroll handlers
-    window.addEventListener('keydown', handleArrowKeys, { capture: true })
-    return () => window.removeEventListener('keydown', handleArrowKeys, { capture: true })
-  }, [searchActive, flatItems, activeIndex, setActiveIndex, handleActiveChange])
 
   // Sync activeIndex when selection changes externally
   useEffect(() => {
@@ -1105,9 +1077,6 @@ export function SessionList({
 
   // Handle search input key events (Arrow keys handled by native listener above)
   const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    // Stop propagation to prevent roving tabindex from intercepting keys
-    e.stopPropagation()
-
     if (e.key === 'Escape') {
       e.preventDefault()
       onSearchClose?.()
@@ -1118,6 +1087,13 @@ export function SessionList({
     if (e.key === 'Enter') {
       e.preventDefault()
       onFocusChatInput?.()
+      return
+    }
+
+    // Forward arrow keys to roving tabindex (search input is outside the container)
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault()
+      getContainerProps().onKeyDown(e)
       return
     }
   }
@@ -1171,6 +1147,8 @@ export function SessionList({
               value={searchQuery}
               onChange={(e) => onSearchChange?.(e.target.value)}
               onKeyDown={handleSearchKeyDown}
+              onFocus={() => setIsSearchInputFocused(true)}
+              onBlur={() => setIsSearchInputFocused(false)}
               placeholder="Search titles and content..."
               className="w-full h-8 pl-8 pr-8 text-sm bg-foreground/5 border-0 rounded-[8px] outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50"
             />
