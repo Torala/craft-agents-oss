@@ -447,6 +447,10 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   const turnRefs = React.useRef<Map<string, HTMLDivElement>>(new Map())
   // Track actual match IDs created in DOM (state so it triggers re-renders)
   const [actualMatchIds, setActualMatchIds] = useState<Set<string>>(new Set())
+  // Track which turn IDs have been highlighted (to avoid re-highlighting on pagination)
+  const highlightedTurnIdsRef = React.useRef<Set<string>>(new Set())
+  // Track previous search/session to detect when to clear vs accumulate highlights
+  const prevHighlightContextRef = React.useRef<{ searchQuery: string; sessionId: string | null }>({ searchQuery: '', sessionId: null })
   // Flag to control when scrolling to matches should happen
   // Only scroll when: session changes with search active, or user clicks navigation
   const shouldScrollToMatchRef = React.useRef(false)
@@ -624,7 +628,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   // Text highlighting within messages
   // Uses DOM manipulation after render to highlight matching text
   useEffect(() => {
-    // Clear previous highlights immediately
+    // Clear previous highlights
     const clearHighlights = () => {
       const existingMarks = document.querySelectorAll('mark.search-highlight')
       existingMarks.forEach(mark => {
@@ -636,10 +640,20 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
       })
     }
 
-    const clearStartTime = performance.now()
-    clearHighlights()
-    console.log('[ChatDisplay Perf] clearHighlights:', (performance.now() - clearStartTime).toFixed(2), 'ms')
-    setActualMatchIds(new Set())
+    // Detect if search/session changed (need full clear) vs just pagination (accumulate)
+    const prevContext = prevHighlightContextRef.current
+    const contextChanged = prevContext.searchQuery !== searchQuery || prevContext.sessionId !== session?.id
+    prevHighlightContextRef.current = { searchQuery, sessionId: session?.id ?? null }
+
+    // Only clear highlights and reset state when search/session changes
+    // When just pagination changes, we accumulate new highlights
+    if (contextChanged) {
+      const clearStartTime = performance.now()
+      clearHighlights()
+      console.log('[ChatDisplay Perf] clearHighlights:', (performance.now() - clearStartTime).toFixed(2), 'ms')
+      setActualMatchIds(new Set())
+      highlightedTurnIdsRef.current = new Set()
+    }
 
     if (!searchQuery.trim() || !isSearchActive) return
 
@@ -657,6 +671,12 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
       turnRefs.current.forEach((container, turnId) => {
         // Skip turns that don't contain matches
         if (!matchingTurnIdSet.has(turnId)) return
+
+        // Skip turns that have already been highlighted (pagination case)
+        if (highlightedTurnIdsRef.current.has(turnId)) return
+
+        // Mark this turn as highlighted
+        highlightedTurnIdsRef.current.add(turnId)
 
         // Initialize counter for this turn
         turnMatchCounters.set(turnId, 0)
@@ -790,15 +810,22 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
       }
 
       const refCount = turnRefs.current.size
-      const matchingInRefs = matchingTurnIds.filter(id => turnRefs.current.has(id)).length
-      console.log('[ChatDisplay Highlight] Try highlight, attempt:', attempts, 'refCount:', refCount, 'matchingTurns:', matchingTurnIds.length, 'matchingInRefs:', matchingInRefs)
-      if (matchingInRefs > 0) {
+      // Only count turns that are in refs AND not already highlighted
+      const unhighlightedMatchingInRefs = matchingTurnIds.filter(id =>
+        turnRefs.current.has(id) && !highlightedTurnIdsRef.current.has(id)
+      ).length
+      console.log('[ChatDisplay Highlight] Try highlight, attempt:', attempts, 'refCount:', refCount, 'matchingTurns:', matchingTurnIds.length, 'unhighlightedInRefs:', unhighlightedMatchingInRefs, 'alreadyHighlighted:', highlightedTurnIdsRef.current.size)
+      if (unhighlightedMatchingInRefs > 0) {
         const highlightStartTime = performance.now()
         applyHighlights()
         const highlightTime = performance.now() - highlightStartTime
-        // Store actual match IDs for navigation (triggers re-render to update validMatches)
-        setActualMatchIds(new Set(createdMatchIds))
-        console.log('[ChatDisplay Perf] applyHighlights:', highlightTime.toFixed(2), 'ms, created', createdMatchIds.length, 'marks in', matchingInRefs, 'turns')
+        // Accumulate match IDs (for pagination - adds new matches to existing)
+        setActualMatchIds(prev => {
+          const merged = new Set(prev)
+          createdMatchIds.forEach(id => merged.add(id))
+          return merged
+        })
+        console.log('[ChatDisplay Perf] applyHighlights:', highlightTime.toFixed(2), 'ms, created', createdMatchIds.length, 'marks in', unhighlightedMatchingInRefs, 'turns')
       } else if (attempts < maxAttempts) {
         // Refs not ready yet - retry with increasing delay
         attempts++
@@ -811,11 +838,11 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
     // Start with initial delay for DOM rendering
     const timeoutId = setTimeout(tryHighlight, 50)
 
-    // Cleanup function to clear timeout and remove highlights
+    // Cleanup function - only clear timeouts, not highlights
+    // Highlights are cleared in the effect body when search/session changes (contextChanged)
     return () => {
       clearTimeout(timeoutId)
       if (highlightTimeoutId) clearTimeout(highlightTimeoutId)
-      clearHighlights()
     }
   }, [searchQuery, isSearchActive, matchingTurnIds, session?.id, visibleTurnCount]) // Added visibleTurnCount to re-highlight after pagination
 
