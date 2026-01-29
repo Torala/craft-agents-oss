@@ -384,7 +384,7 @@ export interface CreateSessionOptions {
   /** Model override for the session (e.g., 'haiku', 'sonnet') */
   model?: string
   /** System prompt preset for the session ('default' | 'mini' or custom string) */
-  systemPrompt?: 'default' | 'mini' | string
+  systemPromptPreset?: 'default' | 'mini' | string
 }
 
 // Events sent from main to renderer

@@ -101,7 +101,7 @@ export default function LabelsSettingsPage() {
                         context={labelsEditConfig.context}
                         example={labelsEditConfig.example}
                         model={labelsEditConfig.model}
-                        systemPrompt={labelsEditConfig.systemPrompt}
+                        systemPromptPreset={labelsEditConfig.systemPromptPreset}
                         secondaryAction={editFileAction}
                       />
                     }
@@ -135,6 +135,8 @@ export default function LabelsSettingsPage() {
                         trigger={<EditButton />}
                         context={autoRulesEditConfig.context}
                         example={autoRulesEditConfig.example}
+                        model={autoRulesEditConfig.model}
+                        systemPromptPreset={autoRulesEditConfig.systemPromptPreset}
                         secondaryAction={editFileAction}
                       />
                     }

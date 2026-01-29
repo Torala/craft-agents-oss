@@ -87,7 +87,7 @@ export interface EditConfig {
   /** Optional model for mini agent (e.g., 'haiku', 'sonnet') */
   model?: string
   /** Optional system prompt preset for mini agent (e.g., 'mini' for focused edits) */
-  systemPrompt?: 'default' | 'mini'
+  systemPromptPreset?: 'default' | 'mini'
 }
 
 /**
@@ -331,7 +331,7 @@ const EDIT_CONFIGS: Record<EditContextKey, (location: string) => EditConfig> = {
     },
     example: 'Add a "Blocked" status',
     model: 'haiku',           // Use fast model for quick config edits
-    systemPrompt: 'mini',     // Use focused mini prompt
+    systemPromptPreset: 'mini',     // Use focused mini prompt
   }),
 
   // Label configuration context
@@ -351,7 +351,7 @@ const EDIT_CONFIGS: Record<EditContextKey, (location: string) => EditConfig> = {
     },
     example: 'Add a "Bug" label with red color',
     model: 'haiku',           // Use fast model for quick config edits
-    systemPrompt: 'mini',     // Use focused mini prompt
+    systemPromptPreset: 'mini',     // Use focused mini prompt
   }),
 
   // Auto-label rules context (focused on regex patterns within labels)
@@ -369,6 +369,8 @@ const EDIT_CONFIGS: Record<EditContextKey, (location: string) => EditConfig> = {
         'Confirm clearly when done.',
     },
     example: 'Add a rule to detect GitHub issue URLs',
+    model: 'haiku',           // Use fast model for quick config edits
+    systemPromptPreset: 'mini',     // Use focused mini prompt
   }),
 
   // Add new label context (triggered from the # menu when no labels match)
@@ -387,6 +389,8 @@ const EDIT_CONFIGS: Record<EditContextKey, (location: string) => EditConfig> = {
     },
     example: 'A red "Bug" label',
     overridePlaceholder: 'What label would you like to create?',
+    model: 'haiku',           // Use fast model for quick config edits
+    systemPromptPreset: 'mini',     // Use focused mini prompt
   }),
 
   // Views configuration context
@@ -405,6 +409,8 @@ const EDIT_CONFIGS: Record<EditContextKey, (location: string) => EditConfig> = {
         'Confirm clearly when done.',
     },
     example: 'Add a "Stale" view for sessions inactive > 7 days',
+    model: 'haiku',           // Use fast model for quick config edits
+    systemPromptPreset: 'mini',     // Use focused mini prompt
   }),
 
   // Tool icons configuration context
@@ -423,6 +429,8 @@ const EDIT_CONFIGS: Record<EditContextKey, (location: string) => EditConfig> = {
         'Confirm clearly when done.',
     },
     example: 'Add an icon for my custom CLI tool "deploy"',
+    model: 'haiku',           // Use fast model for quick config edits
+    systemPromptPreset: 'mini',     // Use focused mini prompt
   }),
 }
 
@@ -473,7 +481,7 @@ export interface EditPopoverProps {
   /** Model override for mini agent (e.g., 'haiku', 'sonnet') */
   model?: string
   /** System prompt preset for mini agent (e.g., 'mini' for focused edits) */
-  systemPrompt?: 'default' | 'mini'
+  systemPromptPreset?: 'default' | 'mini'
   /** Width of the popover (default: 320) */
   width?: number
   /** Additional className for the trigger */
@@ -498,6 +506,12 @@ export interface EditPopoverProps {
    * Useful for context menu triggered popovers where focus management is tricky.
    */
   modal?: boolean
+  /**
+   * Default value to pre-fill the input with.
+   * Useful when the user types something (e.g., "#Test") and clicks "Add new label" -
+   * the input can be pre-filled with "Add new label Test".
+   */
+  defaultValue?: string
 }
 
 /**
@@ -564,7 +578,7 @@ export function EditPopover({
   permissionMode = 'allow-all',
   workingDirectory = 'none', // Default to session folder for config edits
   model,
-  systemPrompt,
+  systemPromptPreset,
   width = 320,
   triggerClassName,
   side = 'bottom',
@@ -574,6 +588,7 @@ export function EditPopover({
   open: controlledOpen,
   onOpenChange: controlledOnOpenChange,
   modal = false,
+  defaultValue = '',
 }: EditPopoverProps) {
   // Open files externally (bypasses link interceptor) for "Edit File" secondary actions
   const { onOpenFileExternal } = usePlatform()
@@ -611,12 +626,14 @@ export function EditPopover({
     }
   }, [open])
 
-  // Reset input when popover closes
+  // Reset input when popover closes, set defaultValue when it opens
   useEffect(() => {
-    if (!open) {
+    if (open) {
+      setInput(defaultValue)
+    } else {
       setInput('')
     }
-  }, [open])
+  }, [open, defaultValue])
 
   const handleSubmit = async () => {
     if (!input.trim()) return
@@ -636,7 +653,7 @@ export function EditPopover({
     // The &systemPrompt= sets the system prompt preset (e.g., 'mini')
     const workdirParam = workingDirectory ? `&workdir=${encodeURIComponent(workingDirectory)}` : ''
     const modelParam = model ? `&model=${encodeURIComponent(model)}` : ''
-    const systemPromptParam = systemPrompt ? `&systemPrompt=${encodeURIComponent(systemPrompt)}` : ''
+    const systemPromptParam = systemPromptPreset ? `&systemPrompt=${encodeURIComponent(systemPromptPreset)}` : ''
     const url = `craftagents://action/new-chat?window=focused&input=${encodedInput}&send=true&mode=${permissionMode}&badges=${encodedBadges}${workdirParam}${modelParam}${systemPromptParam}`
 
     try {

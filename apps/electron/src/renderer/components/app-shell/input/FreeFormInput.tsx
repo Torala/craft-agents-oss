@@ -669,6 +669,7 @@ export function FreeFormInput({
   // "Add New Label" handler: cleans up the #trigger text and opens a controlled
   // EditPopover so the user can describe the label before the agent creates it.
   const [addLabelPopoverOpen, setAddLabelPopoverOpen] = React.useState(false)
+  const [addLabelPrefill, setAddLabelPrefill] = React.useState('')
   const handleAddLabel = React.useCallback((prefill: string) => {
     if (!workspaceRootPath) return
 
@@ -677,6 +678,10 @@ export function FreeFormInput({
     setInput(cleaned)
     syncToParent(cleaned)
     inlineLabel.close()
+
+    // Store the prefill text (e.g., "Test" from "#Test") to pre-fill the popover
+    // Format: "Add new label {prefill}" so user can just press enter or modify
+    setAddLabelPrefill(prefill ? `Add new label ${prefill}` : '')
 
     // Open the EditPopover for label creation
     setAddLabelPopoverOpen(true)
@@ -1204,6 +1209,9 @@ export function FreeFormInput({
             context={addLabelEditConfig.context}
             example={addLabelEditConfig.example}
             overridePlaceholder={addLabelEditConfig.overridePlaceholder}
+            defaultValue={addLabelPrefill}
+            model={addLabelEditConfig.model}
+            systemPromptPreset={addLabelEditConfig.systemPromptPreset}
             secondaryAction={workspaceRootPath ? {
               label: 'Edit File',
               filePath: `${workspaceRootPath}/labels/config.json`,

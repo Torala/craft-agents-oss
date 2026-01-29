@@ -1405,8 +1405,8 @@ export class SessionManager {
     const resolvedModel = options?.model || storedSession.model || defaultModel
 
     // Log mini agent session creation
-    if (options?.systemPrompt === 'mini' || options?.model) {
-      sessionLog.info(`🤖 Creating mini agent session: model=${resolvedModel}, systemPrompt=${options?.systemPrompt}`)
+    if (options?.systemPromptPreset === 'mini' || options?.model) {
+      sessionLog.info(`🤖 Creating mini agent session: model=${resolvedModel}, systemPromptPreset=${options?.systemPromptPreset}`)
     }
 
     const managed: ManagedSession = {
@@ -1426,7 +1426,7 @@ export class SessionManager {
       model: resolvedModel,
       thinkingLevel: defaultThinkingLevel,
       // System prompt preset for mini agents
-      systemPromptPreset: options?.systemPrompt,
+      systemPromptPreset: options?.systemPromptPreset,
       messageQueue: [],
       backgroundShellCommands: new Map(),
       messagesLoaded: true,  // New sessions don't need to load messages from disk
@@ -2794,7 +2794,15 @@ export class SessionManager {
       }
     }
 
-    // 3. Check queue and process or complete
+    // 3. Auto-complete mini agent sessions to avoid session list clutter
+    //    Mini agents are spawned from EditPopovers for quick config edits
+    //    and should automatically move to 'done' when finished
+    if (reason === 'complete' && managed.systemPromptPreset === 'mini' && managed.todoState !== 'done') {
+      sessionLog.info(`Auto-completing mini agent session ${sessionId}`)
+      await this.setTodoState(sessionId, 'done')
+    }
+
+    // 4. Check queue and process or complete
     if (managed.messageQueue.length > 0) {
       // Has queued messages - process next
       this.processNextQueuedMessage(sessionId)
@@ -2808,7 +2816,7 @@ export class SessionManager {
       }, managed.workspace.id)
     }
 
-    // 4. Always persist
+    // 5. Always persist
     this.persistSession(managed)
   }
 
