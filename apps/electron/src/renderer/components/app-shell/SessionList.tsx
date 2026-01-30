@@ -59,6 +59,7 @@ import { fuzzyScore } from "@craft-agent/shared/search"
 // Pagination constants
 const INITIAL_DISPLAY_LIMIT = 20
 const BATCH_SIZE = 20
+const MAX_SEARCH_RESULTS = 100
 
 /** Short relative time locale for date-fns formatDistanceToNowStrict.
  *  Produces compact strings: "7m", "2h", "3d", "2w", "5mo", "1y" */
@@ -926,11 +927,16 @@ export function SessionList({
   )
 
   // Filter items by search query — ripgrep content search only for consistent results
-  // Uses fuzzy matching for title sorting (word boundary aware, CJK support)
+  // When query < 2 chars, apply current filter to maintain filtered view
   const searchFilteredItems = useMemo(() => {
-    if (!searchQuery.trim()) return sortedItems
+    // With short/no query, filter to current view (same as non-search mode)
+    if (searchQuery.length < 2) {
+      return sortedItems.filter(item =>
+        sessionMatchesCurrentFilter(item, currentFilter, { evaluateViews, statusFilter, labelFilterMap })
+      )
+    }
 
-    // Only show sessions with ripgrep content matches
+    // 2+ chars: show sessions with ripgrep content matches (from ALL sessions)
     // Sort by: fuzzy title score first, then by match count
     return sortedItems
       .filter(item => contentSearchResults.has(item.id))
@@ -948,10 +954,11 @@ export function SessionList({
         const countB = contentSearchResults.get(b.id)?.matchCount || 0
         return countB - countA
       })
-  }, [sortedItems, searchQuery, contentSearchResults])
+  }, [sortedItems, searchQuery, contentSearchResults, currentFilter, evaluateViews, statusFilter, labelFilterMap])
 
   // Split search results: sessions matching current filter vs all others
-  const { matchingFilterItems, otherResultItems } = useMemo(() => {
+  // Also limits total results to MAX_SEARCH_RESULTS (100)
+  const { matchingFilterItems, otherResultItems, exceededSearchLimit } = useMemo(() => {
     // Check if ANY filtering is active (primary OR secondary)
     const hasActiveFilters =
       (currentFilter && currentFilter.kind !== 'allChats') ||
@@ -971,15 +978,23 @@ export function SessionList({
       })
     }
 
-    if (!searchQuery.trim() || !hasActiveFilters) {
-      // No grouping needed - all results go to "matching"
-      return { matchingFilterItems: searchFilteredItems, otherResultItems: [] as SessionMeta[] }
+    // Check if we have more results than the limit
+    const totalCount = searchFilteredItems.length
+    const exceeded = totalCount > MAX_SEARCH_RESULTS
+
+    if (searchQuery.length < 2 || !hasActiveFilters) {
+      // No grouping needed - all results go to "matching", but limit to MAX_SEARCH_RESULTS
+      const limitedItems = searchFilteredItems.slice(0, MAX_SEARCH_RESULTS)
+      return { matchingFilterItems: limitedItems, otherResultItems: [] as SessionMeta[], exceededSearchLimit: exceeded }
     }
 
     const matching: SessionMeta[] = []
     const others: SessionMeta[] = []
 
+    // Split results, stopping once we hit MAX_SEARCH_RESULTS total
     for (const item of searchFilteredItems) {
+      if (matching.length + others.length >= MAX_SEARCH_RESULTS) break
+
       const matches = sessionMatchesCurrentFilter(item, currentFilter, { evaluateViews, statusFilter, labelFilterMap })
       if (matches) {
         matching.push(item)
@@ -993,10 +1008,11 @@ export function SessionList({
       searchLog.info('search:grouping:result', {
         matchingCount: matching.length,
         othersCount: others.length,
+        exceeded,
       })
     }
 
-    return { matchingFilterItems: matching, otherResultItems: others }
+    return { matchingFilterItems: matching, otherResultItems: others, exceededSearchLimit: exceeded }
   }, [searchFilteredItems, currentFilter, evaluateViews, searchQuery, statusFilter, labelFilterMap])
 
   // Reset display limit when search query changes
@@ -1039,7 +1055,7 @@ export function SessionList({
 
   // Create flat list for keyboard navigation (maintains order across groups/sections)
   const flatItems = useMemo(() => {
-    if (searchActive && searchQuery) {
+    if (searchActive && searchQuery.length >= 2) {
       // Search mode: flat list of matching + other results (no date grouping)
       return [...matchingFilterItems, ...otherResultItems]
     }
@@ -1261,7 +1277,8 @@ export function SessionList({
           onFocus={() => setIsSearchInputFocused(true)}
           onBlur={() => setIsSearchInputFocused(false)}
           isSearching={isSearchingContent}
-          resultCount={searchFilteredItems.length}
+          resultCount={matchingFilterItems.length + otherResultItems.length}
+          exceededLimit={exceededSearchLimit}
           inputRef={searchInputRef}
         />
       )}
@@ -1290,8 +1307,8 @@ export function SessionList({
             </div>
           )}
 
-          {/* Search mode: flat list with two sections (Matching Filters + Other Matches) */}
-          {searchActive && searchQuery ? (
+          {/* Search mode: flat list with two sections (In Current View + Other Conversations) */}
+          {searchActive && searchQuery.length >= 2 ? (
             <>
               {/* No results in current filter message */}
               {matchingFilterItems.length === 0 && otherResultItems.length > 0 && (
@@ -1303,7 +1320,7 @@ export function SessionList({
               {/* Matching Filters section - flat list, no date grouping */}
               {matchingFilterItems.length > 0 && (
                 <>
-                  <SessionListSectionHeader label="Matching Filters" />
+                  <SessionListSectionHeader label="In Current View" />
                   {matchingFilterItems.map((item, index) => {
                     const flatIndex = sessionIndexMap.get(item.id) ?? 0
                     const itemProps = getItemProps(item, flatIndex)
@@ -1350,7 +1367,7 @@ export function SessionList({
               {/* Other Matches section - flat list, no date grouping */}
               {otherResultItems.length > 0 && (
                 <>
-                  <SessionListSectionHeader label="Other Matches" />
+                  <SessionListSectionHeader label="Other Conversations" />
                   {otherResultItems.map((item, index) => {
                     const flatIndex = sessionIndexMap.get(item.id) ?? 0
                     const itemProps = getItemProps(item, flatIndex)

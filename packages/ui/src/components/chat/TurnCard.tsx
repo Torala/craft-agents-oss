@@ -1619,6 +1619,12 @@ export const TurnCard = React.memo(function TurnCard({
   // Track if user has toggled expansion (skip animation on initial mount)
   const hasUserToggled = useRef(false)
 
+  // Track if component has mounted (enable fade-in for new activities after mount)
+  const hasMounted = useRef(false)
+  useEffect(() => {
+    hasMounted.current = true
+  }, [])
+
   const toggleExpanded = useCallback(() => {
     hasUserToggled.current = true
     const newExpanded = !isExpanded
@@ -1816,7 +1822,11 @@ export const TurnCard = React.memo(function TurnCard({
                       ) : (
                         <motion.div
                           key={item.id}
-                          initial={hasUserToggled.current ? { opacity: 0, x: -8 } : false}
+                          initial={
+                            hasUserToggled.current || hasMounted.current
+                              ? { opacity: 0, x: -8 }
+                              : false
+                          }
                           animate={{ opacity: 1, x: 0 }}
                           transition={{ delay: hasUserToggled.current && index < SIZE_CONFIG.staggeredAnimationLimit ? index * 0.03 : 0 }}
                         >
@@ -1834,7 +1844,11 @@ export const TurnCard = React.memo(function TurnCard({
                     sortedActivities.map((activity, index) => (
                       <motion.div
                         key={activity.id}
-                        initial={hasUserToggled.current ? { opacity: 0, x: -8 } : false}
+                        initial={
+                          hasUserToggled.current || hasMounted.current
+                            ? { opacity: 0, x: -8 }
+                            : false
+                        }
                         animate={{ opacity: 1, x: 0 }}
                         // Only animate on user toggle, not initial mount
                         transition={{ delay: hasUserToggled.current && index < SIZE_CONFIG.staggeredAnimationLimit ? index * 0.03 : 0 }}

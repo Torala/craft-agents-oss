@@ -29,6 +29,8 @@ export interface SessionSearchHeaderProps {
   isSearching?: boolean
   /** Number of results to display (when not searching) */
   resultCount?: number
+  /** Whether the result count exceeded the display limit (shows "100+" instead of exact count) */
+  exceededLimit?: boolean
   /** Ref for the input element (for focus management) */
   inputRef?: React.RefObject<HTMLInputElement>
   /** Placeholder text */
@@ -46,6 +48,7 @@ export function SessionSearchHeader({
   onBlur,
   isSearching = false,
   resultCount,
+  exceededLimit = false,
   inputRef,
   placeholder = 'Search titles and content...',
   readOnly = false,
@@ -88,7 +91,7 @@ export function SessionSearchHeader({
               <span>Loading…</span>
             </>
           ) : (
-            <span>{resultCount ?? 0} results</span>
+            <span>{exceededLimit ? '100+' : (resultCount ?? 0)} results</span>
           )}
         </div>
       )}
