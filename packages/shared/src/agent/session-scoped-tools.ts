@@ -66,7 +66,156 @@ export type {
 // ============================================================
 
 /**
- * Callbacks that can be registered per-session
+ * Credential input modes for different auth types
+ */
+export type CredentialInputMode = 'bearer' | 'basic' | 'header' | 'query' | 'multi-header';
+
+/**
+ * Auth request types
+ */
+export type AuthRequestType =
+  | 'credential'
+  | 'oauth'
+  | 'oauth-google'
+  | 'oauth-slack'
+  | 'oauth-microsoft';
+
+/**
+ * Base auth request fields
+ */
+interface BaseAuthRequest {
+  requestId: string;
+  sessionId: string;
+  sourceSlug: string;
+  sourceName: string;
+}
+
+/**
+ * Credential auth request - prompts for API key, bearer token, etc.
+ */
+export interface CredentialAuthRequest extends BaseAuthRequest {
+  type: 'credential';
+  mode: CredentialInputMode;
+  labels?: {
+    credential?: string;
+    username?: string;
+    password?: string;
+  };
+  description?: string;
+  hint?: string;
+  headerName?: string;
+  /** Header names for multi-header auth (e.g., ["DD-API-KEY", "DD-APPLICATION-KEY"]) */
+  headerNames?: string[];
+  /** Source URL/domain for password manager credential matching (1Password, etc.) */
+  sourceUrl?: string;
+  /** For basic auth: whether password is required. Default true for backward compatibility. */
+  passwordRequired?: boolean;
+}
+
+/**
+ * MCP OAuth auth request - standard OAuth 2.0 + PKCE
+ */
+export interface McpOAuthAuthRequest extends BaseAuthRequest {
+  type: 'oauth';
+}
+
+/**
+ * Google OAuth auth request - Google-specific OAuth
+ */
+export interface GoogleOAuthAuthRequest extends BaseAuthRequest {
+  type: 'oauth-google';
+  service?: GoogleService;
+}
+
+/**
+ * Slack OAuth auth request - Slack-specific OAuth
+ */
+export interface SlackOAuthAuthRequest extends BaseAuthRequest {
+  type: 'oauth-slack';
+  service?: SlackService;
+}
+
+/**
+ * Microsoft OAuth auth request - Microsoft-specific OAuth
+ */
+export interface MicrosoftOAuthAuthRequest extends BaseAuthRequest {
+  type: 'oauth-microsoft';
+  service?: MicrosoftService;
+}
+
+/**
+ * Union of all auth request types
+ */
+export type AuthRequest =
+  | CredentialAuthRequest
+  | McpOAuthAuthRequest
+  | GoogleOAuthAuthRequest
+  | SlackOAuthAuthRequest
+  | MicrosoftOAuthAuthRequest;
+
+/**
+ * Auth result - sent back to agent after auth completes
+ */
+export interface AuthResult {
+  requestId: string;
+  sourceSlug: string;
+  success: boolean;
+  cancelled?: boolean;
+  error?: string;
+  // Additional info for successful auth
+  email?: string;      // For Google/Microsoft OAuth
+  workspace?: string;  // For Slack OAuth
+}
+
+// ============================================================
+// Helper Functions (exported for testing)
+// ============================================================
+
+/**
+ * Detect the effective credential input mode based on source config and requested mode.
+ *
+ * Auto-upgrades to 'multi-header' when source has headerNames array, regardless of
+ * what mode was explicitly requested. This ensures Datadog-like sources (with
+ * headerNames: ["DD-API-KEY", "DD-APPLICATION-KEY"]) always use multi-header UI.
+ *
+ * @param source - Source configuration (may be null if source not found)
+ * @param requestedMode - Mode explicitly requested in tool call
+ * @param requestedHeaderNames - Header names explicitly provided in tool call
+ * @returns Effective mode to use
+ */
+export function detectCredentialMode(
+  source: { api?: { headerNames?: string[] } } | null,
+  requestedMode: CredentialInputMode,
+  requestedHeaderNames?: string[]
+): CredentialInputMode {
+  // Use provided headerNames or fall back to source config
+  const effectiveHeaderNames = requestedHeaderNames || source?.api?.headerNames;
+
+  // If we have headerNames, always use multi-header mode
+  if (effectiveHeaderNames && effectiveHeaderNames.length > 0) {
+    return 'multi-header';
+  }
+
+  return requestedMode;
+}
+
+/**
+ * Get effective header names from request args or source config.
+ *
+ * @param source - Source configuration
+ * @param requestedHeaderNames - Header names explicitly provided in tool call
+ * @returns Array of header names or undefined
+ */
+export function getEffectiveHeaderNames(
+  source: { api?: { headerNames?: string[] } } | null,
+  requestedHeaderNames?: string[]
+): string[] | undefined {
+  return requestedHeaderNames || source?.api?.headerNames;
+}
+
+/**
+ * Callbacks for session-scoped tool operations.
+ * These are registered per-session and invoked by tools.
  */
 export interface SessionScopedToolCallbacks {
   /**
@@ -339,9 +488,135 @@ The user will see a secure input UI with appropriate fields based on the auth mo
 - \`basic\`: Username and Password fields
 - \`header\`: API Key with custom header name shown
 - \`query\`: API Key for query parameter auth
+- \`multi-header\`: Multiple header fields (e.g., Datadog's DD-API-KEY + DD-APPLICATION-KEY)
 
-**IMPORTANT:** After calling this tool, execution will be paused for user input.`,
-};
+**IMPORTANT:** After calling this tool:
+- Execution will be **automatically paused** to show the credential input UI
+- Once the user completes or cancels, you'll receive a message with the result
+- Do NOT include any text or tool calls after this tool - they will not be executed
+
+**Example usage:**
+\`\`\`
+source_credential_prompt({
+  sourceSlug: "my-api",
+  mode: "bearer",
+  labels: { credential: "API Key" },
+  description: "Enter your API key from the dashboard",
+  hint: "Find it at https://example.com/settings/api"
+})
+\`\`\`
+
+**Multi-header example (Datadog):**
+\`\`\`
+source_credential_prompt({
+  sourceSlug: "datadog",
+  mode: "multi-header",
+  headerNames: ["DD-API-KEY", "DD-APPLICATION-KEY"],
+  description: "Enter your Datadog API and Application keys",
+  hint: "Get keys from Organization Settings > API Keys and Application Keys"
+})
+\`\`\``,
+    {
+      sourceSlug: z.string().describe('The slug of the source to authenticate'),
+      mode: z.enum(['bearer', 'basic', 'header', 'query', 'multi-header']).describe('Type of credential input'),
+      labels: z.object({
+        credential: z.string().optional().describe('Label for primary credential field'),
+        username: z.string().optional().describe('Label for username field (basic auth)'),
+        password: z.string().optional().describe('Label for password field (basic auth)'),
+      }).optional().describe('Custom field labels'),
+      description: z.string().optional().describe('Description shown to user'),
+      hint: z.string().optional().describe('Hint about where to find credentials'),
+      headerNames: z.array(z.string()).optional().describe('Header names for multi-header auth (e.g., ["DD-API-KEY", "DD-APPLICATION-KEY"])'),
+      passwordRequired: z.boolean().optional().describe('For basic auth: whether password field is required (default: true)'),
+    },
+    async (args) => {
+      debug('[source_credential_prompt] Requesting credentials:', args.sourceSlug, args.mode);
+
+      // Validate that passwordRequired only applies to basic auth
+      if (args.passwordRequired !== undefined && args.mode !== 'basic') {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: `Error: passwordRequired parameter only applies to basic auth mode. You specified mode="${args.mode}" with passwordRequired=${args.passwordRequired}.`,
+          }],
+          isError: true,
+        };
+      }
+
+      try {
+        // Load source to get name and validate
+        const source = loadSourceConfig(workspaceRootPath, args.sourceSlug);
+        if (!source) {
+          return {
+            content: [{
+              type: 'text' as const,
+              text: `Source '${args.sourceSlug}' not found. Check ~/.craft-agent/workspaces/{workspace}/sources/ for available sources.`,
+            }],
+            isError: true,
+          };
+        }
+
+        // Get callbacks
+        const callbacks = getSessionScopedToolCallbacks(sessionId);
+
+        if (!callbacks?.onAuthRequest) {
+          return {
+            content: [{
+              type: 'text' as const,
+              text: 'Error: No credential input handler available. This tool requires a UI to prompt for credentials.',
+            }],
+            isError: true,
+          };
+        }
+
+        // Auto-detect multi-header mode from source config
+        // If source has headerNames array, use multi-header mode regardless of what was passed
+        const effectiveHeaderNames = getEffectiveHeaderNames(source, args.headerNames);
+        const effectiveMode = detectCredentialMode(source, args.mode, args.headerNames);
+
+        // Build auth request
+        const authRequest: CredentialAuthRequest = {
+          type: 'credential',
+          requestId: crypto.randomUUID(),
+          sessionId,
+          sourceSlug: args.sourceSlug,
+          sourceName: source.name,
+          mode: effectiveMode,
+          labels: args.labels,
+          description: args.description,
+          hint: args.hint,
+          headerName: source.api?.headerName,
+          // For multi-header auth: use provided headerNames or fall back to source config
+          headerNames: effectiveHeaderNames,
+          // Pass source URL so password managers (1Password) can match stored credentials by domain
+          sourceUrl: source.api?.baseUrl || source.mcp?.url,
+          passwordRequired: args.passwordRequired,
+        };
+
+        // Trigger auth request - this will cause the session manager to forceAbort
+        callbacks.onAuthRequest(authRequest);
+
+        // Return immediately - execution will be paused by forceAbort
+        return {
+          content: [{
+            type: 'text' as const,
+            text: `Authentication requested for '${source.name}'. Waiting for user input.`,
+          }],
+          isError: false,
+        };
+      } catch (error) {
+        debug('[source_credential_prompt] Error:', error);
+        return {
+          content: [{
+            type: 'text' as const,
+            text: `Error prompting for credentials: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          }],
+          isError: true,
+        };
+      }
+    }
+  );
+}
 
 // ============================================================
 // Main Factory Function

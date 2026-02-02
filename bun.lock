@@ -79,7 +79,7 @@
     },
     "apps/electron": {
       "name": "@craft-agent/electron",
-      "version": "0.0.1",
+      "version": "0.3.1",
       "dependencies": {
         "@craft-agent/core": "workspace:*",
         "@craft-agent/shared": "workspace:*",
@@ -117,7 +117,7 @@
     },
     "apps/marketing": {
       "name": "@craft-agent/marketing",
-      "version": "0.0.1",
+      "version": "0.3.1",
       "dependencies": {
         "@craft-agent/ui": "workspace:*",
         "@paper-design/shaders-react": "^0.0.70",
@@ -140,7 +140,7 @@
     },
     "apps/viewer": {
       "name": "@craft-agent/viewer",
-      "version": "0.0.1",
+      "version": "0.3.1",
       "dependencies": {
         "@craft-agent/core": "workspace:*",
         "@craft-agent/ui": "workspace:*",
@@ -167,7 +167,7 @@
     },
     "packages/core": {
       "name": "@craft-agent/core",
-      "version": "0.0.1",
+      "version": "0.3.1",
       "devDependencies": {
         "@types/uuid": "^11.0.0",
       },
@@ -179,7 +179,7 @@
     },
     "packages/mermaid": {
       "name": "@craft-agent/mermaid",
-      "version": "0.0.1",
+      "version": "0.3.1",
       "dependencies": {
         "@dagrejs/dagre": "^1.1.8",
       },
@@ -189,7 +189,7 @@
     },
     "packages/shared": {
       "name": "@craft-agent/shared",
-      "version": "0.0.1",
+      "version": "0.3.1",
       "dependencies": {
         "@craft-agent/core": "workspace:*",
         "@isaacs/ttlcache": "^2.1.4",
@@ -212,7 +212,7 @@
     },
     "packages/ui": {
       "name": "@craft-agent/ui",
-      "version": "0.0.1",
+      "version": "0.3.1",
       "dependencies": {
         "@craft-agent/core": "workspace:*",
         "@craft-agent/mermaid": "workspace:*",

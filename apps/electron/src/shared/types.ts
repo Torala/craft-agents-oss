@@ -221,7 +221,7 @@ export interface CredentialResponse {
   username?: string
   /** Password for basic auth */
   password?: string
-  /** Headers for multi-header auth (e.g., { "DD-API-KEY": "...", "DD-APPLICATION-KEY": "..." }) */
+  /** Header values for multi-header mode (e.g., { "DD-API-KEY": "...", "DD-APPLICATION-KEY": "..." }) */
   headers?: Record<string, string>
   /** Whether user cancelled */
   cancelled: boolean
