@@ -1,11 +1,11 @@
 {
   "name": "craft-agent-docs",
+  "version": "0.3.2",
   "private": true,
   "scripts": {
     "dev": "mintlify dev"
   },
   "devDependencies": {
     "mintlify": "^4"
-  },
-  "version": "0.0.1"
+  }
 }
