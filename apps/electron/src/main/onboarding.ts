@@ -53,7 +53,7 @@ export function registerOnboardingHandlers(sessionManager: SessionManager): void
       mainLog.info('[Onboarding:Main] Creating CraftOAuth instance...')
 
       const oauth = new CraftOAuth(
-        { mcpBaseUrl: mcpUrl },
+        { mcpUrl: mcpUrl },
         {
           onStatus: (msg) => mainLog.info('[Onboarding:Main] MCP OAuth status:', msg),
           onError: (err) => mainLog.error('[Onboarding:Main] MCP OAuth error:', err),

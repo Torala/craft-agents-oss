@@ -4,10 +4,30 @@
  * These tests verify that OAuth metadata can be discovered from popular MCP servers.
  * They only check that metadata is discoverable - they don't perform full OAuth flows.
  *
- * Tests are skipped if servers are unreachable (network tolerance for CI).
+ * IMPORTANT: Tests are conditionally skipped if servers are unreachable.
+ * When metadata is null, the test logs a warning and exits early - this is intentional
+ * for CI network tolerance. Check test output for "SKIPPED" warnings.
  */
 import { describe, it, expect } from 'bun:test';
 import { discoverOAuthMetadata } from '../oauth';
+
+/**
+ * Helper to handle conditionally skipped tests.
+ * Logs a prominent warning when a test is skipped due to server unavailability.
+ */
+function skipIfNoMetadata(
+  serverName: string,
+  metadata: unknown,
+  logs: string[]
+): metadata is null {
+  if (metadata === null) {
+    console.warn(`\n⚠️  SKIPPED: ${serverName}`);
+    console.warn('   Server unavailable or requires auth - no assertions run');
+    console.warn('   Discovery logs:', logs.join(', ') || '(none)');
+    return true;
+  }
+  return false;
+}
 
 describe('E2E: OAuth Metadata Discovery', () => {
   describe('GitHub MCP (api.githubcopilot.com)', () => {
@@ -17,10 +37,7 @@ describe('E2E: OAuth Metadata Discovery', () => {
       const logs: string[] = [];
       const metadata = await discoverOAuthMetadata(MCP_URL, (msg) => logs.push(msg));
 
-      // If we get null, the server might be down or require auth - that's OK for E2E
-      if (metadata === null) {
-        console.log('GitHub MCP: No metadata discovered (server may require auth or be unavailable)');
-        console.log('Discovery logs:', logs);
+      if (skipIfNoMetadata('GitHub MCP', metadata, logs)) {
         return;
       }
 
@@ -37,9 +54,7 @@ describe('E2E: OAuth Metadata Discovery', () => {
       const logs: string[] = [];
       const metadata = await discoverOAuthMetadata(MCP_URL, (msg) => logs.push(msg));
 
-      if (metadata === null) {
-        console.log('Linear MCP: No metadata discovered (server may require auth or be unavailable)');
-        console.log('Discovery logs:', logs);
+      if (skipIfNoMetadata('Linear MCP', metadata, logs)) {
         return;
       }
 
@@ -56,9 +71,7 @@ describe('E2E: OAuth Metadata Discovery', () => {
       const logs: string[] = [];
       const metadata = await discoverOAuthMetadata(MCP_URL, (msg) => logs.push(msg));
 
-      if (metadata === null) {
-        console.log('Ahrefs MCP: No metadata discovered (server may require auth or be unavailable)');
-        console.log('Discovery logs:', logs);
+      if (skipIfNoMetadata('Ahrefs MCP', metadata, logs)) {
         return;
       }
 
@@ -75,9 +88,7 @@ describe('E2E: OAuth Metadata Discovery', () => {
       const logs: string[] = [];
       const metadata = await discoverOAuthMetadata(MCP_URL, (msg) => logs.push(msg));
 
-      if (metadata === null) {
-        console.log('Craft MCP: No metadata discovered (server may require auth or be unavailable)');
-        console.log('Discovery logs:', logs);
+      if (skipIfNoMetadata('Craft MCP', metadata, logs)) {
         return;
       }
 

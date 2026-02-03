@@ -5,7 +5,7 @@ import { openUrl } from '../utils/open-url.ts';
 import { generateCallbackPage } from './callback-page.ts';
 
 export interface OAuthConfig {
-  mcpBaseUrl: string; // e.g., http://localhost:3000/v1/links/abc123
+  mcpUrl: string; // Full MCP URL including path (e.g., https://mcp.craft.do/my/mcp)
 }
 
 export interface OAuthTokens {
@@ -51,12 +51,12 @@ export class CraftOAuth {
   // Get OAuth server metadata using progressive discovery
   private async getServerMetadata(): Promise<OAuthMetadata> {
     const metadata = await discoverOAuthMetadata(
-      this.config.mcpBaseUrl,
+      this.config.mcpUrl,
       (msg) => this.callbacks.onStatus(msg)
     );
 
     if (!metadata) {
-      throw new Error(`No OAuth metadata found for ${this.config.mcpBaseUrl}`);
+      throw new Error(`No OAuth metadata found for ${this.config.mcpUrl}`);
     }
 
     return metadata;
@@ -180,7 +180,7 @@ export class CraftOAuth {
 
     try {
       const metadata = await discoverOAuthMetadata(
-        this.config.mcpBaseUrl,
+        this.config.mcpUrl,
         (msg) => this.callbacks.onStatus(msg)
       );
 
@@ -206,7 +206,7 @@ export class CraftOAuth {
     let metadata;
     try {
       metadata = await this.getServerMetadata();
-      this.callbacks.onStatus(`Found OAuth endpoints at ${this.config.mcpBaseUrl}`);
+      this.callbacks.onStatus(`Found OAuth endpoints at ${this.config.mcpUrl}`);
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Unknown error';
       this.callbacks.onStatus(`Failed to get OAuth metadata: ${msg}`);

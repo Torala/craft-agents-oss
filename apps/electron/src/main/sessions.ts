@@ -54,6 +54,38 @@ import { listLabels } from '@craft-agent/shared/labels/storage'
 import { extractLabelId } from '@craft-agent/shared/labels'
 
 /**
+ * Track failed token refresh attempts with timestamps for rate limiting.
+ * Key: source slug, Value: timestamp of last failed refresh attempt.
+ */
+const failedRefreshAttempts = new Map<string, number>()
+
+/** Cooldown period after a failed refresh before retrying (5 minutes) */
+const REFRESH_RETRY_COOLDOWN_MS = 5 * 60 * 1000
+
+/**
+ * Check if a source should skip refresh due to recent failure.
+ */
+function shouldSkipRefresh(sourceSlug: string): boolean {
+  const lastFailure = failedRefreshAttempts.get(sourceSlug)
+  if (!lastFailure) return false
+  return Date.now() - lastFailure < REFRESH_RETRY_COOLDOWN_MS
+}
+
+/**
+ * Record a failed refresh attempt for rate limiting.
+ */
+function recordRefreshFailure(sourceSlug: string): void {
+  failedRefreshAttempts.set(sourceSlug, Date.now())
+}
+
+/**
+ * Clear the failure record when refresh succeeds.
+ */
+function clearRefreshFailure(sourceSlug: string): void {
+  failedRefreshAttempts.delete(sourceSlug)
+}
+
+/**
  * Sanitize message content for use as session title.
  * Strips XML blocks (e.g. <edit_request>) and normalizes whitespace.
  */
@@ -150,6 +182,9 @@ async function buildServersFromSources(sources: LoadedSource[], sessionPath?: st
 /**
  * Check if any MCP OAuth sources have expired/expiring tokens.
  * Returns the sources that need token refresh.
+ *
+ * Note: Sources that recently failed refresh are skipped (rate limited)
+ * to avoid spamming on every message. See REFRESH_RETRY_COOLDOWN_MS.
  */
 async function getMcpOAuthSourcesNeedingRefresh(
   sources: LoadedSource[]
@@ -175,31 +210,54 @@ async function getMcpOAuthSourcesNeedingRefresh(
     })
   )
 
-  // Filter to sources needing refresh
+  // Filter to sources needing refresh, excluding those in cooldown
   return results
-    .filter(({ cred }) => cred && (credManager.isExpired(cred) || credManager.needsRefresh(cred)))
+    .filter(({ source, cred }) => {
+      // Skip if in cooldown from recent failure
+      if (shouldSkipRefresh(source.config.slug)) {
+        sessionLog.debug(`[OAuth] Skipping ${source.config.slug} - in cooldown after recent failure`)
+        return false
+      }
+      return cred && (credManager.isExpired(cred) || credManager.needsRefresh(cred))
+    })
     .map(({ source }) => source)
 }
 
 /**
+ * Result of a token refresh operation.
+ */
+interface TokenRefreshResult {
+  /** Whether any tokens were refreshed (configs were updated) */
+  tokensRefreshed: boolean
+  /** Sources that failed to refresh (for warning display) */
+  failedSources: Array<{ slug: string; reason: string }>
+}
+
+/**
  * Refresh expired MCP OAuth tokens and rebuild server configs.
- * Returns true if any tokens were refreshed (configs were updated).
+ * Returns info about refreshed and failed tokens.
  *
  * This implements "lazy refresh at query time" - tokens are refreshed before
  * each agent.chat() call, then server configs are rebuilt with fresh headers.
+ *
+ * Note: Sources are considered "needing refresh" if their token expires within
+ * 5 minutes (see SourceCredentialManager.needsRefresh).
  */
 async function refreshMcpOAuthTokensIfNeeded(
   agent: CraftAgent,
   sources: LoadedSource[],
   sessionPath: string
-): Promise<boolean> {
+): Promise<TokenRefreshResult> {
+  sessionLog.debug('[OAuth] Checking if any MCP OAuth tokens need refresh')
   const needRefresh = await getMcpOAuthSourcesNeedingRefresh(sources)
 
   if (needRefresh.length === 0) {
-    return false
+    return { tokensRefreshed: false, failedSources: [] }
   }
 
+  sessionLog.debug(`[OAuth] Found ${needRefresh.length} source(s) needing token refresh: ${needRefresh.map(s => s.config.slug).join(', ')}`)
   const credManager = getSourceCredentialManager()
+  const failedSources: Array<{ slug: string; reason: string }> = []
 
   // Refresh all tokens in parallel
   const refreshResults = await Promise.all(
@@ -209,16 +267,22 @@ async function refreshMcpOAuthTokensIfNeeded(
         const token = await credManager.refresh(source)
         if (token) {
           sessionLog.info(`[OAuth] Refreshed MCP token for ${source.config.slug}`)
+          clearRefreshFailure(source.config.slug) // Clear any previous failure record
           return { source, success: true }
         } else {
+          const reason = 'Token refresh returned null'
           sessionLog.warn(`[OAuth] Refresh returned null for ${source.config.slug}`)
           credManager.markSourceNeedsReauth(source, 'Token refresh failed')
+          recordRefreshFailure(source.config.slug) // Rate limit future attempts
+          failedSources.push({ slug: source.config.slug, reason })
           return { source, success: false }
         }
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err)
-        sessionLog.warn(`[OAuth] Refresh failed for ${source.config.slug}: ${msg}`)
-        credManager.markSourceNeedsReauth(source, `Refresh error: ${msg}`)
+        const reason = err instanceof Error ? err.message : String(err)
+        sessionLog.warn(`[OAuth] Refresh failed for ${source.config.slug}: ${reason}`)
+        credManager.markSourceNeedsReauth(source, `Refresh error: ${reason}`)
+        recordRefreshFailure(source.config.slug) // Rate limit future attempts
+        failedSources.push({ slug: source.config.slug, reason })
         return { source, success: false }
       }
     })
@@ -233,10 +297,10 @@ async function refreshMcpOAuthTokensIfNeeded(
     const { mcpServers, apiServers } = await buildServersFromSources(enabledSources, sessionPath)
     const intendedSlugs = enabledSources.map(s => s.config.slug)
     agent.setSourceServers(mcpServers, apiServers, intendedSlugs)
-    return true
+    return { tokensRefreshed: true, failedSources }
   }
 
-  return false
+  return { tokensRefreshed: false, failedSources }
 }
 
 /**
@@ -2680,13 +2744,22 @@ export class SessionManager {
 
       // Refresh MCP OAuth tokens if needed (before chat uses them)
       // This handles the case where tokens expired mid-session
-      const tokensRefreshed = await refreshMcpOAuthTokensIfNeeded(
+      const refreshResult = await refreshMcpOAuthTokensIfNeeded(
         agent,
         sources,
         sessionPath
       )
-      if (tokensRefreshed) {
+      if (refreshResult.tokensRefreshed) {
         sendSpan.mark('oauth.tokens.refreshed')
+      }
+      // Emit warnings for any sources that failed to refresh
+      for (const failed of refreshResult.failedSources) {
+        this.sendEvent({
+          type: 'info',
+          sessionId,
+          message: `Token refresh failed for "${failed.slug}" - source may need re-authentication`,
+          level: 'warning'
+        }, managed.workspace.id)
       }
     }
 
