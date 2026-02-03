@@ -13,8 +13,7 @@ import type { Components } from 'react-markdown'
  * UnknownTag - Fallback component for invalid HTML-like tags
  *
  * Renders tags with invalid names (containing +, @, etc.) as plain text
- * instead of crashing React. Always renders both opening and closing tags
- * for consistency (it's escaped text anyway).
+ * instead of crashing React.
  */
 export const UnknownTag: React.FC<{ tagName: string; children?: React.ReactNode }> = ({
   tagName,
@@ -23,40 +22,25 @@ export const UnknownTag: React.FC<{ tagName: string; children?: React.ReactNode 
   <span className="text-muted-foreground">
     {`<${tagName}>`}
     {children}
-    {`</${tagName}>`}
+    {children != null && `</${tagName}>`}
   </span>
 )
 
-/** Matches valid lowercase HTML tags: div, span, h1, etc. */
-const VALID_HTML_TAG = /^[a-z][a-z0-9]*$/
-
-/** Matches valid PascalCase React components: MyComponent, Button, etc. */
-const VALID_COMPONENT_NAME = /^[A-Z][a-zA-Z0-9_]*$/
-
 /**
  * Checks if a tag name is valid for React/HTML rendering.
+ *
+ * Valid tags are:
+ * - Lowercase HTML elements: div, span, p, etc. (matches /^[a-z][a-z0-9]*$/)
+ * - PascalCase React components: MyComponent, etc. (matches /^[A-Z][a-zA-Z0-9_]*$/)
+ *
  * Invalid tags contain characters like +, @, -, spaces, etc.
  */
 export function isValidTagName(tagName: string): boolean {
-  return VALID_HTML_TAG.test(tagName) || VALID_COMPONENT_NAME.test(tagName)
-}
-
-/**
- * Determines if a tag should use our fallback component.
- * Returns true for invalid tags not explicitly defined in components.
- */
-function shouldUseFallback(prop: string | symbol, target: object): boolean {
-  if (typeof prop === 'symbol') return false
-  if (prop in target) return false
-  return !isValidTagName(prop)
-}
-
-/** Descriptor returned for invalid tags to make hasOwnProperty return true */
-const INVALID_TAG_DESCRIPTOR: PropertyDescriptor = {
-  configurable: true,
-  enumerable: true,
-  value: undefined, // Actual value comes from `get` trap
-  writable: true,
+  // Lowercase HTML tags (div, span, etc.)
+  if (/^[a-z][a-z0-9]*$/.test(tagName)) return true
+  // PascalCase React components (MyComponent, etc.)
+  if (/^[A-Z][a-zA-Z0-9_]*$/.test(tagName)) return true
+  return false
 }
 
 /**
@@ -76,29 +60,65 @@ const INVALID_TAG_DESCRIPTOR: PropertyDescriptor = {
 export function wrapWithSafeProxy(components: Partial<Components>): Partial<Components> {
   return new Proxy(components, {
     get(target, prop) {
-      if (typeof prop === 'symbol') return Reflect.get(target, prop)
-      if (prop in target) return target[prop as keyof typeof target]
-      if (!shouldUseFallback(prop, target)) return undefined
+      // Handle symbols (like Symbol.iterator) - pass through to target
+      if (typeof prop === 'symbol') {
+        return Reflect.get(target, prop)
+      }
 
+      // Return defined component if exists
+      if (prop in target) return target[prop as keyof typeof target]
+
+      // Let React handle valid tag names
+      if (isValidTagName(prop)) return undefined
+
+      // Return fallback for invalid tag names (like sq+qr, foo@bar)
       return ({ children }: { children?: React.ReactNode }) => (
         <UnknownTag tagName={prop}>{children}</UnknownTag>
       )
     },
 
     has(target, prop) {
-      if (typeof prop === 'symbol') return Reflect.has(target, prop)
-      return prop in target || shouldUseFallback(prop, target)
+      // Handle symbols
+      if (typeof prop === 'symbol') {
+        return Reflect.has(target, prop)
+      }
+
+      // Return true if explicitly defined in target
+      if (prop in target) return true
+
+      // Claim we have invalid tag names so `get` can provide the fallback
+      if (!isValidTagName(prop)) return true
+
+      // Valid tags not in target - return false, let React handle natively
+      return false
     },
 
     // CRITICAL: hast-util-to-jsx-runtime uses Object.hasOwnProperty to check
     // for components, which calls getOwnPropertyDescriptor, not the `has` trap.
+    // We must return a descriptor for invalid tags so hasOwnProperty returns true.
     getOwnPropertyDescriptor(target, prop) {
-      if (typeof prop === 'symbol') return Reflect.getOwnPropertyDescriptor(target, prop)
+      // Handle symbols
+      if (typeof prop === 'symbol') {
+        return Reflect.getOwnPropertyDescriptor(target, prop)
+      }
 
+      // Return actual descriptor if property exists in target
       const descriptor = Reflect.getOwnPropertyDescriptor(target, prop)
       if (descriptor) return descriptor
 
-      return shouldUseFallback(prop, target) ? INVALID_TAG_DESCRIPTOR : undefined
+      // For invalid tag names, return a fake descriptor so hasOwnProperty returns true
+      // This makes hast-util-to-jsx-runtime use our component from `get` trap
+      if (!isValidTagName(prop)) {
+        return {
+          configurable: true,
+          enumerable: true,
+          value: undefined, // The actual value comes from `get` trap
+          writable: true,
+        }
+      }
+
+      // Valid tags not in target - return undefined (no own property)
+      return undefined
     },
   })
 }
