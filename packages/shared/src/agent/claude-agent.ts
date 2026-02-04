@@ -1225,9 +1225,11 @@ export class CraftAgent {
               if (input.tool_name === 'Skill') {
                 const toolInput = input.tool_input as { skill?: string; args?: string };
                 if (toolInput.skill && !toolInput.skill.includes(':')) {
-                  // Short name detected - prepend workspaceId
-                  const workspaceId = this.config.workspace.id;
-                  const qualifiedSkill = `${workspaceId}:${toolInput.skill}`;
+                  // Short name detected - prepend workspace slug (folder name)
+                  // SDK expects: "workspaceSlug:skillSlug" format, NOT UUID
+                  const pathParts = this.workspaceRootPath.split('/').filter(Boolean);
+                  const workspaceSlug = pathParts[pathParts.length - 1] || this.config.workspace.id;
+                  const qualifiedSkill = `${workspaceSlug}:${toolInput.skill}`;
                   this.onDebug?.(`Skill tool: qualified "${toolInput.skill}" → "${qualifiedSkill}"`);
                   return {
                     continue: true,
