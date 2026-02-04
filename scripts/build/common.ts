@@ -161,19 +161,22 @@ export function cleanBuildArtifacts(config: BuildConfig): void {
 
 /**
  * Install dependencies
- * On Windows, uses --backend=copyfile to avoid symlink issues with esbuild
+ * On Windows, deletes .bun directory after install to avoid esbuild traversal issues
  */
 export async function installDependencies(config: BuildConfig): Promise<void> {
   const { rootDir, platform } = config;
 
+  console.log('Installing dependencies...');
+  await $`cd ${rootDir} && bun install`.quiet();
+
   if (platform === 'win32') {
-    // Use copyfile backend on Windows - Bun's default symlinks cause
-    // "Access is denied" errors when esbuild tries to traverse .bun/ directories
-    console.log('Installing dependencies (Windows copyfile mode)...');
-    await $`cd ${rootDir} && bun install --backend=copyfile`.quiet();
-  } else {
-    console.log('Installing dependencies...');
-    await $`cd ${rootDir} && bun install`.quiet();
+    // Delete .bun directory on Windows - esbuild can't traverse it due to
+    // "Access is denied" errors when following Bun's symlinks
+    const bunDir = join(rootDir, 'node_modules', '.bun');
+    if (existsSync(bunDir)) {
+      console.log('Removing node_modules/.bun (Windows symlink workaround)...');
+      rmSync(bunDir, { recursive: true, force: true });
+    }
   }
 }
 
