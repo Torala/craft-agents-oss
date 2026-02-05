@@ -20,11 +20,10 @@ export type MessageRole =
  * Credential input modes for different auth types
  */
 export type CredentialInputMode =
-  | 'bearer'       // Single token field (Bearer Token, API Key)
-  | 'basic'        // Username + Password fields
-  | 'header'       // API Key with custom header name
-  | 'query'        // API Key for query parameter
-  | 'multi-header'; // Multiple header fields
+  | 'bearer'      // Single token field (Bearer Token, API Key)
+  | 'basic'       // Username + Password fields
+  | 'header'      // API Key with custom header name
+  | 'query';      // API Key for query parameter
 
 /**
  * Auth request types
@@ -273,8 +272,6 @@ export interface StoredMessage {
   authError?: string;
   authEmail?: string;
   authWorkspace?: string;
-  // Queued: user message that is waiting to be processed (persisted for recovery)
-  isQueued?: boolean;
 }
 
 /**
@@ -323,7 +320,6 @@ export type ErrorCode =
   | 'invalid_model'          // Model ID not found
   | 'data_policy_error'      // OpenRouter data policy restriction
   | 'invalid_request'        // API rejected the request (e.g., bad image, invalid content)
-  | 'image_too_large'        // Image exceeds API dimension/size limits
   | 'provider_error'         // AI provider experiencing issues (overloaded, unavailable)
   | 'unknown_error';
 
@@ -350,19 +346,14 @@ export interface TypedError {
 }
 
 /**
- * Permission request type categories
- */
-export type PermissionRequestType = 'bash' | 'file_write' | 'mcp_mutation' | 'api_mutation';
-
-/**
  * Permission request from agent (e.g., bash command approval)
  */
 export interface PermissionRequest {
   requestId: string;
   toolName: string;
-  command?: string;  // Optional: bash commands have it, MCP tools may not
+  command: string;
   description: string;
-  type?: PermissionRequestType;  // Type of permission request
+  type?: 'bash';  // Type of permission request
 }
 
 /**
@@ -400,8 +391,7 @@ export type AgentEvent =
   | { type: 'task_progress'; toolUseId: string; elapsedSeconds: number; turnId?: string }
   | { type: 'shell_killed'; shellId: string; turnId?: string }
   | { type: 'source_activated'; sourceSlug: string; originalMessage: string }
-  | { type: 'usage_update'; usage: Pick<AgentEventUsage, 'inputTokens' | 'contextWindow'> }
-  | { type: 'todos_updated'; todos: Array<{ content: string; status: 'pending' | 'in_progress' | 'completed'; activeForm?: string }>; turnId?: string; explanation?: string | null };
+  | { type: 'usage_update'; usage: Pick<AgentEventUsage, 'inputTokens' | 'contextWindow'> };
 
 /**
  * Generate a unique message ID
