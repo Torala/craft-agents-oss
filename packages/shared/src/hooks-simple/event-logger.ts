@@ -45,7 +45,14 @@ export class HookEventLogger {
   private logPath: string;
   private buffer: string[] = [];
   private flushTimer: NodeJS.Timeout | null = null;
+  private isDisposed = false;
+  private flushInProgress = false;
   private readonly FLUSH_DELAY_MS = 100;
+  private readonly MAX_RETRIES = 3;
+  private readonly RETRY_DELAY_MS = 100;
+
+  /** Optional callback when events are lost (after all retries fail) */
+  onEventLost?: (events: string[], error: Error) => void;
 
   constructor(workspaceRootPath: string) {
     this.logPath = join(workspaceRootPath, 'events.jsonl');
@@ -56,6 +63,11 @@ export class HookEventLogger {
    * Events are buffered and flushed after a short delay to coalesce rapid writes.
    */
   log(event: LoggedHookEventInput): void {
+    if (this.isDisposed) {
+      console.warn('[HookEventLogger] Attempted to log after disposal');
+      return;
+    }
+
     const entry: LoggedHookEvent = {
       id: randomUUID(),
       time: new Date().toISOString(),
@@ -77,23 +89,62 @@ export class HookEventLogger {
    * Schedule a flush if not already scheduled.
    */
   private scheduleFlush(): void {
-    if (!this.flushTimer) {
+    if (!this.flushTimer && !this.isDisposed) {
       this.flushTimer = setTimeout(() => this.flush(), this.FLUSH_DELAY_MS);
     }
   }
 
   /**
-   * Flush buffered events to disk.
+   * Flush buffered events to disk with retry logic.
+   * Uses atomic buffer swap to prevent race conditions.
    */
   private async flush(): Promise<void> {
     this.flushTimer = null;
+
+    // Prevent concurrent flushes
+    if (this.flushInProgress) {
+      this.scheduleFlush();
+      return;
+    }
+
     if (this.buffer.length === 0) return;
 
-    const lines = this.buffer.splice(0).join('\n') + '\n';
-    try {
-      await appendFile(this.logPath, lines, 'utf-8');
-    } catch (error) {
-      console.error('[HookEventLogger] Write failed:', error);
+    this.flushInProgress = true;
+
+    // Atomic buffer swap - take ownership of current buffer
+    const toFlush = this.buffer;
+    this.buffer = [];
+
+    const lines = toFlush.join('\n') + '\n';
+    let lastError: Error | null = null;
+
+    // Retry with exponential backoff
+    for (let attempt = 0; attempt < this.MAX_RETRIES; attempt++) {
+      try {
+        await appendFile(this.logPath, lines, 'utf-8');
+        this.flushInProgress = false;
+        return; // Success
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        console.error(`[HookEventLogger] Write failed (attempt ${attempt + 1}/${this.MAX_RETRIES}):`, error);
+
+        if (attempt < this.MAX_RETRIES - 1) {
+          // Wait before retry with exponential backoff
+          await new Promise(resolve => setTimeout(resolve, this.RETRY_DELAY_MS * Math.pow(2, attempt)));
+        }
+      }
+    }
+
+    // All retries failed - re-queue events at front of buffer for next attempt
+    // or notify callback if provided
+    this.flushInProgress = false;
+
+    if (this.onEventLost) {
+      this.onEventLost(toFlush, lastError!);
+    } else {
+      // Re-queue failed events at front of buffer
+      this.buffer = [...toFlush, ...this.buffer];
+      console.error(`[HookEventLogger] Events re-queued after ${this.MAX_RETRIES} failed attempts`);
     }
   }
 
@@ -107,5 +158,15 @@ export class HookEventLogger {
       this.flushTimer = null;
     }
     await this.flush();
+  }
+
+  /**
+   * Dispose the logger, clearing timers and preventing further logging.
+   * Alias for close() with additional cleanup.
+   */
+  async dispose(): Promise<void> {
+    this.isDisposed = true;
+    await this.close();
+    this.buffer = []; // Clear any remaining events
   }
 }

@@ -683,7 +683,7 @@ export async function emitHook(
       // Expand environment variables in labels (e.g., "scheduled::$CRAFT_LOCAL_TIME" -> "scheduled::17:30")
       const expandedLabels = labels?.map(label => {
         const expanded = expandEnvVars(label, env);
-        console.log(`[hooks] Label expansion: "${label}" -> "${expanded}" (CRAFT_LOCAL_TIME=${env.CRAFT_LOCAL_TIME})`);
+        log.debug(`[hooks] Label expansion: "${label}" -> "${expanded}"`);
         return expanded;
       });
 
@@ -994,3 +994,39 @@ export {
   type CommandExecutionOptions,
   type CommandExecutionResult,
 } from './command-executor.ts';
+
+// Re-export Event Bus (new architecture)
+export {
+  WorkspaceEventBus,
+  type EventBus,
+  type EventPayloadMap,
+  type BaseEventPayload,
+  type LabelEventPayload,
+  type PermissionModeChangePayload,
+  type FlagChangePayload,
+  type TodoStateChangePayload,
+  type SchedulerTickPayload,
+  type LabelConfigChangePayload,
+  type GenericEventPayload,
+  type EventHandler,
+  type AnyEventHandler,
+} from './event-bus.ts';
+
+// Re-export HookSystem facade (new architecture)
+export {
+  HookSystem,
+  type HookSystemOptions,
+  type SessionMetadataSnapshot as HookSystemMetadataSnapshot,
+} from './hook-system.ts';
+
+// Re-export handlers (new architecture)
+export {
+  CommandHandler,
+  PromptHandler,
+  EventLogHandler,
+  type HookHandler,
+  type CommandHandlerOptions,
+  type PromptHandlerOptions,
+  type EventLogHandlerOptions,
+  type HooksConfigProvider,
+} from './handlers/index.ts';

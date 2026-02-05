@@ -112,6 +112,7 @@ export const DOC_REFS = {
   statuses: `${APP_ROOT}/docs/statuses.md`,
   labels: `${APP_ROOT}/docs/labels.md`,
   toolIcons: `${APP_ROOT}/docs/tool-icons.md`,
+  hooks: `${APP_ROOT}/docs/hooks.md`,
   mermaid: `${APP_ROOT}/docs/mermaid.md`,
   docsDir: `${APP_ROOT}/docs/`,
 } as const;

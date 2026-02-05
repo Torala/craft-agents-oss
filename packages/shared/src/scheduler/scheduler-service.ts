@@ -67,8 +67,11 @@ export class SchedulerService {
       dayName: days[now.getDay()]!, // getDay() always returns 0-6
     };
 
+    console.log('[SchedulerService] TICK at', payload.localTime, 'UTC:', payload.timestamp);
+
     try {
       await this.onTick(payload);
+      console.log('[SchedulerService] TICK callback completed');
     } catch (error) {
       console.error('[SchedulerService] Tick failed:', error);
     }

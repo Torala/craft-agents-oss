@@ -643,6 +643,24 @@ export default function App() {
     }
   }, [])
 
+  // Listen for scheduled hook prompt triggers (auto-refresh UI when hook creates a session)
+  useEffect(() => {
+    const unsubHook = window.electronAPI.onHookPromptTriggered(async (data) => {
+      // Only process if this window is for the same workspace
+      if (data.workspaceId !== windowWorkspaceId) return
+
+      // Fetch the full session from backend
+      const session = await window.electronAPI.getSessionMessages(data.sessionId)
+      if (session) {
+        // Add to UI (per-session atom and metadata map)
+        addSession(session)
+      }
+    })
+    return () => {
+      unsubHook()
+    }
+  }, [windowWorkspaceId, addSession])
+
   const handleCreateSession = useCallback(async (workspaceId: string, options?: import('../shared/types').CreateSessionOptions): Promise<Session> => {
     const session = await window.electronAPI.createSession(workspaceId, options)
     // Add to per-session atom and metadata map (no sessionsAtom)

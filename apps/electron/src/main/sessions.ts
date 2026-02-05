@@ -52,8 +52,7 @@ import { type ThinkingLevel, DEFAULT_THINKING_LEVEL } from '@craft-agent/shared/
 import { evaluateAutoLabels } from '@craft-agent/shared/labels/auto'
 import { listLabels } from '@craft-agent/shared/labels/storage'
 import { extractLabelId } from '@craft-agent/shared/labels'
-import { HookEmitter, HookEventLogger, reloadHooks, reloadPermissions, type SessionMetadataSnapshot } from '@craft-agent/shared/hooks-simple'
-import { SchedulerService, type SchedulerTickPayload } from '@craft-agent/shared/scheduler'
+import { HookSystem, type HookSystemMetadataSnapshot } from '@craft-agent/shared/hooks-simple'
 
 /**
  * Sanitize message content for use as session title.
@@ -560,12 +559,8 @@ export class SessionManager {
    * marked as unread when assistant completes - if user is viewing it, don't mark unread.
    */
   private activeViewingSession: Map<string, string> = new Map()
-  // Hook emitters for workspace event hooks - one per workspace
-  private hookEmitters: Map<string, HookEmitter> = new Map()
-  // Last known metadata state per session - for hook diffing (separate from managed state)
-  private lastKnownMetadata: Map<string, SessionMetadataSnapshot> = new Map()
-  // Scheduler service for SchedulerTick events (ticks every minute)
-  private scheduler: SchedulerService | null = null
+  // Hook systems for workspace event hooks - one per workspace (includes scheduler, diffing, and handlers)
+  private hookSystems: Map<string, HookSystem> = new Map()
 
   setWindowManager(wm: WindowManager): void {
     this.windowManager = wm
@@ -628,32 +623,25 @@ export class SessionManager {
         sessionLog.info(`Label config changed in ${workspaceId}`)
         this.broadcastLabelsChanged(workspaceId)
 
-        // Emit LabelConfigChange hook
-        const emitter = this.hookEmitters.get(workspaceRootPath)
-        if (emitter) {
-          emitter.emitAll([{
-            event: 'LabelConfigChange',
-            payload: { workspaceId },
-          }]).then((results) => {
-            const firstResult = results[0]
-            if (firstResult?.result?.matched && firstResult.result.matched > 0) {
-              sessionLog.info(`[Hooks] Emitted LabelConfigChange hook`)
-            }
-          }).catch((error) => {
+        // Emit LabelConfigChange hook via HookSystem
+        const hookSystem = this.hookSystems.get(workspaceRootPath)
+        if (hookSystem) {
+          hookSystem.emitLabelConfigChange().catch((error) => {
             sessionLog.error(`[Hooks] Failed to emit LabelConfigChange:`, error)
           })
         }
       },
       onHooksConfigChange: () => {
         sessionLog.info(`Hooks config changed in ${workspaceId}`)
-        // Reinitialize hook emitter to pick up new config
-        const emitter = this.hookEmitters.get(workspaceRootPath)
-        if (emitter) {
-          emitter.initialize().then((result) => {
+        // Reload hooks config via HookSystem
+        const hookSystem = this.hookSystems.get(workspaceRootPath)
+        if (hookSystem) {
+          const result = hookSystem.reloadConfig()
+          if (result.success) {
             sessionLog.info(`Reloaded ${result.hookCount} hooks for workspace ${workspaceId}`)
-          }).catch((error) => {
-            sessionLog.error(`Failed to reload hooks for workspace ${workspaceId}:`, error)
-          })
+          } else {
+            sessionLog.error(`Failed to reload hooks for workspace ${workspaceId}:`, result.errors)
+          }
         }
       },
       onAppThemeChange: (theme) => {
@@ -694,78 +682,18 @@ export class SessionManager {
           return
         }
 
-        // File-to-file diffing: compare lastKnownMetadata (previous file state) with header (current file state)
-        // This is critical because managed state may already be updated by UI before file watcher fires
-        const prev = this.lastKnownMetadata.get(sessionId) ?? {
-          permissionMode: undefined,
-          labels: [],
-          isFlagged: false,
-          todoState: undefined,
-        }
-
-        const next: SessionMetadataSnapshot = {
-          permissionMode: header.permissionMode,
-          labels: header.labels ?? [],
-          isFlagged: header.isFlagged ?? false,
-          todoState: header.todoState,
-        }
-
-        sessionLog.debug(`[Hooks] prev: ${JSON.stringify(prev)}`)
-        sessionLog.debug(`[Hooks] next: ${JSON.stringify(next)}`)
-
-        // Emit hooks based on file-to-file diff
-        const emitter = this.hookEmitters.get(workspaceRootPath)
-        if (emitter) {
-          emitter.diffAndEmit(prev, next, sessionId).then(async (results) => {
-            if (results.length > 0) {
-              sessionLog.info(`[Hooks] Emitted ${results.length} hook(s) for session ${sessionId}`)
-            }
-
-            // Collect and execute pending prompts from hook results
-            const allPendingPrompts: Array<{
-              prompt: string
-              mentions: string[]
-              labels?: string[]
-            }> = []
-
-            for (const result of results) {
-              if (result?.result?.pendingPrompts) {
-                for (const pending of result.result.pendingPrompts) {
-                  allPendingPrompts.push(pending)
-                }
-              }
-            }
-
-            if (allPendingPrompts.length > 0) {
-              sessionLog.info(`[Hooks] Processing ${allPendingPrompts.length} pending prompt(s) from session ${sessionId}`)
-              const promptResults = await Promise.allSettled(
-                allPendingPrompts.map(pending =>
-                  this.executePromptHook(
-                    managed.workspace.id,
-                    workspaceRootPath,
-                    pending.prompt,
-                    pending.mentions,
-                    { labels: pending.labels }
-                  )
-                )
-              )
-
-              // Log any failures
-              for (const [idx, result] of promptResults.entries()) {
-                if (result.status === 'rejected') {
-                  sessionLog.error(`[Hooks] Failed to execute prompt hook ${idx + 1}:`, result.reason)
-                } else if (result.status === 'fulfilled') {
-                  sessionLog.info(`[Hooks] Created session ${result.value.sessionId} from prompt hook`)
-                }
-              }
-            }
+        // Update session metadata via HookSystem (handles diffing and event emission internally)
+        const hookSystem = this.hookSystems.get(workspaceRootPath)
+        if (hookSystem) {
+          hookSystem.updateSessionMetadata(sessionId, {
+            permissionMode: header.permissionMode,
+            labels: header.labels ?? [],
+            isFlagged: header.isFlagged ?? false,
+            todoState: header.todoState,
           }).catch((error) => {
-            sessionLog.error(`[Hooks] Failed to emit hooks for session ${sessionId}:`, error)
+            sessionLog.error(`[Hooks] Failed to update session metadata:`, error)
           })
         }
-
-        // Always update last known metadata from file
-        this.lastKnownMetadata.set(sessionId, next)
 
         // Update managed state and send UI events (separate from hook emission)
         let uiChanged = false
@@ -813,103 +741,42 @@ export class SessionManager {
     watcher.start()
     this.configWatchers.set(workspaceRootPath, watcher)
 
-    // Initialize hook emitter for this workspace
-    if (!this.hookEmitters.has(workspaceRootPath)) {
-      // Create event logger for persistent event stream
-      const eventLogger = new HookEventLogger(workspaceRootPath)
-
-      const hookEmitter = new HookEmitter({
+    // Initialize HookSystem for this workspace (includes scheduler, handlers, and event logging)
+    if (!this.hookSystems.has(workspaceRootPath)) {
+      const hookSystem = new HookSystem({
         workspaceRootPath,
         workspaceId,
-        eventLogger,
+        enableScheduler: true,
+        onPromptsReady: async (prompts) => {
+          // Execute prompt hooks by creating new sessions
+          const promptResults = await Promise.allSettled(
+            prompts.map(pending =>
+              this.executePromptHook(
+                workspaceId,
+                workspaceRootPath,
+                pending.prompt,
+                pending.mentions,
+                { labels: pending.labels }
+              )
+            )
+          )
+
+          // Log any failures
+          for (const [idx, result] of promptResults.entries()) {
+            if (result.status === 'rejected') {
+              sessionLog.error(`[Hooks] Failed to execute prompt hook ${idx + 1}:`, result.reason)
+            } else if (result.status === 'fulfilled') {
+              sessionLog.info(`[Hooks] Created session ${result.value.sessionId} from prompt hook`)
+            }
+          }
+        },
         onError: (event, error) => {
           sessionLog.error(`Hook failed for ${event}:`, error.message)
         },
-        onEmit: (event, payload) => {
-          sessionLog.debug(`Emitting hook: ${event}`, payload)
-        },
       })
-      hookEmitter.initialize().then((result) => {
-        if (result.hookCount > 0) {
-          sessionLog.info(`Initialized ${result.hookCount} hooks for workspace ${workspaceId}`)
-        }
-      }).catch((error) => {
-        sessionLog.error(`Failed to initialize hooks for workspace ${workspaceId}:`, error)
-      })
-      this.hookEmitters.set(workspaceRootPath, hookEmitter)
 
-      // Initialize scheduler service (shared across all workspaces)
-      if (!this.scheduler) {
-        this.scheduler = new SchedulerService(async (payload: SchedulerTickPayload) => {
-          sessionLog.info(`[Scheduler] ===== TICK RECEIVED ===== localTime=${payload.localTime}`)
-          sessionLog.info(`[Scheduler] Hook emitters count: ${this.hookEmitters.size}`)
-
-          // Emit SchedulerTick to all workspace hook emitters
-          for (const [wsPath, emitter] of this.hookEmitters) {
-            sessionLog.info(`[Scheduler] Processing workspace: ${wsPath}, initialized: ${emitter.isInitialized()}`)
-            try {
-              // Get workspace ID from path
-              const wsId = this.getWorkspaceIdFromPath(wsPath)
-              if (!wsId) {
-                sessionLog.warn(`[Scheduler] No workspace found for path: ${wsPath}`)
-                continue
-              }
-
-              sessionLog.info(`[Scheduler] Emitting SchedulerTick to workspace ${wsId}`)
-              const results = await emitter.emitAll([{
-                event: 'SchedulerTick',
-                payload: payload as unknown as Record<string, unknown>,
-              }])
-              sessionLog.info(`[Scheduler] Emit results: ${JSON.stringify(results.map(r => ({
-                event: r.event,
-                matched: r.result?.matched ?? 0,
-                pendingPrompts: r.result?.pendingPrompts?.length ?? 0
-              })))}`)
-
-              // Collect all pending prompts from hook results
-              const allPendingPrompts: Array<{
-                prompt: string
-                mentions: string[]
-                labels?: string[]
-              }> = []
-
-              for (const result of results) {
-                if (result?.result?.pendingPrompts) {
-                  for (const pending of result.result.pendingPrompts) {
-                    allPendingPrompts.push(pending)
-                  }
-                }
-              }
-
-              // Execute all prompts in parallel for better performance
-              if (allPendingPrompts.length > 0) {
-                const promptResults = await Promise.allSettled(
-                  allPendingPrompts.map(pending =>
-                    this.executePromptHook(
-                      wsId,
-                      wsPath,
-                      pending.prompt,
-                      pending.mentions,
-                      { labels: pending.labels }
-                    )
-                  )
-                )
-
-                // Log any failures
-                for (const [idx, result] of promptResults.entries()) {
-                  if (result.status === 'rejected') {
-                    sessionLog.error(`[Scheduler] Failed to execute prompt hook ${idx + 1}:`, result.reason)
-                  }
-                }
-              }
-            } catch (error) {
-              sessionLog.error(`[Scheduler] Failed to emit tick to ${wsPath}:`, error)
-            }
-          }
-        })
-        this.scheduler.start()
-        sessionLog.info('Scheduler started (ticking every minute)')
-      }
+      this.hookSystems.set(workspaceRootPath, hookSystem)
+      sessionLog.info(`Initialized HookSystem for workspace ${workspaceId}`)
     }
   }
 
@@ -1182,13 +1049,16 @@ export class SessionManager {
 
           this.sessions.set(meta.id, managed)
 
-          // Initialize last known metadata for hook diffing
-          this.lastKnownMetadata.set(meta.id, {
-            permissionMode: managed.permissionMode,
-            labels: managed.labels,
-            isFlagged: managed.isFlagged,
-            todoState: managed.todoState,
-          })
+          // Initialize session metadata in HookSystem for diffing
+          const hookSystem = this.hookSystems.get(workspaceRootPath)
+          if (hookSystem) {
+            hookSystem.setInitialSessionMetadata(meta.id, {
+              permissionMode: managed.permissionMode,
+              labels: managed.labels,
+              isFlagged: managed.isFlagged,
+              todoState: managed.todoState,
+            })
+          }
 
           totalSessions++
         }
@@ -1754,13 +1624,16 @@ export class SessionManager {
 
     this.sessions.set(storedSession.id, managed)
 
-    // Initialize last known metadata for hook diffing
-    this.lastKnownMetadata.set(storedSession.id, {
-      permissionMode: managed.permissionMode,
-      labels: managed.labels,
-      isFlagged: managed.isFlagged,
-      todoState: managed.todoState,
-    })
+    // Initialize session metadata in HookSystem for diffing
+    const hookSystem = this.hookSystems.get(workspaceRootPath)
+    if (hookSystem) {
+      hookSystem.setInitialSessionMetadata(storedSession.id, {
+        permissionMode: managed.permissionMode,
+        labels: managed.labels,
+        isFlagged: managed.isFlagged,
+        todoState: managed.todoState,
+      })
+    }
 
     return {
       id: storedSession.id,
@@ -2689,13 +2562,13 @@ export class SessionManager {
       managed.agent.dispose()
     }
 
-    // Clean up hook metadata cache for this session (prevents memory leak)
-    this.lastKnownMetadata.delete(sessionId)
+    // Clean up session metadata in HookSystem (prevents memory leak)
+    const hookSystem = this.hookSystems.get(workspaceRootPath)
+    if (hookSystem) {
+      hookSystem.removeSessionMetadata(sessionId)
+    }
 
     this.sessions.delete(sessionId)
-
-    // Clean up last known metadata for hook diffing
-    this.lastKnownMetadata.delete(sessionId)
 
     // Delete from disk too
     deleteStoredSession(workspaceRootPath, sessionId)
@@ -4105,16 +3978,6 @@ To view this task's output:
   }
 
   /**
-   * Get workspace ID from workspace root path
-   * Used by scheduler to find workspace when processing hook results
-   */
-  private getWorkspaceIdFromPath(workspaceRootPath: string): string | null {
-    const workspaces = getWorkspaces()
-    const workspace = workspaces.find(w => w.rootPath === workspaceRootPath)
-    return workspace?.id ?? null
-  }
-
-  /**
    * Resolve @mentions in hook prompts to valid skill slugs
    * Filters mentions to only return skills that exist in the workspace
    */
@@ -4173,13 +4036,6 @@ To view this task's output:
   cleanup(): void {
     sessionLog.info('Cleaning up resources...')
 
-    // Stop scheduler service
-    if (this.scheduler) {
-      this.scheduler.stop()
-      this.scheduler = null
-      sessionLog.info('Stopped scheduler service')
-    }
-
     // Stop all ConfigWatchers (file system watchers)
     for (const [path, watcher] of this.configWatchers) {
       watcher.stop()
@@ -4202,19 +4058,16 @@ To view this task's output:
       unregisterSessionScopedToolCallbacks(sessionId)
     }
 
-    // Dispose all hook emitters and their event loggers
-    for (const [workspacePath, emitter] of this.hookEmitters) {
+    // Dispose all HookSystems (includes scheduler, handlers, and event loggers)
+    for (const [workspacePath, hookSystem] of this.hookSystems) {
       try {
-        emitter.dispose()
-        sessionLog.info(`Disposed hook emitter for ${workspacePath}`)
+        hookSystem.dispose()
+        sessionLog.info(`Disposed HookSystem for ${workspacePath}`)
       } catch (error) {
-        sessionLog.error(`Failed to dispose hook emitter for ${workspacePath}:`, error)
+        sessionLog.error(`Failed to dispose HookSystem for ${workspacePath}:`, error)
       }
     }
-    this.hookEmitters.clear()
-
-    // Clear hook metadata cache
-    this.lastKnownMetadata.clear()
+    this.hookSystems.clear()
 
     sessionLog.info('Cleanup complete')
   }

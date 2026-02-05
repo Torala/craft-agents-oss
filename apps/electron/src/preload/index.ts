@@ -154,6 +154,15 @@ const api: ElectronAPI = {
     return () => ipcRenderer.removeListener(IPC_CHANNELS.DEEP_LINK_NAVIGATE, handler)
   },
 
+  // Hook events (scheduled hooks creating sessions)
+  onHookPromptTriggered: (callback: (data: { workspaceId: string; sessionId: string; prompt: string }) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, data: { workspaceId: string; sessionId: string; prompt: string }) => {
+      callback(data)
+    }
+    ipcRenderer.on(IPC_CHANNELS.HOOK_PROMPT_TRIGGERED, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.HOOK_PROMPT_TRIGGERED, handler)
+  },
+
   // Auth
   showLogoutConfirmation: () => ipcRenderer.invoke(IPC_CHANNELS.SHOW_LOGOUT_CONFIRMATION),
   showDeleteSessionConfirmation: (name: string) => ipcRenderer.invoke(IPC_CHANNELS.SHOW_DELETE_SESSION_CONFIRMATION, name),
