@@ -87,6 +87,8 @@ export interface ImageValidationResult {
   valid: boolean;
   /** Hard error - image cannot be sent */
   error?: string;
+  /** Error code for programmatic handling */
+  errorCode?: 'dimension_exceeded' | 'size_exceeded';
   /** Warning - image will work but may have issues */
   warning?: string;
   /** Image needs resizing for optimal performance */
@@ -108,21 +110,23 @@ export function validateImageForClaudeAPI(
   width?: number,
   height?: number
 ): ImageValidationResult {
-  // Check file size first (hard limit)
+  // Check file size first (hard limit - cannot resize to fix)
   if (size > MAX_IMAGE_SIZE) {
     const sizeMB = (size / 1024 / 1024).toFixed(1);
     return {
       valid: false,
+      errorCode: 'size_exceeded',
       error: `Image too large (${sizeMB}MB). Claude API limit is 5MB. Please resize or compress the image.`,
     };
   }
 
   // Check dimensions if provided
   if (width !== undefined && height !== undefined) {
-    // Hard limit on dimensions
+    // Hard limit on dimensions - can be fixed by resizing
     if (width > MAX_IMAGE_DIMENSION || height > MAX_IMAGE_DIMENSION) {
       return {
         valid: false,
+        errorCode: 'dimension_exceeded',
         error: `Image dimensions too large (${width}×${height}). Maximum is ${MAX_IMAGE_DIMENSION}×${MAX_IMAGE_DIMENSION} pixels.`,
       };
     }
@@ -151,6 +155,10 @@ export const IMAGE_LIMITS = {
   MAX_SIZE: MAX_IMAGE_SIZE,
   MAX_DIMENSION: MAX_IMAGE_DIMENSION,
   OPTIMAL_EDGE: OPTIMAL_IMAGE_EDGE,
+  /** JPEG quality for photo-like images */
+  JPEG_QUALITY_HIGH: 90,
+  /** JPEG quality for fallback compression when size still exceeds limits */
+  JPEG_QUALITY_FALLBACK: 75,
 } as const;
 
 /**

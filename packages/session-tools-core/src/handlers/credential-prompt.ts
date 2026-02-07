@@ -7,7 +7,7 @@
 import type { SessionToolContext } from '../context.ts';
 import type { ToolResult, CredentialAuthRequest, CredentialInputMode } from '../types.ts';
 import { successResponse, errorResponse } from '../response.ts';
-import { generateRequestId } from '../source-helpers.ts';
+import { generateRequestId, detectCredentialMode, getEffectiveHeaderNames } from '../source-helpers.ts';
 
 export interface CredentialPromptArgs {
   sourceSlug: string;
@@ -19,6 +19,8 @@ export interface CredentialPromptArgs {
   };
   description?: string;
   hint?: string;
+  /** Header names for multi-header auth (e.g., ["DD-API-KEY", "DD-APPLICATION-KEY"]) */
+  headerNames?: string[];
   passwordRequired?: boolean;
 }
 
@@ -34,19 +36,23 @@ export async function handleCredentialPrompt(
   ctx: SessionToolContext,
   args: CredentialPromptArgs
 ): Promise<ToolResult> {
-  const { sourceSlug, mode, labels, description, hint, passwordRequired } = args;
-
-  // Validate that passwordRequired only applies to basic auth
-  if (passwordRequired !== undefined && mode !== 'basic') {
-    return errorResponse(
-      `Error: passwordRequired parameter only applies to basic auth mode. You specified mode="${mode}" with passwordRequired=${passwordRequired}.`
-    );
-  }
+  const { sourceSlug, mode, labels, description, hint, headerNames, passwordRequired } = args;
 
   // Load source config
   const source = ctx.loadSourceConfig(sourceSlug);
   if (!source) {
     return errorResponse(`Source '${sourceSlug}' not found.`);
+  }
+
+  // Detect effective mode (auto-upgrades to multi-header if source has headerNames)
+  const effectiveMode = detectCredentialMode(source, mode, headerNames);
+  const effectiveHeaderNames = getEffectiveHeaderNames(source, headerNames);
+
+  // Validate that passwordRequired only applies to basic auth
+  if (passwordRequired !== undefined && effectiveMode !== 'basic') {
+    return errorResponse(
+      `Error: passwordRequired parameter only applies to basic auth mode. You specified mode="${mode}" with passwordRequired=${passwordRequired}.`
+    );
   }
 
   // Build auth request
@@ -56,11 +62,12 @@ export async function handleCredentialPrompt(
     sessionId: ctx.sessionId,
     sourceSlug,
     sourceName: source.name,
-    mode,
+    mode: effectiveMode,
     labels,
     description,
     hint,
     headerName: source.api?.headerName,
+    headerNames: effectiveHeaderNames,
     // Pass source URL so password managers can match stored credentials
     sourceUrl: source.api?.baseUrl || source.mcp?.url,
     passwordRequired,

@@ -12,7 +12,7 @@
 /**
  * Credential input modes for different authentication types
  */
-export type CredentialInputMode = 'bearer' | 'basic' | 'header' | 'query';
+export type CredentialInputMode = 'bearer' | 'basic' | 'header' | 'query' | 'multi-header';
 
 // ============================================================
 // Service Types (simplified for portability)
@@ -72,6 +72,8 @@ export interface CredentialAuthRequest extends BaseAuthRequest {
   description?: string;
   hint?: string;
   headerName?: string;
+  /** Header names for multi-header auth (e.g., ["DD-API-KEY", "DD-APPLICATION-KEY"]) */
+  headerNames?: string[];
   /** Source URL/domain for password manager credential matching (1Password, etc.) */
   sourceUrl?: string;
   /** For basic auth: whether password is required. Default true for backward compatibility. */
@@ -237,6 +239,8 @@ export interface ApiSourceConfig {
   baseUrl: string;
   authType: ApiAuthType;
   headerName?: string;
+  /** Header names for multi-header auth (e.g., ["DD-API-KEY", "DD-APPLICATION-KEY"]) */
+  headerNames?: string[];
   queryParam?: string;
   authScheme?: string;
   testEndpoint?: {

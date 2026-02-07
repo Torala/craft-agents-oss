@@ -220,7 +220,7 @@ const sourceOAuthTriggerSchema = {
 
 const credentialPromptSchema = {
   sourceSlug: z.string().describe('The slug of the source to authenticate'),
-  mode: z.enum(['bearer', 'basic', 'header', 'query']).describe('Type of credential input'),
+  mode: z.enum(['bearer', 'basic', 'header', 'query', 'multi-header']).describe('Type of credential input'),
   labels: z.object({
     credential: z.string().optional(),
     username: z.string().optional(),
@@ -228,6 +228,7 @@ const credentialPromptSchema = {
   }).optional().describe('Custom field labels'),
   description: z.string().optional().describe('Description shown to user'),
   hint: z.string().optional().describe('Hint about where to find credentials'),
+  headerNames: z.array(z.string()).optional().describe('Header names for multi-header auth (e.g., ["DD-API-KEY", "DD-APPLICATION-KEY"])'),
   passwordRequired: z.boolean().optional().describe('For basic auth: whether password is required'),
 };
 

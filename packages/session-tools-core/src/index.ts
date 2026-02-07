@@ -74,6 +74,9 @@ export {
   skillMdExists,
   listSkillSlugs,
   generateRequestId,
+  // Multi-header credential helpers
+  detectCredentialMode,
+  getEffectiveHeaderNames,
 } from './source-helpers.ts';
 
 // Validation
