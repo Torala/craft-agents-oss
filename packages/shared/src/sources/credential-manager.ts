@@ -362,7 +362,7 @@ export class SourceCredentialManager {
 
     try {
       const oauth = new CraftOAuth(
-        { mcpBaseUrl: getMcpBaseUrl(source.config.mcp.url) },
+        { mcpUrl: source.config.mcp.url },
         callbacks
       );
 
@@ -767,7 +767,7 @@ export class SourceCredentialManager {
       }
 
       const oauth = new CraftOAuth(
-        { mcpBaseUrl: getMcpBaseUrl(source.config.mcp.url) },
+        { mcpUrl: source.config.mcp.url },
         {
           onStatus: () => {},
           onError: () => {},

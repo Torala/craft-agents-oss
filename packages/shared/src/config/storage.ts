@@ -17,6 +17,7 @@ import type { StoredAttachment, StoredMessage } from '@craft-agent/core/types';
 import type { Plan } from '../agent/plan-types.ts';
 import type { PermissionMode } from '../agent/mode-manager.ts';
 import { BUNDLED_CONFIG_DEFAULTS, type ConfigDefaults } from './config-defaults-schema.ts';
+import { isValidThemeFile } from './validators.ts';
 
 // Re-export CONFIG_DIR for convenience (centralized in paths.ts)
 export { CONFIG_DIR } from './paths.ts';
@@ -955,8 +956,11 @@ export function saveAppTheme(theme: ThemeOverrides): void {
 
 /**
  * Sync bundled preset themes to disk on launch.
- * Always overwrites to ensure presets stay current with the running app version
- * (e.g., updated color tokens or new preset themes added in a new release).
+ * Preserves user customizations:
+ * - If file doesn't exist → copy from bundle
+ * - If file exists but is invalid/corrupt → copy from bundle (auto-heal)
+ * - If file exists and is valid → skip (preserve user changes)
+ *
  * User-created custom theme files (with non-bundled filenames) are untouched.
  * User color overrides live in theme.json (separate file) and are never touched.
  */
@@ -980,14 +984,22 @@ export function ensurePresetThemes(): void {
     return;
   }
 
-  // Always write bundled preset themes to disk on launch.
-  // This ensures theme updates from new app versions are applied immediately.
-  // Only bundled filenames are overwritten — user-created custom themes are untouched.
+  // Copy bundled preset themes to disk, preserving user customizations.
+  // - If file doesn't exist → copy from bundle
+  // - If file exists but is invalid/corrupt → copy from bundle (auto-heal)
+  // - If file exists and is valid → skip (preserve user changes)
   try {
     const bundledFiles = readdirSync(bundledThemesDir).filter(f => f.endsWith('.json'));
     for (const file of bundledFiles) {
       const srcPath = join(bundledThemesDir, file);
       const destPath = join(themesDir, file);
+
+      // Skip if file exists and is valid (preserve user customizations)
+      if (existsSync(destPath) && isValidThemeFile(destPath)) {
+        continue;
+      }
+
+      // Copy from bundle (new file or auto-heal corrupt file)
       const content = readFileSync(srcPath, 'utf-8');
       writeFileSync(destPath, content, 'utf-8');
     }

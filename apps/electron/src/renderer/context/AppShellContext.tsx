@@ -39,6 +39,8 @@ export interface AppShellContextType {
   // from retaining the full messages array and causing memory leaks.
   workspaces: Workspace[]
   activeWorkspaceId: string | null
+  /** Workspace slug for SDK skill qualification (derived from workspace path) */
+  activeWorkspaceSlug: string | null
   modelDefaults: import('@craft-agent/shared/config/models').ModelDefaults
   /** When set, a custom model overrides the Anthropic model selector (e.g. OpenRouter) */
   customModel: string | null

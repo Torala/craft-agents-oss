@@ -179,6 +179,16 @@ export default function App() {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   // Window's workspace ID - fixed for this window (multi-window architecture)
   const [windowWorkspaceId, setWindowWorkspaceId] = useState<string | null>(null)
+
+  // Derive workspace slug from path for SDK skill qualification
+  const windowWorkspaceSlug = useMemo(() => {
+    if (!windowWorkspaceId) return null
+    const workspace = workspaces.find(w => w.id === windowWorkspaceId)
+    if (!workspace?.rootPath) return windowWorkspaceId // Fallback to ID
+    const pathParts = workspace.rootPath.split('/').filter(Boolean)
+    return pathParts[pathParts.length - 1] || windowWorkspaceId
+  }, [windowWorkspaceId, workspaces])
+
   const [modelDefaults, setModelDefaults] = useState<ModelDefaults>({
     anthropic: DEFAULT_MODEL,
     openai: DEFAULT_CODEX_MODEL,
@@ -888,8 +898,8 @@ export default function App() {
       // Step 4: Extract badges from mentions (sources/skills) with embedded icons
       // Badges are self-contained for display in UserMessageBubble and viewer
       // Merge with any externally provided badges (e.g., from EditPopover context badges)
-      const mentionBadges: ContentBadge[] = windowWorkspaceId
-        ? extractBadges(message, skills, sources, windowWorkspaceId)
+      const mentionBadges: ContentBadge[] = windowWorkspaceSlug
+        ? extractBadges(message, skills, sources, windowWorkspaceSlug)
         : []
       const badges: ContentBadge[] = [...(externalBadges || []), ...mentionBadges]
 
@@ -973,7 +983,7 @@ export default function App() {
         ]
       }))
     }
-  }, [sessionOptions, updateSessionById, skills, sources, windowWorkspaceId])
+  }, [sessionOptions, updateSessionById, skills, sources, windowWorkspaceId, windowWorkspaceSlug])
 
   const refreshModelDefaults = useCallback(async () => {
     if (!window.electronAPI?.getModelDefaults) return
@@ -1287,6 +1297,7 @@ export default function App() {
     // and useSession(id) hook for individual sessions. This prevents memory leaks.
     workspaces,
     activeWorkspaceId: windowWorkspaceId,
+    activeWorkspaceSlug: windowWorkspaceSlug,
     modelDefaults,
     customModel,
     authType,
@@ -1336,6 +1347,7 @@ export default function App() {
     // NOTE: sessions removed to prevent memory leaks - components use atoms instead
     workspaces,
     windowWorkspaceId,
+    windowWorkspaceSlug,
     modelDefaults,
     customModel,
     authType,

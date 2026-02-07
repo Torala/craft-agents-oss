@@ -17,6 +17,7 @@ import { debug } from '../utils/debug.ts';
 import { CONFIG_DIR } from '../config/paths.ts';
 import { getBundledAssetsDir } from '../utils/paths.ts';
 import { getSourcePath } from '../sources/storage.ts';
+import { isValidPermissionsFile } from '../config/validators.ts';
 import {
   SAFE_MODE_CONFIG,
   PermissionsConfigSchema,
@@ -46,10 +47,13 @@ export function getAppPermissionsDir(): string {
 
 /**
  * Sync bundled default permissions to disk on launch.
- * Always overwrites to ensure defaults stay current with the running app version
- * (e.g., new bash/MCP patterns added in a new release).
- * User customizations live in separate files (workspace/source permissions.json)
- * and are never touched by this function.
+ * Preserves user customizations:
+ * - If file doesn't exist → copy from bundle
+ * - If file exists but is invalid/corrupt → copy from bundle (auto-heal)
+ * - If file exists and is valid → skip (preserve user changes)
+ *
+ * User customizations in workspace/source permissions.json files
+ * are never touched by this function.
  */
 export function ensureDefaultPermissions(): void {
   // Skip if already initialized this session (prevents re-init on hot reload)
@@ -71,12 +75,20 @@ export function ensureDefaultPermissions(): void {
     return;
   }
 
-  // Always write bundled default.json to disk on launch.
-  // This ensures new permission rules from app updates are available immediately.
-  // User customizations go in workspace/source permissions.json files (separate layer).
+  // Copy bundled default.json to disk, preserving user customizations.
+  // - If file doesn't exist → copy from bundle
+  // - If file exists but is invalid/corrupt → copy from bundle (auto-heal)
+  // - If file exists and is valid → skip (preserve user changes)
   const destPath = join(permissionsDir, 'default.json');
   const srcPath = join(bundledPermissionsDir, 'default.json');
   if (existsSync(srcPath)) {
+    // Skip if file exists and is valid (preserve user customizations)
+    if (existsSync(destPath) && isValidPermissionsFile(destPath)) {
+      debug('[Permissions] Preserved existing valid default.json');
+      return;
+    }
+
+    // Copy from bundle (new file or auto-heal corrupt file)
     try {
       const content = readFileSync(srcPath, 'utf-8');
       writeFileSync(destPath, content, 'utf-8');
