@@ -211,7 +211,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
       }
     }
     return providerDefault
-  }, [session?.model, session?.llmConnection, workspaceDefaultLlmConnection, llmConnections, modelDefaults])
+  }, [session?.id, session?.model, session?.llmConnection, workspaceDefaultLlmConnection, llmConnections, modelDefaults])
 
   // Working directory for this session
   const workingDirectory = session?.workingDirectory

@@ -276,11 +276,14 @@ export function createWorkspaceAtPath(
   const globalDefaults = loadConfigDefaults();
 
   // Merge global defaults with provided defaults
+  // AI settings (model, thinkingLevel, defaultLlmConnection) are left undefined
+  // so they fall back to app-level defaults
   const workspaceDefaults: WorkspaceConfig['defaults'] = {
-    model: undefined, // Resolved at session time based on active LLM connection's provider
+    model: undefined,
+    thinkingLevel: undefined,
+    // defaultLlmConnection: undefined - falls back to app default
     permissionMode: globalDefaults.workspaceDefaults.permissionMode,
     cyclablePermissionModes: globalDefaults.workspaceDefaults.cyclablePermissionModes,
-    thinkingLevel: globalDefaults.workspaceDefaults.thinkingLevel,
     enabledSourceSlugs: [],
     workingDirectory: undefined,
     ...defaults, // User-provided defaults override global defaults

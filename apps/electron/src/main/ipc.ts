@@ -2271,8 +2271,6 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
           }
         }, 100)
       })
-
-      ipcLog.info(`Watching session files: ${sessionId}`)
     } catch (error) {
       ipcLog.error('Failed to start session file watcher:', error)
     }
@@ -2289,7 +2287,6 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
       fileChangeDebounceTimer = null
     }
     if (watchedSessionId) {
-      ipcLog.info(`Stopped watching session files: ${watchedSessionId}`)
       watchedSessionId = null
     }
   })
@@ -2631,7 +2628,6 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
 
   // Get all skills for a workspace
   ipcMain.handle(IPC_CHANNELS.SKILLS_GET, async (_event, workspaceId: string) => {
-    ipcLog.info(`SKILLS_GET: Loading skills for workspace: ${workspaceId}`)
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) {
       ipcLog.error(`SKILLS_GET: Workspace not found: ${workspaceId}`)
@@ -2639,7 +2635,6 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
     }
     const { loadWorkspaceSkills } = await import('@craft-agent/shared/skills')
     const skills = loadWorkspaceSkills(workspace.rootPath)
-    ipcLog.info(`SKILLS_GET: Loaded ${skills.length} skills from ${workspace.rootPath}`)
     return skills
   })
 
@@ -3077,7 +3072,6 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
   ipcMain.handle(IPC_CHANNELS.LOGO_GET_URL, async (_event, serviceUrl: string, provider?: string) => {
     const { getLogoUrl } = await import('@craft-agent/shared/utils/logo')
     const result = getLogoUrl(serviceUrl, provider)
-    console.log(`[logo] getLogoUrl("${serviceUrl}", "${provider}") => "${result}"`)
     return result
   })
 

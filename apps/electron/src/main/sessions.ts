@@ -4710,32 +4710,19 @@ To view this task's output:
    * UI uses this to adapt model/thinking selectors based on the current backend.
    */
   getCapabilities(sessionId?: string): ReturnType<CraftAgent['capabilities']> | ReturnType<CodexBackend['capabilities']> | null {
-    sessionLog.info(`[DEBUG getCapabilities] called with sessionId: ${sessionId}`)
-
     // If sessionId provided, return capabilities for that specific session
     if (sessionId) {
       const managed = this.sessions.get(sessionId)
-      sessionLog.info(`[DEBUG getCapabilities] managed session:`, {
-        exists: !!managed,
-        hasAgent: !!managed?.agent,
-        llmConnection: managed?.llmConnection,
-      })
-
       if (managed) {
         // If agent exists, use its capabilities (most accurate)
         if (managed.agent) {
-          const caps = managed.agent.capabilities()
-          sessionLog.info(`[DEBUG getCapabilities] from agent:`, caps.provider, caps.models?.map(m => m.id))
-          return caps
+          return managed.agent.capabilities()
         }
         // No agent yet - derive capabilities from session's LLM connection
         if (managed.llmConnection) {
           const connection = getLlmConnection(managed.llmConnection)
-          sessionLog.info(`[DEBUG getCapabilities] connection lookup:`, connection?.slug, connection?.providerType)
           if (connection) {
-            const caps = getStaticCapabilities(connection.providerType)
-            sessionLog.info(`[DEBUG getCapabilities] static caps:`, caps.provider, caps.models?.map(m => m.id))
-            return caps
+            return getStaticCapabilities(connection.providerType)
           }
         }
       }
@@ -4743,13 +4730,10 @@ To view this task's output:
     // Fallback: return capabilities from any active session (for backward compat)
     for (const [_, managed] of this.sessions) {
       if (managed.agent) {
-        const caps = managed.agent.capabilities()
-        sessionLog.info(`[DEBUG getCapabilities] fallback from other agent:`, caps.provider, caps.models?.map(m => m.id))
-        return caps
+        return managed.agent.capabilities()
       }
     }
     // No active agents - return null (UI will fall back to hardcoded values)
-    sessionLog.info(`[DEBUG getCapabilities] returning null - no agents`)
     return null
   }
 

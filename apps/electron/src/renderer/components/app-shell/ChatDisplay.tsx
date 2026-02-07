@@ -1304,7 +1304,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                       if (turn.type === 'user') return `user-${turn.message.id}`
                       if (turn.type === 'system') return `system-${turn.message.id}`
                       if (turn.type === 'auth-request') return `auth-${turn.message.id}`
-                      return `turn-${turn.turnId}`
+                      return `turn-${turn.turnId}-${turn.timestamp}`
                     }
                     const turnKey = getTurnKey()
                     const isCurrentMatch = isSearchActive && matchingTurnIds[currentMatchIndex] === turnKey

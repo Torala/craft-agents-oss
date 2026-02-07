@@ -38,7 +38,7 @@ import { isMac } from "@/lib/platform"
 import { Button } from "@/components/ui/button"
 import { HeaderIconButton } from "@/components/ui/HeaderIconButton"
 import { Separator } from "@/components/ui/separator"
-import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@craft-agent/ui"
+import { Tooltip, TooltipTrigger, TooltipContent } from "@craft-agent/ui"
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -1971,7 +1971,6 @@ function AppShellContent({
 
   return (
     <AppShellProvider value={appShellContextValue}>
-      <TooltipProvider delayDuration={0}>
         {/*
           Draggable title bar region for transparent window (macOS)
           - Fixed overlay at z-titlebar allows window dragging from the top bar area
@@ -2043,33 +2042,31 @@ function AppShellContent({
               <div className="flex-1 flex flex-col min-h-0">
                 {/* New Session Button - Gmail-style, with context menu for "Open in New Window" */}
                 <div className="px-2 pt-1 pb-2 shrink-0">
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <div>
-                          <ContextMenu modal={true}>
-                            <ContextMenuTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                onClick={() => handleNewChat(true)}
-                                className="w-full justify-start gap-2 py-[7px] px-2 text-[13px] font-normal rounded-[6px] shadow-minimal bg-background"
-                                data-tutorial="new-chat-button"
-                              >
-                                <SquarePenRounded className="h-3.5 w-3.5 shrink-0" />
-                                New Session
-                              </Button>
-                            </ContextMenuTrigger>
-                            <StyledContextMenuContent>
-                              <ContextMenuProvider>
-                                <SidebarMenu type="newSession" />
-                              </ContextMenuProvider>
-                            </StyledContextMenuContent>
-                          </ContextMenu>
-                        </div>
-                      </TooltipTrigger>
-                      <TooltipContent side="right">{newChatHotkey}</TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div>
+                        <ContextMenu modal={true}>
+                          <ContextMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              onClick={() => handleNewChat(true)}
+                              className="w-full justify-start gap-2 py-[7px] px-2 text-[13px] font-normal rounded-[6px] shadow-minimal bg-background"
+                              data-tutorial="new-chat-button"
+                            >
+                              <SquarePenRounded className="h-3.5 w-3.5 shrink-0" />
+                              New Session
+                            </Button>
+                          </ContextMenuTrigger>
+                          <StyledContextMenuContent>
+                            <ContextMenuProvider>
+                              <SidebarMenu type="newSession" />
+                            </ContextMenuProvider>
+                          </StyledContextMenuContent>
+                        </ContextMenu>
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent side="right">{newChatHotkey}</TooltipContent>
+                  </Tooltip>
                 </div>
                 {/* Primary Nav: All Sessions, Flagged, States, Labels | Sources, Skills | Settings */}
                 {/* pb-4 provides clearance so the last item scrolls above the mask-fade-bottom gradient */}
@@ -2260,20 +2257,18 @@ function AppShellContent({
                   </div>
                   {/* Help button - icon only with tooltip */}
                   <DropdownMenu>
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <DropdownMenuTrigger asChild>
-                            <button
-                              className="flex items-center justify-center h-7 w-7 rounded-[6px] select-none outline-none hover:bg-foreground/5 focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
-                            >
-                              <HelpCircle className="h-4 w-4 text-foreground/60" />
-                            </button>
-                          </DropdownMenuTrigger>
-                        </TooltipTrigger>
-                        <TooltipContent side="top">Help & Documentation</TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <DropdownMenuTrigger asChild>
+                          <button
+                            className="flex items-center justify-center h-7 w-7 rounded-[6px] select-none outline-none hover:bg-foreground/5 focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
+                          >
+                            <HelpCircle className="h-4 w-4 text-foreground/60" />
+                          </button>
+                        </DropdownMenuTrigger>
+                      </TooltipTrigger>
+                      <TooltipContent side="top">Help & Documentation</TooltipContent>
+                    </Tooltip>
                     <StyledDropdownMenuContent align="end" side="top" sideOffset={8}>
                       <StyledDropdownMenuItem onClick={() => window.electronAPI.openUrl(getDocUrl('sources'))}>
                         <DatabaseZap className="h-3.5 w-3.5" />
@@ -2351,11 +2346,11 @@ function AppShellContent({
               opacity: effectiveFocusMode ? 0 : 1,
             }}
             transition={isResizing ? { duration: 0 } : springTransition}
-            className="h-full shrink-0 overflow-hidden"
+            className="h-full shrink-0 overflow-hidden bg-background shadow-middle rounded-l-[14px] rounded-r-[10px]"
           >
             <div
               style={{ width: sessionListWidth }}
-              className="h-full flex flex-col min-w-0 bg-background shadow-middle rounded-l-[14px] rounded-r-[10px]"
+              className="h-full flex flex-col min-w-0"
             >
             <PanelHeader
               title={isSidebarVisible ? listTitle : undefined}
@@ -3296,7 +3291,6 @@ function AppShellContent({
         </>
       )}
 
-      </TooltipProvider>
     </AppShellProvider>
   )
 }
