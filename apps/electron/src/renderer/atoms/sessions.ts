@@ -54,6 +54,8 @@ export interface SessionMeta {
   isRegeneratingTitle?: boolean
   /** Model override for this session */
   model?: string
+  /** LLM connection slug for this session */
+  llmConnection?: string
   /** Token usage stats (from JSONL header, available without loading messages) */
   tokenUsage?: {
     inputTokens: number

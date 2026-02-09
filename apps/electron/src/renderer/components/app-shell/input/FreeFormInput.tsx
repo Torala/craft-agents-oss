@@ -56,11 +56,12 @@ import { cn } from '@/lib/utils'
 import { isMac, PATH_SEP, getPathBasename } from '@/lib/platform'
 import { applySmartTypography } from '@/lib/smart-typography'
 import { AttachmentPreview } from '../AttachmentPreview'
-import { ANTHROPIC_MODELS, getModelShortName, getModelContextWindow, isCodexModel, isCopilotModel } from '@config/models'
+import { ANTHROPIC_MODELS, getModelShortName, getModelDisplayName, getModelContextWindow, isCodexModel, isCopilotModel } from '@config/models'
 import { resolveEffectiveConnectionSlug, isCompatProvider, isAnthropicProvider } from '@config/llm-connections'
 import { useOptionalAppShellContext } from '@/context/AppShellContext'
 import { EditPopover, getEditConfig } from '@/components/ui/EditPopover'
 import { SourceAvatar } from '@/components/ui/source-avatar'
+import { ConnectionIcon } from '@/components/icons/ConnectionIcon'
 import { FreeFormInputContextBadge } from './FreeFormInputContextBadge'
 import type { FileAttachment, LoadedSource, LoadedSkill } from '../../../../shared/types'
 import type { PermissionMode } from '@craft-agent/shared/agent/modes'
@@ -295,6 +296,19 @@ export function FreeFormInput({
     const model = availableModels.find(m => typeof m !== 'string' && m.id === currentModel)
     return typeof model !== 'string' && model?.supportsThinking === false
   }, [availableModels, currentModel])
+
+  // Get display name for current model (full name, not short name)
+  const currentModelDisplayName = React.useMemo(() => {
+    const modelToDisplay = connectionDefaultModel ?? currentModel
+    const model = availableModels.find(m =>
+      typeof m === 'string' ? m === modelToDisplay : m.id === modelToDisplay
+    )
+    if (!model) {
+      // Fallback: use helper function to format unknown model IDs nicely
+      return getModelDisplayName(modelToDisplay)
+    }
+    return typeof model === 'string' ? model : model.name
+  }, [availableModels, currentModel, connectionDefaultModel])
 
   // Group connections by provider type for hierarchical dropdown
   // Each provider (Anthropic, OpenAI) can have multiple connections (API Key, Claude Max, etc.)
@@ -1653,7 +1667,8 @@ export function FreeFormInput({
                     ) : (
                       <>
                         {providerMismatch && <Lock className="h-3 w-3 shrink-0" />}
-                        {getModelShortName(connectionDefaultModel ?? currentModel)}
+                        {effectiveConnectionDetails && <ConnectionIcon connection={effectiveConnectionDetails} size={14} />}
+                        {currentModelDisplayName}
                         {!connectionDefaultModel && <ChevronDown className="h-3 w-3 opacity-50 shrink-0" />}
                       </>
                     )}
@@ -1708,7 +1723,8 @@ export function FreeFormInput({
                             )}
                           >
                             <div className="text-left flex-1">
-                              <div className="font-medium text-sm flex items-center gap-2">
+                              <div className="font-medium text-sm flex items-center gap-1.5">
+                                <ConnectionIcon connection={conn} size={14} />
                                 {conn.name}
                                 {isCurrentConnection && <Check className="h-3 w-3 text-foreground" />}
                               </div>

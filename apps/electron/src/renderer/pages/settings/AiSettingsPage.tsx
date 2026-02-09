@@ -34,6 +34,7 @@ import {
   StyledDropdownMenuSeparator,
 } from '@/components/ui/styled-dropdown'
 import { cn } from '@/lib/utils'
+import { ConnectionIcon } from '@/components/icons/ConnectionIcon'
 
 import {
   SettingsSection,
@@ -208,7 +209,8 @@ function ConnectionRow({ connection, isLastConnection, onRenameClick, onDelete, 
   return (
     <SettingsRow
       label={(
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1">
+          <ConnectionIcon connection={connection} size={14} />
           <span>{connection.name}</span>
           {connection.isDefault && (
             <span className="inline-flex items-center h-5 px-2 text-[11px] font-medium rounded-[4px] bg-background shadow-minimal text-foreground/60">

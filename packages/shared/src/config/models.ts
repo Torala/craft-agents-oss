@@ -61,6 +61,14 @@ export const MODEL_REGISTRY: ModelDefinition[] = [
     contextWindow: 200_000,
   },
   {
+    id: 'claude-opus-4-5-20251101',
+    name: 'Opus 4.5',
+    shortName: 'Opus 4.5',
+    description: 'Previous generation flagship model',
+    provider: 'anthropic',
+    contextWindow: 200_000,
+  },
+  {
     id: 'claude-sonnet-4-5-20250929',
     name: 'Sonnet 4.5',
     shortName: 'Sonnet',
@@ -154,7 +162,7 @@ export function getModelIdByShortName(shortName: string): string {
 // ============================================
 
 /** Default model for Anthropic connections (used when creating/backfilling connections) */
-export const DEFAULT_MODEL = getModelIdByShortName('Sonnet');
+export const DEFAULT_MODEL = getModelIdByShortName('Opus');
 
 /** Default model for Codex/OpenAI connections (used when creating/backfilling connections) */
 export const DEFAULT_CODEX_MODEL = getModelIdByShortName('Codex');
@@ -195,8 +203,18 @@ export function getModelById(modelId: string): ModelDefinition | undefined {
 export function getModelDisplayName(modelId: string): string {
   const model = getModelById(modelId);
   if (model) return model.name;
-  // Fallback: strip prefix and date suffix
-  return modelId.replace('claude-', '').replace(/-\d{8}$/, '');
+  // Fallback: strip prefix and date suffix, format nicely
+  // e.g., "claude-opus-4-5-20251101" → "Opus 4.5"
+  const stripped = modelId
+    .replace('claude-', '')
+    .replace(/-\d{8}$/, '');  // Remove date suffix
+  // Split on dashes, capitalize first part, join version parts with dots
+  const parts = stripped.split('-');
+  const first = parts[0];
+  if (!first) return modelId;
+  const name = first.charAt(0).toUpperCase() + first.slice(1);
+  const version = parts.slice(1).join('.');
+  return version ? `${name} ${version}` : name;
 }
 
 /**
