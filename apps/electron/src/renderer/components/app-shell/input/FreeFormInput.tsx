@@ -1875,36 +1875,28 @@ export function FreeFormInput({
             }
 
             return (
-              <DropdownMenu>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <DropdownMenuTrigger asChild>
-                      <button
-                        type="button"
-                        disabled={isProcessing}
-                        className="inline-flex items-center h-6 px-2 text-[12px] font-medium bg-info/10 rounded-[6px] shadow-tinted select-none cursor-pointer hover:bg-info/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                        style={{
-                          '--shadow-color': 'var(--info-rgb)',
-                          color: 'color-mix(in oklab, var(--info) 30%, var(--foreground))',
-                        } as React.CSSProperties}
-                      >
-                        {usagePercent}%
-                      </button>
-                    </DropdownMenuTrigger>
-                  </TooltipTrigger>
-                  <TooltipContent side="top">
-                    {usagePercent}% context used
-                  </TooltipContent>
-                </Tooltip>
-                <StyledDropdownMenuContent align="center" side="top" sideOffset={8}>
-                  <StyledDropdownMenuItem
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
                     onClick={handleCompactClick}
                     disabled={isProcessing}
+                    className="inline-flex items-center h-6 px-2 text-[12px] font-medium bg-info/10 rounded-[6px] shadow-tinted select-none cursor-pointer hover:bg-info/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    style={{
+                      '--shadow-color': 'var(--info-rgb)',
+                      color: 'color-mix(in oklab, var(--info) 30%, var(--foreground))',
+                    } as React.CSSProperties}
                   >
-                    Compact
-                  </StyledDropdownMenuItem>
-                </StyledDropdownMenuContent>
-              </DropdownMenu>
+                    {usagePercent}%
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="top">
+                  {isProcessing
+                    ? `${usagePercent}% context used — wait for current operation`
+                    : `${usagePercent}% context used — click to compact`
+                  }
+                </TooltipContent>
+              </Tooltip>
             )
           })()}
 
