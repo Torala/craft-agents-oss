@@ -35,6 +35,8 @@ export interface TitleGeneratorOptions {
   credentials?: OpenAICredentials;
   /** Summarization/utility model for title generation */
   summarizationModel?: string;
+  /** Base URL for OpenAI-compatible endpoints (default: https://api.openai.com/v1) */
+  baseUrl?: string;
 }
 
 /**
@@ -50,6 +52,7 @@ async function generateTitleWithOpenAI(
   prompt: string,
   credentials: OpenAICredentials,
   model: string,
+  baseUrl?: string,
 ): Promise<string | null> {
   const authToken = credentials.apiKey || credentials.accessToken;
   if (!authToken) {
@@ -58,7 +61,9 @@ async function generateTitleWithOpenAI(
   }
 
   try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const url = `${baseUrl ?? 'https://api.openai.com/v1'}/chat/completions`;
+    debug(`[title-generator] OpenAI request: url=${url}, model=${model}`);
+    const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -136,7 +141,7 @@ export async function generateSessionTitle(
       // Use OpenAI for Codex sessions — model from connection (last = mini/summarization)
       const openaiModel = options?.modelOverride ?? options?.summarizationModel ?? getDefaultSummarizationModel();
       debug(`[title-generator] Using OpenAI for title generation with model: ${openaiModel}`);
-      return await generateTitleWithOpenAI(prompt, options.credentials, openaiModel);
+      return await generateTitleWithOpenAI(prompt, options.credentials, openaiModel, options.baseUrl);
     }
 
     // Default: Use Claude SDK (works with API key or OAuth)
@@ -221,7 +226,7 @@ export async function regenerateSessionTitle(
       // Use OpenAI for Codex sessions — model from connection (last = mini/summarization)
       const openaiModel = options?.modelOverride ?? options?.summarizationModel ?? getDefaultSummarizationModel();
       debug(`[title-generator] Using OpenAI for title regeneration with model: ${openaiModel}`);
-      return await generateTitleWithOpenAI(prompt, options.credentials, openaiModel);
+      return await generateTitleWithOpenAI(prompt, options.credentials, openaiModel, options.baseUrl);
     }
 
     // Default: Use Claude SDK (works with API key or OAuth)

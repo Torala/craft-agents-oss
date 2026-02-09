@@ -190,6 +190,7 @@ export interface Message {
   authStatus?: AuthStatus;
   authCredentialMode?: CredentialInputMode;  // For credential requests
   authHeaderName?: string;        // For header auth - the header name
+  authHeaderNames?: string[];     // For multi-header auth (e.g., ["DD-API-KEY", "DD-APPLICATION-KEY"])
   authLabels?: {                  // Custom field labels
     credential?: string;
     username?: string;
@@ -259,6 +260,7 @@ export interface StoredMessage {
   authStatus?: AuthStatus;
   authCredentialMode?: CredentialInputMode;
   authHeaderName?: string;
+  authHeaderNames?: string[];
   authLabels?: {
     credential?: string;
     username?: string;

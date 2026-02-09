@@ -1548,6 +1548,12 @@ export class SessionManager {
           { type: 'source_bearer', workspaceId: wsId, sourceId: request.sourceSlug },
           { value: response.value! }
         )
+      } else if (request.mode === 'multi-header') {
+        // Store multi-header credentials as JSON { "DD-API-KEY": "...", "DD-APPLICATION-KEY": "..." }
+        await credManager.set(
+          { type: 'source_apikey', workspaceId: wsId, sourceId: request.sourceSlug },
+          { value: JSON.stringify(response.headers) }
+        )
       } else {
         // header or query - both use API key storage
         await credManager.set(
@@ -2377,6 +2383,7 @@ export class SessionManager {
             authDescription: request.description,
             authHint: request.hint,
             authHeaderName: request.headerName,
+            authHeaderNames: request.headerNames,
             authSourceUrl: request.sourceUrl,
             authPasswordRequired: request.passwordRequired,
           }),
@@ -3375,8 +3382,16 @@ export class SessionManager {
           title: initialTitle,
         }, managed.workspace.id)
 
+        // Resolve the connection for title generation BEFORE the agent is created
+        // (agent creation sets managed.llmConnection, but runs concurrently
+        // and may not complete before generateTitle reads it)
+        const titleConnection = managed.llmConnection ?? resolveSessionConnection(
+          undefined,
+          loadWorkspaceConfig(managed.workspace.rootPath)?.defaults?.defaultLlmConnection
+        )?.slug
+
         // Generate AI title asynchronously (will update the initial title)
-        this.generateTitle(managed, message)
+        this.generateTitle(managed, message, titleConnection)
       }
     }
 
@@ -4028,10 +4043,16 @@ To view this task's output:
    * Resolves provider type, credentials, and model override from the connection config.
    */
   private async buildTitleOptions(llmConnection: string | undefined): Promise<(TitleGeneratorOptions & { modelOverride?: string }) | undefined> {
-    if (!llmConnection) return undefined
+    if (!llmConnection) {
+      sessionLog.info(`[buildTitleOptions] No connection specified, skipping`)
+      return undefined
+    }
 
     const connection = getLlmConnection(llmConnection)
-    if (!connection) return undefined
+    if (!connection) {
+      sessionLog.info(`[buildTitleOptions] Connection '${llmConnection}' not found`)
+      return undefined
+    }
 
     if (connection.providerType === 'openai' || connection.providerType === 'openai_compat') {
       const credentialManager = getCredentialManager()
@@ -4042,20 +4063,49 @@ To view this task's output:
         apiKey = await credentialManager.getLlmApiKey(llmConnection) ?? undefined
       } else if (connection.authType === 'oauth') {
         const oauth = await credentialManager.getLlmOAuth(llmConnection)
-        accessToken = oauth?.accessToken
+        if (oauth?.accessToken) {
+          // Check if token is expired and refresh if needed (ChatGPT Plus tokens expire after ~1h)
+          const isExpired = oauth.expiresAt
+            ? Date.now() > oauth.expiresAt - 5 * 60 * 1000
+            : !!oauth.refreshToken
+
+          if (isExpired && oauth.refreshToken) {
+            try {
+              const { refreshChatGptTokens } = await import('@craft-agent/shared/auth/chatgpt-oauth')
+              const refreshed = await refreshChatGptTokens(oauth.refreshToken)
+              await credentialManager.setLlmOAuth(llmConnection, {
+                accessToken: refreshed.accessToken,
+                refreshToken: refreshed.refreshToken,
+                expiresAt: refreshed.expiresAt,
+                idToken: refreshed.idToken,
+              })
+              accessToken = refreshed.accessToken
+              sessionLog.info(`[buildTitleOptions] Refreshed ChatGPT Plus OAuth token for title generation`)
+            } catch (error) {
+              sessionLog.warn(`[buildTitleOptions] Failed to refresh ChatGPT Plus token:`, error)
+              accessToken = oauth.accessToken
+            }
+          } else {
+            accessToken = oauth.accessToken
+          }
+        }
       }
 
       if (apiKey || accessToken) {
+        const model = getSummarizationModel(connection)
+        sessionLog.info(`[buildTitleOptions] OpenAI provider ready: model=${model}, authType=${apiKey ? 'api_key' : 'oauth'}, baseUrl=${connection.baseUrl ?? '(default)'}`)
         return {
           provider: 'openai',
           credentials: { apiKey, accessToken },
-          modelOverride: connection.defaultModel ?? undefined,
-          summarizationModel: getSummarizationModel(connection),
+          summarizationModel: model,
+          baseUrl: connection.baseUrl,
         }
       }
+      sessionLog.info(`[buildTitleOptions] No credentials found for OpenAI connection '${llmConnection}'`)
       return undefined
     }
 
+    sessionLog.info(`[buildTitleOptions] Anthropic provider ready: model=${connection.defaultModel ?? '(default)'}, summarizationModel=${getSummarizationModel(connection)}`)
     return {
       provider: 'anthropic',
       modelOverride: connection.defaultModel ?? undefined,
@@ -4067,10 +4117,12 @@ To view this task's output:
    * Generate an AI title for a session from the user's first message.
    * Called asynchronously when the first user message is received.
    */
-  private async generateTitle(managed: ManagedSession, userMessage: string): Promise<void> {
-    sessionLog.info(`Starting title generation for session ${managed.id}`)
+  private async generateTitle(managed: ManagedSession, userMessage: string, connectionOverride?: string): Promise<void> {
+    const resolvedConnection = connectionOverride ?? managed.llmConnection
+    sessionLog.info(`[generateTitle] Starting for session ${managed.id}, connection=${resolvedConnection ?? '(none)'}`)
     try {
-      const titleOptions = await this.buildTitleOptions(managed.llmConnection)
+      const titleOptions = await this.buildTitleOptions(resolvedConnection)
+      sessionLog.info(`[generateTitle] Options: provider=${titleOptions?.provider ?? '(none)'}, model=${titleOptions?.summarizationModel ?? '(default)'}, baseUrl=${titleOptions?.baseUrl ?? '(default)'}`)
 
       const title = await generateSessionTitle(userMessage, titleOptions)
       if (title) {

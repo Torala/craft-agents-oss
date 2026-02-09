@@ -60,6 +60,7 @@ API sources are configured with a JSON file:
 | `api.headerName` | No | Custom header name for `header` auth type |
 | `api.queryParam` | No | Query parameter name for `query` auth type |
 | `api.authScheme` | No | Bearer token prefix for `bearer` auth (default: `"Bearer"`, can be `"Token"`) |
+| `api.headerNames` | No | Array of header names for multi-header auth (e.g., `["DD-API-KEY", "DD-APPLICATION-KEY"]`) |
 
 ## Authentication Types
 
@@ -131,6 +132,29 @@ For public APIs that don't require authentication.
 ```
 
 Sends credentials as `Authorization: Basic {base64(username:password)}`.
+
+### Multi-Header Authentication
+
+```json
+{
+  "api": {
+    "baseUrl": "https://api.example.com",
+    "authType": "header",
+    "headerNames": ["X-API-KEY", "X-APP-KEY"]
+  }
+}
+```
+
+Sends multiple credentials as separate headers. Each header name in the array gets its own input field during authentication. All headers are included in every API request.
+
+<Tip>
+Use multi-header authentication when an API requires two or more authentication headers simultaneously. This is common for services that separate identity from authorization, or require both an API key and an application secret.
+</Tip>
+
+**Common use cases:**
+- **Datadog**: `DD-API-KEY` + `DD-APPLICATION-KEY`
+- **APIs with identity + signing keys**: Separate API key and secret
+- **Services with app + user credentials**: Application key plus user token
 
 ## Test Endpoint
 

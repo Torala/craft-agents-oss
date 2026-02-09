@@ -142,6 +142,7 @@ export interface CodexConfigGeneratorOptions {
    * Where plan files are stored for SubmitPlan tool.
    */
   plansFolderPath?: string;
+
 }
 
 /**

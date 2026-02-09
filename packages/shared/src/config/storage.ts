@@ -1381,14 +1381,14 @@ export function migrateLegacyLlmConnectionsConfig(): void {
       };
     } else if (legacyAuthType === 'codex_api_key') {
       // OpenAI API Key via Codex (OpenRouter, Vercel AI Gateway compatible)
+      // Always use openai_compat for API key connections (5.3 is OAuth-only)
       const hasCustomEndpoint = !!legacyBaseUrl;
-      const providerType = hasCustomEndpoint ? 'openai_compat' as const : 'openai' as const;
       migrated = {
         slug: 'codex-api',
         name: hasCustomEndpoint ? 'Codex (Custom Endpoint)' : 'Codex (OpenAI API Key)',
-        providerType,
+        providerType: 'openai_compat',
         authType: hasCustomEndpoint ? 'api_key_with_endpoint' : 'api_key',
-        models: getDefaultModelsForConnection(providerType),
+        models: getDefaultModelsForConnection('openai_compat'),
         createdAt: Date.now(),
       };
     } else if (legacyAuthType === 'api_key') {

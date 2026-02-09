@@ -79,7 +79,7 @@ const BUILT_IN_CONNECTION_TEMPLATES: Record<string, {
   },
   'codex-api': {
     name: (h) => h ? 'Codex (Custom Endpoint)' : 'Codex (OpenAI API Key)',
-    providerType: (h) => h ? 'openai_compat' : 'openai',
+    providerType: 'openai_compat', // Always use compat for API key (5.3 is OAuth-only)
     authType: (h) => h ? 'api_key_with_endpoint' : 'api_key',
   },
 }

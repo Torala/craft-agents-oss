@@ -65,8 +65,14 @@ import { parseError, type AgentError } from './errors.ts';
 // Session storage for plans folder path
 import { getSessionPlansPath } from '../sessions/storage.ts';
 
+// Mention parsing for skill extraction
+import { parseMentions, stripAllMentions } from '../mentions/index.ts';
+
+// Skills loader for resolving skill paths
+import { loadWorkspaceSkills } from '../skills/storage.ts';
+
 // Path utilities for cross-platform normalization
-import { resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 
 // System prompt for Craft Agent context
 import { getSystemPrompt } from '../prompts/system.ts';
@@ -1812,12 +1818,39 @@ export class CodexAgent extends BaseAgent {
   /**
    * Build user input from message and attachments.
    * Mirrors ClaudeAgent's buildSDKUserMessage() for full context parity.
+   *
+   * Also extracts [skill:...] mentions from the message and adds them as
+   * skill UserInput items, which is how Codex discovers and loads skills.
    */
   private buildUserInput(
     message: string,
     attachments?: FileAttachment[]
   ): UserInput[] {
     const input: UserInput[] = [];
+
+    // ============================================================
+    // SKILL MENTION EXTRACTION
+    // ============================================================
+
+    // Parse [skill:workspaceId:slug] mentions from the message.
+    // Load workspace skills to match against and resolve paths.
+    const workspaceRoot = this.config.workspace.rootPath ?? this.workingDirectory;
+    const skills = loadWorkspaceSkills(workspaceRoot);
+    const skillSlugs = skills.map(s => s.slug);
+    const parsed = parseMentions(message, skillSlugs, []);
+
+    // Add matched skills as skill UserInput items.
+    // Codex loads the SKILL.md from the given path and injects its instructions.
+    for (const slug of parsed.skills) {
+      const skill = skills.find(s => s.slug === slug);
+      if (skill) {
+        input.push({ type: 'skill' as const, name: skill.slug, path: join(skill.path, 'SKILL.md') });
+      }
+    }
+
+    // Strip all [bracket] mentions from the message text.
+    // Codex doesn't understand [skill:...], [source:...] etc. annotations.
+    const cleanMessage = stripAllMentions(message);
 
     // ============================================================
     // CONTEXT INJECTION (matching ClaudeAgent)
@@ -1829,7 +1862,7 @@ export class CodexAgent extends BaseAgent {
     const contextParts = this.promptBuilder.buildContextParts(
       {
         plansFolderPath: getSessionPlansPath(
-          this.config.workspace.rootPath ?? this.workingDirectory,
+          workspaceRoot,
           this._sessionId
         ),
       },
@@ -1867,11 +1900,11 @@ export class CodexAgent extends BaseAgent {
     // COMBINE INTO MESSAGE
     // ============================================================
 
-    // Combine: context + attachments + user message
+    // Combine: context + attachments + user message (with mentions stripped)
     const allParts = [
       ...contextParts,
       ...attachmentParts,
-      message,
+      cleanMessage,
     ].filter(Boolean);
 
     const fullMessage = allParts.join('\n\n');
