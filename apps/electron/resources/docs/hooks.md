@@ -310,6 +310,19 @@ Or use the `config_validate` tool directly with `target: "hooks"`.
 cat hooks.json | jq .
 ```
 
+## Rate Limits
+
+To protect against runaway hooks (e.g., a hook that indirectly triggers itself in a loop), the event bus enforces per-event-type rate limits:
+
+| Event | Max fires / minute |
+|-------|--------------------|
+| `SchedulerTick` | 60 (1/sec) |
+| All others (`LabelAdd`, `FlagChange`, `PreToolUse`, etc.) | 10 |
+
+When a limit is hit, further events of that type are **silently dropped** for the remainder of the 60-second window. A warning is logged. The window resets automatically.
+
+**Example:** If you have a `LabelAdd` hook that triggers a prompt which adds a label back to a session, it will fire at most 10 times before being rate-limited — preventing infinite session creation.
+
 ## Troubleshooting
 
 ### Hook not firing

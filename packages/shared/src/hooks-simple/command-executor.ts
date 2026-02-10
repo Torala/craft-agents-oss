@@ -5,8 +5,8 @@
  * Provides security boundary between user-defined hooks and shell execution.
  */
 
-import { exec } from 'node:child_process';
-import { promisify } from 'node:util';
+import { exec, type ExecOptions } from 'node:child_process';
+import { createLogger } from '../utils/debug.ts';
 import {
   permissionsConfigCache,
   type PermissionsContext,
@@ -14,7 +14,46 @@ import {
 } from '../agent/permissions-config.ts';
 import { getBashRejectionReason, formatBashRejectionMessage } from '../agent/mode-manager.ts';
 
-const execAsync = promisify(exec);
+const log = createLogger('command-executor');
+
+// Grace period before sending SIGKILL after SIGTERM (ms)
+const SIGKILL_GRACE_MS = 5000;
+
+/**
+ * Execute a command with SIGKILL fallback.
+ * Node.js exec sends SIGTERM on timeout, but if the process traps SIGTERM
+ * and doesn't exit, the parent hangs forever. This wrapper sends SIGKILL
+ * after a grace period to guarantee cleanup.
+ */
+function execWithKill(
+  command: string,
+  options: ExecOptions & { timeout?: number; maxBuffer?: number }
+): Promise<{ stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    const child = exec(command, options, (error, stdout, stderr) => {
+      clearTimeout(killTimer);
+      if (error) {
+        const err = error as Error & { stdout?: string; stderr?: string };
+        err.stdout = stdout as string;
+        err.stderr = stderr as string;
+        reject(err);
+      } else {
+        resolve({ stdout: stdout as string, stderr: stderr as string });
+      }
+    });
+
+    let killTimer: ReturnType<typeof setTimeout>;
+    const timeout = options.timeout ?? 0;
+    if (timeout > 0) {
+      killTimer = setTimeout(() => {
+        if (!child.killed) {
+          log.warn(`[CommandExecutor] Process did not exit after SIGTERM, sending SIGKILL`);
+          child.kill('SIGKILL');
+        }
+      }, timeout + SIGKILL_GRACE_MS);
+    }
+  });
+}
 
 // ============================================================================
 // Permission Checking
@@ -107,7 +146,7 @@ export async function executeCommand(
   }
 
   try {
-    const { stdout, stderr } = await execAsync(command, {
+    const { stdout, stderr } = await execWithKill(command, {
       env: options.env,
       timeout: options.timeout ?? 60000,
       cwd: options.cwd,

@@ -114,6 +114,23 @@ export type AnyEventHandler = (
 ) => void | Promise<void>;
 
 // ============================================================================
+// Rate Limiting
+// ============================================================================
+
+interface RateWindow {
+  count: number;
+  windowStart: number;
+}
+
+const DEFAULT_RATE_LIMIT = 10;
+const SCHEDULER_RATE_LIMIT = 60;
+const RATE_WINDOW_MS = 60_000; // 1 minute
+
+function getRateLimit(event: HookEvent): number {
+  return event === 'SchedulerTick' ? SCHEDULER_RATE_LIMIT : DEFAULT_RATE_LIMIT;
+}
+
+// ============================================================================
 // EventBus Interface
 // ============================================================================
 
@@ -145,6 +162,7 @@ export class WorkspaceEventBus implements EventBus {
   private readonly workspaceId: string;
   private readonly handlers: Map<HookEvent, Set<EventHandler<HookEvent>>> = new Map();
   private readonly anyHandlers: Set<AnyEventHandler> = new Set();
+  private readonly rateCounts: Map<HookEvent, RateWindow> = new Map();
   private disposed = false;
 
   constructor(workspaceId: string) {
@@ -161,6 +179,23 @@ export class WorkspaceEventBus implements EventBus {
       log.warn(`[EventBus] Attempted to emit after disposal: ${event}`);
       return;
     }
+
+    // Rate limiting: prevent runaway event loops (sync and async)
+    const now = Date.now();
+    const rateWindow = this.rateCounts.get(event) ?? { count: 0, windowStart: now };
+    if (now - rateWindow.windowStart >= RATE_WINDOW_MS) {
+      rateWindow.count = 0;
+      rateWindow.windowStart = now;
+    }
+    const limit = getRateLimit(event);
+    if (rateWindow.count >= limit) {
+      log.warn(
+        `[EventBus] Rate limit: ${event} fired ${rateWindow.count} times in ${Math.round((now - rateWindow.windowStart) / 1000)}s (limit: ${limit}/min), dropping`
+      );
+      return;
+    }
+    rateWindow.count++;
+    this.rateCounts.set(event, rateWindow);
 
     log.debug(`[EventBus] Emitting: ${event}`);
 
@@ -250,6 +285,7 @@ export class WorkspaceEventBus implements EventBus {
     log.debug(`[EventBus] Disposing for workspace: ${this.workspaceId}`);
     this.handlers.clear();
     this.anyHandlers.clear();
+    this.rateCounts.clear();
     this.disposed = true;
   }
 
