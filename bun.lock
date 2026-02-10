@@ -82,7 +82,7 @@
     },
     "apps/electron": {
       "name": "@craft-agent/electron",
-      "version": "0.3.99",
+      "version": "0.4.3",
       "dependencies": {
         "@craft-agent/core": "workspace:*",
         "@craft-agent/shared": "workspace:*",
@@ -120,7 +120,7 @@
     },
     "apps/marketing": {
       "name": "@craft-agent/marketing",
-      "version": "0.3.99",
+      "version": "0.4.3",
       "dependencies": {
         "@craft-agent/ui": "workspace:*",
         "@paper-design/shaders-react": "^0.0.70",
@@ -143,7 +143,7 @@
     },
     "apps/viewer": {
       "name": "@craft-agent/viewer",
-      "version": "0.3.99",
+      "version": "0.4.3",
       "dependencies": {
         "@craft-agent/core": "workspace:*",
         "@craft-agent/ui": "workspace:*",
@@ -170,7 +170,7 @@
     },
     "packages/bridge-mcp-server": {
       "name": "@craft-agent/bridge-mcp-server",
-      "version": "0.3.99",
+      "version": "0.4.3",
       "bin": {
         "bridge-mcp-server": "./dist/index.js",
       },
@@ -183,11 +183,11 @@
     },
     "packages/codex-types": {
       "name": "@craft-agent/codex-types",
-      "version": "0.3.99",
+      "version": "0.4.3",
     },
     "packages/core": {
       "name": "@craft-agent/core",
-      "version": "0.3.99",
+      "version": "0.4.3",
       "devDependencies": {
         "@types/uuid": "^11.0.0",
       },
@@ -199,7 +199,7 @@
     },
     "packages/mermaid": {
       "name": "@craft-agent/mermaid",
-      "version": "0.3.99",
+      "version": "0.4.3",
       "dependencies": {
         "elkjs": "^0.11.0",
       },
@@ -209,7 +209,7 @@
     },
     "packages/session-mcp-server": {
       "name": "@craft-agent/session-mcp-server",
-      "version": "0.3.99",
+      "version": "0.4.3",
       "bin": {
         "session-mcp-server": "./dist/index.js",
       },
@@ -224,7 +224,7 @@
     },
     "packages/session-tools-core": {
       "name": "@craft-agent/session-tools-core",
-      "version": "0.3.99",
+      "version": "0.4.3",
       "dependencies": {
         "@craft-agent/mermaid": "workspace:*",
         "gray-matter": "^4.0.3",
@@ -236,7 +236,7 @@
     },
     "packages/shared": {
       "name": "@craft-agent/shared",
-      "version": "0.3.99",
+      "version": "0.4.3",
       "dependencies": {
         "@craft-agent/codex-types": "workspace:*",
         "@craft-agent/core": "workspace:*",
@@ -244,6 +244,7 @@
         "@isaacs/ttlcache": "^2.1.4",
         "@leeoniya/ufuzzy": "^1.0.19",
         "bash-parser": "^0.5.0",
+        "croner": "^10.0.1",
         "filtrex": "^3.1.0",
         "incr-regex-package": "^1.0.4",
         "shell-quote": "^1.8.3",
@@ -261,7 +262,7 @@
     },
     "packages/ui": {
       "name": "@craft-agent/ui",
-      "version": "0.3.99",
+      "version": "0.4.3",
       "dependencies": {
         "@craft-agent/core": "workspace:*",
         "@craft-agent/mermaid": "workspace:*",
@@ -1482,6 +1483,8 @@
     "crc": ["crc@3.8.0", "", { "dependencies": { "buffer": "^5.1.0" } }, "sha512-iX3mfgcTMIq3ZKLIsVFAbv7+Mc10kxabAGQb8HvjA1o3T1PIYprbakQ65d3I+2HGHt6nSKkM9PYjgoJO2KcFBQ=="],
 
     "crc-32": ["crc-32@1.2.2", "", { "bin": { "crc32": "bin/crc32.njs" } }, "sha512-ROmzCKrTnOwybPcJApAA6WBWij23HVfGVNKqqrZpuyZOHqK2CwHSvpGuyt/UNNvaIjEd8X5IFGp4Mh+Ie1IHJQ=="],
+
+    "croner": ["croner@10.0.1", "", {}, "sha512-ixNtAJndqh173VQ4KodSdJEI6nuioBWI0V1ITNKhZZsO0pEMoDxz539T4FTTbSZ/xIOSuDnzxLVRqBVSvPNE2g=="],
 
     "cross-dirname": ["cross-dirname@0.1.0", "", {}, "sha512-+R08/oI0nl3vfPcqftZRpytksBXDzOUveBq/NBVx0sUp1axwzPQrKinNx5yd5sxPu8j1wIy8AfnVQ+5eFdha6Q=="],
 
