@@ -344,11 +344,19 @@ export class EventAdapter {
 
   /**
    * Adapt item/commandExecution/outputDelta - accumulate for tool result.
+   * Caps accumulation at MAX_COMMAND_OUTPUT_CHARS to prevent OOM from unbounded growth
+   * (e.g., rg matching inside large session JSONL files).
    */
   adaptCommandOutputDelta(notification: OutputDeltaNotification): void {
     const { itemId, delta } = notification;
     const current = this.commandOutput.get(itemId) || '';
-    this.commandOutput.set(itemId, current + delta);
+    // Stop accumulating once we've hit the limit — further deltas are silently dropped.
+    // The truncation message is added in createCommandResult when the result is emitted.
+    if (current.length >= MAX_COMMAND_OUTPUT_CHARS) return;
+    const next = current + delta;
+    this.commandOutput.set(itemId, next.length > MAX_COMMAND_OUTPUT_CHARS
+      ? next.slice(0, MAX_COMMAND_OUTPUT_CHARS)
+      : next);
   }
 
   /**

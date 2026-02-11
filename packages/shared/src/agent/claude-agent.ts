@@ -791,7 +791,10 @@ export class ClaudeAgent extends BaseAgent {
               if (_hookInput.hook_event_name !== 'PreToolUse') {
                 return { continue: true };
               }
-              // After the guard, we know this is PreToolUse — tool_name and tool_use_id are set
+              // Validate the fields we depend on are actually present
+              if (!_hookInput.tool_name || !_hookInput.tool_use_id) {
+                return { continue: true };
+              }
               const input = _hookInput as Required<Pick<typeof _hookInput, 'tool_name' | 'tool_use_id'>> & typeof _hookInput;
 
               // Get current permission mode (single source of truth)

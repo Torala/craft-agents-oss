@@ -117,8 +117,10 @@ export class TokenRefreshManager {
     // Load credential and check if refresh needed
     const cred = await this.credManager.load(source);
 
-    // If no credential or doesn't need refresh, return current token
-    if (cred && !this.credManager.isExpired(cred) && !this.credManager.needsRefresh(cred)) {
+    // If credential exists, has a known expiry, and isn't near expiry, return it as-is.
+    // Missing expiresAt means we can't determine lifetime — fall through to refresh
+    // so the new credential gets a proper expiresAt (matching needsRefresh() logic).
+    if (cred && cred.expiresAt && !this.credManager.isExpired(cred) && !this.credManager.needsRefresh(cred)) {
       return {
         success: true,
         token: cred.value,
