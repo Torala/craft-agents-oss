@@ -81,6 +81,16 @@ packages/codex-types/**/*
 packages/session-tools-core/**/*
 
 # =============================================================================
+# PACKAGES - SESSION MCP SERVER (Session-scoped tools for Codex via stdio)
+# =============================================================================
+packages/session-mcp-server/**/*
+
+# =============================================================================
+# PACKAGES - BRIDGE MCP SERVER (REST API bridge for Codex via stdio)
+# =============================================================================
+packages/bridge-mcp-server/**/*
+
+# =============================================================================
 # PACKAGES - UI (React Components)
 # =============================================================================
 packages/ui/**/*
