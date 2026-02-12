@@ -8,7 +8,7 @@ import { join } from 'path';
 import type { Arch, BuildConfig } from './common';
 
 /**
- * Verify SDK and Codex binary are bundled in the packaged Linux app
+ * Verify SDK, Codex, and Copilot CLI are bundled in the packaged Linux app
  */
 export function verifyPackagedSDK(unpackedPath: string, arch: Arch): void {
   const appPath = join(unpackedPath, 'resources', 'app');
@@ -35,6 +35,15 @@ export function verifyPackagedSDK(unpackedPath: string, arch: Arch): void {
 
   const codexStats = statSync(codexPath);
   console.log(`  Codex bundled: ${(codexStats.size / 1024 / 1024).toFixed(1)} MB`);
+
+  // Verify Copilot CLI binary
+  const copilotPath = join(appPath, 'vendor', 'copilot', `linux-${arch}`, 'copilot');
+  if (!existsSync(copilotPath)) {
+    throw new Error(`CRITICAL: Copilot CLI not bundled! Expected at: ${copilotPath}`);
+  }
+
+  const copilotStats = statSync(copilotPath);
+  console.log(`  Copilot CLI bundled: ${(copilotStats.size / 1024 / 1024).toFixed(1)} MB`);
 }
 
 /**
@@ -51,7 +60,7 @@ export async function packageLinux(config: BuildConfig): Promise<string> {
   // Verify SDK is bundled in the unpacked app before checking artifacts
   const unpackedPath = join(electronDir, 'release', 'linux-unpacked');
   if (existsSync(unpackedPath)) {
-    console.log('Verifying SDK and Codex in packaged app...');
+    console.log('Verifying SDK, Codex, and Copilot CLI in packaged app...');
     verifyPackagedSDK(unpackedPath, arch);
   } else {
     console.warn('  linux-unpacked not found, skipping SDK verification');

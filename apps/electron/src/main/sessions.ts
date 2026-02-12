@@ -1359,18 +1359,22 @@ export class SessionManager {
     setPathToClaudeCodeExecutable(cliPath)
 
     // Resolve path to @github/copilot CLI (for CopilotAgent)
-    // The SDK's getBundledCliPath() uses import.meta.resolve() which breaks in esbuild bundles
-    const copilotRelativePath = join('node_modules', '@github', 'copilot', 'index.js')
-    let copilotPath = join(basePath, copilotRelativePath)
-    if (!existsSync(copilotPath) && !app.isPackaged) {
-      const monorepoRoot = join(basePath, '..', '..')
-      copilotPath = join(monorepoRoot, copilotRelativePath)
-    }
+    // import.meta.resolve() breaks in esbuild bundles, so we resolve the path explicitly.
+    // Packaged: vendor/copilot/{platform}-{arch}/ (copied by build script, verified in CI).
+    // Dev: native binary from node_modules/@github/copilot-{platform}-{arch}/.
+    const platform = process.platform === 'win32' ? 'win32' : process.platform === 'linux' ? 'linux' : 'darwin'
+    const arch = process.arch === 'arm64' ? 'arm64' : 'x64'
+    const binaryName = platform === 'win32' ? 'copilot.exe' : 'copilot'
+
+    const copilotPath = app.isPackaged
+      ? join(basePath, 'vendor', 'copilot', `${platform}-${arch}`, binaryName)
+      : join(basePath, 'node_modules', '@github', `copilot-${platform}-${arch}`, binaryName)
+
     if (existsSync(copilotPath)) {
       this.copilotCliPath = copilotPath
       sessionLog.info('Resolved Copilot CLI path:', copilotPath)
     } else {
-      sessionLog.warn('Copilot CLI not found — Copilot sessions will try SDK default resolution')
+      sessionLog.warn('Copilot CLI not found at', copilotPath, '— Copilot sessions will try SDK default resolution')
     }
 
     // Set path to fetch interceptor for SDK subprocess

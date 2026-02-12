@@ -130,14 +130,17 @@ function createBuiltInConnection(slug: string, baseUrl?: string | null): LlmConn
 async function fetchAndStoreCopilotModels(slug: string, accessToken: string): Promise<void> {
   const { CopilotClient } = await import('@github/copilot-sdk')
 
-  // Resolve @github/copilot CLI path — import.meta.resolve() breaks in esbuild bundles
-  const copilotRelativePath = join('node_modules', '@github', 'copilot', 'index.js')
+  // Resolve @github/copilot CLI path — import.meta.resolve() breaks in esbuild bundles.
+  // Packaged: vendor/copilot/{platform}-{arch}/ (copied by build script, verified in CI).
+  // Dev: native binary from node_modules/@github/copilot-{platform}-{arch}/.
   const basePath = app.isPackaged ? app.getAppPath() : process.cwd()
-  let copilotCliPath = join(basePath, copilotRelativePath)
-  if (!existsSync(copilotCliPath)) {
-    const monorepoRoot = join(basePath, '..', '..')
-    copilotCliPath = join(monorepoRoot, copilotRelativePath)
-  }
+  const platform = process.platform === 'win32' ? 'win32' : process.platform === 'linux' ? 'linux' : 'darwin'
+  const arch = process.arch === 'arm64' ? 'arm64' : 'x64'
+  const binaryName = platform === 'win32' ? 'copilot.exe' : 'copilot'
+
+  const copilotCliPath = app.isPackaged
+    ? join(basePath, 'vendor', 'copilot', `${platform}-${arch}`, binaryName)
+    : join(basePath, 'node_modules', '@github', `copilot-${platform}-${arch}`, binaryName)
 
   const debugLines: string[] = []
   const debugLog = (msg: string) => {

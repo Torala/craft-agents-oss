@@ -11,7 +11,7 @@ import { join } from 'path';
 import type { BuildConfig } from './common';
 
 /**
- * Verify SDK and Codex binary are bundled in the packaged Windows app
+ * Verify SDK, Codex, and Copilot CLI are bundled in the packaged Windows app
  */
 export function verifyPackagedSDK(unpackedPath: string): void {
   const appPath = join(unpackedPath, 'resources', 'app');
@@ -38,6 +38,15 @@ export function verifyPackagedSDK(unpackedPath: string): void {
 
   const codexStats = statSync(codexPath);
   console.log(`  Codex bundled: codex.exe is ${(codexStats.size / 1024 / 1024).toFixed(1)} MB`);
+
+  // Verify Copilot CLI binary
+  const copilotPath = join(appPath, 'vendor', 'copilot', 'win32-x64', 'copilot.exe');
+  if (!existsSync(copilotPath)) {
+    throw new Error(`CRITICAL: Copilot CLI not bundled! Expected at: ${copilotPath}`);
+  }
+
+  const copilotStats = statSync(copilotPath);
+  console.log(`  Copilot CLI bundled: copilot.exe is ${(copilotStats.size / 1024 / 1024).toFixed(1)} MB`);
 }
 
 /**
@@ -265,7 +274,7 @@ export async function packageWindows(config: BuildConfig): Promise<string> {
   // Verify SDK is bundled in the unpacked app before checking artifacts
   const unpackedPath = join(electronDir, 'release', 'win-unpacked');
   if (existsSync(unpackedPath)) {
-    console.log('Verifying SDK and Codex in packaged app...');
+    console.log('Verifying SDK, Codex, and Copilot CLI in packaged app...');
     verifyPackagedSDK(unpackedPath);
   } else {
     console.warn('  win-unpacked not found, skipping SDK verification');
