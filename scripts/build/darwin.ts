@@ -8,7 +8,7 @@ import { join } from 'path';
 import type { Arch, BuildConfig } from './common';
 
 /**
- * Verify SDK and Codex binary are bundled in the packaged macOS app
+ * Verify SDK, Codex, and Copilot CLI are bundled in the packaged macOS app
  */
 export function verifyPackagedSDK(appPath: string, arch: Arch): void {
   const appResourcesPath = join(appPath, 'Contents', 'Resources', 'app');
@@ -35,6 +35,15 @@ export function verifyPackagedSDK(appPath: string, arch: Arch): void {
 
   const codexStats = statSync(codexPath);
   console.log(`  Codex bundled: ${(codexStats.size / 1024 / 1024).toFixed(1)} MB`);
+
+  // Verify Copilot CLI binary
+  const copilotPath = join(appResourcesPath, 'vendor', 'copilot', `darwin-${arch}`, 'copilot');
+  if (!existsSync(copilotPath)) {
+    throw new Error(`CRITICAL: Copilot CLI not bundled! Expected at: ${copilotPath}`);
+  }
+
+  const copilotStats = statSync(copilotPath);
+  console.log(`  Copilot CLI bundled: ${(copilotStats.size / 1024 / 1024).toFixed(1)} MB`);
 }
 
 /**
@@ -71,7 +80,7 @@ export async function packageDarwin(config: BuildConfig): Promise<string> {
   // Verify SDK is bundled in the .app before checking artifacts
   const macDir = arch === 'arm64' ? 'mac-arm64' : 'mac';
   const appPath = join(electronDir, 'release', macDir, 'Craft Agents.app');
-  console.log('Verifying SDK and Codex in packaged app...');
+  console.log('Verifying SDK, Codex, and Copilot CLI in packaged app...');
   verifyPackagedSDK(appPath, arch);
 
   // Verify the DMG and ZIP were built (ZIP is used by electron-updater for auto-updates)

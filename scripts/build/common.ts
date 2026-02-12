@@ -531,6 +531,39 @@ export function verifyMcpServersExist(config: BuildConfig): void {
 }
 
 /**
+ * Copy the native Copilot CLI binary from node_modules to vendor/copilot/.
+ * The @github/copilot package has platform-specific optional deps that provide
+ * native binaries (e.g., @github/copilot-darwin-arm64). bun install only installs
+ * the matching platform's binary. We copy it to vendor/copilot/{platform}-{arch}/
+ * so electron-builder can include it via extraResources.
+ */
+export function copyCopilotCli(config: BuildConfig): void {
+  const { platform, arch, rootDir, electronDir } = config;
+  const isWindows = platform === 'win32';
+  const binaryName = isWindows ? 'copilot.exe' : 'copilot';
+  const packageDir = join(rootDir, 'node_modules', '@github', `copilot-${platform}-${arch}`);
+  const sourcePath = join(packageDir, binaryName);
+  const vendorDir = join(electronDir, 'vendor', 'copilot', `${platform}-${arch}`);
+  const destPath = join(vendorDir, binaryName);
+
+  if (!existsSync(sourcePath)) {
+    console.warn(`Warning: Copilot CLI binary not found at ${sourcePath} — Copilot sessions will fall back to SDK resolution`);
+    return;
+  }
+
+  console.log(`Copying Copilot CLI for ${platform}-${arch}...`);
+  mkdirSync(vendorDir, { recursive: true });
+  copyFileSync(sourcePath, destPath);
+
+  if (!isWindows) {
+    execSync(`chmod +x "${destPath}"`);
+  }
+
+  const size = statSync(destPath).size;
+  console.log(`  Copilot CLI installed to ${destPath} (${(size / 1024 / 1024).toFixed(0)} MB) ✓`);
+}
+
+/**
  * Build the Electron app (main, preload, renderer)
  */
 export async function buildElectronApp(config: BuildConfig): Promise<void> {

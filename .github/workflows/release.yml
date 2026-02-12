@@ -301,9 +301,9 @@ jobs:
             apps/electron/release/Craft-Agent-${{ matrix.arch }}.zip
           retention-days: 7
 
-  # Verify SDK and Codex binary are bundled in all artifacts before upload
+  # Verify SDK, Codex, and Copilot CLI are bundled in all artifacts before upload
   verify-bundles:
-    name: Verify SDK & Codex Bundling
+    name: Verify SDK, Codex & Copilot Bundling
     needs: [prepare, build]
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -336,6 +336,14 @@ jobs:
           fi
           SIZE=$(stat -c%s "$CODEX")
           echo "✓ macOS ARM64: Codex found ($SIZE bytes)"
+          COPILOT="$APP/vendor/copilot/darwin-arm64/copilot"
+          if [ ! -f "$COPILOT" ]; then
+            echo "::error::Copilot CLI missing in macOS ARM64 bundle"
+            ls -la "$APP/vendor/copilot/" || true
+            exit 1
+          fi
+          SIZE=$(stat -c%s "$COPILOT")
+          echo "✓ macOS ARM64: Copilot CLI found ($SIZE bytes)"
 
       - name: Verify macOS x64
         run: |
@@ -357,6 +365,14 @@ jobs:
           fi
           SIZE=$(stat -c%s "$CODEX")
           echo "✓ macOS x64: Codex found ($SIZE bytes)"
+          COPILOT="$APP/vendor/copilot/darwin-x64/copilot"
+          if [ ! -f "$COPILOT" ]; then
+            echo "::error::Copilot CLI missing in macOS x64 bundle"
+            ls -la "$APP/vendor/copilot/" || true
+            exit 1
+          fi
+          SIZE=$(stat -c%s "$COPILOT")
+          echo "✓ macOS x64: Copilot CLI found ($SIZE bytes)"
 
       - name: Verify Linux
         run: |
@@ -379,6 +395,14 @@ jobs:
           fi
           SIZE=$(stat -c%s "$CODEX")
           echo "✓ Linux: Codex found ($SIZE bytes)"
+          COPILOT="$APP/vendor/copilot/linux-x64/copilot"
+          if [ ! -f "$COPILOT" ]; then
+            echo "::error::Copilot CLI missing in Linux bundle"
+            ls -la "$APP/vendor/copilot/" || true
+            exit 1
+          fi
+          SIZE=$(stat -c%s "$COPILOT")
+          echo "✓ Linux: Copilot CLI found ($SIZE bytes)"
 
       - name: Verify Windows
         run: |
@@ -404,6 +428,14 @@ jobs:
             fi
             SIZE=$(stat -c%s "$CODEX")
             echo "✓ Windows: Codex found ($SIZE bytes)"
+            COPILOT="$APP/vendor/copilot/win32-x64/copilot.exe"
+            if [ ! -f "$COPILOT" ]; then
+              echo "::error::Copilot CLI missing in Windows bundle"
+              ls -la "$APP/vendor/copilot/" || true
+              exit 1
+            fi
+            SIZE=$(stat -c%s "$COPILOT")
+            echo "✓ Windows: Copilot CLI found ($SIZE bytes)"
           else
             echo "::error::Windows: Could not extract installer for verification"
             exit 1
