@@ -15,13 +15,13 @@
 import {
   DEBUG,
   debugLog,
-  isFastModeEnabled,
   isRichToolDescriptionsEnabled,
   setStoredError,
   toolMetadataStore,
   displayNameSchema,
   intentSchema,
 } from './interceptor-common.ts';
+import { FEATURE_FLAGS } from './feature-flags.ts';
 
 // Re-export shared types and functions for backward compatibility
 // (existing code imports from this file)
@@ -593,10 +593,11 @@ async function logResponse(response: Response, url: string, startTime: number): 
 
 /**
  * Check if fast mode should be enabled for this request.
- * Only activates for Opus models on Anthropic's API when the feature flag is on.
+ * Only activates for Opus 4.6 on Anthropic's API when the feature flag is on.
  */
-function shouldEnableFastMode(_model: unknown): boolean {
-  return false;
+function shouldEnableFastMode(model: unknown): boolean {
+  if (!FEATURE_FLAGS.fastMode) return false;
+  return typeof model === 'string' && model === 'claude-opus-4-6';
 }
 
 const FAST_MODE_BETA = 'fast-mode-2026-02-01';

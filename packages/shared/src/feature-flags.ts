@@ -8,4 +8,6 @@
 export const FEATURE_FLAGS = {
   /** Enable source HTML template rendering via render_template tool */
   sourceTemplates: false,
+  /** Enable Opus 4.6 fast mode (speed:"fast" + beta header). 6x pricing. */
+  fastMode: false,
 } as const;

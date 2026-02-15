@@ -85,14 +85,6 @@ export function debugLog(...args: unknown[]) {
 // ============================================================================
 
 /**
- * Check if fast mode is enabled (adds speed:"fast" + beta header to Anthropic API requests).
- * Hardcoded to true for now — config-based toggle can be added later.
- */
-export function isFastModeEnabled(): boolean {
-  return true;
-}
-
-/**
  * Check if rich tool descriptions are enabled (adds _intent/_displayName to all tools).
  * Reads from config.json on each call — the file is small and this runs once per API request.
  * Defaults to true if config is unreadable or field is not set.
