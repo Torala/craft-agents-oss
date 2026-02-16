@@ -1074,6 +1074,8 @@ export class CodexAgent extends BaseAgent {
       const skillResult = qualifySkillName(
         modifiedInput || inputObj,
         workspaceSlug,
+        rootPath,
+        this.config.session?.workingDirectory,
         (msg) => this.debug(`PreToolUse: ${msg}`)
       );
       if (skillResult.modified) {

@@ -43,6 +43,8 @@ import {
 import { type PermissionsContext, permissionsConfigCache } from './permissions-config.ts';
 import { getSessionPlansPath, getSessionPath } from '../sessions/storage.ts';
 import { readFileSync } from 'fs';
+import { join } from 'node:path';
+import { homedir } from 'node:os';
 import { expandPath } from '../utils/paths.ts';
 import { extractWorkspaceSlug } from '../utils/workspace.ts';
 import {
@@ -972,6 +974,8 @@ export class ClaudeAgent extends BaseAgent {
                 const skillResult = qualifySkillName(
                   modifiedInput || toolInput,
                   workspaceSlug,
+                  this.workspaceRootPath,
+                  this.config.session?.workingDirectory,
                   (msg) => this.onDebug?.(msg)
                 );
                 if (skillResult.modified) {
@@ -1278,8 +1282,16 @@ export class ClaudeAgent extends BaseAgent {
         },
         // Selectively disable tools - file tools are disabled (use MCP), web/code controlled by settings
         disallowedTools,
-        // Load workspace as SDK plugin (enables skills, commands, agents from workspace)
-        plugins: [{ type: 'local' as const, path: this.workspaceRootPath }],
+        // Load skill directories as SDK plugins (enables skills from all 3 tiers)
+        plugins: [
+          { type: 'local' as const, path: this.workspaceRootPath },
+          // Project-level skills: {workingDir}/.agents/
+          ...(this.config.session?.workingDirectory
+            ? [{ type: 'local' as const, path: join(this.config.session.workingDirectory, '.agents') }]
+            : []),
+          // Global skills: ~/.agents/
+          { type: 'local' as const, path: join(homedir(), '.agents') },
+        ],
       };
 
       // Track whether we're trying to resume a session (for error handling)

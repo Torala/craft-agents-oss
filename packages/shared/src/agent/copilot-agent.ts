@@ -777,6 +777,8 @@ export class CopilotAgent extends BaseAgent {
     const skillResult = qualifySkillName(
       pathResult.modified ? pathResult.input : inputObj,
       this.config.workspace.id,
+      this.config.workspace.rootPath,
+      this.config.session?.workingDirectory,
       (msg) => this.debug(msg)
     );
 

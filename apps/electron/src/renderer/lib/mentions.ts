@@ -236,12 +236,14 @@ export function extractBadges(
       filePath = match.id
     }
 
-    // For skills, create fully-qualified rawText (workspaceId:slug) so the agent
-    // receives the correct format for the SDK's Skill tool. The SDK requires
-    // fully-qualified names to resolve skills. Display label stays as the friendly name.
+    // For skills, create fully-qualified rawText (pluginName:slug) so the agent
+    // receives the correct format for the SDK's Skill tool. Plugin name depends
+    // on which tier the skill came from: workspace → workspaceId, project/global → ".agents"
     let rawText = match.fullMatch
     if (match.type === 'skill') {
-      rawText = `[skill:${workspaceId}:${match.id}]`
+      const skill = skills.find(s => s.slug === match.id)
+      const pluginName = skill?.source === 'workspace' ? workspaceId : '.agents'
+      rawText = `[skill:${pluginName}:${match.id}]`
     }
 
     return {

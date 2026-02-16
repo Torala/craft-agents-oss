@@ -111,16 +111,16 @@ describe('qualifySkillName', () => {
 
   it('calls debug callback when qualifying', () => {
     const messages: string[] = []
-    qualifySkillName({ skill: 'commit' }, 'my-workspace', (msg) => messages.push(msg))
+    qualifySkillName({ skill: 'commit' }, 'my-workspace', undefined, undefined, (msg) => messages.push(msg))
     expect(messages.length).toBe(1)
     expect(messages[0]).toContain('qualified')
     expect(messages[0]).toContain('commit')
     expect(messages[0]).toContain('my-workspace:commit')
   })
 
-  it('does not call debug callback when already qualified', () => {
+  it('does not call debug callback when skill is missing', () => {
     const messages: string[] = []
-    qualifySkillName({ skill: 'ws:commit' }, 'my-workspace', (msg) => messages.push(msg))
+    qualifySkillName({ skill: undefined }, 'my-workspace', undefined, undefined, (msg) => messages.push(msg))
     expect(messages.length).toBe(0)
   })
 
