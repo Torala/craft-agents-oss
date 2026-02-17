@@ -438,6 +438,74 @@ Uses @craft-agent/mermaid parser for accurate validation.`,
         required: ['sourceSlug'],
       },
     },
+    {
+      name: 'call_llm',
+      description: `Invoke a secondary LLM for focused subtasks. Use for:
+- Cost optimization: use a smaller model for simple tasks (summarization, classification)
+- Structured output: JSON schema compliance
+- Parallel processing: call multiple times in one message - all run simultaneously
+- Context isolation: process content without polluting main context
+
+Pass file paths via 'attachments' - the tool loads content automatically.
+For large files (>2000 lines), use {path, startLine, endLine} to select a portion.`,
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          prompt: {
+            type: 'string',
+            description: 'Instructions for the LLM',
+          },
+          attachments: {
+            type: 'array',
+            description: 'File paths to include as context',
+            items: {
+              oneOf: [
+                { type: 'string' },
+                {
+                  type: 'object',
+                  properties: {
+                    path: { type: 'string' },
+                    startLine: { type: 'number' },
+                    endLine: { type: 'number' },
+                  },
+                  required: ['path'],
+                },
+              ],
+            },
+          },
+          model: {
+            type: 'string',
+            description: 'Model ID or short name (e.g., "haiku", "sonnet"). Defaults to Haiku.',
+          },
+          systemPrompt: {
+            type: 'string',
+            description: 'Optional system prompt',
+          },
+          maxTokens: {
+            type: 'number',
+            description: 'Max output tokens (1-64000). Defaults to 4096',
+          },
+          temperature: {
+            type: 'number',
+            description: 'Sampling temperature 0-1',
+          },
+          outputFormat: {
+            type: 'string',
+            enum: ['summary', 'classification', 'extraction', 'analysis', 'comparison', 'validation'],
+            description: 'Predefined output format',
+          },
+          outputSchema: {
+            type: 'object',
+            description: 'Custom JSON Schema for structured output',
+          },
+          _precomputedResult: {
+            type: 'string',
+            description: 'Internal: pre-computed result injected by PreToolUse intercept',
+          },
+        },
+        required: ['prompt'],
+      },
+    },
   ];
 }
 
@@ -555,6 +623,32 @@ async function main() {
 
         case 'source_test':
           return await handleSourceTest(ctx, toolArgs as { sourceSlug: string });
+
+        case 'call_llm': {
+          // Thin handler: the real work is done in the PreToolUse intercept
+          // which injects _precomputedResult into the input.
+          const precomputed = (toolArgs as Record<string, unknown>)?._precomputedResult as string | undefined;
+          if (!precomputed) {
+            return errorResponse(
+              'call_llm requires the agent backend to pre-compute the result via PreToolUse intercept. ' +
+              'No _precomputedResult found in input.'
+            );
+          }
+          try {
+            const parsed = JSON.parse(precomputed);
+            if (parsed.error) {
+              return errorResponse(`call_llm failed: ${parsed.error}`);
+            }
+            if (parsed.text !== undefined) {
+              return {
+                content: [{ type: 'text' as const, text: parsed.text || '(Model returned empty response)' }],
+              };
+            }
+            return errorResponse('call_llm: _precomputedResult has unexpected format (missing text field).');
+          } catch {
+            return errorResponse(`call_llm: Failed to parse _precomputedResult: ${precomputed.slice(0, 200)}`);
+          }
+        }
 
         default:
           return errorResponse(`Unknown tool: ${name}`);

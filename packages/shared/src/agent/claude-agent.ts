@@ -11,7 +11,7 @@ import { runErrorDiagnostics } from './diagnostics.ts';
 import { loadStoredConfig, loadConfigDefaults, type Workspace, type AuthType, getDefaultLlmConnection, getLlmConnection } from '../config/storage.ts';
 import { isLocalMcpEnabled } from '../workspaces/storage.ts';
 import { loadPlanFromPath, type SessionConfig as Session } from '../sessions/storage.ts';
-import { DEFAULT_MODEL, isClaudeModel } from '../config/models.ts';
+import { DEFAULT_MODEL, isClaudeModel, getDefaultSummarizationModel } from '../config/models.ts';
 import { getCredentialManager } from '../credentials/index.ts';
 import { updatePreferences, loadPreferences, formatPreferencesForPrompt, type UserPreferences } from '../config/preferences.ts';
 import type { FileAttachment } from '../utils/files.ts';
@@ -475,6 +475,7 @@ export class ClaudeAgent extends BaseAgent {
         this.onDebug?.(`[ClaudeAgent] onAuthRequest received: ${request.sourceSlug} (type: ${request.type})`);
         this.onAuthRequest?.(request);
       },
+      queryFn: (request) => this.queryLlm(request),
     });
 
     // Start config watcher for hot-reloading source changes
@@ -2441,6 +2442,35 @@ export class ClaudeAgent extends BaseAgent {
       debug(`[ClaudeAgent.runMiniCompletion] Failed: ${error}`);
       return null;
     }
+  }
+
+  // ============================================================
+  // queryLlm — Agent-native LLM query for call_llm tool (OAuth path)
+  // ============================================================
+
+  async queryLlm(request: import('./llm-tool.ts').LLMQueryRequest): Promise<import('./llm-tool.ts').LLMQueryResult> {
+    const model = request.model ?? this.config.miniModel ?? getDefaultSummarizationModel();
+
+    const options = {
+      ...getDefaultOptions(this.config.envOverrides),
+      model,
+      maxTurns: 1,
+      systemPrompt: request.systemPrompt ?? 'Reply with ONLY the requested text. No explanation.',
+      ...(request.maxTokens ? { maxTokens: request.maxTokens } : {}),
+    };
+
+    let result = '';
+    for await (const msg of query({ prompt: request.prompt, options })) {
+      if (msg.type === 'assistant') {
+        for (const block of msg.message.content) {
+          if (block.type === 'text') {
+            result += block.text;
+          }
+        }
+      }
+    }
+
+    return { text: result.trim() };
   }
 
   // ============================================================

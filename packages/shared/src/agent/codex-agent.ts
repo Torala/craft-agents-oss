@@ -31,7 +31,10 @@ import { AbortReason } from './backend/types.ts';
 import type { Workspace } from '../config/storage.ts';
 
 // Import models from centralized registry
-import { DEFAULT_CODEX_MODEL, getModelById, getModelIdByShortName } from '../config/models.ts';
+import { DEFAULT_CODEX_MODEL, getModelById, getModelIdByShortName, MODEL_REGISTRY, getDefaultSummarizationModel } from '../config/models.ts';
+
+// LLM tool types and helpers for call_llm PreToolUse intercept
+import { processAttachment, OUTPUT_FORMATS, type LLMQueryRequest, type LLMQueryResult } from './llm-tool.ts';
 
 // BaseAgent provides common functionality
 import { BaseAgent } from './base-agent.ts';
@@ -1030,6 +1033,34 @@ export class CodexAgent extends BaseAgent {
           }
         }
       }
+    }
+
+    // ============================================================
+    // CALL_LLM INTERCEPT: Pre-execute LLM request and inject result
+    // The session-mcp-server can't access Codex auth, so we execute
+    // the LLM call here via ephemeral thread and inject the result
+    // into the tool input as _precomputedResult.
+    // ============================================================
+    if (sdkToolName === 'mcp__session__call_llm') {
+      const inputObj = (typeof input === 'object' && input !== null ? input : {}) as Record<string, unknown>;
+      this.debug('PreToolUse: Intercepting call_llm for pre-execution');
+      try {
+        const result = await this.preExecuteCallLlm(inputObj);
+        const decision: ToolCallPreExecuteDecision = {
+          type: 'modify',
+          input: { ...inputObj, _precomputedResult: JSON.stringify(result) },
+        };
+        await this.safeRespondToPreToolUse(requestId, decision);
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        this.debug(`PreToolUse: call_llm pre-execution failed: ${errorMsg}`);
+        const decision: ToolCallPreExecuteDecision = {
+          type: 'modify',
+          input: { ...inputObj, _precomputedResult: JSON.stringify({ error: errorMsg }) },
+        };
+        await this.safeRespondToPreToolUse(requestId, decision);
+      }
+      return;
     }
 
     // Track modifications to input
@@ -2427,6 +2458,162 @@ export class CodexAgent extends BaseAgent {
         `API servers (${apiServerCount}) are not supported in Codex backend. ` +
         `Servers: ${Object.keys(apiServers).join(', ')}`
       );
+    }
+  }
+
+  // ============================================================
+  // LLM Tool Pre-Execution (call_llm via PreToolUse intercept)
+  // ============================================================
+
+  /**
+   * Pre-execute a call_llm request: process attachments, resolve model,
+   * build prompt with structured output injection, and run via ephemeral thread.
+   */
+  private async preExecuteCallLlm(input: Record<string, unknown>): Promise<LLMQueryResult> {
+    const prompt = input.prompt as string;
+    if (!prompt?.trim()) {
+      throw new Error('Prompt is required and cannot be empty.');
+    }
+
+    // Validate: thinking not supported in Codex mode
+    if (input.thinking) {
+      throw new Error(
+        'Extended thinking is not supported in Codex mode.\n\n' +
+        'Remove thinking=true to use basic mode.'
+      );
+    }
+
+    // Process attachments
+    const textParts: string[] = [];
+    const attachments = input.attachments as Array<string | { path: string; startLine?: number; endLine?: number }> | undefined;
+
+    if (attachments?.length) {
+      for (let i = 0; i < attachments.length; i++) {
+        const result = await processAttachment(attachments[i]!, i);
+        if (result.type === 'error') {
+          throw new Error(result.message);
+        }
+        if (result.type === 'image') {
+          throw new Error(
+            `Attachment ${i + 1}: Image attachments are not supported in Codex mode. Use text files only.`
+          );
+        }
+        if (result.type === 'text') {
+          textParts.push(`<file path="${result.filename}">\n${result.content}\n</file>`);
+        }
+      }
+    }
+
+    textParts.push(prompt);
+
+    // Resolve model against registry
+    let model = input.model as string | undefined;
+    if (model) {
+      const modelDef = getModelById(model)
+        || MODEL_REGISTRY.find(m => m.shortName.toLowerCase() === model!.toLowerCase())
+        || MODEL_REGISTRY.find(m => m.name.toLowerCase() === model!.toLowerCase());
+      if (modelDef) {
+        model = modelDef.id;
+      }
+    }
+
+    // Build system prompt with structured output injection if needed
+    let systemPrompt = (input.systemPrompt as string) || '';
+    const outputFormat = input.outputFormat as string | undefined;
+    const outputSchema = input.outputSchema as Record<string, unknown> | undefined;
+
+    let schema: Record<string, unknown> | null = null;
+    if (outputSchema) {
+      schema = outputSchema;
+    } else if (outputFormat && OUTPUT_FORMATS[outputFormat as keyof typeof OUTPUT_FORMATS]) {
+      schema = OUTPUT_FORMATS[outputFormat as keyof typeof OUTPUT_FORMATS];
+    }
+
+    if (schema) {
+      const schemaJson = JSON.stringify(schema, null, 2);
+      systemPrompt += `${systemPrompt ? '\n\n' : ''}You MUST respond with valid JSON matching this schema:\n${schemaJson}\n\nRespond with ONLY the JSON object, no other text or markdown formatting.`;
+    }
+
+    return this.queryLlm({
+      prompt: textParts.join('\n\n'),
+      systemPrompt: systemPrompt || undefined,
+      model,
+      maxTokens: input.maxTokens as number | undefined,
+      temperature: input.temperature as number | undefined,
+    });
+  }
+
+  /**
+   * Execute an LLM query via ephemeral thread.
+   * Same pattern as runMiniCompletion but with configurable system prompt and model.
+   */
+  private async queryLlm(request: LLMQueryRequest): Promise<LLMQueryResult> {
+    this.debug('[CodexAgent.queryLlm] Starting');
+
+    const client = await this.ensureClient();
+    const model = request.model ?? this.config.miniModel ?? getDefaultSummarizationModel();
+
+    this.debug(`[CodexAgent.queryLlm] Using model: ${model}`);
+
+    // Start an ephemeral thread with the system prompt
+    const threadResponse = await client.threadStart({
+      model,
+      cwd: this.workingDirectory,
+      baseInstructions: request.systemPrompt ?? 'Reply with ONLY the requested text. No explanation.',
+      ephemeral: true,
+    });
+    const threadId = threadResponse.thread.id;
+    this.debug(`[CodexAgent.queryLlm] Started ephemeral thread: ${threadId}`);
+
+    // Collect response text from deltas
+    let result = '';
+    let completionResolve: () => void;
+    const completionPromise = new Promise<void>((resolve) => {
+      completionResolve = resolve;
+    });
+
+    const textHandler = (notification: { threadId: string; delta?: string }) => {
+      if (notification.threadId === threadId && notification.delta) {
+        result += notification.delta;
+      }
+    };
+
+    const completionHandler = (notification: { threadId: string }) => {
+      if (notification.threadId === threadId) {
+        completionResolve();
+      }
+    };
+
+    client.on('item/agentMessage/delta', textHandler);
+    client.on('turn/completed', completionHandler);
+
+    try {
+      await client.turnStart({
+        threadId,
+        input: [{ type: 'text', text: request.prompt, text_elements: [] }],
+        cwd: null,
+        approvalPolicy: null,
+        sandboxPolicy: null,
+        model: null,
+        effort: null,
+        summary: null,
+        personality: null,
+        outputSchema: null,
+        collaborationMode: null,
+      });
+
+      // 30s timeout matching runMiniCompletion
+      const timeoutPromise = new Promise<void>((_, reject) =>
+        setTimeout(() => reject(new Error('call_llm timed out after 30s')), 30000)
+      );
+
+      await Promise.race([completionPromise, timeoutPromise]);
+
+      this.debug(`[CodexAgent.queryLlm] Result length: ${result.trim().length}`);
+      return { text: result.trim() };
+    } finally {
+      client.off('item/agentMessage/delta', textHandler);
+      client.off('turn/completed', completionHandler);
     }
   }
 
