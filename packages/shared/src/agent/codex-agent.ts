@@ -31,7 +31,7 @@ import { AbortReason } from './backend/types.ts';
 import type { Workspace } from '../config/storage.ts';
 
 // Import models from centralized registry
-import { DEFAULT_CODEX_MODEL, getModelById, getModelIdByShortName, MODEL_REGISTRY, getDefaultSummarizationModel } from '../config/models.ts';
+import { DEFAULT_CODEX_MODEL, getModelById, getModelIdByShortName, getModelProvider, MODEL_REGISTRY, getDefaultSummarizationModel } from '../config/models.ts';
 
 // LLM tool types and helpers for call_llm PreToolUse intercept
 import { processAttachment, OUTPUT_FORMATS, type LLMQueryRequest, type LLMQueryResult } from './llm-tool.ts';
@@ -196,6 +196,13 @@ export class CodexAgent extends BaseAgent {
   // handlers finish, their events are enqueued into a dead queue.
   private inflightItemHandlers = 0;
   private turnCompletedPending = false;
+
+  // Ephemeral thread isolation — queryLlm, generateTitle, and runMiniCompletion start
+  // ephemeral threads on the same AppServerClient. Without filtering, ALL event handlers
+  // process their events too: polluting the main event queue, overwriting codexThreadId,
+  // and calling eventQueue.complete() prematurely.
+  private _ephemeralThreadIds = new Set<string>();
+  private _startingEphemeralThread = false;
 
   // Pending approval requests (legacy approval handlers)
   private pendingApprovals: Map<string, {
@@ -405,8 +412,9 @@ export class CodexAgent extends BaseAgent {
   private setupClientEventHandlers(): void {
     if (!this.client) return;
 
-    // Thread started - capture thread ID
+    // Thread started - capture thread ID (skip ephemeral threads from queryLlm etc.)
     this.client.on('thread/started', (notification) => {
+      if (this._startingEphemeralThread) return;
       const threadId = notification.thread?.id;
       if (threadId && threadId !== this.codexThreadId) {
         this.codexThreadId = threadId;
@@ -415,19 +423,21 @@ export class CodexAgent extends BaseAgent {
       }
     });
 
-    // Turn started
+    // Turn started (skip ephemeral threads)
     this.client.on('turn/started', (notification) => {
+      if (this._ephemeralThreadIds.has(notification.threadId)) return;
       this.currentTurnId = notification.turn?.id || null;
       for (const event of this.adapter.adaptTurnStarted(notification)) {
         this.eventQueue.enqueue(event);
       }
     });
 
-    // Turn completed
+    // Turn completed (skip ephemeral threads)
     // IMPORTANT: Defer eventQueue.complete() if async item/completed handlers are still in flight.
     // Without this, tool_result and text_complete events from item/completed can be enqueued
     // after complete(), causing lost tool results and truncated assistant messages.
     this.client.on('turn/completed', (notification) => {
+      if (this._ephemeralThreadIds.has(notification.threadId)) return;
       for (const event of this.adapter.adaptTurnCompleted(notification)) {
         this.eventQueue.enqueue(event);
       }
@@ -447,17 +457,19 @@ export class CodexAgent extends BaseAgent {
       }
     });
 
-    // Item started
+    // Item started (skip ephemeral threads)
     this.client.on('item/started', (notification) => {
+      if (this._ephemeralThreadIds.has(notification.threadId)) return;
       for (const event of this.adapter.adaptItemStarted(notification)) {
         this.eventQueue.enqueue(event);
       }
     });
 
-    // Item completed
+    // Item completed (skip ephemeral threads)
     // NOTE: This handler is async (may await source activation). We track in-flight
     // handlers so turn/completed can defer eventQueue.complete() until they finish.
     this.client.on('item/completed', async (notification) => {
+      if (this._ephemeralThreadIds.has(notification.threadId)) return;
       this.inflightItemHandlers++;
       try {
         const events = this.adapter.adaptItemCompleted(notification);
@@ -515,22 +527,25 @@ export class CodexAgent extends BaseAgent {
       }
     });
 
-    // Agent message delta (streaming text)
+    // Agent message delta (streaming text, skip ephemeral threads)
     this.client.on('item/agentMessage/delta', (notification) => {
+      if (this._ephemeralThreadIds.has(notification.threadId)) return;
       for (const event of this.adapter.adaptAgentMessageDelta(notification)) {
         this.eventQueue.enqueue(event);
       }
     });
 
-    // Reasoning delta (streaming thinking)
+    // Reasoning delta (streaming thinking, skip ephemeral threads)
     this.client.on('item/reasoning/textDelta', (notification) => {
+      if (this._ephemeralThreadIds.has(notification.threadId)) return;
       for (const event of this.adapter.adaptReasoningDelta(notification)) {
         this.eventQueue.enqueue(event);
       }
     });
 
-    // Command output delta (accumulate for tool result)
+    // Command output delta (accumulate for tool result, skip ephemeral threads)
     this.client.on('item/commandExecution/outputDelta', (notification) => {
+      if (this._ephemeralThreadIds.has(notification.threadId)) return;
       this.adapter.adaptCommandOutputDelta(notification);
     });
 
@@ -1583,7 +1598,9 @@ export class CodexAgent extends BaseAgent {
 
     this.debug(`[generateTitle] Starting ephemeral thread with model=${model}`);
 
-    // Start an ephemeral thread (not persisted, no tools)
+    // Start an ephemeral thread (not persisted, no tools).
+    // Mark as ephemeral so main event handlers ignore its events.
+    this._startingEphemeralThread = true;
     const response = await client.threadStart({
       model,
       ephemeral: true,
@@ -1591,7 +1608,9 @@ export class CodexAgent extends BaseAgent {
       sandbox: 'danger-full-access',
       baseInstructions: 'Reply with ONLY the requested text. No explanation.',
     });
+    this._startingEphemeralThread = false;
     const threadId = response.thread.id;
+    this._ephemeralThreadIds.add(threadId);
 
     this.debug(`[generateTitle] Thread started: ${threadId}`);
 
@@ -1662,6 +1681,8 @@ export class CodexAgent extends BaseAgent {
       client.on('error', onProcessError);
     });
 
+    this._ephemeralThreadIds.delete(threadId);
+
     const trimmed = result.trim();
     this.debug(`[generateTitle] Result: "${trimmed}"`);
     return (trimmed.length > 0 && trimmed.length < 100) ? trimmed : null;
@@ -1704,6 +1725,8 @@ export class CodexAgent extends BaseAgent {
     this.eventQueue.reset();
     this.inflightItemHandlers = 0;
     this.turnCompletedPending = false;
+    this._ephemeralThreadIds.clear();
+    this._startingEphemeralThread = false;
     this.adapter.startTurn();
     this.currentUserMessage = message; // Store for source_activated events
 
@@ -2548,6 +2571,14 @@ export class CodexAgent extends BaseAgent {
       if (modelDef) {
         model = modelDef.id;
       }
+
+      // Codex backend only supports OpenAI models — drop cross-provider resolutions
+      // (e.g. "haiku" → claude-haiku-4-5-20251001 is not usable via Codex)
+      const resolvedProvider = getModelProvider(model);
+      if (resolvedProvider && resolvedProvider !== 'openai') {
+        this.debug(`preExecuteCallLlm: resolved model "${model}" is ${resolvedProvider}, not compatible with Codex — falling back to miniModel`);
+        model = undefined;
+      }
     }
 
     // Build system prompt with structured output injection if needed
@@ -2584,18 +2615,23 @@ export class CodexAgent extends BaseAgent {
     this.debug('[CodexAgent.queryLlm] Starting');
 
     const client = await this.ensureClient();
-    const model = request.model ?? this.config.miniModel ?? getDefaultSummarizationModel();
+    const rawModel = request.model ?? this.config.miniModel ?? getDefaultSummarizationModel();
+    const model = resolveCodexModelId(rawModel, this.config.authType);
 
     this.debug(`[CodexAgent.queryLlm] Using model: ${model}`);
 
-    // Start an ephemeral thread with the system prompt
+    // Start an ephemeral thread with the system prompt.
+    // Mark as ephemeral so main event handlers ignore its events.
+    this._startingEphemeralThread = true;
     const threadResponse = await client.threadStart({
       model,
       cwd: this.workingDirectory,
       baseInstructions: request.systemPrompt ?? 'Reply with ONLY the requested text. No explanation.',
       ephemeral: true,
     });
+    this._startingEphemeralThread = false;
     const threadId = threadResponse.thread.id;
+    this._ephemeralThreadIds.add(threadId);
     this.debug(`[CodexAgent.queryLlm] Started ephemeral thread: ${threadId}`);
 
     // Collect response text from deltas
@@ -2647,6 +2683,7 @@ export class CodexAgent extends BaseAgent {
     } finally {
       client.off('item/agentMessage/delta', textHandler);
       client.off('turn/completed', completionHandler);
+      this._ephemeralThreadIds.delete(threadId);
     }
   }
 
@@ -2677,15 +2714,19 @@ export class CodexAgent extends BaseAgent {
       const model = this.config.miniModel;
       debug(`[CodexAgent.runMiniCompletion] Using model: ${model}`);
 
-      // Start an ephemeral thread with no system prompt
+      // Start an ephemeral thread with no system prompt.
+      // Mark as ephemeral so main event handlers ignore its events.
       debug(`[CodexAgent.runMiniCompletion] Starting ephemeral thread...`);
+      this._startingEphemeralThread = true;
       const threadResponse = await client.threadStart({
         model,
         cwd: this.workingDirectory,
         baseInstructions: '', // Empty - no system prompt
         ephemeral: true, // Don't persist this thread
       });
+      this._startingEphemeralThread = false;
       const threadId = threadResponse.thread.id;
+      this._ephemeralThreadIds.add(threadId);
       debug(`[CodexAgent.runMiniCompletion] Started ephemeral thread: ${threadId}`);
 
       // Set up Promise-based completion tracking
@@ -2749,9 +2790,10 @@ export class CodexAgent extends BaseAgent {
         this.debug(`[runMiniCompletion] Result: ${text ? `"${text.slice(0, 200)}"` : 'null'}`);
         return text;
       } finally {
-        // Clean up listeners
+        // Clean up listeners and ephemeral thread tracking
         client.off('item/agentMessage/delta', textHandler);
         client.off('turn/completed', completionHandler);
+        this._ephemeralThreadIds.delete(threadId);
       }
     } catch (error) {
       debug(`[CodexAgent.runMiniCompletion] Failed: ${error}`);
