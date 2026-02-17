@@ -168,9 +168,8 @@ export function expandToolPaths(
  * Ensure skill names are fully-qualified with the correct plugin prefix.
  *
  * The SDK resolves skills as `pluginName:skillSlug` where the plugin name is
- * derived from path.basename() of the registered plugin directory. Skills can
- * live in 3 tiers:
- *   1. Workspace: {workspaceRoot}/skills/{slug}/ → plugin name = basename(workspaceRoot)
+ * read from `.claude-plugin/plugin.json` `name` field. Skills can live in 3 tiers:
+ *   1. Workspace: {workspaceRoot}/skills/{slug}/ → plugin name from plugin.json
  *   2. Project:   {workingDir}/.agents/skills/{slug}/ → plugin name = ".agents"
  *   3. Global:    ~/.agents/skills/{slug}/ → plugin name = ".agents"
  *
@@ -180,7 +179,7 @@ export function expandToolPaths(
  * workspace slug, even for global/project skills).
  *
  * @param input - The Skill tool input ({ skill: string, args?: string })
- * @param workspaceSlug - The workspace slug (basename of workspace root)
+ * @param workspaceSlug - The workspace slug (from .claude-plugin/plugin.json name)
  * @param workspaceRootPath - Absolute path to the workspace root
  * @param workingDirectory - Absolute path to the current working directory (optional)
  * @param onDebug - Optional debug callback

@@ -8,10 +8,10 @@
  * The skill extraction logic lives in CodexAgent.buildUserInput(), which uses:
  * - parseMentions() from @craft-agent/shared/mentions (parses [skill:slug] syntax)
  * - stripAllMentions() from @craft-agent/shared/mentions (removes all [bracket] mentions)
- * - loadWorkspaceSkills() from skills/storage (resolves skill paths)
+ * - loadAllSkills() from skills/storage (resolves skill paths)
  *
  * Since buildUserInput() is private, we test the shared parsing functions directly
- * and verify the integration by mocking loadWorkspaceSkills and calling buildUserInput
+ * and verify the integration by mocking loadAllSkills and calling buildUserInput
  * through reflection.
  */
 import { describe, it, expect, mock, beforeEach } from 'bun:test';

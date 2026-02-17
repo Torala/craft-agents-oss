@@ -35,6 +35,7 @@ import {
   migrateLegacyCredentials,
   migrateLegacyLlmConnectionsConfig,
   migrateOrphanedDefaultConnections,
+  MODEL_REGISTRY,
   type Workspace,
 } from '@craft-agent/shared/config'
 import { loadWorkspaceConfig } from '@craft-agent/shared/workspaces'
@@ -76,7 +77,7 @@ import { getCredentialManager } from '@craft-agent/shared/credentials'
 import { CraftMcpClient } from '@craft-agent/shared/mcp'
 import { type Session, type Message, type SessionEvent, type FileAttachment, type StoredAttachment, type SendMessageOptions, IPC_CHANNELS, generateMessageId } from '../shared/types'
 import { formatPathsToRelative, formatToolInputPaths, perf, encodeIconToDataUrl, getEmojiIcon, resetSummarizationClient, resolveToolIcon } from '@craft-agent/shared/utils'
-import { loadWorkspaceSkills, loadAllSkills, loadSkillBySlug, type LoadedSkill } from '@craft-agent/shared/skills'
+import { loadAllSkills, loadSkillBySlug, type LoadedSkill } from '@craft-agent/shared/skills'
 import type { ToolDisplayMeta } from '@craft-agent/core/types'
 import { getToolIconsDir, isCodexModel, getMiniModel, isAnthropicProvider, DEFAULT_MODEL, DEFAULT_CODEX_MODEL } from '@craft-agent/shared/config'
 import type { SummarizeCallback } from '@craft-agent/shared/sources'
@@ -518,6 +519,7 @@ function resolveToolDisplayMeta(
       const internalMcpServers: Record<string, Record<string, string>> = {
         'session': {
           'SubmitPlan': 'Submit Plan',
+          'call_llm': 'LLM Query',
           'config_validate': 'Validate Config',
           'skill_validate': 'Validate Skill',
           'mermaid_validate': 'Validate Mermaid',
@@ -585,7 +587,7 @@ function resolveToolDisplayMeta(
       if (skillSlug) {
         // Load skills and find the one being invoked
         try {
-          const skills = loadWorkspaceSkills(workspaceRootPath)
+          const skills = loadAllSkills(workspaceRootPath)
           const skill = skills.find(s => s.slug === skillSlug)
           if (skill) {
             // Try file-based icon first, fall back to emoji icon from metadata
@@ -1077,8 +1079,8 @@ export class SessionManager {
       onSkillChange: async (slug, skill) => {
         sessionLog.info(`Skill '${slug}' changed:`, skill ? 'updated' : 'deleted')
         // Broadcast updated list to UI
-        const { loadWorkspaceSkills } = await import('@craft-agent/shared/skills')
-        const skills = loadWorkspaceSkills(workspaceRootPath)
+        const { loadAllSkills } = await import('@craft-agent/shared/skills')
+        const skills = loadAllSkills(workspaceRootPath)
         this.broadcastSkillsChanged(skills)
       },
 
@@ -4889,6 +4891,18 @@ To view this task's output:
         // Format tool input paths to relative for better readability
         const formattedToolInput = formatToolInputPaths(event.input)
 
+        // Resolve call_llm model short name (e.g., "haiku") to full ID (e.g., "claude-haiku-4-5-20251001")
+        // for TurnCard badge display. The LLM sends short names but we want the resolved model shown.
+        if (event.toolName === 'mcp__session__call_llm' && formattedToolInput?.model) {
+          const shortName = String(formattedToolInput.model)
+          const modelDef = MODEL_REGISTRY.find(m => m.id === shortName)
+            || MODEL_REGISTRY.find(m => m.shortName.toLowerCase() === shortName.toLowerCase())
+            || MODEL_REGISTRY.find(m => m.name.toLowerCase() === shortName.toLowerCase())
+          if (modelDef) {
+            formattedToolInput.model = modelDef.id
+          }
+        }
+
         // Resolve tool display metadata (icon, displayName) for skills/sources
         // Only resolve when we have input (second event for SDK dual-event pattern)
         const workspaceRootPath = managed.workspace.rootPath
@@ -5516,7 +5530,7 @@ To view this task's output:
    */
   private resolveHookMentions(workspaceRootPath: string, mentions: string[]): { sourceSlugs: string[]; skillSlugs: string[] } | undefined {
     const sources = loadWorkspaceSources(workspaceRootPath)
-    const skills = loadWorkspaceSkills(workspaceRootPath)
+    const skills = loadAllSkills(workspaceRootPath)
     const sourceSlugs: string[] = []
     const skillSlugs: string[] = []
 
