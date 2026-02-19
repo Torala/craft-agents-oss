@@ -1,0 +1,385 @@
+/**
+ * Pi SDK Event Adapter
+ *
+ * Maps Pi Agent Core events (AgentEvent / AgentSessionEvent) to
+ * Craft Agent's AgentEvent format for UI compatibility.
+ *
+ * Pi emits fine-grained lifecycle events. We translate them into
+ * the same event vocabulary the renderer already understands from
+ * Claude / Codex / Copilot backends.
+ */
+
+import type { AgentEvent as CraftAgentEvent } from '@craft-agent/core/types';
+import type {
+  AgentEvent as PiAgentEvent,
+} from '@mariozechner/pi-agent-core';
+import type {
+  AgentSessionEvent,
+} from '@mariozechner/pi-coding-agent';
+import type { AssistantMessageEvent } from '@mariozechner/pi-ai';
+import { BaseEventAdapter } from '../base-event-adapter.ts';
+import { PI_TOOL_NAME_MAP } from './constants.ts';
+
+/**
+ * Combined event type the adapter can handle.
+ * AgentSessionEvent is a superset of PiAgentEvent (adds auto_compaction_*, auto_retry_*).
+ */
+type PiEvent = PiAgentEvent | AgentSessionEvent;
+
+/**
+ * Maps Pi SDK events to Craft AgentEvents for UI compatibility.
+ *
+ * Event mapping:
+ * - message_update (text_delta in assistantMessageEvent) → text_delta
+ * - message_end → text_complete
+ * - tool_execution_start → tool_start
+ * - tool_execution_end → tool_result
+ * - agent_end → complete
+ * - auto_compaction_start → status (with "Compacting" keyword)
+ * - auto_compaction_end → info/error
+ * - auto_retry_start → status
+ * - auto_retry_end → status
+ */
+export class PiEventAdapter extends BaseEventAdapter {
+  // Track tool names from execution_start for proper tool_result correlation
+  private toolNames: Map<string, string> = new Map();
+
+  // Track whether streaming deltas have been received for the current message
+  private hasStreamedDeltas: boolean = false;
+
+  // Track whether a final (non-intermediate) text_complete has been emitted this turn
+  private hasEmittedFinalText: boolean = false;
+
+  // Deduplication: track last emitted intermediate text to skip identical re-emissions
+  private lastIntermediateText: string | null = null;
+
+  // Sub-turnId isolation (same pattern as CopilotEventAdapter)
+  private subTurnCounter: number = 0;
+  private messageSubTurnId: string | null = null;
+
+  constructor() {
+    super('pi-event');
+  }
+
+  /**
+   * Generate a unique sub-turnId for a text block within the current turn.
+   */
+  private nextSubTurnId(prefix: string): string {
+    const base = this.currentTurnId || 'unknown';
+    return `${base}__${prefix}${this.subTurnCounter++}`;
+  }
+
+  protected onTurnStart(): void {
+    this.toolNames.clear();
+    this.hasStreamedDeltas = false;
+    this.hasEmittedFinalText = false;
+    this.lastIntermediateText = null;
+    this.subTurnCounter = 0;
+    this.messageSubTurnId = null;
+    this.log.debug('Turn started', { turnIndex: this.turnIndex });
+  }
+
+  /**
+   * Adapt a Pi SDK event to zero or more Craft AgentEvents.
+   */
+  *adaptEvent(event: PiEvent): Generator<CraftAgentEvent> {
+    switch (event.type) {
+      // ============================================================
+      // Agent lifecycle events
+      // ============================================================
+
+      case 'agent_start':
+        // Internal — agent run has started
+        break;
+
+      case 'agent_end':
+        yield { type: 'complete' };
+        break;
+
+      // ============================================================
+      // Turn events
+      // ============================================================
+
+      case 'turn_start':
+        // Reset turn-level state; currentTurnId is set by caller via startTurn()
+        break;
+
+      case 'turn_end':
+        // Don't emit 'complete' here — agent_end handles it.
+        // Emitting from both causes duplicate messages in session persistence.
+        this.hasStreamedDeltas = false;
+        this.hasEmittedFinalText = false;
+        this.lastIntermediateText = null;
+        this.subTurnCounter = 0;
+        this.messageSubTurnId = null;
+        break;
+
+      // ============================================================
+      // Message events (text streaming)
+      // ============================================================
+
+      case 'message_start':
+        // Internal — a new assistant message is starting
+        break;
+
+      case 'message_update': {
+        // Pi wraps the streaming event from pi-ai in assistantMessageEvent
+        const amEvent: AssistantMessageEvent = event.assistantMessageEvent;
+        if (amEvent.type === 'text_delta' && amEvent.delta) {
+          this.hasStreamedDeltas = true;
+          if (!this.messageSubTurnId) {
+            this.messageSubTurnId = this.nextSubTurnId('m');
+          }
+          yield {
+            type: 'text_delta',
+            text: amEvent.delta,
+            turnId: this.messageSubTurnId,
+          };
+        }
+        break;
+      }
+
+      case 'message_end': {
+        // Extract text content from the final message
+        const textContent = this.extractTextFromMessage(event.message);
+        if (textContent && !this.hasEmittedFinalText) {
+          this.hasEmittedFinalText = true;
+
+          const mTurnId = this.messageSubTurnId || this.nextSubTurnId('m');
+          this.messageSubTurnId = null;
+
+          yield {
+            type: 'text_complete',
+            text: textContent,
+            turnId: mTurnId,
+          };
+          this.hasStreamedDeltas = false;
+        }
+        break;
+      }
+
+      // ============================================================
+      // Tool events
+      // ============================================================
+
+      case 'tool_execution_start': {
+        const toolCallId = event.toolCallId;
+        const toolName = this.resolveToolName(event.toolName);
+        this.toolNames.set(toolCallId, toolName);
+
+        const args = (event.args ?? {}) as Record<string, unknown>;
+
+        // Classify bash commands that are actually file reads
+        if (toolName === 'Bash' && typeof args.command === 'string') {
+          const readInfo = this.classifyReadCommand(toolCallId, args.command);
+          if (readInfo) {
+            yield this.createReadToolStart(
+              toolCallId,
+              readInfo,
+              undefined, // intent
+              'Read File',
+            );
+            break;
+          }
+        }
+
+        yield this.createToolStart(
+          toolCallId,
+          toolName,
+          args,
+          undefined, // intent
+          this.getToolDisplayName(toolName),
+        );
+        break;
+      }
+
+      case 'tool_execution_update': {
+        // Accumulate partial output for streaming tool results
+        const partialResult = event.partialResult;
+        if (partialResult && typeof partialResult === 'object') {
+          const content = (partialResult as { content?: Array<{ type: string; text?: string }> }).content;
+          if (Array.isArray(content)) {
+            for (const part of content) {
+              if (part.type === 'text' && part.text) {
+                this.accumulateOutput(event.toolCallId, part.text);
+              }
+            }
+          }
+        }
+        break;
+      }
+
+      case 'tool_execution_end': {
+        const toolCallId = event.toolCallId;
+        const resolvedToolName = this.toolNames.get(toolCallId) || 'tool';
+        this.toolNames.delete(toolCallId);
+
+        // Check for block reason
+        const blockReason = this.consumeBlockReason(toolCallId, resolvedToolName);
+
+        // Use accumulated output from partial results if available
+        const accumulatedOutput = this.consumeOutput(toolCallId);
+
+        const isError = event.isError;
+        let result: string;
+
+        if (accumulatedOutput) {
+          result = accumulatedOutput;
+        } else if (blockReason) {
+          result = blockReason;
+        } else {
+          result = this.extractToolResult(event.result, isError);
+        }
+
+        // After tool completion, the assistant may generate new text
+        this.hasEmittedFinalText = false;
+        this.messageSubTurnId = null;
+
+        // Check if this was classified as a file read
+        const readInfo = this.consumeReadCommand(toolCallId);
+        if (readInfo) {
+          yield this.createToolResult(toolCallId, 'Read', result, isError);
+          break;
+        }
+
+        yield this.createToolResult(toolCallId, resolvedToolName, result, isError);
+        break;
+      }
+
+      // ============================================================
+      // Session-level events (AgentSessionEvent extensions)
+      // ============================================================
+
+      case 'auto_compaction_start':
+        // Use "Compacting" keyword so session handler detects statusType: 'compacting'
+        yield { type: 'status', message: 'Compacting context...' };
+        break;
+
+      case 'auto_compaction_end': {
+        const compactionEvent = event as Extract<AgentSessionEvent, { type: 'auto_compaction_end' }>;
+        if (compactionEvent.result && !compactionEvent.aborted) {
+          // Use "Compacted" keyword so session handler detects statusType: 'compaction_complete'
+          yield { type: 'info', message: 'Compacted context to fit within limits' };
+        } else if (compactionEvent.errorMessage) {
+          yield { type: 'error', message: `Context compaction failed: ${compactionEvent.errorMessage}` };
+        }
+        break;
+      }
+
+      case 'auto_retry_start': {
+        const retryEvent = event as Extract<AgentSessionEvent, { type: 'auto_retry_start' }>;
+        yield {
+          type: 'status',
+          message: `Retrying (attempt ${retryEvent.attempt}/${retryEvent.maxAttempts})...`,
+        };
+        break;
+      }
+
+      case 'auto_retry_end': {
+        const retryEndEvent = event as Extract<AgentSessionEvent, { type: 'auto_retry_end' }>;
+        if (!retryEndEvent.success && retryEndEvent.finalError) {
+          yield { type: 'error', message: `Retry failed: ${retryEndEvent.finalError}` };
+        }
+        break;
+      }
+
+      default:
+        this.log.warn(`Unknown Pi event type: ${(event as { type: string }).type}`);
+        break;
+    }
+  }
+
+  // ============================================================
+  // Helpers
+  // ============================================================
+
+  /**
+   * Resolve Pi tool name to PascalCase for UI consistency.
+   * Pi tools use lowercase names (read, write, edit, bash, grep, find, ls).
+   */
+  private resolveToolName(rawName: string): string {
+    return PI_TOOL_NAME_MAP[rawName] || rawName;
+  }
+
+  /**
+   * Extract text content from a Pi AgentMessage.
+   * Pi messages use the pi-ai Message format with content arrays.
+   */
+  private extractTextFromMessage(message: unknown): string | null {
+    if (!message || typeof message !== 'object') return null;
+
+    const msg = message as {
+      role?: string;
+      content?: string | Array<{ type: string; text?: string }>;
+    };
+
+    if (typeof msg.content === 'string') {
+      return msg.content || null;
+    }
+
+    if (Array.isArray(msg.content)) {
+      const textParts = msg.content
+        .filter((c) => c.type === 'text' && c.text)
+        .map((c) => c.text!);
+      return textParts.length > 0 ? textParts.join('') : null;
+    }
+
+    return null;
+  }
+
+  /**
+   * Extract a string result from Pi tool execution result.
+   */
+  private extractToolResult(result: unknown, isError: boolean): string {
+    if (!result) {
+      return isError ? 'Tool execution failed' : 'Success';
+    }
+
+    if (typeof result === 'string') return result;
+
+    // Pi tool results follow the AgentToolResult shape: { content: [...], details: ... }
+    const typed = result as {
+      content?: Array<{ type: string; text?: string }>;
+      details?: unknown;
+    };
+
+    if (Array.isArray(typed.content)) {
+      const texts = typed.content
+        .filter((c) => c.type === 'text' && c.text)
+        .map((c) => c.text!);
+      if (texts.length > 0) return texts.join('\n');
+    }
+
+    // Fall back to JSON
+    try {
+      return JSON.stringify(result);
+    } catch {
+      return String(result);
+    }
+  }
+
+  /**
+   * Get a human-readable display name for a tool.
+   */
+  private getToolDisplayName(toolName: string): string | undefined {
+    switch (toolName) {
+      case 'Bash':
+        return 'Run Command';
+      case 'Read':
+        return 'Read File';
+      case 'Write':
+        return 'Write File';
+      case 'Edit':
+        return 'Edit File';
+      case 'Glob':
+      case 'Find':
+        return 'Search Files';
+      case 'Grep':
+        return 'Search Content';
+      case 'Ls':
+        return 'List Directory';
+      default:
+        return undefined;
+    }
+  }
+}

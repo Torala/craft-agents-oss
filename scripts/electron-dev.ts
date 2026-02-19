@@ -17,6 +17,9 @@ const SESSION_SERVER_DIR = join(ROOT_DIR, "packages/session-mcp-server");
 const SESSION_SERVER_OUTPUT = join(SESSION_SERVER_DIR, "dist/index.js");
 const BRIDGE_SERVER_DIR = join(ROOT_DIR, "packages/bridge-mcp-server");
 const BRIDGE_SERVER_OUTPUT = join(BRIDGE_SERVER_DIR, "dist/index.js");
+// Pi agent server path (subprocess for Pi SDK sessions)
+const PI_AGENT_SERVER_DIR = join(ROOT_DIR, "packages/pi-agent-server");
+const PI_AGENT_SERVER_OUTPUT = join(PI_AGENT_SERVER_DIR, "dist/index.js");
 
 // Platform-specific binary paths (bun creates .exe on Windows, no extension on Unix)
 const IS_WINDOWS = process.platform === "win32";
@@ -147,18 +150,20 @@ function copyResources(): void {
   }
 }
 
-// Build MCP servers for Codex sessions (one-time, no watch needed)
+// Build MCP servers for Codex sessions and Pi agent server (one-time, no watch needed)
 async function buildMcpServers(): Promise<void> {
-  console.log("🌉 Building MCP servers for Codex sessions...");
+  console.log("🌉 Building MCP servers and Pi agent server...");
 
   // Ensure dist directories exist
   const sessionDistDir = join(SESSION_SERVER_DIR, "dist");
   const bridgeDistDir = join(BRIDGE_SERVER_DIR, "dist");
+  const piDistDir = join(PI_AGENT_SERVER_DIR, "dist");
   if (!existsSync(sessionDistDir)) mkdirSync(sessionDistDir, { recursive: true });
   if (!existsSync(bridgeDistDir)) mkdirSync(bridgeDistDir, { recursive: true });
+  if (!existsSync(piDistDir)) mkdirSync(piDistDir, { recursive: true });
 
-  // Build both servers in parallel
-  const [sessionResult, bridgeResult] = await Promise.all([
+  // Build all servers in parallel
+  const [sessionResult, bridgeResult, piResult] = await Promise.all([
     runEsbuild(
       "packages/session-mcp-server/src/index.ts",
       "packages/session-mcp-server/dist/index.js",
@@ -168,6 +173,12 @@ async function buildMcpServers(): Promise<void> {
     runEsbuild(
       "packages/bridge-mcp-server/src/index.ts",
       "packages/bridge-mcp-server/dist/index.js",
+      {},
+      { packagesExternal: true }
+    ),
+    runEsbuild(
+      "packages/pi-agent-server/src/index.ts",
+      "packages/pi-agent-server/dist/index.js",
       {},
       { packagesExternal: true }
     ),
@@ -184,6 +195,12 @@ async function buildMcpServers(): Promise<void> {
     process.exit(1);
   }
   console.log("✅ Bridge MCP server built");
+
+  if (!piResult.success) {
+    console.error("❌ Pi agent server build failed:", piResult.error);
+    process.exit(1);
+  }
+  console.log("✅ Pi agent server built");
 }
 
 // Get OAuth defines for esbuild API

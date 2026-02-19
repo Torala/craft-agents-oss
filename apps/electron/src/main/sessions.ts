@@ -8,11 +8,13 @@ import {
   CodexBackend,
   CodexAgent,
   CopilotAgent,
+  PiAgent,
   detectProvider,
   resolveSessionConnection,
   providerTypeToAgentProvider,
   connectionAuthTypeToBackendAuthType,
   createBackendFromConnection,
+  type AgentProvider,
   type LlmAuthType,
 } from '@craft-agent/shared/agent/backend'
 import {
@@ -491,6 +493,17 @@ function resolveBridgeServerPath(): { path: string; exists: boolean } {
     ? join(app.getAppPath(), 'resources', 'bridge-mcp-server', 'index.js')
     : join(process.cwd(), 'packages', 'bridge-mcp-server', 'dist', 'index.js')
   return { path: bridgeServerPath, exists: existsSync(bridgeServerPath) }
+}
+
+/**
+ * Resolve the path to the Pi agent server executable.
+ * Used by PiAgent to spawn the out-of-process subprocess.
+ */
+function resolvePiServerPath(): { path: string; exists: boolean } {
+  const piServerPath = app.isPackaged
+    ? join(app.getAppPath(), 'resources', 'pi-agent-server', 'index.js')
+    : join(process.cwd(), 'packages', 'pi-agent-server', 'dist', 'index.js')
+  return { path: piServerPath, exists: existsSync(piServerPath) }
 }
 
 /**
@@ -2463,7 +2476,7 @@ export class SessionManager {
       }
 
       // Determine provider from connection or fall back to legacy authType
-      let provider: 'anthropic' | 'openai' | 'copilot'
+      let provider: AgentProvider
       let authType: LlmAuthType | undefined
 
       if (connection) {
@@ -2728,6 +2741,71 @@ export class SessionManager {
           await setupCopilotBridgeConfig(copilotConfigDir, enabledSources)
           copilotAgent.setSourceServers(mcpServers, apiServers, enabledSlugs)
         }
+      } else if (provider === 'pi') {
+        // Pi backend - uses pi-agent-server subprocess
+        const piModel = managed.model || connection?.defaultModel || ''
+
+        // Resolve Pi agent server path
+        const piServer = resolvePiServerPath()
+        if (!piServer.exists) {
+          sessionLog.warn(`Pi agent server not found at ${piServer.path}. Run 'bun run electron:build' to build it.`)
+        }
+
+        // Session MCP server and bridge server for source proxying
+        const piSessionServerPath = app.isPackaged
+          ? join(app.getAppPath(), 'resources', 'session-mcp-server', 'index.js')
+          : join(process.cwd(), 'packages', 'session-mcp-server', 'dist', 'index.js')
+        const piSessionServerExists = existsSync(piSessionServerPath)
+
+        const bridgeServer = resolveBridgeServerPath()
+
+        managed.agent = new PiAgent({
+          provider: 'pi',
+          authType: authType || 'api_key',
+          workspace: managed.workspace,
+          model: piModel,
+          miniModel: connection ? (getMiniModel(connection) ?? connection.defaultModel) : undefined,
+          thinkingLevel: managed.thinkingLevel,
+          connectionSlug: connection?.slug,
+          piServerPath: piServer.exists ? piServer.path : undefined,
+          sessionServerPath: piSessionServerExists ? piSessionServerPath : undefined,
+          bridgeServerPath: bridgeServer.exists ? bridgeServer.path : undefined,
+          nodePath: getBundledBunPath() ?? 'bun',
+          session: {
+            id: managed.id,
+            workspaceRootPath: managed.workspace.rootPath,
+            sdkSessionId: managed.sdkSessionId,
+            createdAt: managed.lastMessageAt,
+            lastUsedAt: managed.lastMessageAt,
+            workingDirectory: managed.workingDirectory,
+            sdkCwd: managed.sdkCwd,
+            model: managed.model,
+            llmConnection: managed.llmConnection,
+          },
+          onSdkSessionIdUpdate: (sdkSessionId: string) => {
+            managed.sdkSessionId = sdkSessionId
+            sessionLog.info(`SDK session ID captured for ${managed.id}: ${sdkSessionId}`)
+            this.persistSession(managed)
+            sessionPersistenceQueue.flush(managed.id)
+          },
+          onSdkSessionIdCleared: () => {
+            managed.sdkSessionId = undefined
+            sessionLog.info(`SDK session ID cleared for ${managed.id} (resume recovery)`)
+            this.persistSession(managed)
+            sessionPersistenceQueue.flush(managed.id)
+          },
+          getRecoveryMessages: () => {
+            const relevantMessages = managed.messages
+              .filter(m => m.role === 'user' || m.role === 'assistant')
+              .filter(m => !m.isIntermediate)
+              .slice(-6)
+            return relevantMessages.map(m => ({
+              type: m.role as 'user' | 'assistant',
+              content: m.content,
+            }))
+          },
+        })
+        sessionLog.info(`Created Pi agent for session ${managed.id} (model: ${piModel})${managed.sdkSessionId ? ' (resuming)' : ''}`)
       } else {
         // Claude backend - uses Anthropic SDK
         // Set auth credentials for this session's connection BEFORE creating the agent.

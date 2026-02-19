@@ -10,6 +10,7 @@ import copilotIcon from '@/assets/provider-icons/copilot.svg'
 import ollamaIcon from '@/assets/provider-icons/ollama.svg'
 import openaiIcon from '@/assets/provider-icons/openai.svg'
 import openrouterIcon from '@/assets/provider-icons/openrouter.svg'
+import piIcon from '@/assets/provider-icons/pi.svg'
 import vercelIcon from '@/assets/provider-icons/vercel.svg'
 
 import type { LlmProviderType } from '@craft-agent/shared/config/llm-connections'
@@ -23,6 +24,7 @@ export const providerIcons = {
   copilot: copilotIcon,
   ollama: ollamaIcon,
   openrouter: openrouterIcon,
+  pi: piIcon,
   vercel: vercelIcon,
 } as const
 
@@ -37,6 +39,8 @@ const providerDisplayNames: Record<string, string> = {
   copilot: 'GitHub Copilot',
   ollama: 'Ollama',
   openrouter: 'OpenRouter',
+  pi: 'Pi',
+  pi_compat: 'Pi',
   vercel: 'Vercel',
 }
 
@@ -97,6 +101,9 @@ export function getProviderIcon(
       return providerIcons.openai
     case 'copilot':
       return providerIcons.copilot
+    case 'pi':
+    case 'pi_compat':
+      return providerIcons.pi
     default:
       // Try URL detection as fallback
       if (baseUrl) {

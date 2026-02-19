@@ -51,7 +51,8 @@ export function CredentialsStep({
   const isCopilotOAuth = apiSetupMethod === 'copilot_oauth'
   const isAnthropicApiKey = apiSetupMethod === 'anthropic_api_key'
   const isOpenAiApiKey = apiSetupMethod === 'openai_api_key'
-  const isApiKey = isAnthropicApiKey || isOpenAiApiKey
+  const isPiApiKey = apiSetupMethod === 'pi_api_key'
+  const isApiKey = isAnthropicApiKey || isOpenAiApiKey || isPiApiKey
 
   // Copilot device code clipboard handling
   const [copiedCode, setCopiedCode] = useState(false)
@@ -247,8 +248,10 @@ export function CredentialsStep({
 
   // --- API Key flow ---
   // Determine provider type and description based on selected method
-  const providerType = isOpenAiApiKey ? 'openai' : 'anthropic'
-  const apiKeyDescription = isOpenAiApiKey
+  const providerType = isPiApiKey ? 'pi' : isOpenAiApiKey ? 'openai' : 'anthropic'
+  const apiKeyDescription = isPiApiKey
+    ? "Enter your Pi API key. Access 20+ LLM providers through a unified API."
+    : isOpenAiApiKey
     ? "Enter your OpenAI API key."
     : "Enter your API key. Optionally configure a custom endpoint for OpenRouter, Ollama, or compatible APIs."
 

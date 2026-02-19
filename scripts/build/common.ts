@@ -485,7 +485,27 @@ export function copySessionServer(config: BuildConfig): void {
 }
 
 /**
- * Build MCP helper servers (bridge + session).
+ * Copy Pi Agent Server to packaged app resources.
+ * The Pi agent server is the subprocess for Pi SDK sessions.
+ */
+export function copyPiAgentServer(config: BuildConfig): void {
+  const { rootDir, electronDir } = config;
+
+  const piSource = join(rootDir, 'packages', 'pi-agent-server', 'dist', 'index.js');
+  const piDest = join(electronDir, 'resources', 'pi-agent-server', 'index.js');
+
+  if (!existsSync(piSource)) {
+    console.warn(`Warning: Pi agent server not found at ${piSource}. Pi SDK sessions will not work.`);
+    return;
+  }
+
+  console.log('Copying Pi Agent Server...');
+  mkdirSync(dirname(piDest), { recursive: true });
+  copyFileSync(piSource, piDest);
+}
+
+/**
+ * Build MCP helper servers (bridge + session) and Pi agent server.
  * Shared across all platforms to avoid drift.
  */
 export function buildMcpServers(config: BuildConfig): void {
@@ -495,11 +515,14 @@ export function buildMcpServers(config: BuildConfig): void {
   const bridgeOut = join(bridgeDir, 'dist', 'index.js');
   const sessionDir = join(rootDir, 'packages', 'session-mcp-server');
   const sessionOut = join(sessionDir, 'dist', 'index.js');
+  const piDir = join(rootDir, 'packages', 'pi-agent-server');
+  const piOut = join(piDir, 'dist', 'index.js');
 
   console.log('Building MCP helper servers...');
 
   mkdirSync(join(bridgeDir, 'dist'), { recursive: true });
   mkdirSync(join(sessionDir, 'dist'), { recursive: true });
+  mkdirSync(join(piDir, 'dist'), { recursive: true });
 
   execSync(
     `bun build ${join(bridgeDir, 'src', 'index.ts')} --outfile ${bridgeOut} --target node --format cjs`,
@@ -511,28 +534,40 @@ export function buildMcpServers(config: BuildConfig): void {
     { cwd: rootDir, stdio: 'inherit', shell: true }
   );
 
+  execSync(
+    `bun build ${join(piDir, 'src', 'index.ts')} --outfile ${piOut} --target node --format cjs`,
+    { cwd: rootDir, stdio: 'inherit', shell: true }
+  );
+
   if (!existsSync(bridgeOut)) {
     throw new Error(`Bridge MCP server output not found at ${bridgeOut}`);
   }
   if (!existsSync(sessionOut)) {
     throw new Error(`Session MCP server output not found at ${sessionOut}`);
   }
+  if (!existsSync(piOut)) {
+    throw new Error(`Pi agent server output not found at ${piOut}`);
+  }
 }
 
 /**
- * Verify MCP helper servers are present in packaged resources.
+ * Verify MCP helper servers and Pi agent server are present in packaged resources.
  */
 export function verifyMcpServersExist(config: BuildConfig): void {
   const { electronDir } = config;
 
   const bridgePath = join(electronDir, 'resources', 'bridge-mcp-server', 'index.js');
   const sessionPath = join(electronDir, 'resources', 'session-mcp-server', 'index.js');
+  const piPath = join(electronDir, 'resources', 'pi-agent-server', 'index.js');
 
   if (!existsSync(bridgePath)) {
     throw new Error(`Bridge MCP server not found at ${bridgePath}`);
   }
   if (!existsSync(sessionPath)) {
     throw new Error(`Session MCP server not found at ${sessionPath}`);
+  }
+  if (!existsSync(piPath)) {
+    throw new Error(`Pi agent server not found at ${piPath}`);
   }
 }
 

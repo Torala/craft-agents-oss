@@ -17,7 +17,7 @@
 /**
  * Provider identifier for AI backends.
  */
-export type ModelProvider = 'anthropic' | 'openai' | 'copilot';
+export type ModelProvider = 'anthropic' | 'openai' | 'copilot' | 'pi';
 
 /**
  * Full model definition with capabilities and costs.
@@ -115,6 +115,37 @@ export const MODEL_REGISTRY: ModelDefinition[] = [
   // No hardcoded entries — models are discovered at runtime via client.listModels()
   // and stored on the connection. See fetchAndStoreCopilotModels() in ipc.ts.
   // ----------------------------------------
+
+  // ----------------------------------------
+  // Pi Models (via @mariozechner/pi-coding-agent)
+  // Pi supports 20+ providers through its unified API.
+  // At runtime, models are discovered dynamically via ModelRegistry.
+  // These entries are fallbacks for offline/first-launch scenarios.
+  // ----------------------------------------
+  {
+    id: 'pi/claude-sonnet-4-5',
+    name: 'Claude Sonnet 4.5 (Pi)',
+    shortName: 'Sonnet (Pi)',
+    description: 'Anthropic Claude via Pi unified API',
+    provider: 'pi',
+    contextWindow: 200_000,
+  },
+  {
+    id: 'pi/gpt-5.2',
+    name: 'GPT-5.2 (Pi)',
+    shortName: 'GPT-5.2 (Pi)',
+    description: 'OpenAI GPT via Pi unified API',
+    provider: 'pi',
+    contextWindow: 128_000,
+  },
+  {
+    id: 'pi/gemini-2.5-pro',
+    name: 'Gemini 2.5 Pro (Pi)',
+    shortName: 'Gemini Pro (Pi)',
+    description: 'Google Gemini via Pi unified API',
+    provider: 'pi',
+    contextWindow: 1_000_000,
+  },
 ];
 
 // ============================================
@@ -136,6 +167,9 @@ export const OPENAI_MODELS = getModelsByProvider('openai');
 
 /** All GitHub Copilot models */
 export const COPILOT_MODELS = getModelsByProvider('copilot');
+
+/** All Pi models */
+export const PI_MODELS = getModelsByProvider('pi');
 
 /**
  * Legacy compatibility export.
@@ -173,6 +207,9 @@ export const DEFAULT_CODEX_MODEL = getModelIdByShortName('Codex');
 
 /** Default model for Copilot connections — no hardcoded default; models come from listModels() */
 export const DEFAULT_COPILOT_MODEL: string | undefined = undefined;
+
+/** Default model for Pi connections — no hardcoded default; models are dynamic */
+export const DEFAULT_PI_MODEL: string | undefined = undefined;
 
 // ============================================
 // UTILITY MODELS
@@ -275,6 +312,14 @@ export function isCodexModel(modelId: string): boolean {
 export function isCopilotModel(modelId: string): boolean {
   const model = getModelById(modelId);
   return model?.provider === 'copilot';
+}
+
+/**
+ * Check if a model ID refers to a Pi model.
+ */
+export function isPiModel(modelId: string): boolean {
+  const model = getModelById(modelId);
+  return model?.provider === 'pi';
 }
 
 /**

@@ -11,6 +11,7 @@ import {
   type ModelDefinition,
   ANTHROPIC_MODELS,
   OPENAI_MODELS,
+  PI_MODELS,
 } from './models';
 
 // ============================================================
@@ -28,6 +29,8 @@ import {
  * - 'bedrock': AWS Bedrock (Claude models via AWS)
  * - 'vertex': Google Vertex AI (Claude models via GCP)
  * - 'copilot': GitHub Copilot (via @github/copilot-sdk)
+ * - 'pi': Pi unified LLM API (20+ providers via @mariozechner/pi-coding-agent)
+ * - 'pi_compat': Pi with custom endpoint (Ollama, self-hosted models)
  */
 export type LlmProviderType =
   | 'anthropic'
@@ -36,7 +39,9 @@ export type LlmProviderType =
   | 'openai_compat'
   | 'bedrock'
   | 'vertex'
-  | 'copilot';
+  | 'copilot'
+  | 'pi'
+  | 'pi_compat';
 
 /**
  * @deprecated Use LlmProviderType instead. Kept for migration compatibility.
@@ -203,6 +208,7 @@ function findSmallModel(connection: Pick<LlmConnection, 'models' | 'providerType
   const keyword = isAnthropicProvider(connection.providerType) ? 'haiku'
     : isOpenAIProvider(connection.providerType) ? 'mini'
     : isCopilotProvider(connection.providerType) ? 'mini'
+    : isPiProvider(connection.providerType) ? 'mini'
     : undefined;
 
   if (keyword) {
@@ -310,7 +316,7 @@ export function authTypeRequiresEndpoint(authType: LlmAuthType): boolean {
  * @returns true if this is a compat provider (anthropic_compat or openai_compat)
  */
 export function isCompatProvider(providerType: LlmProviderType): boolean {
-  return providerType === 'anthropic_compat' || providerType === 'openai_compat';
+  return providerType === 'anthropic_compat' || providerType === 'openai_compat' || providerType === 'pi_compat';
 }
 
 /**
@@ -347,6 +353,15 @@ export function isCopilotProvider(providerType: LlmProviderType): boolean {
 }
 
 /**
+ * Check if a provider type uses Pi unified API.
+ * @param providerType - Provider type to check
+ * @returns true if this provider uses Pi
+ */
+export function isPiProvider(providerType: LlmProviderType): boolean {
+  return providerType === 'pi' || providerType === 'pi_compat';
+}
+
+/**
  * Get the default model list for a provider type from the registry.
  * For *_compat providers, returns empty array - those should use connection.models instead.
  *
@@ -366,6 +381,11 @@ export function getModelsForProviderType(providerType: LlmProviderType): ModelDe
 
   if (providerType === 'copilot') {
     return []; // Copilot models are dynamic — fetched via listModels(), no hardcoded fallbacks
+  }
+
+  // Pi: registry models as fallback; pi_compat already handled by isCompatProvider above
+  if (providerType === 'pi') {
+    return PI_MODELS;
   }
 
   // Anthropic, Bedrock, Vertex all use Claude models
@@ -389,6 +409,8 @@ export function getDefaultModelsForConnection(providerType: LlmProviderType): Ar
   ];
   if (providerType === 'openai') return OPENAI_MODELS;
   if (providerType === 'copilot') return []; // Dynamic — fetched via listModels()
+  if (providerType === 'pi') return PI_MODELS;
+  if (providerType === 'pi_compat') return [];  // Dynamic — user specifies
   if (providerType === 'anthropic_compat') return [
     'anthropic/claude-opus-4.6',
     'anthropic/claude-sonnet-4.5',
@@ -484,6 +506,8 @@ export function isValidProviderAuthCombination(
     bedrock: ['bearer_token', 'iam_credentials', 'environment'],
     vertex: ['oauth', 'service_account_file', 'environment'],
     copilot: ['oauth'],
+    pi: ['api_key', 'oauth', 'none'],
+    pi_compat: ['api_key_with_endpoint', 'none'],
   };
 
   return validCombinations[providerType]?.includes(authType) ?? false;

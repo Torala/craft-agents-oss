@@ -6,6 +6,9 @@ export { CodexAgent, CodexBackend } from './codex-agent.ts';
 
 // Export CopilotAgent for direct use
 export { CopilotAgent, CopilotBackend, resolveCopilotModelId } from './copilot-agent.ts';
+
+// Export PiAgent for direct use
+export { PiAgent, PiBackend } from './pi-agent.ts';
 export * from './errors.ts';
 export * from './options.ts';
 

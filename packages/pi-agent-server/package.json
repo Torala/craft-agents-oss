@@ -1,0 +1,22 @@
+{
+  "name": "@craft-agent/pi-agent-server",
+  "version": "0.4.8",
+  "license": "Apache-2.0",
+  "description": "Out-of-process Pi agent server communicating via JSONL over stdio",
+  "type": "commonjs",
+  "main": "dist/index.js",
+  "bin": {
+    "pi-agent-server": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "bun build src/index.ts --outdir=dist --target=node --format=cjs"
+  },
+  "dependencies": {
+    "@mariozechner/pi-coding-agent": "^0.53.0",
+    "@mariozechner/pi-agent-core": "^0.53.0",
+    "@mariozechner/pi-ai": "^0.53.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0"
+  }
+}

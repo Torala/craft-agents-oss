@@ -17,6 +17,8 @@ const BRIDGE_SERVER_OUTPUT = join(BRIDGE_SERVER_DIR, "dist/index.js");
 const SESSION_TOOLS_CORE_DIR = join(ROOT_DIR, "packages/session-tools-core");
 const SESSION_SERVER_DIR = join(ROOT_DIR, "packages/session-mcp-server");
 const SESSION_SERVER_OUTPUT = join(SESSION_SERVER_DIR, "dist/index.js");
+const PI_AGENT_SERVER_DIR = join(ROOT_DIR, "packages/pi-agent-server");
+const PI_AGENT_SERVER_OUTPUT = join(PI_AGENT_SERVER_DIR, "dist/index.js");
 
 // Load .env file if it exists
 function loadEnvFile(): void {
@@ -243,6 +245,45 @@ async function buildSessionServer(): Promise<void> {
   console.log("✅ Session server built successfully");
 }
 
+// Build the Pi Agent Server (subprocess for Pi SDK sessions)
+async function buildPiAgentServer(): Promise<void> {
+  console.log("🥧 Building Pi Agent Server...");
+
+  // Ensure dist directory exists
+  const distDir = join(PI_AGENT_SERVER_DIR, "dist");
+  if (!existsSync(distDir)) {
+    mkdirSync(distDir, { recursive: true });
+  }
+
+  const proc = spawn({
+    cmd: [
+      "bun", "build",
+      join(PI_AGENT_SERVER_DIR, "src/index.ts"),
+      "--outfile", PI_AGENT_SERVER_OUTPUT,
+      "--target", "node",
+      "--format", "cjs",
+    ],
+    cwd: ROOT_DIR,
+    stdout: "inherit",
+    stderr: "inherit",
+  });
+
+  const exitCode = await proc.exited;
+
+  if (exitCode !== 0) {
+    console.error("❌ Pi agent server build failed with exit code", exitCode);
+    process.exit(exitCode);
+  }
+
+  // Verify output exists
+  if (!existsSync(PI_AGENT_SERVER_OUTPUT)) {
+    console.error("❌ Pi agent server output not found at", PI_AGENT_SERVER_OUTPUT);
+    process.exit(1);
+  }
+
+  console.log("✅ Pi agent server built successfully");
+}
+
 async function main(): Promise<void> {
   loadEnvFile();
 
@@ -260,6 +301,9 @@ async function main(): Promise<void> {
   // Build session server (provides session-scoped tools like SubmitPlan for Codex sessions)
   // Depends on session-tools-core being built first
   await buildSessionServer();
+
+  // Build Pi agent server (subprocess for Pi SDK sessions)
+  await buildPiAgentServer();
 
   // Build Copilot network interceptor (CJS bundle for Node.js --require)
   await buildCopilotInterceptor();

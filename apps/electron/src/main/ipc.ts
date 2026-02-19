@@ -90,6 +90,16 @@ const BUILT_IN_CONNECTION_TEMPLATES: Record<string, {
     providerType: 'copilot',
     authType: 'oauth',
   },
+  'pi-api': {
+    name: 'Pi (API Key)',
+    providerType: 'pi',
+    authType: 'api_key',
+  },
+  'pi-local': {
+    name: (h) => h ? 'Pi (Custom Endpoint)' : 'Pi (Local / Ollama)',
+    providerType: (h) => h ? 'pi_compat' : 'pi',
+    authType: (h) => h ? 'api_key_with_endpoint' : 'none',
+  },
 }
 
 /**

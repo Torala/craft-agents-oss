@@ -43,11 +43,11 @@ export interface ApiKeyInputProps {
   /** Disable the input (e.g. during validation) */
   disabled?: boolean
   /** Provider type determines which presets and placeholders to show */
-  providerType?: 'anthropic' | 'openai'
+  providerType?: 'anthropic' | 'openai' | 'pi'
 }
 
-// Preset key includes both provider defaults ('anthropic', 'openai') and third-party services
-type PresetKey = 'anthropic' | 'openai' | 'openrouter' | 'vercel' | 'ollama' | 'custom'
+// Preset key includes both provider defaults ('anthropic', 'openai', 'pi') and third-party services
+type PresetKey = 'anthropic' | 'openai' | 'pi' | 'openrouter' | 'vercel' | 'ollama' | 'custom'
 
 interface Preset {
   key: PresetKey
@@ -71,10 +71,16 @@ const OPENAI_PRESETS: Preset[] = [
   { key: 'openai', label: 'OpenAI', url: '' },
 ]
 
+// Pi provider presets - unified API for 20+ LLM providers
+const PI_PRESETS: Preset[] = [
+  { key: 'pi', label: 'Pi', url: '' },
+]
+
 const COMPAT_ANTHROPIC_DEFAULTS = 'anthropic/claude-opus-4.6, anthropic/claude-sonnet-4.5, anthropic/claude-haiku-4.5'
 const COMPAT_OPENAI_DEFAULTS = 'openai/gpt-5.2-codex, openai/gpt-5.1-codex-mini'
 
-function getPresetsForProvider(providerType: 'anthropic' | 'openai'): Preset[] {
+function getPresetsForProvider(providerType: 'anthropic' | 'openai' | 'pi'): Preset[] {
+  if (providerType === 'pi') return PI_PRESETS
   return providerType === 'openai' ? OPENAI_PRESETS : ANTHROPIC_PRESETS
 }
 
@@ -112,10 +118,10 @@ export function ApiKeyInput({
   const isDisabled = disabled || status === 'validating'
 
   // Determine if we're using the default provider preset (hide base URL field)
-  const isDefaultProviderPreset = activePreset === 'anthropic' || activePreset === 'openai'
+  const isDefaultProviderPreset = activePreset === 'anthropic' || activePreset === 'openai' || activePreset === 'pi'
 
   // Provider-specific placeholders
-  const apiKeyPlaceholder = providerType === 'openai' ? 'sk-...' : 'sk-ant-...'
+  const apiKeyPlaceholder = providerType === 'pi' ? 'pi-...' : providerType === 'openai' ? 'sk-...' : 'sk-ant-...'
 
   const handlePresetSelect = (preset: Preset) => {
     setActivePreset(preset.key)

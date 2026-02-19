@@ -53,6 +53,7 @@ import {
   buildMcpServers,
   copyBridgeServer,
   copySessionServer,
+  copyPiAgentServer,
   verifyMcpServersExist,
   buildElectronApp,
   createManifest,
@@ -260,6 +261,10 @@ async function main(): Promise<void> {
     // Copy Session MCP Server to packaged app resources (provides SubmitPlan, etc. for Codex)
     console.log('\n[10/11] Copying Session MCP Server...');
     copySessionServer(config);
+
+    // Copy Pi Agent Server to packaged app resources (subprocess for Pi SDK sessions)
+    console.log('\n[10/11] Copying Pi Agent Server...');
+    copyPiAgentServer(config);
 
     console.log('\n[10/11] Verifying MCP helper servers...');
     verifyMcpServersExist(config);

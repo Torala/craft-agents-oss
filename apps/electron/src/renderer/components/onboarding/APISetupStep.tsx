@@ -5,12 +5,13 @@ import { StepFormLayout, BackButton, ContinueButton } from "./primitives"
 import type { LlmAuthType, LlmProviderType } from "@craft-agent/shared/config/llm-connections"
 
 /** Provider segment for the segmented control */
-export type ProviderSegment = 'anthropic' | 'openai' | 'copilot'
+export type ProviderSegment = 'anthropic' | 'openai' | 'copilot' | 'pi'
 
 const SEGMENT_LABELS: Record<ProviderSegment, string> = {
   anthropic: 'Claude',
   openai: 'Codex',
   copilot: 'GitHub Copilot',
+  pi: 'Pi',
 }
 
 const BetaBadge = () => (
@@ -23,6 +24,7 @@ const SEGMENT_DESCRIPTIONS: Record<ProviderSegment, React.ReactNode> = {
   anthropic: <>Use Claude Agent SDK as the main agent.<br />Configure with your Claude subscription or API key.</>,
   openai: <>Use Codex CLI as the main agent.<BetaBadge /><br />Configure with your ChatGPT subscription or OpenAI API key.</>,
   copilot: <>Use Copilot Agent as the main agent.<BetaBadge /><br />Configure with your GitHub Copilot subscription.</>,
+  pi: <>Use Pi as the main agent.<BetaBadge /><br />Configure with your API key for 20+ LLM providers.</>,
 }
 
 /**
@@ -41,6 +43,7 @@ export type ApiSetupMethod =
   | 'chatgpt_oauth'
   | 'openai_api_key'
   | 'copilot_oauth'
+  | 'pi_api_key'
 
 /**
  * Map ApiSetupMethod to the underlying LLM connection types.
@@ -60,6 +63,8 @@ export function apiSetupMethodToConnectionTypes(method: ApiSetupMethod): {
       return { providerType: 'openai', authType: 'api_key' };
     case 'copilot_oauth':
       return { providerType: 'copilot', authType: 'oauth' };
+    case 'pi_api_key':
+      return { providerType: 'pi', authType: 'api_key' };
   }
 }
 
@@ -106,6 +111,13 @@ const API_SETUP_OPTIONS: ApiSetupOption[] = [
     description: 'Use your GitHub Copilot subscription.',
     icon: <Cpu className="size-4" />,
     providerType: 'copilot',
+  },
+  {
+    id: 'pi_api_key',
+    name: 'Pi · API Key',
+    description: 'Use your API key for 20+ LLM providers via Pi.',
+    icon: <Key className="size-4" />,
+    providerType: 'pi',
   },
 ]
 
@@ -187,7 +199,7 @@ function ProviderSegmentedControl({
   activeSegment: ProviderSegment
   onSegmentChange: (segment: ProviderSegment) => void
 }) {
-  const segments: ProviderSegment[] = ['anthropic', 'openai', 'copilot']
+  const segments: ProviderSegment[] = ['anthropic', 'openai', 'copilot', 'pi']
 
   return (
     <div className="flex rounded-xl bg-foreground/[0.03] p-1 mb-4">

@@ -84,6 +84,7 @@ const BASE_SLUG_FOR_METHOD: Record<ApiSetupMethod, string> = {
   chatgpt_oauth: 'codex',
   openai_api_key: 'codex-api',
   copilot_oauth: 'copilot',
+  pi_api_key: 'pi-api',
 }
 
 /**
@@ -147,6 +148,14 @@ function apiSetupMethodToConnectionSetup(
       return {
         slug,
         credential: options.credential,
+      }
+    case 'pi_api_key':
+      return {
+        slug,
+        credential: options.credential,
+        baseUrl: options.baseUrl,
+        defaultModel: options.connectionDefaultModel,
+        models: options.models,
       }
   }
 }
@@ -294,10 +303,12 @@ export function useOnboarding({
     setState(s => ({ ...s, credentialStatus: 'validating', errorMessage: undefined }))
 
     const isOpenAiFlow = state.apiSetupMethod === 'openai_api_key'
+    const isPiFlow = state.apiSetupMethod === 'pi_api_key'
 
     try {
       // API key validation differs by provider:
       // - OpenAI flow: API key is always required
+      // - Pi flow: API key is always required
       // - Anthropic flow: API key required for hosted providers, optional for Ollama/local
       if (isOpenAiFlow) {
         if (!data.apiKey.trim()) {
@@ -305,6 +316,15 @@ export function useOnboarding({
             ...s,
             credentialStatus: 'error',
             errorMessage: 'Please enter a valid OpenAI API key',
+          }))
+          return
+        }
+      } else if (isPiFlow) {
+        if (!data.apiKey.trim()) {
+          setState(s => ({
+            ...s,
+            credentialStatus: 'error',
+            errorMessage: 'Please enter a valid Pi API key',
           }))
           return
         }
@@ -330,6 +350,9 @@ export function useOnboarding({
           data.baseUrl,
           data.models,
         )
+      } else if (isPiFlow) {
+        // Pi validation - skip connection test for now, just save the key
+        testResult = { success: true }
       } else {
         // Anthropic validation - tests auth, endpoint, model, and tool support
         testResult = await window.electronAPI.testApiConnection(

@@ -292,6 +292,7 @@ export interface BackendConfig {
    * - 'anthropic' → ClaudeAgent (Anthropic SDK)
    * - 'openai' → CodexAgent (OpenAI via app-server)
    * - 'copilot' → CopilotAgent (GitHub Copilot via @github/copilot-sdk)
+   * - 'pi' → PiAgent (Pi via @mariozechner/pi-coding-agent)
    */
   provider: AgentProvider;
 
@@ -388,6 +389,13 @@ export interface BackendConfig {
    * Used by Codex (via config.toml) and Copilot (via mcpServers runtime config).
    */
   bridgeServerPath?: string;
+
+  /**
+   * Path to the pi-agent-server entry point (stdio subprocess for PiAgent).
+   * PiAgent spawns this as a child process and communicates via JSON-RPC over stdio.
+   * Resolved in the Electron main process and passed here.
+   */
+  piServerPath?: string;
 
   /** Callback when SDK session ID is captured/updated */
   onSdkSessionIdUpdate?: (sdkSessionId: string) => void;
