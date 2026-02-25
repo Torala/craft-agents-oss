@@ -4,34 +4,31 @@
  * Navigator panel for displaying automations in the 2nd column.
  * Follows the SourcesListPanel pattern with avatar, title, subtitle, badges.
  * Title and Plus button are handled by the shared PanelHeader in AppShell.
+ *
+ * Supports CMD/CTRL+click multi-select and Shift+click range select,
+ * using the shared EntityRow + createEntitySelection infrastructure.
  */
 
 import * as React from 'react'
-import { useState } from 'react'
-import { MoreHorizontal, Webhook, ChevronDown, ChevronRight } from 'lucide-react'
+import { useState, useCallback } from 'react'
+import { Webhook } from 'lucide-react'
 import { formatDistanceToNowStrict } from 'date-fns'
 import type { Locale } from 'date-fns'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@craft-agent/ui'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from '@/components/ui/empty'
-import { Separator } from '@/components/ui/separator'
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  StyledDropdownMenuContent,
-} from '@/components/ui/styled-dropdown'
-import {
-  ContextMenu,
-  ContextMenuTrigger,
-  StyledContextMenuContent,
-} from '@/components/ui/styled-context-menu'
-import { DropdownMenuProvider, ContextMenuProvider } from '@/components/ui/menu-context'
+import { EntityRow } from '@/components/ui/entity-row'
 import { SessionSearchHeader } from '@/components/app-shell/SessionSearchHeader'
 import { AutomationMenu } from './AutomationMenu'
+import { BatchAutomationMenu } from './BatchAutomationMenu'
 import { AutomationAvatar } from './AutomationAvatar'
-import { AutomationActionPreview } from './AutomationActionPreview'
 import { cn } from '@/lib/utils'
+import { automationSelection } from '@/hooks/useEntitySelection'
 import { APP_EVENTS, AGENT_EVENTS, getEventDisplayName, type AutomationListItem, type AutomationListFilter } from './types'
+
+const {
+  useSelection: useAutomationSelection,
+} = automationSelection
 
 /** Short relative time locale — produces compact strings: "7m", "2h", "3d" */
 const shortTimeLocale: Pick<Locale, 'formatDistance'> = {
@@ -57,8 +54,12 @@ const shortTimeLocale: Pick<Locale, 'formatDistance'> = {
 interface AutomationItemProps {
   automation: AutomationListItem
   isSelected: boolean
+  isInMultiSelect: boolean
+  isMultiSelectActive: boolean
   isFirst: boolean
   onClick: () => void
+  onToggleSelect?: () => void
+  onRangeSelect?: () => void
   onDelete: () => void
   onToggleEnabled: () => void
   onTest: () => void
@@ -72,191 +73,91 @@ function getActionTypeBadge(_automation: AutomationListItem): { label: string; c
 function AutomationItem({
   automation,
   isSelected,
+  isInMultiSelect,
+  isMultiSelectActive,
   isFirst,
   onClick,
+  onToggleSelect,
+  onRangeSelect,
   onDelete,
   onToggleEnabled,
   onTest,
   onDuplicate,
 }: AutomationItemProps) {
-  const [menuOpen, setMenuOpen] = useState(false)
-  const [contextMenuOpen, setContextMenuOpen] = useState(false)
-  const [expanded, setExpanded] = useState(false)
   const actionBadge = getActionTypeBadge(automation)
 
+  const handleClick = useCallback((e: React.MouseEvent) => {
+    if (e.button === 2) {
+      // Right-click: auto-add to selection if multi-select active
+      if (isMultiSelectActive && !isInMultiSelect && onToggleSelect) onToggleSelect()
+      return
+    }
+    if ((e.metaKey || e.ctrlKey) && onToggleSelect) {
+      e.preventDefault()
+      onToggleSelect()
+      return
+    }
+    if (e.shiftKey && onRangeSelect) {
+      e.preventDefault()
+      onRangeSelect()
+      return
+    }
+    onClick()
+  }, [isMultiSelectActive, isInMultiSelect, onToggleSelect, onRangeSelect, onClick])
+
   return (
-    <div className={cn('automation-item', !automation.enabled && 'opacity-50')} data-selected={isSelected || undefined}>
-      {/* Separator */}
-      {!isFirst && (
-        <div className="automation-separator pl-12 pr-4">
-          <Separator />
-        </div>
-      )}
-
-      <ContextMenu modal={true} onOpenChange={setContextMenuOpen}>
-        <ContextMenuTrigger asChild>
-          <div className="automation-content relative group select-none pl-2 mr-2">
-            {/* Background wrapper — covers chevron, avatar, button, and expanded content */}
-            <div
-              className={cn(
-                'relative rounded-[8px] transition-all',
-                isSelected
-                  ? 'bg-foreground/5 hover:bg-foreground/7'
-                  : 'hover:bg-foreground/2'
-              )}
-            >
-              {/* Expand chevron — positioned absolutely inside background wrapper */}
-              <div
-                className="absolute left-[4px] top-3.5 z-10 flex items-center justify-center cursor-pointer p-1 rounded-[4px] hover:bg-foreground/5 transition-colors"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  setExpanded(!expanded)
-                }}
-              >
-                {expanded ? (
-                  <ChevronDown className="h-3 w-3 text-muted-foreground" />
-                ) : (
-                  <ChevronRight className="h-3 w-3 text-muted-foreground" />
-                )}
-              </div>
-
-              {/* Automation Avatar — shifted right to make room for chevron */}
-              <div className="absolute left-[24px] top-3.5 z-10 flex items-center justify-center">
-                <AutomationAvatar event={automation.event} size="sm" />
-              </div>
-
-              {/* Main content button */}
-              <button
-                className="flex w-full items-start gap-2 pl-6 pr-4 py-3 text-left text-sm outline-none"
-                onClick={onClick}
-              >
-                {/* Spacer for chevron + avatar */}
-                <div className="w-5 h-5 shrink-0" />
-
-                {/* Content column */}
-                <div className="flex flex-col gap-1.5 min-w-0 flex-1">
-                  {/* Title */}
-                  <div className="flex items-start gap-2 w-full pr-6 min-w-0">
-                    <div className="font-medium font-sans line-clamp-2 min-w-0 -mb-[2px]">
-                      {automation.name}
-                    </div>
-                  </div>
-
-                  {/* Subtitle: summary */}
-                  <div className="flex items-center gap-1.5 text-xs text-foreground/50 w-full -mb-[2px] pr-6 min-w-0">
-                    <span className="truncate">{automation.summary}</span>
-                  </div>
-
-                  {/* Badges row: event + action type + last ran timestamp */}
-                  <div className="flex items-center gap-1.5 -mb-[2px]">
-                    <span className={cn(
-                      'shrink-0 px-1.5 py-0.5 text-[10px] font-medium rounded',
-                      'bg-foreground/8 text-foreground/60'
-                    )}>
-                      {getEventDisplayName(automation.event)}
-                    </span>
-                    <span className={cn(
-                      'shrink-0 px-1.5 py-0.5 text-[10px] font-medium rounded',
-                      actionBadge.classes
-                    )}>
-                      {actionBadge.label}
-                    </span>
-                    {/* Last ran timestamp — bottom right */}
-                    {automation.lastExecutedAt && (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <span className="shrink-0 ml-auto text-[11px] text-foreground/40 whitespace-nowrap cursor-default">
-                            {formatDistanceToNowStrict(new Date(automation.lastExecutedAt), { locale: shortTimeLocale as Locale, roundingMethod: 'floor' })}
-                          </span>
-                        </TooltipTrigger>
-                        <TooltipContent side="bottom" sideOffset={4}>
-                          Last ran {formatDistanceToNowStrict(new Date(automation.lastExecutedAt), { addSuffix: true })}
-                        </TooltipContent>
-                      </Tooltip>
-                    )}
-                  </div>
-                </div>
-              </button>
-
-              {/* Expanded When/Then details */}
-              {expanded && (
-                <div className="pl-[50px] pr-4 pb-3 space-y-2.5">
-                  {/* When */}
-                  <div className="space-y-0.5">
-                    <h5 className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">When</h5>
-                    <div className="text-xs text-foreground/70">
-                      <span className="font-medium">{getEventDisplayName(automation.event)}</span>
-                      {automation.matcher && (
-                        <span className="ml-2">
-                          matching <code className="font-mono bg-foreground/5 px-1 rounded">{automation.matcher}</code>
-                        </span>
-                      )}
-                      {automation.cron && (
-                        <span className="ml-2">
-                          at <code className="font-mono bg-foreground/5 px-1 rounded">{automation.cron}</code>
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Then */}
-                  <div className="space-y-0.5">
-                    <h5 className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Then</h5>
-                    <AutomationActionPreview actions={automation.actions} />
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Action buttons - visible on hover */}
-            <div
-              className={cn(
-                'absolute right-2 top-2 transition-opacity z-10',
-                menuOpen || contextMenuOpen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-              )}
-            >
-              <div className="flex items-center rounded-[8px] overflow-hidden border border-transparent hover:border-border/50">
-                <DropdownMenu modal={true} onOpenChange={setMenuOpen}>
-                  <DropdownMenuTrigger asChild>
-                    <div className="p-1.5 hover:bg-foreground/10 data-[state=open]:bg-foreground/10 cursor-pointer">
-                      <MoreHorizontal className="h-4 w-4 text-muted-foreground" />
-                    </div>
-                  </DropdownMenuTrigger>
-                  <StyledDropdownMenuContent align="end">
-                    <DropdownMenuProvider>
-                      <AutomationMenu
-                        automationId={automation.id}
-                        automationName={automation.name}
-                        enabled={automation.enabled}
-                        onToggleEnabled={onToggleEnabled}
-                        onTest={onTest}
-                        onDuplicate={onDuplicate}
-                        onDelete={onDelete}
-                      />
-                    </DropdownMenuProvider>
-                  </StyledDropdownMenuContent>
-                </DropdownMenu>
-              </div>
-            </div>
-          </div>
-        </ContextMenuTrigger>
-
-        {/* Context menu */}
-        <StyledContextMenuContent>
-          <ContextMenuProvider>
-            <AutomationMenu
-              automationId={automation.id}
-              automationName={automation.name}
-              enabled={automation.enabled}
-              onToggleEnabled={onToggleEnabled}
-              onTest={onTest}
-              onDuplicate={onDuplicate}
-              onDelete={onDelete}
-            />
-          </ContextMenuProvider>
-        </StyledContextMenuContent>
-      </ContextMenu>
-    </div>
+    <EntityRow
+      className={cn('automation-item', !automation.enabled && 'opacity-50')}
+      showSeparator={!isFirst}
+      separatorClassName="pl-10 pr-4"
+      isSelected={isSelected}
+      isInMultiSelect={isInMultiSelect}
+      onMouseDown={handleClick}
+      icon={<AutomationAvatar event={automation.event} size="sm" />}
+      title={automation.name}
+      badges={
+        <>
+          <span className={cn(
+            'shrink-0 px-1.5 py-0.5 text-[10px] font-medium rounded',
+            'bg-foreground/8 text-foreground/60'
+          )}>
+            {getEventDisplayName(automation.event)}
+          </span>
+          <span className={cn(
+            'shrink-0 px-1.5 py-0.5 text-[10px] font-medium rounded',
+            actionBadge.classes
+          )}>
+            {actionBadge.label}
+          </span>
+        </>
+      }
+      trailing={
+        automation.lastExecutedAt ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="shrink-0 text-[11px] text-foreground/40 whitespace-nowrap cursor-default">
+                {formatDistanceToNowStrict(new Date(automation.lastExecutedAt), { locale: shortTimeLocale as Locale, roundingMethod: 'floor' })}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" sideOffset={4}>
+              Last ran {formatDistanceToNowStrict(new Date(automation.lastExecutedAt), { addSuffix: true })}
+            </TooltipContent>
+          </Tooltip>
+        ) : undefined
+      }
+      menuContent={
+        <AutomationMenu
+          automationId={automation.id}
+          automationName={automation.name}
+          enabled={automation.enabled}
+          onToggleEnabled={onToggleEnabled}
+          onTest={onTest}
+          onDuplicate={onDuplicate}
+          onDelete={onDelete}
+        />
+      }
+      contextMenuContent={isMultiSelectActive && isInMultiSelect ? <BatchAutomationMenu /> : undefined}
+    />
   )
 }
 
@@ -290,6 +191,14 @@ export function AutomationsListPanel({
   const [searchQuery, setSearchQuery] = useState('')
   const [searchActive, setSearchActive] = useState(false)
 
+  const {
+    select: selectAutomation,
+    toggle: toggleAutomation,
+    selectRange,
+    isMultiSelectActive,
+    isSelected: isInSelection,
+  } = useAutomationSelection()
+
   const isSearchMode = searchActive && searchQuery.length >= 2
 
   // Filter automations based on sidebar-driven filter (from route)
@@ -303,7 +212,7 @@ export function AutomationsListPanel({
   }, [automations, automationFilter?.kind])
 
   // Further filter by search query (name, summary, event display name)
-  const filteredAutomations = React.useMemo(() => {
+  const searchFiltered = React.useMemo(() => {
     if (!isSearchMode) return categoryFiltered
     const q = searchQuery.toLowerCase()
     return categoryFiltered.filter(a =>
@@ -312,6 +221,30 @@ export function AutomationsListPanel({
       getEventDisplayName(a.event).toLowerCase().includes(q)
     )
   }, [categoryFiltered, isSearchMode, searchQuery])
+
+  // Sort: most recently executed first, never-run at the bottom
+  const filteredAutomations = React.useMemo(() => {
+    return [...searchFiltered].sort((a, b) => {
+      if (!a.lastExecutedAt && !b.lastExecutedAt) return 0
+      if (!a.lastExecutedAt) return 1
+      if (!b.lastExecutedAt) return -1
+      return new Date(b.lastExecutedAt).getTime() - new Date(a.lastExecutedAt).getTime()
+    })
+  }, [searchFiltered])
+
+  const handleItemClick = useCallback((automationId: string, index: number) => {
+    selectAutomation(automationId, index)
+    onAutomationClick(automationId)
+  }, [selectAutomation, onAutomationClick])
+
+  const handleToggleSelect = useCallback((automationId: string, index: number) => {
+    toggleAutomation(automationId, index)
+  }, [toggleAutomation])
+
+  const handleRangeSelect = useCallback((toIndex: number) => {
+    const allIds = filteredAutomations.map(a => a.id)
+    selectRange(toIndex, allIds)
+  }, [filteredAutomations, selectRange])
 
   // Empty state
   if (automations.length === 0) {
@@ -373,8 +306,12 @@ export function AutomationsListPanel({
                   key={automation.id}
                   automation={automation}
                   isSelected={selectedAutomationId === automation.id}
+                  isInMultiSelect={isMultiSelectActive && isInSelection(automation.id)}
+                  isMultiSelectActive={isMultiSelectActive}
                   isFirst={index === 0}
-                  onClick={() => onAutomationClick(automation.id)}
+                  onClick={() => handleItemClick(automation.id, index)}
+                  onToggleSelect={() => handleToggleSelect(automation.id, index)}
+                  onRangeSelect={() => handleRangeSelect(index)}
                   onDelete={() => onDeleteAutomation?.(automation.id)}
                   onToggleEnabled={() => onToggleAutomation?.(automation.id)}
                   onTest={() => onTestAutomation?.(automation.id)}

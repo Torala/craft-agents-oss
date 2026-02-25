@@ -552,6 +552,8 @@ const api: ElectronAPI = {
     ipcRenderer.invoke(IPC_CHANNELS.AUTOMATIONS_DELETE, workspaceId, eventName, matcherIndex),
   getAutomationHistory: (workspaceId: string, automationId: string, limit?: number) =>
     ipcRenderer.invoke(IPC_CHANNELS.AUTOMATIONS_GET_HISTORY, workspaceId, automationId, limit),
+  getAutomationLastExecuted: (workspaceId: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.AUTOMATIONS_GET_LAST_EXECUTED, workspaceId) as Promise<Record<string, number>>,
 
   // Automations change listener (live updates when automations.json changes on disk)
   onAutomationsChanged: (callback: (workspaceId: string) => void) => {

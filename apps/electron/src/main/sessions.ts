@@ -2,7 +2,7 @@ import { app, nativeImage } from 'electron'
 import * as Sentry from '@sentry/electron/main'
 import { basename, join, normalize, isAbsolute, sep } from 'path'
 import { existsSync } from 'fs'
-import { readFile, realpath } from 'fs/promises'
+import { appendFile, readFile, realpath } from 'fs/promises'
 import { homedir, tmpdir } from 'os'
 import { type AgentEvent, setPermissionMode, type PermissionMode, unregisterSessionScopedToolCallbacks, AbortReason, type AuthRequest, type AuthResult, type CredentialAuthRequest } from '@craft-agent/shared/agent'
 import {
@@ -77,7 +77,7 @@ import { type ThinkingLevel, DEFAULT_THINKING_LEVEL } from '@craft-agent/shared/
 import { evaluateAutoLabels } from '@craft-agent/shared/labels/auto'
 import { listLabels } from '@craft-agent/shared/labels/storage'
 import { extractLabelId } from '@craft-agent/shared/labels'
-import { AutomationSystem, type AutomationSystemMetadataSnapshot } from '@craft-agent/shared/automations'
+import { AutomationSystem, AUTOMATIONS_HISTORY_FILE, type AutomationSystemMetadataSnapshot } from '@craft-agent/shared/automations'
 
 // Import and re-export (extracted to avoid Electron dependency in tests)
 import { sanitizeForTitle } from './title-sanitizer'
@@ -1002,10 +1002,29 @@ export class SessionManager {
                 pending.labels,
                 pending.permissionMode,
                 pending.mentions,
+                pending.llmConnection,
+                pending.model,
               )
             )
           )
+
+          // Write enriched history entries (with session IDs and prompt summaries)
+          const historyPath = join(workspaceRootPath, AUTOMATIONS_HISTORY_FILE)
           for (const [idx, result] of settled.entries()) {
+            const pending = prompts[idx]
+            if (!pending.matcherId) continue
+
+            const entry = {
+              id: pending.matcherId,
+              ts: Date.now(),
+              ok: result.status === 'fulfilled',
+              sessionId: result.status === 'fulfilled' ? result.value.sessionId : undefined,
+              prompt: pending.prompt.slice(0, 200),
+              error: result.status === 'rejected' ? String(result.reason).slice(0, 200) : undefined,
+            }
+
+            appendFile(historyPath, JSON.stringify(entry) + '\n', 'utf-8').catch(() => {})
+
             if (result.status === 'rejected') {
               sessionLog.error(`[Automations] Failed to execute prompt action ${idx + 1}:`, result.reason)
             } else {
@@ -5070,7 +5089,17 @@ To view this task's output:
     labels?: string[],
     permissionMode?: 'safe' | 'ask' | 'allow-all',
     mentions?: string[],
+    llmConnection?: string,
+    model?: string,
   ): Promise<{ sessionId: string }> {
+    // Warn if llmConnection was specified but doesn't resolve
+    if (llmConnection) {
+      const connection = resolveSessionConnection(llmConnection)
+      if (!connection) {
+        sessionLog.warn(`[Automations] llmConnection "${llmConnection}" not found, using default`)
+      }
+    }
+
     // Resolve @mentions to source/skill slugs
     const resolved = mentions ? this.resolveAutomationMentions(workspaceRootPath, mentions) : undefined
 
@@ -5080,6 +5109,8 @@ To view this task's output:
       labels,
       permissionMode: permissionMode || 'safe',
       enabledSourceSlugs: resolved?.sourceSlugs,
+      llmConnection,
+      model,
     })
 
     // Send the prompt

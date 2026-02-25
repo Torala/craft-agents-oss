@@ -73,6 +73,22 @@ export function useAutomations(
     return () => { stale = true }
   }, [activeWorkspaceRootPath])
 
+  // Populate lastExecutedAt from history file
+  useEffect(() => {
+    if (!activeWorkspaceId || automations.length === 0) return
+    let stale = false
+    window.electronAPI.getAutomationLastExecuted(activeWorkspaceId)
+      .then((map) => {
+        if (stale) return
+        setAutomations(prev => prev.map(a => ({
+          ...a,
+          lastExecutedAt: map[a.id] ?? a.lastExecutedAt,
+        })))
+      })
+      .catch(() => {})
+    return () => { stale = true }
+  }, [activeWorkspaceId, automations.length])
+
   // Subscribe to live automations updates (when automations.json changes on disk)
   useEffect(() => {
     if (!activeWorkspaceRootPath) return
@@ -94,6 +110,7 @@ export function useAutomations(
 
     window.electronAPI.testAutomation({
       workspaceId: activeWorkspaceId,
+      automationId: automation.id,
       actions: automation.actions,
       permissionMode: automation.permissionMode,
       labels: automation.labels,
@@ -166,13 +183,16 @@ export function useAutomations(
     try {
       const entries = await window.electronAPI.getAutomationHistory(activeWorkspaceId, automationId, 20)
       const automation = automations.find(h => h.id === automationId)
-      return entries.map((e: { id: string; ts: number; ok: boolean }) => ({
+      return entries.map((e: { id: string; ts: number; ok: boolean; sessionId?: string; prompt?: string; error?: string }) => ({
         id: `${e.id}-${e.ts}`,
         automationId: e.id,
         event: automation?.event ?? 'LabelAdd',
         status: e.ok ? 'success' as const : 'error' as const,
         duration: 0,
         timestamp: e.ts,
+        sessionId: e.sessionId,
+        actionSummary: e.prompt,
+        error: e.error,
       }))
     } catch {
       return []

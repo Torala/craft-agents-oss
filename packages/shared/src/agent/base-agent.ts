@@ -60,7 +60,7 @@ import { getMiniAgentSystemPrompt } from '../prompts/system.ts';
 import { buildTitlePrompt, buildRegenerateTitlePrompt, validateTitle } from '../utils/title-generator.ts';
 
 // Skill extraction for Codex/Copilot backends (Claude uses native SDK Skill tool)
-import { parseMentions, stripAllMentions } from '../mentions/index.ts';
+import { parseMentions, stripAllMentions, resolveFileMentions } from '../mentions/index.ts';
 import { loadAllSkills } from '../skills/storage.ts';
 
 // ============================================================
@@ -869,13 +869,17 @@ Please continue the conversation naturally from where we left off.
       }
     }
 
-    // Strip all bracket mentions from the message text
-    const stripped = stripAllMentions(message).trim();
+    // Strip control mentions (skills, sources) from the message text
+    const stripped = stripAllMentions(message);
+
+    // Resolve [file:path] and [folder:path] to absolute paths
+    const workDir = this.config.session?.workingDirectory ?? this.workingDirectory;
+    const resolved = resolveFileMentions(stripped, workDir).trim();
 
     // If user sent only skill mentions with no other text, add a directive
-    const cleanMessage = (!stripped && skillPaths.size > 0)
+    const cleanMessage = (!resolved && skillPaths.size > 0)
       ? 'Follow the skill instructions from the files listed above.'
-      : stripped;
+      : resolved;
 
     this.debug(`[extractSkillPaths] Clean message: "${cleanMessage.slice(0, 100)}...", skills: ${skillPaths.size}`);
 

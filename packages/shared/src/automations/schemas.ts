@@ -15,9 +15,15 @@ import type { ValidationIssue } from '../config/validators.ts';
 export const PromptActionSchema = z.object({
   type: z.literal('prompt'),
   prompt: z.string().min(1, 'Prompt cannot be empty'),
+  llmConnection: z.string().min(1).optional(),
+  model: z.string().min(1).optional(),
 });
 
-export const ActionDefinitionSchema = PromptActionSchema;
+/** Accepts prompt actions strictly; passes through legacy/unknown action types without erroring */
+export const ActionDefinitionSchema = z.union([
+  PromptActionSchema,
+  z.object({ type: z.string() }).passthrough(),
+]);
 
 export const AutomationMatcherSchema = z.object({
   id: z.string().optional(),
@@ -37,8 +43,19 @@ export const AutomationMatcherSchema = z.object({
 ).transform((data) => {
   // Normalize: merge hooks into actions, drop hooks key
   const merged = [...(data.actions ?? []), ...(data.hooks ?? [])];
+  // Convert legacy command actions to prompt actions
+  let hasCommand = false;
+  const normalized = merged.map((action) => {
+    if (action.type === 'command' && 'command' in action) {
+      hasCommand = true;
+      return { type: 'prompt' as const, prompt: `Run this command: ${(action as unknown as { command: string }).command}` };
+    }
+    return action;
+  });
   const { hooks: _hooks, ...rest } = data;
-  return { ...rest, actions: merged };
+  // Command actions need unrestricted shell execution
+  const permissionMode = hasCommand && !rest.permissionMode ? 'allow-all' as const : rest.permissionMode;
+  return { ...rest, permissionMode, actions: normalized };
 });
 
 /**

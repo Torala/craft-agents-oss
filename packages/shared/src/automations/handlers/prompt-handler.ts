@@ -5,10 +5,7 @@
  * Prompts are queued and delivered via callback for the caller to execute.
  */
 
-import { appendFile } from 'node:fs/promises';
-import { join } from 'node:path';
 import { createLogger } from '../../utils/debug.ts';
-import { AUTOMATIONS_HISTORY_FILE } from '../constants.ts';
 import type { EventBus, BaseEventPayload } from '../event-bus.ts';
 import type { AutomationHandler, PromptHandlerOptions, AutomationsConfigProvider } from './types.ts';
 import type { AutomationEvent, PromptAction, PendingPrompt, AppEvent } from '../types.ts';
@@ -104,15 +101,16 @@ export class PromptHandler implements AutomationHandler {
 
         pendingPrompts.push({
           sessionId: this.options.sessionId,
+          matcherId,
           prompt: expandedPrompt,
           mentions: references.mentions,
           labels: expandedLabels,
           permissionMode,
+          llmConnection: prompt.llmConnection,
+          model: prompt.model,
         });
       }
 
-      // Record prompt queuing as successful execution
-      this.appendHistory(matcherId, true);
     }
 
     // Deliver prompts via callback
@@ -120,17 +118,6 @@ export class PromptHandler implements AutomationHandler {
       log.debug(`[PromptHandler] Delivering ${pendingPrompts.length} prompts`);
       this.options.onPromptsReady(pendingPrompts);
     }
-  }
-
-  /**
-   * Append a single execution record to automations-history.jsonl.
-   * Fire-and-forget — failures are silently ignored.
-   */
-  private appendHistory(matcherId: string | undefined, ok: boolean): void {
-    if (!matcherId) return;
-    const line = JSON.stringify({ id: matcherId, ts: Date.now(), ok }) + '\n';
-    appendFile(join(this.options.workspaceRootPath, AUTOMATIONS_HISTORY_FILE), line, 'utf-8')
-      .catch(() => {}); // fire-and-forget, non-critical
   }
 
   /**

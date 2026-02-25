@@ -87,10 +87,22 @@ export function MainContentPanel({
       return
     }
     let stale = false
+
+    // Initial fetch
     getAutomationHistory(selectedAutomationId).then(entries => {
       if (!stale) setExecutions(entries)
     })
-    return () => { stale = true }
+
+    // Re-fetch on automation changes (live updates when automations fire)
+    const cleanup = window.electronAPI.onAutomationsChanged(() => {
+      if (!stale) {
+        getAutomationHistory(selectedAutomationId).then(entries => {
+          if (!stale) setExecutions(entries)
+        })
+      }
+    })
+
+    return () => { stale = true; cleanup() }
   }, [selectedAutomationId, getAutomationHistory])
 
   // Source multi-select state

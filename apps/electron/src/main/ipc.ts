@@ -1,5 +1,5 @@
 import { app, ipcMain, nativeTheme, nativeImage, dialog, shell, BrowserWindow } from 'electron'
-import { readFile, readdir, stat, realpath, mkdir, writeFile, unlink, rm } from 'fs/promises'
+import { appendFile, readFile, readdir, stat, realpath, mkdir, writeFile, unlink, rm } from 'fs/promises'
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { normalize, isAbsolute, join, basename, dirname, resolve, relative, sep } from 'path'
 import { homedir, tmpdir } from 'os'
@@ -2695,6 +2695,12 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
           sessionId: session?.id,
           duration: Date.now() - start,
         })
+
+        // Write history entry for test runs
+        if (payload.automationId) {
+          const entry = { id: payload.automationId, ts: Date.now(), ok: true, sessionId: session?.id, prompt: action.prompt.slice(0, 200) }
+          appendFile(join(workspace.rootPath, 'automations-history.jsonl'), JSON.stringify(entry) + '\n', 'utf-8').catch(() => {})
+        }
       } catch (err: unknown) {
         results.push({
           type: 'prompt',
@@ -2702,6 +2708,12 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
           stderr: (err as Error).message,
           duration: Date.now() - start,
         })
+
+        // Write failed history entry
+        if (payload.automationId) {
+          const entry = { id: payload.automationId, ts: Date.now(), ok: false, error: ((err as Error).message ?? '').slice(0, 200), prompt: action.prompt.slice(0, 200) }
+          appendFile(join(workspace.rootPath, 'automations-history.jsonl'), JSON.stringify(entry) + '\n', 'utf-8').catch(() => {})
+        }
       }
     }
 
@@ -2785,10 +2797,32 @@ export function registerIpcHandlers(sessionManager: SessionManager, windowManage
 
       return lines
         .map(line => { try { return JSON.parse(line) } catch { return null } })
-        .filter((e): e is { id: string; ts: number; ok: boolean } => e?.id === automationId)
+        .filter((e): e is { id: string; ts: number; ok: boolean; sessionId?: string; prompt?: string; error?: string } => e?.id === automationId)
         .slice(-limit)
+        .reverse()
     } catch {
       return [] // File doesn't exist yet
+    }
+  })
+
+  // Return last execution timestamp for all automations (for lastExecutedAt in list)
+  ipcMain.handle(IPC_CHANNELS.AUTOMATIONS_GET_LAST_EXECUTED, async (_event, workspaceId: string) => {
+    const workspace = getWorkspaceByNameOrId(workspaceId)
+    if (!workspace) throw new Error('Workspace not found')
+
+    const historyPath = join(workspace.rootPath, 'automations-history.jsonl')
+    try {
+      const content = await readFile(historyPath, 'utf-8')
+      const result: Record<string, number> = {}
+      for (const line of content.trim().split('\n')) {
+        try {
+          const entry = JSON.parse(line)
+          if (entry.id && entry.ts) result[entry.id] = entry.ts
+        } catch { /* skip malformed lines */ }
+      }
+      return result
+    } catch {
+      return {}
     }
   })
 

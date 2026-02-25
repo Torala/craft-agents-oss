@@ -55,6 +55,10 @@ export const AGENT_EVENTS: AgentEvent[] = [
 export interface PromptAction {
   type: 'prompt';
   prompt: string;
+  /** LLM connection slug for the created session (falls back to default if not found) */
+  llmConnection?: string;
+  /** Model ID for the created session (falls back to provider default if invalid) */
+  model?: string;
 }
 
 export type AutomationAction = PromptAction;
@@ -113,6 +117,8 @@ export type ActionExecutionResult = PromptActionResult;
 export interface PendingPrompt {
   /** The session ID this prompt should be sent to */
   sessionId: string | undefined;
+  /** The automation matcher ID this prompt originated from */
+  matcherId?: string;
   /** The expanded prompt text */
   prompt: string;
   /**
@@ -124,6 +130,10 @@ export interface PendingPrompt {
   labels?: string[];
   /** Permission mode for the created session (from matcher config) */
   permissionMode?: 'safe' | 'ask' | 'allow-all';
+  /** LLM connection slug for the created session (falls back to default if not found) */
+  llmConnection?: string;
+  /** Model ID for the created session (falls back to provider default if invalid) */
+  model?: string;
 }
 
 export interface AutomationResult {

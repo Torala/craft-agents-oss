@@ -186,11 +186,26 @@ Send a prompt to Craft Agent, creating a new session. Only works with App events
 |----------|------|---------|-------------|
 | `type` | `"prompt"` | Required | Action type |
 | `prompt` | string | Required | Prompt text to send |
+| `llmConnection` | string | Workspace default | LLM connection slug (configured in AI Settings) |
+| `model` | string | Workspace default | Model ID for the created session |
 
 **Features:**
 - Use `@mentions` to reference sources or skills (e.g., `@github`, `@linear`)
 - Environment variables are expanded (e.g., `$CRAFT_LABEL`, `${CRAFT_SESSION_NAME}`)
 - Mentioned sources are automatically activated for the new session
+
+**LLM Connection & Model:** You can specify which AI provider and model to use for the session created by a prompt action. If omitted, the workspace default connection and model are used.
+
+```json
+{
+  "type": "prompt",
+  "prompt": "Quick code review of recent changes",
+  "llmConnection": "my-copilot-connection",
+  "model": "gemini-3-pro-preview"
+}
+```
+
+The `llmConnection` value is the slug of an LLM connection configured in AI Settings. The `model` value is a model ID supported by the provider. If either is invalid or not found, it gracefully falls back to the workspace default.
 
 ## Matchers
 

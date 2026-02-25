@@ -85,9 +85,29 @@ Send a prompt to Craft Agent (creates a new session for scheduled prompts).
 }
 ```
 
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `type` | `"prompt"` | Required | Action type |
+| `prompt` | string | Required | Prompt text to send |
+| `llmConnection` | string | Workspace default | LLM connection slug (configured in AI Settings) |
+| `model` | string | Workspace default | Model ID for the created session |
+
 **Features:**
 - Use `@mentions` to reference sources or skills
 - Environment variables are expanded (e.g., `$CRAFT_LABEL`)
+
+**LLM Connection & Model:** Optionally specify which AI provider and model to use for the created session. If omitted, the workspace default connection and model are used.
+
+```json
+{
+  "type": "prompt",
+  "prompt": "Quick code review of recent changes",
+  "llmConnection": "my-copilot-connection",
+  "model": "gemini-3-pro-preview"
+}
+```
+
+The `llmConnection` value is the slug of an LLM connection configured in AI Settings. The `model` value is a model ID supported by the provider. If either is invalid or not found, it gracefully falls back to the workspace default. Both can be used independently or together.
 
 ## Matcher Configuration
 

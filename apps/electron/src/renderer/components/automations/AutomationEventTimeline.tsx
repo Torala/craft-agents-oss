@@ -7,7 +7,8 @@
 
 import { CheckCircle2, XCircle, ShieldAlert } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { getEventDisplayName, type ExecutionEntry, type ExecutionStatus } from './types'
+import { useNavigation } from '@/contexts/NavigationContext'
+import { type ExecutionEntry, type ExecutionStatus } from './types'
 
 // ============================================================================
 // Helpers
@@ -26,12 +27,6 @@ function formatRelativeTime(timestamp: number): string {
   return `${days}d ago`
 }
 
-function formatDuration(ms: number): string {
-  if (ms === 0) return '—'
-  if (ms < 1000) return `${ms}ms`
-  return `${(ms / 1000).toFixed(1)}s`
-}
-
 const statusConfig: Record<ExecutionStatus, { icon: React.ElementType; classes: string }> = {
   success: { icon: CheckCircle2, classes: 'text-success' },
   error:   { icon: XCircle,      classes: 'text-destructive' },
@@ -48,6 +43,8 @@ export interface AutomationEventTimelineProps {
 }
 
 export function AutomationEventTimeline({ entries, className }: AutomationEventTimelineProps) {
+  const { navigateToSession } = useNavigation()
+
   if (entries.length === 0) {
     return (
       <div className="px-4 py-6 text-center text-sm text-muted-foreground">
@@ -72,20 +69,20 @@ export function AutomationEventTimeline({ entries, className }: AutomationEventT
               {formatRelativeTime(entry.timestamp)}
             </span>
 
-            {/* Event badge */}
-            <span className="shrink-0 px-1.5 py-0.5 text-[10px] font-medium rounded bg-foreground/8 text-foreground/60">
-              {getEventDisplayName(entry.event)}
-            </span>
-
-            {/* Action summary */}
+            {/* Action summary — truncated prompt text */}
             <span className="flex-1 min-w-0 truncate text-xs text-foreground/70">
               {entry.actionSummary || entry.error || '—'}
             </span>
 
-            {/* Duration */}
-            <span className="text-xs text-muted-foreground tabular-nums shrink-0">
-              {formatDuration(entry.duration)}
-            </span>
+            {/* Session deep link */}
+            {entry.sessionId && (
+              <button
+                className="shrink-0 text-[11px] text-accent hover:underline cursor-pointer"
+                onClick={() => navigateToSession(entry.sessionId!)}
+              >
+                Open session
+              </button>
+            )}
           </div>
         )
       })}

@@ -19,6 +19,7 @@ export interface AutomationActionRowProps {
  * Highlight @mentions in prompt strings
  */
 function PromptText({ text }: { text: string }) {
+  if (!text) return <span className="text-sm text-muted-foreground italic">Empty prompt</span>
   const parts = text.split(/(@\w[\w-]*)/g)
   return (
     <span className="text-sm break-words">

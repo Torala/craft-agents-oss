@@ -12,6 +12,7 @@ import { AUTOMATIONS_CONFIG_FILE } from './constants.ts';
 import { AutomationsConfigSchema, zodErrorToIssues, DEPRECATED_EVENT_ALIASES } from './schemas.ts';
 import { isValidLabelId } from '../labels/storage.ts';
 import { extractLabelId } from '../labels/values.ts';
+import { getLlmConnection } from '../config/storage.ts';
 import { Cron } from 'croner';
 import type { ValidationResult, ValidationIssue } from '../config/validators.ts';
 import type { AutomationsConfig, AutomationsValidationResult } from './types.ts';
@@ -265,9 +266,9 @@ export function validateAutomations(workspaceRoot: string): ValidationResult {
   // Additional workspace-aware validations
   const warnings = [...contentResult.warnings];
 
-  // Validate labels exist in workspace
+  // Validate labels and llmConnection slugs exist
   try {
-    const config = JSON.parse(raw) as { automations?: Record<string, Array<{ labels?: string[] }>>; tasks?: Record<string, Array<{ labels?: string[] }>>; hooks?: Record<string, Array<{ labels?: string[] }>> };
+    const config = JSON.parse(raw) as { automations?: Record<string, Array<{ labels?: string[]; actions?: Array<{ type: string; llmConnection?: string }>; hooks?: Array<{ type: string; llmConnection?: string }> }>>; tasks?: Record<string, Array<{ labels?: string[]; actions?: Array<{ type: string; llmConnection?: string }>; hooks?: Array<{ type: string; llmConnection?: string }> }>>; hooks?: Record<string, Array<{ labels?: string[]; actions?: Array<{ type: string; llmConnection?: string }>; hooks?: Array<{ type: string; llmConnection?: string }> }>> };
     const labelEntries = config.automations ?? config.tasks ?? config.hooks;
     if (labelEntries) {
       for (const [event, matchers] of Object.entries(labelEntries)) {
@@ -286,6 +287,24 @@ export function validateAutomations(workspaceRoot: string): ValidationResult {
                   severity: 'warning',
                   suggestion: `Create this label in labels/config.json or use an existing label ID`,
                 });
+              }
+            }
+          }
+          // Validate llmConnection slugs in prompt actions
+          const actions = matcher?.actions ?? matcher?.hooks;
+          if (actions) {
+            for (const action of actions) {
+              if (action.type === 'prompt' && action.llmConnection) {
+                const connection = getLlmConnection(action.llmConnection);
+                if (!connection) {
+                  warnings.push({
+                    file,
+                    path: `automations.${event}[${i}].actions`,
+                    message: `LLM connection "${action.llmConnection}" not found in config`,
+                    severity: 'warning',
+                    suggestion: 'Check the connection slug in AI Settings or config.json',
+                  });
+                }
               }
             }
           }

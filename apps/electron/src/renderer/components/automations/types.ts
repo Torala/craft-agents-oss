@@ -10,6 +10,8 @@
  * See apps/electron/CLAUDE.md "Common Mistake: Node.js APIs in Renderer".
  */
 
+import { Cron } from 'croner'
+
 // ============================================================================
 // Automation System Types (mirrored from packages/shared/src/automations/types.ts)
 // ============================================================================
@@ -128,6 +130,8 @@ export interface ExecutionEntry {
   error?: string
   /** Truncated action summary */
   actionSummary?: string
+  /** Session ID created by this execution (for deep linking) */
+  sessionId?: string
 }
 
 // ============================================================================
@@ -254,6 +258,23 @@ function deriveAutomationName(event: string, matcher: AutomationsConfigMatcher):
 /** Derive a summary line from the matcher/cron/event */
 function deriveAutomationSummary(event: string, matcher: AutomationsConfigMatcher): string {
   if (matcher.cron) {
+    try {
+      const job = new Cron(matcher.cron, { timezone: matcher.timezone })
+      const next = job.nextRun()
+      if (next) {
+        const tz = matcher.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone
+        const tzCity = tz.split('/').pop()?.replace(/_/g, ' ') ?? tz
+        const formatted = next.toLocaleString('en-US', {
+          weekday: 'short',
+          hour: 'numeric',
+          minute: '2-digit',
+          timeZone: tz,
+        })
+        return `Next run: ${formatted} (${tzCity})`
+      }
+    } catch {
+      // Invalid cron — fall through to raw display
+    }
     const tz = matcher.timezone ? ` (${matcher.timezone})` : ''
     return `Cron: ${matcher.cron}${tz}`
   }
@@ -285,8 +306,18 @@ export function parseAutomationsConfig(json: unknown): AutomationListItem[] {
     for (let matcherIdx = 0; matcherIdx < matchers.length; matcherIdx++) {
       const matcher = matchers[matcherIdx]
       // Support both "actions" (v2) and "hooks" (v1) inner arrays
-      const actions = matcher.actions ?? matcher.hooks
-      if (!actions || !Array.isArray(actions) || actions.length === 0) continue
+      const rawActions = matcher.actions ?? matcher.hooks
+      if (!rawActions || !Array.isArray(rawActions) || rawActions.length === 0) continue
+
+      // Normalize actions: convert legacy command actions to prompt actions
+      const actions: AutomationAction[] = rawActions.map((a) => {
+        if (a.type === 'prompt') return a as AutomationAction
+        if (a.type === 'command' && a.command) {
+          return { type: 'prompt', prompt: `Run this command: ${a.command}` } as AutomationAction
+        }
+        return null
+      }).filter((a): a is AutomationAction => a !== null)
+      if (actions.length === 0) continue
 
       items.push({
         id: matcher.id ?? `${eventName}-${index}`,
@@ -300,7 +331,7 @@ export function parseAutomationsConfig(json: unknown): AutomationListItem[] {
         timezone: matcher.timezone,
         permissionMode: matcher.permissionMode,
         labels: matcher.labels,
-        actions: actions as AutomationAction[],
+        actions,
       })
       index++
     }

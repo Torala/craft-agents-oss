@@ -892,6 +892,7 @@ export const IPC_CHANNELS = {
   AUTOMATIONS_DUPLICATE: 'automations:duplicate',
   AUTOMATIONS_DELETE: 'automations:delete',
   AUTOMATIONS_GET_HISTORY: 'automations:getHistory',
+  AUTOMATIONS_GET_LAST_EXECUTED: 'automations:getLastExecuted',
   AUTOMATIONS_CHANGED: 'automations:changed',  // Broadcast event
 } as const
 
@@ -910,6 +911,8 @@ export interface ToolIconMapping {
 // Automation testing types (manual trigger from UI)
 export interface TestAutomationPayload {
   workspaceId: string
+  /** Matcher ID for writing history entries */
+  automationId?: string
   actions: Array<{ type: 'prompt'; prompt: string }>
   permissionMode?: 'safe' | 'ask' | 'allow-all'
   labels?: string[]
@@ -1247,7 +1250,8 @@ export interface ElectronAPI {
   setAutomationEnabled(workspaceId: string, eventName: string, matcherIndex: number, enabled: boolean): Promise<void>
   duplicateAutomation(workspaceId: string, eventName: string, matcherIndex: number): Promise<void>
   deleteAutomation(workspaceId: string, eventName: string, matcherIndex: number): Promise<void>
-  getAutomationHistory(workspaceId: string, automationId: string, limit?: number): Promise<Array<{ id: string; ts: number; ok: boolean }>>
+  getAutomationHistory(workspaceId: string, automationId: string, limit?: number): Promise<Array<{ id: string; ts: number; ok: boolean; sessionId?: string; prompt?: string; error?: string }>>
+  getAutomationLastExecuted(workspaceId: string): Promise<Record<string, number>>
 
   // Automations change listener (live updates when automations.json changes on disk)
   onAutomationsChanged(callback: (workspaceId: string) => void): () => void

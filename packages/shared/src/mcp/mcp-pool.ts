@@ -13,9 +13,11 @@
  * - Runtime source switching without session restart
  */
 
-import { CraftMcpClient, type McpClientConfig } from './client.ts';
+import { CraftMcpClient, type McpClientConfig, type PoolClient } from './client.ts';
+import { ApiSourcePoolClient } from './api-source-pool-client.ts';
 import type { SdkMcpServerConfig } from '../agent/backend/types.ts';
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
+import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { isLocalMcpEnabled } from '../workspaces/storage.ts';
 import { guardLargeResult } from '../utils/large-response.ts';
 
@@ -61,7 +63,10 @@ function sdkConfigToClientConfig(config: SdkMcpServerConfig): McpClientConfig | 
 
 export class McpClientPool {
   /** Active MCP clients keyed by source slug */
-  private clients = new Map<string, CraftMcpClient>();
+  private clients = new Map<string, PoolClient>();
+
+  /** Slugs managed by syncApiServers (vs sync). Prevents sync() from disconnecting API sources. */
+  private apiManagedSlugs = new Set<string>();
 
   /** Cached tool lists keyed by source slug */
   private toolCache = new Map<string, Tool[]>();
@@ -147,6 +152,31 @@ export class McpClientPool {
   }
 
   /**
+   * Connect to an in-process MCP server (API source) via in-memory transport.
+   * Stores the client in the same `clients` map as remote MCP clients.
+   */
+  async connectInProcess(slug: string, mcpServer: McpServer): Promise<void> {
+    if (this.clients.has(slug)) return;
+
+    const client = new ApiSourcePoolClient(mcpServer);
+    await client.connect();
+    this.clients.set(slug, client);
+    this.debug(`Connected in-process client for API source: ${slug}`);
+
+    // Cache tools (same flow as remote connect)
+    const tools = await client.listTools();
+    this.toolCache.set(slug, tools);
+    this.debug(`API source ${slug}: ${tools.length} tools available`);
+
+    // Update tool mappings
+    for (const tool of tools) {
+      const proxyName = `mcp__${slug}__${tool.name}`;
+      this.toolToSlug.set(proxyName, slug);
+      this.toolToOriginal.set(proxyName, tool.name);
+    }
+  }
+
+  /**
    * Disconnect a source and remove its tools from the pool.
    */
   async disconnect(slug: string): Promise<void> {
@@ -177,6 +207,7 @@ export class McpClientPool {
     this.toolCache.clear();
     this.toolToSlug.clear();
     this.toolToOriginal.clear();
+    this.apiManagedSlugs.clear();
     this.debug('Disconnected all MCP clients');
   }
 
@@ -207,9 +238,9 @@ export class McpClientPool {
     const currentSlugs = new Set(this.clients.keys());
     const failures: string[] = [];
 
-    // Disconnect removed sources (including newly-filtered ones)
+    // Disconnect removed sources (including newly-filtered ones), but skip API-managed slugs
     for (const slug of currentSlugs) {
-      if (!desiredSlugs.has(slug)) {
+      if (!desiredSlugs.has(slug) && !this.apiManagedSlugs.has(slug)) {
         await this.disconnect(slug);
       }
     }
@@ -227,6 +258,57 @@ export class McpClientPool {
     }
 
     this.onToolsChanged?.();
+
+    return failures;
+  }
+
+  /**
+   * Sync in-process API servers to match a desired set.
+   * Connects new API sources, disconnects removed ones.
+   *
+   * @param desired - Map of slug → McpSdkServerConfigWithInstance
+   * @returns List of slugs that failed to connect
+   */
+  async syncApiServers(desired: Record<string, unknown>): Promise<string[]> {
+    const failures: string[] = [];
+
+    // Extract McpServer instances from SDK config objects
+    const apiSlugs = new Map<string, McpServer>();
+    for (const [slug, config] of Object.entries(desired)) {
+      const cfg = config as { type?: string; instance?: McpServer };
+      if (cfg?.type === 'sdk' && cfg.instance) {
+        apiSlugs.set(slug, cfg.instance);
+      }
+    }
+
+    const desiredSlugs = new Set(apiSlugs.keys());
+
+    // Disconnect API sources that are no longer desired
+    for (const slug of this.apiManagedSlugs) {
+      if (!desiredSlugs.has(slug)) {
+        await this.disconnect(slug);
+        this.apiManagedSlugs.delete(slug);
+      }
+    }
+
+    // Connect new API sources
+    let connected = 0;
+    for (const [slug, server] of apiSlugs) {
+      if (!this.clients.has(slug)) {
+        try {
+          await this.connectInProcess(slug, server);
+          this.apiManagedSlugs.add(slug);
+          connected++;
+        } catch (err) {
+          this.debug(`Failed to connect API source ${slug}: ${err instanceof Error ? err.message : String(err)}`);
+          failures.push(slug);
+        }
+      }
+    }
+
+    if (connected > 0) {
+      this.onToolsChanged?.();
+    }
 
     return failures;
   }
