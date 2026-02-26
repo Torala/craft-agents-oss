@@ -79,7 +79,7 @@
             ]
           },
           {
-            "group": "Tasks",
+            "group": "Automations",
             "pages": [
               "tasks/overview"
             ]
