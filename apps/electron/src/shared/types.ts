@@ -888,6 +888,15 @@ export const IPC_CHANNELS = {
   MENU_COPY: 'menu:copy',
   MENU_PASTE: 'menu:paste',
   MENU_SELECT_ALL: 'menu:selectAll',
+
+  // Automations (manual trigger + state management)
+  TEST_AUTOMATION: 'automations:test',
+  AUTOMATIONS_SET_ENABLED: 'automations:setEnabled',
+  AUTOMATIONS_DUPLICATE: 'automations:duplicate',
+  AUTOMATIONS_DELETE: 'automations:delete',
+  AUTOMATIONS_GET_HISTORY: 'automations:getHistory',
+  AUTOMATIONS_GET_LAST_EXECUTED: 'automations:getLastExecuted',
+  AUTOMATIONS_CHANGED: 'automations:changed',  // Broadcast event
 } as const
 
 // Re-import types for ElectronAPI
@@ -900,6 +909,28 @@ export interface ToolIconMapping {
   /** Data URL of the icon (e.g., data:image/png;base64,...) */
   iconDataUrl: string
   commands: string[]
+}
+
+// Automation testing types (manual trigger from UI)
+export interface TestAutomationPayload {
+  workspaceId: string
+  /** Matcher ID for writing history entries */
+  automationId?: string
+  actions: Array<{ type: 'prompt'; prompt: string; llmConnection?: string; model?: string }>
+  permissionMode?: 'safe' | 'ask' | 'allow-all'
+  labels?: string[]
+}
+
+export interface TestAutomationActionResult {
+  type: 'prompt'
+  success: boolean
+  stderr?: string
+  sessionId?: string
+  duration: number
+}
+
+export interface TestAutomationResult {
+  actions: TestAutomationActionResult[]
 }
 
 // Type-safe IPC API exposed to renderer
@@ -1232,6 +1263,19 @@ export interface ElectronAPI {
   testLlmConnection(slug: string): Promise<{ success: boolean; error?: string }>
   setDefaultLlmConnection(slug: string): Promise<{ success: boolean; error?: string }>
   setWorkspaceDefaultLlmConnection(workspaceId: string, slug: string | null): Promise<{ success: boolean; error?: string }>
+
+  // Automation testing (manual trigger)
+  testAutomation(payload: TestAutomationPayload): Promise<TestAutomationResult>
+
+  // Automation state management
+  setAutomationEnabled(workspaceId: string, eventName: string, matcherIndex: number, enabled: boolean): Promise<void>
+  duplicateAutomation(workspaceId: string, eventName: string, matcherIndex: number): Promise<void>
+  deleteAutomation(workspaceId: string, eventName: string, matcherIndex: number): Promise<void>
+  getAutomationHistory(workspaceId: string, automationId: string, limit?: number): Promise<Array<{ id: string; ts: number; ok: boolean; sessionId?: string; prompt?: string; error?: string }>>
+  getAutomationLastExecuted(workspaceId: string): Promise<Record<string, number>>
+
+  // Automations change listener (live updates when automations.json changes on disk)
+  onAutomationsChanged(callback: (workspaceId: string) => void): () => void
 }
 
 /**
@@ -1354,6 +1398,14 @@ export interface SourceFilter {
 }
 
 /**
+ * Automation type filter for automations navigation (e.g., show only Scheduled, Event-based, or Agentic automations)
+ */
+export interface AutomationFilter {
+  kind: 'type'
+  automationType: 'scheduled' | 'event' | 'agentic'
+}
+
+/**
  * Sources navigation state - shows SourcesListPanel in navigator
  */
 export interface SourcesNavigationState {
@@ -1403,6 +1455,19 @@ export interface SkillsNavigationState {
 }
 
 /**
+ * Automations navigation state - shows AutomationsListPanel in navigator
+ */
+export interface AutomationsNavigationState {
+  navigator: 'automations'
+  /** Optional filter for automation type */
+  filter?: AutomationFilter
+  /** Selected automation details, or null for empty state */
+  details: { type: 'automation'; automationId: string } | null
+  /** Optional right sidebar panel state */
+  rightSidebar?: RightSidebarPanel
+}
+
+/**
  * Unified navigation state - single source of truth for all 3 panels
  *
  * From this state we can derive:
@@ -1415,6 +1480,7 @@ export type NavigationState =
   | SourcesNavigationState
   | SettingsNavigationState
   | SkillsNavigationState
+  | AutomationsNavigationState
 
 /**
  * Type guard to check if state is sessions navigation
@@ -1445,6 +1511,13 @@ export const isSkillsNavigation = (
 ): state is SkillsNavigationState => state.navigator === 'skills'
 
 /**
+ * Type guard to check if state is automations navigation
+ */
+export const isAutomationsNavigation = (
+  state: NavigationState
+): state is AutomationsNavigationState => state.navigator === 'automations'
+
+/**
  * Default navigation state - allSessions with no selection
  */
 export const DEFAULT_NAVIGATION_STATE: NavigationState = {
@@ -1468,6 +1541,12 @@ export const getNavigationStateKey = (state: NavigationState): string => {
       return `skills/skill/${state.details.skillSlug}`
     }
     return 'skills'
+  }
+  if (state.navigator === 'automations') {
+    if (state.details?.type === 'automation') {
+      return `automations/automation/${state.details.automationId}`
+    }
+    return 'automations'
   }
   if (state.navigator === 'settings') {
     return `settings:${state.subpage}`
@@ -1508,6 +1587,16 @@ export const parseNavigationStateKey = (key: string): NavigationState | null => 
       return { navigator: 'skills', details: { type: 'skill', skillSlug } }
     }
     return { navigator: 'skills', details: null }
+  }
+
+  // Handle automations
+  if (key === 'automations') return { navigator: 'automations', details: null }
+  if (key.startsWith('automations/automation/')) {
+    const automationId = key.slice(22)
+    if (automationId) {
+      return { navigator: 'automations', details: { type: 'automation', automationId } }
+    }
+    return { navigator: 'automations', details: null }
   }
 
   // Handle settings

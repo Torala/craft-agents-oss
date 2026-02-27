@@ -65,6 +65,9 @@ The file format is:
 | `name` | Optional user-defined name |
 | `isFlagged` | Whether session is flagged |
 | `model` | Model override for this session |
+| `llmConnection` | LLM connection slug (locked after first message) |
+| `connectionLocked` | Whether the connection is locked (cannot change after first message) |
+| `thinkingLevel` | Thinking level: `"off"`, `"think"`, or `"max"` |
 | `workingDirectory` | Working directory for bash commands |
 | `enabledSourceSlugs` | Array of active source slugs |
 
@@ -86,6 +89,26 @@ Conversations can be organized by status to track your workflow:
 | **Cancelled** | Closed | Conversations that are no longer needed |
 
 **Open** statuses appear in your inbox; **Closed** statuses are archived. You can [customize statuses](/statuses/overview) to match your workflow—add custom statuses like "Blocked" or "Waiting" to fit your process.
+
+## Batch Operations
+
+Select multiple sessions to perform bulk actions. Hold **⌘ Click** (macOS) or **Ctrl+Click** (Windows/Linux) to toggle individual sessions, or **⇧ Click** for range selection.
+
+When multiple sessions are selected, a batch action panel appears with these operations:
+
+| Action | Description |
+|--------|-------------|
+| **Change Status** | Set the same status on all selected sessions |
+| **Set Labels** | Toggle labels across all selected sessions |
+| **Flag / Unflag** | Flag or unflag all selected sessions |
+| **Archive** | Archive all selected sessions |
+| **Delete** | Permanently delete all selected sessions |
+
+Press **Esc** to clear the selection.
+
+<Tip>
+Right-click on a multi-selection to access these same actions via a context menu, which also includes flag/unflag and delete options.
+</Tip>
 
 ## Conversation Continuity
 

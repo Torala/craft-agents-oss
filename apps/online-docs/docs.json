@@ -79,9 +79,9 @@
             ]
           },
           {
-            "group": "Hooks",
+            "group": "Automations",
             "pages": [
-              "hooks/overview"
+              "automations/overview"
             ]
           },
           {
