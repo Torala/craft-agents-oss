@@ -394,27 +394,32 @@ export function buildMcpServers(config: BuildConfig): void {
   console.log('Building MCP servers...');
 
   mkdirSync(join(sessionDir, 'dist'), { recursive: true });
-  mkdirSync(join(piDir, 'dist'), { recursive: true });
 
   execSync(
     `bun build ${join(sessionDir, 'src', 'index.ts')} --outfile ${sessionOut} --target node --format cjs`,
     { cwd: rootDir, stdio: 'inherit', shell: true }
   );
 
+  if (!existsSync(sessionOut)) {
+    throw new Error(`Session MCP server output not found at ${sessionOut}`);
+  }
+
   // Pi agent server uses --target=bun --format=esm because its Pi SDK deps are ESM-only.
   // --target=node --format=cjs leaves ESM deps as external require() calls that fail at runtime.
   // koffi is marked external because it's a native N-API module — bun can't inline .node binaries
   // and inlining its JS breaks the native binary resolution paths.
-  execSync(
-    `bun build ${join(piDir, 'src', 'index.ts')} --outdir ${join(piDir, 'dist')} --target bun --format esm --external koffi`,
-    { cwd: rootDir, stdio: 'inherit', shell: true }
-  );
-
-  if (!existsSync(sessionOut)) {
-    throw new Error(`Session MCP server output not found at ${sessionOut}`);
-  }
-  if (!existsSync(piOut)) {
-    throw new Error(`Pi agent server output not found at ${piOut}`);
+  // Optional: skip if package directory is missing (e.g., not synced to OSS).
+  if (existsSync(join(piDir, 'src'))) {
+    mkdirSync(join(piDir, 'dist'), { recursive: true });
+    execSync(
+      `bun build ${join(piDir, 'src', 'index.ts')} --outdir ${join(piDir, 'dist')} --target bun --format esm --external koffi`,
+      { cwd: rootDir, stdio: 'inherit', shell: true }
+    );
+    if (!existsSync(piOut)) {
+      throw new Error(`Pi agent server output not found at ${piOut}`);
+    }
+  } else {
+    console.warn('Warning: Pi agent server package not found. Pi SDK sessions will not work.');
   }
 }
 
@@ -431,7 +436,7 @@ export function verifyMcpServersExist(config: BuildConfig): void {
     throw new Error(`Session MCP server not found at ${sessionPath}`);
   }
   if (!existsSync(piPath)) {
-    throw new Error(`Pi agent server not found at ${piPath}`);
+    console.warn(`Warning: Pi agent server not found at ${piPath}. Pi SDK sessions will not work.`);
   }
 }
 
