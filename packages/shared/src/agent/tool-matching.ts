@@ -166,11 +166,13 @@ export function extractToolStarts(
       if (hasNewInput) {
         // Re-emit with complete input (assistant message has full input, stream has {})
         const { intent, displayName } = extractToolMetadata(toolBlock, sessionDir);
+        // Strip internal metadata fields — already captured via extractToolMetadata above
+        const { _displayName: _dn, _intent: _in, ...cleanInput } = toolBlock.input as Record<string, unknown>;
         events.push({
           type: 'tool_start',
           toolName: toolBlock.name,
           toolUseId: toolBlock.id,
-          input: toolBlock.input,
+          input: cleanInput,
           intent,
           displayName,
           turnId,
@@ -183,12 +185,14 @@ export function extractToolStarts(
     emittedToolStartIds.add(toolBlock.id);
 
     const { intent, displayName } = extractToolMetadata(toolBlock, sessionDir);
+    // Strip internal metadata fields — already captured via extractToolMetadata above
+    const { _displayName: _dn2, _intent: _in2, ...cleanInput2 } = toolBlock.input as Record<string, unknown>;
 
     events.push({
       type: 'tool_start',
       toolName: toolBlock.name,
       toolUseId: toolBlock.id,
-      input: toolBlock.input,
+      input: cleanInput2,
       intent,
       displayName,
       turnId,
