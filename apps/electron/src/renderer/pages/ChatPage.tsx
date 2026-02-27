@@ -41,6 +41,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     onSendMessage,
     onOpenFile,
     onOpenUrl,
+    workspaces,
     onRespondToPermission,
     onRespondToCredential,
     onMarkSessionRead,
@@ -220,22 +221,61 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
 
   // Working directory for this session
   const workingDirectory = session?.workingDirectory
+  const activeWorkspace = React.useMemo(
+    () => workspaces.find((w) => w.id === activeWorkspaceId) || null,
+    [workspaces, activeWorkspaceId]
+  )
   const handleWorkingDirectoryChange = React.useCallback(async (path: string) => {
     if (!session) return
     await window.electronAPI.sessionCommand(session.id, { type: 'updateWorkingDirectory', dir: path })
   }, [session])
 
   const handleOpenFile = React.useCallback(
-    (path: string) => {
-      // Resolve bare relative paths against the session working directory
-      const resolved = (path.startsWith('/') || path.startsWith('~/'))
-        ? path
-        : workingDirectory
-          ? `${workingDirectory}/${path}`
-          : path
+    async (path: string) => {
+      // Resolve bare relative paths against session working directory,
+      // or workspace root as a fallback when workingDirectory is not set.
+      const resolved = (() => {
+        if (path.startsWith('/') || path.startsWith('~/')) return path
+
+        const baseDir = workingDirectory || activeWorkspace?.rootPath
+        if (!baseDir) return path
+
+        const cleanedBase = baseDir.replace(/\/+$/, '')
+        const cleanedPath = path.replace(/^\.\//, '')
+        return `${cleanedBase}/${cleanedPath}`
+      })()
+
+      // Smart fallback for missing files in AI output:
+      // if the exact path doesn't exist, search nearby for same basename
+      // (e.g. markdown/linkify.test.ts -> markdown/__tests__/linkify.test.ts).
+      if (resolved.startsWith('/')) {
+        const lastSlash = resolved.lastIndexOf('/')
+        if (lastSlash > 0 && lastSlash < resolved.length - 1) {
+          const parentDir = resolved.slice(0, lastSlash)
+          const fileName = resolved.slice(lastSlash + 1)
+          try {
+            const matches = await window.electronAPI.searchFiles(parentDir, fileName)
+            const files = matches.filter((m) => m.type === 'file' && m.name === fileName)
+            const exact = files.find((m) => m.path === resolved)
+            if (exact) {
+              onOpenFile(exact.path)
+              return
+            }
+
+            if (files.length === 1) {
+              onOpenFile(files[0].path)
+              toast.info(`Opened closest match: ${files[0].relativePath}`)
+              return
+            }
+          } catch {
+            // Search fallback is best-effort; proceed with original resolved path.
+          }
+        }
+      }
+
       onOpenFile(resolved)
     },
-    [onOpenFile, workingDirectory]
+    [onOpenFile, workingDirectory, activeWorkspace?.rootPath]
   )
 
   const handleOpenUrl = React.useCallback(

@@ -71,7 +71,7 @@ export class BrowserPaneManager {
       minWidth: 700,
       minHeight: 500,
       show: shouldShow,
-      backgroundColor: '#111111',
+      backgroundColor: '#ffffff',
       webPreferences: {
         partition: SESSION_PARTITION,
         session: ses,
@@ -107,8 +107,51 @@ export class BrowserPaneManager {
     this.emitStateChange(instance)
     mainLog.info(`[browser-pane] Created instance: ${instanceId} (show=${shouldShow})`)
 
-    // Keep initial page deterministic for browser tool flows
-    void window.loadURL('about:blank')
+    // Keep initial page deterministic for browser tool flows, but render
+    // a lightweight start screen so newly opened windows are not blank.
+    void window.loadURL('about:blank').then(() => {
+      return window.webContents.executeJavaScript(`
+        document.documentElement.innerHTML = ` + JSON.stringify(`
+          <html>
+            <head>
+              <meta charset="utf-8" />
+              <title>Browser Ready</title>
+              <style>
+                :root { color-scheme: light dark; }
+                body {
+                  margin: 0;
+                  min-height: 100vh;
+                  display: grid;
+                  place-items: center;
+                  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+                  background: #f8fafc;
+                  color: #0f172a;
+                }
+                .card {
+                  max-width: 540px;
+                  margin: 24px;
+                  padding: 24px;
+                  border-radius: 12px;
+                  background: rgba(255,255,255,0.88);
+                  border: 1px solid rgba(15,23,42,0.12);
+                  box-shadow: 0 10px 30px rgba(15,23,42,0.08);
+                }
+                h1 { margin: 0 0 10px; font-size: 20px; }
+                p { margin: 0; line-height: 1.45; font-size: 14px; opacity: 0.85; }
+              </style>
+            </head>
+            <body>
+              <div class="card">
+                <h1>Browser window is ready</h1>
+                <p>Use browser tools to navigate and interact with pages (for example: browser_navigate, browser_snapshot, browser_click).</p>
+              </div>
+            </body>
+          </html>
+        `) + `;
+      `)
+    }).catch((error) => {
+      mainLog.warn(`[browser-pane] Failed to initialize start page for ${instanceId}: ${error instanceof Error ? error.message : String(error)}`)
+    })
 
     return instanceId
   }

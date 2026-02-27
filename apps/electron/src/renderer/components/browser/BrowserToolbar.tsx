@@ -17,6 +17,7 @@ interface BrowserToolbarProps {
   onGoForward: () => void
   onReload: () => void
   onStop: () => void
+  compact?: boolean
 }
 
 export function BrowserToolbar({
@@ -26,6 +27,7 @@ export function BrowserToolbar({
   onGoForward,
   onReload,
   onStop,
+  compact = false,
 }: BrowserToolbarProps) {
   const [urlInput, setUrlInput] = useState('')
   const [isFocused, setIsFocused] = useState(false)
@@ -71,7 +73,9 @@ export function BrowserToolbar({
   const isLoading = instanceInfo?.isLoading ?? false
 
   return (
-    <div className="flex items-center gap-1 px-2 py-1.5 border-b border-border bg-background/80">
+    <div className={compact
+      ? 'flex items-center gap-1 px-1.5 py-0.5 rounded-[8px] border border-foreground/10 bg-background/70 min-w-0'
+      : 'flex items-center gap-1 px-2 py-1.5 border-b border-border bg-background/80'}>
       {/* Navigation buttons */}
       <div className="flex items-center gap-0.5">
         <Tooltip>
@@ -135,7 +139,9 @@ export function BrowserToolbar({
             onBlur={handleBlur}
             onKeyDown={handleKeyDown}
             placeholder="Enter URL or search..."
-            className="w-full h-[30px] px-3 pl-8 rounded-lg border border-foreground/10 bg-foreground/[0.03] text-[13px] text-foreground placeholder:text-foreground/30 focus:outline-none focus:border-accent/50 focus:bg-background transition-colors"
+            className={compact
+              ? 'w-full h-[28px] px-3 pl-8 rounded-lg border border-foreground/10 bg-foreground/[0.03] text-[13px] text-foreground placeholder:text-foreground/30 focus:outline-none focus:border-accent/50 focus:bg-background transition-colors'
+              : 'w-full h-[30px] px-3 pl-8 rounded-lg border border-foreground/10 bg-foreground/[0.03] text-[13px] text-foreground placeholder:text-foreground/30 focus:outline-none focus:border-accent/50 focus:bg-background transition-colors'}
             spellCheck={false}
             autoComplete="off"
             autoCorrect="off"

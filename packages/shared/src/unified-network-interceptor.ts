@@ -81,6 +81,29 @@ function injectMetadataFields(
 }
 
 /**
+ * Normalize a tool schema so metadata can always be injected, including zero-arg
+ * tools whose schema may be `{ type: "object" }` without a `properties` key.
+ *
+ * Exported for focused unit tests.
+ */
+export function injectMetadataIntoToolSchema<T extends {
+  properties?: Record<string, unknown>;
+  required?: string[];
+  [key: string]: unknown;
+}>(
+  schema: T,
+): T & { properties: Record<string, unknown>; required: string[] } {
+  const normalizedProperties = schema.properties && typeof schema.properties === 'object' ? schema.properties : {};
+  const normalizedRequired = Array.isArray(schema.required) ? schema.required : [];
+  const result = injectMetadataFields(normalizedProperties, normalizedRequired);
+  return {
+    ...schema,
+    properties: result.properties,
+    required: result.required,
+  };
+}
+
+/**
  * Extract _intent/_displayName from a parsed tool input and store in toolMetadataStore.
  * Shared by both SSE processors (Anthropic strips, OpenAI captures).
  *
@@ -376,17 +399,19 @@ const anthropicAdapter: ApiAdapter = {
         continue;
       }
 
-      if (tool.input_schema?.properties) {
-        const result = injectMetadataFields(tool.input_schema.properties as Record<string, unknown>, tool.input_schema.required);
-        tool.input_schema.properties = result.properties;
-        tool.input_schema.required = result.required;
-        // External MCP servers may set additionalProperties: false which would
-        // cause the API to reject _intent/_displayName in tool inputs.
-        if ((tool.input_schema as Record<string, unknown>).additionalProperties === false) {
-          delete (tool.input_schema as Record<string, unknown>).additionalProperties;
-        }
-        modifiedCount++;
+      if (!tool.input_schema || typeof tool.input_schema !== 'object') {
+        continue;
       }
+
+      const updatedSchema = injectMetadataIntoToolSchema(tool.input_schema);
+      tool.input_schema.properties = updatedSchema.properties;
+      tool.input_schema.required = updatedSchema.required;
+      // External MCP servers may set additionalProperties: false which would
+      // cause the API to reject _intent/_displayName in tool inputs.
+      if ((tool.input_schema as Record<string, unknown>).additionalProperties === false) {
+        delete (tool.input_schema as Record<string, unknown>).additionalProperties;
+      }
+      modifiedCount++;
     }
 
     if (modifiedCount > 0) {
@@ -715,7 +740,7 @@ const openAiAdapter: ApiAdapter = {
     let modifiedCount = 0;
 
     for (const tool of tools) {
-      if (tool.type !== 'function' || !tool.function?.parameters?.properties) continue;
+      if (tool.type !== 'function' || !tool.function?.parameters) continue;
 
       // MCP tools always get metadata regardless of the feature flag — they're
       // lower-volume than built-in tools and the metadata drives source-specific
@@ -726,9 +751,9 @@ const openAiAdapter: ApiAdapter = {
       }
 
       const params = tool.function.parameters;
-      const result = injectMetadataFields(params.properties as Record<string, unknown>, params.required);
-      params.properties = result.properties;
-      params.required = result.required;
+      const updatedSchema = injectMetadataIntoToolSchema(params);
+      params.properties = updatedSchema.properties;
+      params.required = updatedSchema.required;
       // External MCP servers may set additionalProperties: false which would
       // cause validation to reject _intent/_displayName in tool inputs.
       if ((params as Record<string, unknown>).additionalProperties === false) {
@@ -940,15 +965,15 @@ const openAiResponsesAdapter: ApiAdapter = {
     let modifiedCount = 0;
 
     for (const tool of tools) {
-      if (tool.type !== 'function' || !tool.parameters?.properties) continue;
+      if (tool.type !== 'function' || !tool.parameters) continue;
 
       const isMcpTool = tool.name?.startsWith('mcp__');
       if (!richDescriptions && !isMcpTool) continue;
 
       const params = tool.parameters;
-      const result = injectMetadataFields(params.properties as Record<string, unknown>, params.required);
-      params.properties = result.properties;
-      params.required = result.required;
+      const updatedSchema = injectMetadataIntoToolSchema(params);
+      params.properties = updatedSchema.properties;
+      params.required = updatedSchema.required;
       if ((params as Record<string, unknown>).additionalProperties === false) {
         delete (params as Record<string, unknown>).additionalProperties;
       }

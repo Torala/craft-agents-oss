@@ -21,6 +21,16 @@ export const browserInstanceCountAtom = atom<number>(
   (get) => get(browserInstancesMapAtom).size
 )
 
+/** Currently active browser instance ID (selected/focused by user interactions) */
+export const activeBrowserInstanceIdAtom = atom<string | null>(null)
+
+/** Derived: currently active browser instance info */
+export const activeBrowserInstanceAtom = atom<BrowserInstanceInfo | null>((get) => {
+  const activeId = get(activeBrowserInstanceIdAtom)
+  if (!activeId) return null
+  return get(browserInstancesMapAtom).get(activeId) ?? null
+})
+
 /** Update a single browser instance (from IPC state change event) */
 export const updateBrowserInstanceAtom = atom(
   null,

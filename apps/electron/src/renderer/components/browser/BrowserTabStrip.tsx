@@ -5,8 +5,8 @@
  * Clicking a badge focuses its dedicated browser window.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { useAtomValue, useSetAtom } from 'jotai'
+import { useCallback, useEffect, useRef } from 'react'
+import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import * as Icons from 'lucide-react'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@craft-agent/ui'
 import {
@@ -16,6 +16,7 @@ import {
   StyledDropdownMenuItem,
 } from '@/components/ui/styled-dropdown'
 import {
+  activeBrowserInstanceIdAtom,
   browserInstancesAtom,
   setBrowserInstancesAtom,
   updateBrowserInstanceAtom,
@@ -32,7 +33,7 @@ export function BrowserTabStrip() {
   const setInstances = useSetAtom(setBrowserInstancesAtom)
   const updateInstance = useSetAtom(updateBrowserInstanceAtom)
   const removeInstance = useSetAtom(removeBrowserInstanceAtom)
-  const [activeInstanceId, setActiveInstanceId] = useState<string | null>(null)
+  const [activeInstanceId, setActiveInstanceId] = useAtom(activeBrowserInstanceIdAtom)
   const instancesRef = useRef(instances)
 
   useEffect(() => {

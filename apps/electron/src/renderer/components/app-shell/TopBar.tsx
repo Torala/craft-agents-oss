@@ -35,8 +35,11 @@ import {
 import type { MenuItem, MenuSection, SettingsMenuItem } from "../../../shared/menu-schema"
 import { SETTINGS_ICONS } from "../icons/SettingsIcons"
 import { SquarePenRounded } from "../icons/SquarePenRounded"
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
+import { useAtomValue } from 'jotai'
 import { BrowserTabStrip } from "../browser/BrowserTabStrip"
+import { BrowserToolbar } from '../browser/BrowserToolbar'
+import { activeBrowserInstanceAtom, browserInstanceCountAtom } from '@/atoms/browser-pane'
 
 // --- Menu rendering (moved from AppMenu) ---
 
@@ -176,6 +179,34 @@ export function TopBar({
   useEffect(() => {
     window.electronAPI.isDebugMode().then(setIsDebugMode)
   }, [])
+
+  const browserInstanceCount = useAtomValue(browserInstanceCountAtom)
+  const activeBrowserInstance = useAtomValue(activeBrowserInstanceAtom)
+
+  const handleBrowserNavigate = useCallback((url: string) => {
+    if (!activeBrowserInstance) return
+    void window.electronAPI.browserPane.navigate(activeBrowserInstance.id, url)
+  }, [activeBrowserInstance])
+
+  const handleBrowserGoBack = useCallback(() => {
+    if (!activeBrowserInstance) return
+    void window.electronAPI.browserPane.goBack(activeBrowserInstance.id)
+  }, [activeBrowserInstance])
+
+  const handleBrowserGoForward = useCallback(() => {
+    if (!activeBrowserInstance) return
+    void window.electronAPI.browserPane.goForward(activeBrowserInstance.id)
+  }, [activeBrowserInstance])
+
+  const handleBrowserReload = useCallback(() => {
+    if (!activeBrowserInstance) return
+    void window.electronAPI.browserPane.reload(activeBrowserInstance.id)
+  }, [activeBrowserInstance])
+
+  const handleBrowserStop = useCallback(() => {
+    if (!activeBrowserInstance) return
+    void window.electronAPI.browserPane.stop(activeBrowserInstance.id)
+  }, [activeBrowserInstance])
 
   const actionHandlers: MenuActionHandlers = {
     toggleFocusMode: onToggleFocusMode,
@@ -319,34 +350,48 @@ export function TopBar({
           className="pointer-events-auto titlebar-no-drag flex items-center gap-1"
           style={{ width: '50%', maxWidth: 640 }}
         >
-          {/* Back */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <TopBarButton onClick={onBack} disabled={!canGoBack} aria-label="Go back">
-                <Icons.ChevronLeft className="h-[18px] w-[18px] text-foreground/70" strokeWidth={1.5} />
-              </TopBarButton>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">Back {goBackHotkey}</TooltipContent>
-          </Tooltip>
+          {browserInstanceCount > 0 && activeBrowserInstance ? (
+            <BrowserToolbar
+              compact
+              instanceInfo={activeBrowserInstance}
+              onNavigate={handleBrowserNavigate}
+              onGoBack={handleBrowserGoBack}
+              onGoForward={handleBrowserGoForward}
+              onReload={handleBrowserReload}
+              onStop={handleBrowserStop}
+            />
+          ) : (
+            <>
+              {/* Back */}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <TopBarButton onClick={onBack} disabled={!canGoBack} aria-label="Go back">
+                    <Icons.ChevronLeft className="h-[18px] w-[18px] text-foreground/70" strokeWidth={1.5} />
+                  </TopBarButton>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">Back {goBackHotkey}</TooltipContent>
+              </Tooltip>
 
-          {/* Forward */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <TopBarButton onClick={onForward} disabled={!canGoForward} aria-label="Go forward">
-                <Icons.ChevronRight className="h-[18px] w-[18px] text-foreground/70" strokeWidth={1.5} />
-              </TopBarButton>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">Forward {goForwardHotkey}</TooltipContent>
-          </Tooltip>
+              {/* Forward */}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <TopBarButton onClick={onForward} disabled={!canGoForward} aria-label="Go forward">
+                    <Icons.ChevronRight className="h-[18px] w-[18px] text-foreground/70" strokeWidth={1.5} />
+                  </TopBarButton>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">Forward {goForwardHotkey}</TooltipContent>
+              </Tooltip>
 
-          {/* Search field (visual placeholder) */}
-          <button
-            type="button"
-            className="ml-1 flex-1 min-w-0 flex items-center justify-center gap-2 h-[30px] px-3 rounded-[8px] border border-foreground/6 text-[13px] text-foreground/40 hover:bg-foreground/5 hover:text-foreground transition-colors cursor-pointer"
-          >
-            <Icons.Search className="h-3.5 w-3.5 shrink-0" />
-            <span className="truncate">Search {workspaceName || 'Workspace'}</span>
-          </button>
+              {/* Search field (visual placeholder) */}
+              <button
+                type="button"
+                className="ml-1 flex-1 min-w-0 flex items-center justify-center gap-2 h-[30px] px-3 rounded-[8px] border border-foreground/6 text-[13px] text-foreground/40 hover:bg-foreground/5 hover:text-foreground transition-colors cursor-pointer"
+              >
+                <Icons.Search className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">Search {workspaceName || 'Workspace'}</span>
+              </button>
+            </>
+          )}
         </div>
       </div>
 

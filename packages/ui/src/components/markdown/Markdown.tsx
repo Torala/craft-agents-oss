@@ -128,13 +128,22 @@ function createComponents(
     a: ({ href, children }) => {
       const handleClick = (e: React.MouseEvent) => {
         e.preventDefault()
-        if (href) {
-          // Check if it's a file path
-          if (FILE_PATH_REGEX.test(href) && onFileClick) {
-            onFileClick(href)
-          } else if (onUrlClick) {
-            onUrlClick(href)
-          }
+
+        // Some AI outputs include raw HTML anchors with empty href but path text content.
+        // Fallback to the anchor text when href is missing/empty.
+        const fallbackText = React.Children.toArray(children)
+          .map((child) => (typeof child === 'string' ? child : ''))
+          .join('')
+          .trim()
+
+        const target = (href?.trim() || fallbackText)
+        if (!target) return
+
+        // Check if it's a file path
+        if (FILE_PATH_REGEX.test(target) && onFileClick) {
+          onFileClick(target)
+        } else if (onUrlClick) {
+          onUrlClick(target)
         }
       }
 
