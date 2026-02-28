@@ -368,16 +368,11 @@ export function TopBar({
       <div className="pointer-events-auto titlebar-no-drag flex items-center gap-1">
         <BrowserTabStrip activeSessionId={activeSessionId} />
         <DropdownMenu>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <DropdownMenuTrigger asChild>
-                <TopBarButton aria-label="Add panel menu">
-                  <Icons.Plus className="h-4 w-4 text-foreground/50" strokeWidth={1.5} />
-                </TopBarButton>
-              </DropdownMenuTrigger>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">New Panel</TooltipContent>
-          </Tooltip>
+          <DropdownMenuTrigger asChild>
+            <TopBarButton aria-label="Add panel menu" className="ml-1 h-[26px] w-[26px] rounded-lg">
+              <Icons.Plus className="h-4 w-4 text-foreground/50" strokeWidth={1.5} />
+            </TopBarButton>
+          </DropdownMenuTrigger>
           <StyledDropdownMenuContent align="end" minWidth="min-w-56">
             <StyledDropdownMenuItem onClick={onAddSessionPanel}>
               <SquarePenRounded className="h-3.5 w-3.5" />
@@ -392,16 +387,11 @@ export function TopBar({
 
         {/* Help button */}
         <DropdownMenu>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <DropdownMenuTrigger asChild>
-                <TopBarButton aria-label="Help & Documentation">
-                  <Icons.HelpCircle className="h-4 w-4 text-foreground/50" strokeWidth={1.5} />
-                </TopBarButton>
-              </DropdownMenuTrigger>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">Help & Documentation</TooltipContent>
-          </Tooltip>
+          <DropdownMenuTrigger asChild>
+            <TopBarButton aria-label="Help & Documentation" className="h-[26px] w-[26px] rounded-lg">
+              <Icons.HelpCircle className="h-4 w-4 text-foreground/50" strokeWidth={1.5} />
+            </TopBarButton>
+          </DropdownMenuTrigger>
           <StyledDropdownMenuContent align="end" minWidth="min-w-48">
             <StyledDropdownMenuItem onClick={() => window.electronAPI.openUrl(getDocUrl('sources'))}>
               <Icons.DatabaseZap className="h-3.5 w-3.5" />

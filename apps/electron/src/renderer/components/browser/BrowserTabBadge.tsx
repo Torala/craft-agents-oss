@@ -29,8 +29,8 @@ export const BrowserTabBadge = forwardRef<HTMLButtonElement, BrowserTabBadgeProp
   const foregroundClass = instance.themeColor
     ? (isDarkThemeColor
       ? 'text-white/90 hover:bg-white/10'
-      : 'text-foreground/90 hover:bg-black/5')
-    : 'text-foreground/60 hover:bg-foreground/[0.03] hover:text-foreground/85'
+      : 'text-black/80 hover:bg-black/5')
+    : 'text-foreground hover:bg-foreground/[0.03]'
 
   return (
     <button
@@ -42,7 +42,6 @@ export const BrowserTabBadge = forwardRef<HTMLButtonElement, BrowserTabBadgeProp
         bg-background
         ${foregroundClass}
         ${instance.agentControlActive ? 'border border-accent' : ''}
-        ${instance.isVisible ? '' : 'opacity-70'}
         ${className ?? ''}
       `}
       style={{

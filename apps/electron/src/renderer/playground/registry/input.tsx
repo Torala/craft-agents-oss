@@ -1,8 +1,11 @@
 import * as React from 'react'
+import { useSetAtom } from 'jotai'
 import type { ComponentEntry } from './types'
 import { cn } from '@/lib/utils'
 import { MODELS } from '@config/models'
 import type { PermissionMode } from '@craft-agent/shared/agent/modes'
+import { setBrowserInstancesAtom } from '@/atoms/browser-pane'
+import type { BrowserInstanceInfo } from '../../../shared/types'
 
 // Import REAL components from the main app
 import { FreeFormInput } from '@/components/app-shell/input/FreeFormInput'
@@ -35,6 +38,12 @@ interface FreeFormInputPlaygroundProps {
   inputValue?: string
   onInputChange?: (value: string) => void
   unstyled?: boolean
+  sessionId?: string
+  showBrowserStatus?: boolean
+  browserIsLoading?: boolean
+  browserThemeColor?: string
+  browserUrl?: string
+  browserVisible?: boolean
 }
 
 function FreeFormInputPlayground({
@@ -47,14 +56,55 @@ function FreeFormInputPlayground({
   inputValue,
   onInputChange,
   unstyled = false,
+  sessionId = 'playground-session',
+  showBrowserStatus = false,
+  browserIsLoading = false,
+  browserThemeColor = '#0b57d0',
+  browserUrl = 'https://github.com/craftdocs/craft-agents',
+  browserVisible = true,
 }: FreeFormInputPlaygroundProps) {
   // Local state for options since playground doesn't have parent state management
   const [model, setModel] = React.useState(currentModel)
   const [ultrathink, setUltrathink] = React.useState(ultrathinkEnabled)
   const [mode, setMode] = React.useState<PermissionMode>(permissionMode)
+  const setBrowserInstances = useSetAtom(setBrowserInstancesAtom)
 
   React.useEffect(() => setUltrathink(ultrathinkEnabled), [ultrathinkEnabled])
   React.useEffect(() => setMode(permissionMode), [permissionMode])
+
+  React.useEffect(() => {
+    if (!showBrowserStatus) {
+      setBrowserInstances([])
+      return () => setBrowserInstances([])
+    }
+
+    const browserInstance: BrowserInstanceInfo = {
+      id: 'playground-browser-1',
+      url: browserUrl,
+      title: 'Playground Browser',
+      favicon: 'https://www.google.com/s2/favicons?domain=github.com&sz=64',
+      isLoading: browserIsLoading,
+      canGoBack: false,
+      canGoForward: false,
+      boundSessionId: sessionId,
+      ownerType: 'session',
+      ownerSessionId: sessionId,
+      isVisible: browserVisible,
+      agentControlActive: true,
+      themeColor: browserThemeColor || null,
+    }
+
+    setBrowserInstances([browserInstance])
+    return () => setBrowserInstances([])
+  }, [
+    setBrowserInstances,
+    showBrowserStatus,
+    browserUrl,
+    browserIsLoading,
+    sessionId,
+    browserVisible,
+    browserThemeColor,
+  ])
 
   return (
     <FreeFormInput
@@ -69,6 +119,7 @@ function FreeFormInputPlayground({
       onPermissionModeChange={setMode}
       inputValue={inputValue}
       onInputChange={onInputChange}
+      sessionId={sessionId}
       onSubmit={() => {}} // No-op for playground
       onStop={() => {}} // No-op for playground
       unstyled={unstyled}
@@ -266,16 +317,40 @@ export const inputComponents: ComponentEntry[] = [
         defaultValue: 'claude-sonnet-4-20250514',
       },
       {
-        name: 'safeModeEnabled',
-        description: 'Safe mode badge active',
-        control: { type: 'boolean' },
-        defaultValue: false,
-      },
-      {
         name: 'ultrathinkEnabled',
         description: 'Ultrathink badge active',
         control: { type: 'boolean' },
         defaultValue: false,
+      },
+      {
+        name: 'showBrowserStatus',
+        description: 'Show toolbar browser status slot for this session',
+        control: { type: 'boolean' },
+        defaultValue: false,
+      },
+      {
+        name: 'browserIsLoading',
+        description: 'Show loading spinner in browser status slot',
+        control: { type: 'boolean' },
+        defaultValue: false,
+      },
+      {
+        name: 'browserThemeColor',
+        description: 'Theme color used for browser status background',
+        control: { type: 'string', placeholder: '#0b57d0' },
+        defaultValue: '#0b57d0',
+      },
+      {
+        name: 'browserUrl',
+        description: 'Browser URL used to render hostname in status slot',
+        control: { type: 'string', placeholder: 'https://example.com' },
+        defaultValue: 'https://github.com/craftdocs/craft-agents',
+      },
+      {
+        name: 'browserVisible',
+        description: 'Whether the bound browser window is currently visible',
+        control: { type: 'boolean' },
+        defaultValue: true,
       },
     ],
     variants: [
@@ -283,6 +358,48 @@ export const inputComponents: ComponentEntry[] = [
       { name: 'With Badges', props: { currentModel: 'claude-sonnet-4-20250514', permissionMode: 'safe' as PermissionMode, ultrathinkEnabled: true } },
       { name: 'Processing', props: { currentModel: 'claude-sonnet-4-20250514', isProcessing: true } },
       { name: 'Disabled', props: { currentModel: 'claude-sonnet-4-20250514', disabled: true } },
+      {
+        name: 'Browser Status / Themed',
+        props: {
+          currentModel: 'claude-sonnet-4-20250514',
+          showBrowserStatus: true,
+          browserThemeColor: '#1f6feb',
+          browserUrl: 'https://github.com/craftdocs/craft-agents',
+          browserVisible: true,
+        },
+      },
+      {
+        name: 'Browser Status / Loading',
+        props: {
+          currentModel: 'claude-sonnet-4-20250514',
+          showBrowserStatus: true,
+          browserIsLoading: true,
+          browserThemeColor: '#0d1117',
+          browserUrl: 'https://docs.craft.do/changelog',
+          browserVisible: true,
+        },
+      },
+      {
+        name: 'Browser Status / No Theme',
+        props: {
+          currentModel: 'claude-sonnet-4-20250514',
+          showBrowserStatus: true,
+          browserThemeColor: '',
+          browserUrl: 'https://example.com',
+          browserVisible: true,
+        },
+      },
+      {
+        name: 'Processing + Browser',
+        props: {
+          currentModel: 'claude-sonnet-4-20250514',
+          isProcessing: true,
+          showBrowserStatus: true,
+          browserThemeColor: '#fbbc04',
+          browserUrl: 'https://news.ycombinator.com',
+          browserVisible: true,
+        },
+      },
     ],
     mockData: () => ({}),
   },

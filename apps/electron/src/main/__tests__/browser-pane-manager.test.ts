@@ -300,6 +300,21 @@ describe('BrowserPaneManager', () => {
     )
   })
 
+  it('clears navigation timeout timer on success', async () => {
+    manager.createInstance('nav-timeout')
+
+    const originalClearTimeout = globalThis.clearTimeout
+    const clearTimeoutSpy = mock((handle: Parameters<typeof clearTimeout>[0]) => originalClearTimeout(handle))
+    ;(globalThis as any).clearTimeout = clearTimeoutSpy
+
+    try {
+      await manager.navigate('nav-timeout', 'https://example.com')
+      expect(clearTimeoutSpy.mock.calls.length).toBeGreaterThan(0)
+    } finally {
+      ;(globalThis as any).clearTimeout = originalClearTimeout
+    }
+  })
+
   it('focus brings the instance window to front', () => {
     manager.createInstance('f1')
     manager.focus('f1')
@@ -309,6 +324,36 @@ describe('BrowserPaneManager', () => {
 
     expect(instance.window.show).toHaveBeenCalled()
     expect(instance.window.focus).toHaveBeenCalled()
+  })
+
+  it('dedupes repeated focus calls before ready-to-show', () => {
+    manager.createInstance('f2')
+
+    manager.focus('f2')
+    manager.focus('f2')
+    manager.focus('f2')
+
+    const instance = (manager as any).instances.get('f2')
+    instance.window._emit('ready-to-show')
+
+    expect(instance.window.show.mock.calls.length).toBe(1)
+    expect(instance.window.focus.mock.calls.length).toBe(1)
+  })
+
+  it('cancels deferred pre-ready focus when hide happens first', () => {
+    manager.createInstance('f-hide-race')
+
+    manager.focus('f-hide-race')
+    manager.hide('f-hide-race')
+
+    const instance = (manager as any).instances.get('f-hide-race')
+    const showCallsBeforeReady = instance.window.show.mock.calls.length
+    const focusCallsBeforeReady = instance.window.focus.mock.calls.length
+
+    instance.window._emit('ready-to-show')
+
+    expect(instance.window.show.mock.calls.length).toBe(showCallsBeforeReady)
+    expect(instance.window.focus.mock.calls.length).toBe(focusCallsBeforeReady)
   })
 
   it('user close hides window and keeps instance alive', () => {
@@ -431,6 +476,61 @@ describe('BrowserPaneManager', () => {
     expect(manager.listInstances().find(i => i.id === 'theme-null')?.themeColor).toBeNull()
   })
 
+  it('replays toolbar state with theme color when window is shown', () => {
+    manager.createInstance('theme-show-replay')
+    const instance = (manager as any).instances.get('theme-show-replay')
+
+    instance.currentUrl = 'https://example.com'
+    instance.title = 'Example'
+    instance.canGoBack = true
+    instance.canGoForward = false
+    instance.themeColor = '#123456'
+
+    const sendsBeforeShow = instance.window.webContents.send.mock.calls.length
+    instance.window._emit('show')
+
+    const sendCallsAfterShow = instance.window.webContents.send.mock.calls.slice(sendsBeforeShow)
+    expect(sendCallsAfterShow).toContainEqual([
+      'browser-toolbar:state-update',
+      {
+        url: 'https://example.com',
+        title: 'Example',
+        isLoading: false,
+        canGoBack: true,
+        canGoForward: false,
+        themeColor: '#123456',
+      },
+    ])
+  })
+
+  it('replays full toolbar state when toolbar renderer finishes loading', () => {
+    manager.createInstance('toolbar-finish-load-replay')
+    const instance = (manager as any).instances.get('toolbar-finish-load-replay')
+
+    instance.currentUrl = 'https://craft.do'
+    instance.title = 'Craft'
+    instance.isLoading = true
+    instance.canGoBack = true
+    instance.canGoForward = true
+    instance.themeColor = '#654321'
+
+    const sendsBeforeFinishLoad = instance.window.webContents.send.mock.calls.length
+    instance.window.webContents._emit('did-finish-load')
+
+    const sendCallsAfterFinishLoad = instance.window.webContents.send.mock.calls.slice(sendsBeforeFinishLoad)
+    expect(sendCallsAfterFinishLoad).toContainEqual([
+      'browser-toolbar:state-update',
+      {
+        url: 'https://craft.do',
+        title: 'Craft',
+        isLoading: true,
+        canGoBack: true,
+        canGoForward: true,
+        themeColor: '#654321',
+      },
+    ])
+  })
+
   it('runs early theme extraction shortly after navigation', async () => {
     manager.createInstance('theme-early')
     const instance = (manager as any).instances.get('theme-early')
@@ -441,6 +541,17 @@ describe('BrowserPaneManager', () => {
     await Bun.sleep(140)
 
     expect(manager.listInstances().find(i => i.id === 'theme-early')?.themeColor).toBe('#0f1e2d')
+  })
+
+  it('clears pending in-page theme timer on full navigation', () => {
+    manager.createInstance('theme-timer-clear')
+    const instance = (manager as any).instances.get('theme-timer-clear')
+
+    instance.pageView.webContents._emit('did-navigate-in-page', 'https://example.com/route-a')
+    expect(instance.inPageThemeTimer).not.toBeNull()
+
+    instance.pageView.webContents._emit('did-navigate', 'https://example.com/full-nav')
+    expect(instance.inPageThemeTimer).toBeNull()
   })
 
   it('captures screenshot region from ref target', async () => {
@@ -556,6 +667,26 @@ describe('BrowserPaneManager', () => {
       expect(instance.cdp.setAgentVisualState).toHaveBeenLastCalledWith({
         active: true,
         label: 'Navigate Page — Loading example.com',
+        cursor: null,
+      })
+    })
+
+    it('reapplies overlay after hide/show while control is active', () => {
+      manager.createInstance('ac-show-reapply')
+      manager.bindSession('ac-show-reapply', 'sess-show-reapply')
+
+      manager.setAgentControl('sess-show-reapply', { displayName: 'Click Button', intent: 'Clicking submit' })
+
+      const instance = (manager as any).instances.get('ac-show-reapply')
+      const callCountAfterSet = instance.cdp.setAgentVisualState.mock.calls.length
+
+      instance.window._emit('hide')
+      instance.window._emit('show')
+
+      expect(instance.cdp.setAgentVisualState.mock.calls.length).toBe(callCountAfterSet + 1)
+      expect(instance.cdp.setAgentVisualState).toHaveBeenLastCalledWith({
+        active: true,
+        label: 'Click Button — Clicking submit',
         cursor: null,
       })
     })

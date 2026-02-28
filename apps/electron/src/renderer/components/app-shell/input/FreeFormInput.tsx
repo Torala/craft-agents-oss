@@ -62,7 +62,7 @@ import { EditPopover, getEditConfig } from '@/components/ui/EditPopover'
 import { SourceAvatar } from '@/components/ui/source-avatar'
 import { ConnectionIcon } from '@/components/icons/ConnectionIcon'
 import { FreeFormInputContextBadge } from './FreeFormInputContextBadge'
-import type { FileAttachment, LoadedSource, LoadedSkill, BrowserInstanceInfo } from '../../../../shared/types'
+import type { FileAttachment, LoadedSource, LoadedSkill } from '../../../../shared/types'
 import type { PermissionMode } from '@craft-agent/shared/agent/modes'
 import { type ThinkingLevel, THINKING_LEVELS, getThinkingLevelName } from '@craft-agent/shared/agent/thinking-levels'
 import { useEscapeInterrupt } from '@/context/EscapeInterruptContext'
@@ -197,10 +197,6 @@ export interface FreeFormInputProps {
   onConnectionChange?: (connectionSlug: string) => void
   /** When true, the session's locked connection has been removed */
   connectionUnavailable?: boolean
-  /** Browser instance bound to this session (for toolbar status slot) */
-  browserInstance?: BrowserInstanceInfo | null
-  /** Callback when the browser status bar is clicked (focuses the browser window) */
-  onBrowserClick?: (instanceId: string) => void
 }
 
 /**
@@ -254,8 +250,6 @@ export function FreeFormInput({
   currentConnection,
   onConnectionChange,
   connectionUnavailable = false,
-  browserInstance,
-  onBrowserClick,
 }: FreeFormInputProps) {
   // Read connection default model, connections, and workspace info from context.
   // Uses optional variant so playground (no provider) doesn't crash.
@@ -1420,8 +1414,7 @@ export function FreeFormInput({
           {/* Status slot overlay - escape interrupt (highest priority), browser status, etc. */}
           <ToolbarStatusSlot
             showEscapeOverlay={isProcessing && showEscapeOverlay}
-            browserInstance={browserInstance ?? null}
-            onBrowserClick={onBrowserClick}
+            sessionId={sessionId}
           />
 
           <div className={cn("flex items-center gap-1 px-2 py-2", !compactMode && "border-t border-border/50")}>

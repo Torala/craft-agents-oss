@@ -32,6 +32,12 @@ export const mockElectronAPI = {
     return `Output for task ${taskId}:\n\nThis is a mock output in the playground.\nIn the real app, this would show the actual task output.`
   },
 
+  browserPane: {
+    focus: async (instanceId: string) => {
+      console.log('[Playground] browserPane.focus called:', instanceId)
+    },
+  },
+
   openFile: async (path: string) => {
     console.log('[Playground] openFile called:', path)
     alert(`Would open file in system editor:\n${path}`)

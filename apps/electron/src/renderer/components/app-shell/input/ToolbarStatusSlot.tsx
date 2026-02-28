@@ -7,33 +7,56 @@
  *
  * Positioned absolute inset-0 over the toolbar's relative container.
  * Uses AnimatePresence for smooth fade transitions between states.
+ *
+ * Browser state is consumed directly from Jotai atoms (same pattern as BrowserTabStrip)
+ * to avoid threading props through 4 component levels.
  */
 
 import * as React from 'react'
 import { motion, AnimatePresence } from 'motion/react'
 import { Globe } from 'lucide-react'
+import { useAtomValue } from 'jotai'
 import { Spinner } from '@craft-agent/ui'
 import { cn } from '@/lib/utils'
 import { Kbd } from '@/components/ui/kbd'
 import { getHostname, getThemeLuminance } from '@/components/browser/utils'
+import { browserInstancesAtom } from '@/atoms/browser-pane'
 import type { BrowserInstanceInfo } from '../../../../shared/types'
 
 interface ToolbarStatusSlotProps {
   /** Whether the escape interrupt overlay should be visible (highest priority) */
   showEscapeOverlay: boolean
-  /** Browser instance bound to this session (shown when agent control is active) */
-  browserInstance: BrowserInstanceInfo | null
-  /** Callback when the browser status bar is clicked */
-  onBrowserClick?: (instanceId: string) => void
+  /** Session ID to find the bound browser instance */
+  sessionId?: string
 }
 
 export function ToolbarStatusSlot({
   showEscapeOverlay,
-  browserInstance,
-  onBrowserClick,
+  sessionId,
 }: ToolbarStatusSlotProps) {
+  const browserInstances = useAtomValue(browserInstancesAtom)
+
+  // Find the browser instance bound to this session with active agent control.
+  // If multiple match, prefer visible; tie-break to the most recently updated entry.
+  const browserInstance = React.useMemo(() => {
+    if (!sessionId) return null
+
+    const candidates = browserInstances.filter(
+      i => i.boundSessionId === sessionId && i.agentControlActive
+    )
+    if (candidates.length === 0) return null
+
+    const visible = candidates.filter(i => i.isVisible)
+    const selected = (visible.length > 0 ? visible : candidates).at(-1)
+    return selected ?? null
+  }, [browserInstances, sessionId])
+
   // Priority resolution: escape interrupt > browser status
-  const showBrowser = !showEscapeOverlay && browserInstance?.agentControlActive
+  const showBrowser = !showEscapeOverlay && browserInstance !== null
+
+  const handleBrowserClick = React.useCallback((instanceId: string) => {
+    window.electronAPI?.browserPane?.focus?.(instanceId)
+  }, [])
 
   return (
     <AnimatePresence>
@@ -67,7 +90,7 @@ export function ToolbarStatusSlot({
         <BrowserStatusBar
           key="browser"
           instance={browserInstance}
-          onClick={() => onBrowserClick?.(browserInstance.id)}
+          onClick={() => handleBrowserClick(browserInstance.id)}
         />
       )}
     </AnimatePresence>
@@ -96,7 +119,7 @@ function BrowserStatusBar({
     : { backgroundColor: 'color-mix(in srgb, var(--accent) 15%, var(--background))' }
 
   const textColorClass = themeColor
-    ? (isDarkTheme ? 'text-white/90' : 'text-foreground/90')
+    ? (isDarkTheme ? 'text-white/90' : 'text-black/80')
     : ''
 
   return (

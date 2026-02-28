@@ -2047,7 +2047,9 @@ export class SessionManager {
           managed,
           workspaceRootPath,
           sessionId: storedSession.id,
-          sessions: this.sessions as unknown as Map<string, unknown>,
+          deleteFromRuntimeSessions: (id) => {
+            this.sessions.delete(id)
+          },
           deleteStoredSession,
         })
 

@@ -16,7 +16,7 @@ export const BROWSER_LIVE_FX_BORDER = {
 } as const
 
 export function getBrowserLiveFxCornerRadii(platform: BrowserLiveFxPlatform): BrowserLiveFxCornerRadii {
-  const bottomRadius = platform === 'darwin' ? 12 : platform === 'win32' ? 8 : 6
+  const bottomRadius = platform === 'darwin' ? 16 : platform === 'win32' ? 8 : 6
 
   return {
     topLeft: '0px',

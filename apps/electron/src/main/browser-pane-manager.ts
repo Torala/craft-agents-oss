@@ -124,6 +124,8 @@ interface BrowserInstance {
   keepAliveOnWindowClose: boolean
   toolbarReady: boolean
   showOnCreate: boolean
+  pendingShowOnReady: boolean
+  pendingShowToken: number
   lastAction: LastBrowserAction | null
   agentControl: AgentControlState | null
   themeColor: string | null
@@ -362,6 +364,8 @@ export class BrowserPaneManager {
       keepAliveOnWindowClose: true,
       toolbarReady: false,
       showOnCreate: shouldShow,
+      pendingShowOnReady: false,
+      pendingShowToken: 0,
       lastAction: null,
       agentControl: null,
       themeColor: null,
@@ -414,6 +418,8 @@ export class BrowserPaneManager {
       instance.inPageThemeTimer = null
     }
     instance.themeObserverToken = null
+    instance.pendingShowOnReady = false
+    instance.pendingShowToken += 1
 
     // Clean up in-flight network tracking for this instance's webContents
     const wcId = instance.pageView.webContents.id
@@ -472,18 +478,21 @@ export class BrowserPaneManager {
     }
 
     const timeoutMs = 30_000
+    let timeoutHandle: ReturnType<typeof setTimeout> | null = null
 
     try {
       const loaded = instance.pageView.webContents.loadURL(normalizedUrl)
-      const timeout = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error(`Navigation to "${normalizedUrl}" timed out after ${timeoutMs / 1000}s`)), timeoutMs)
-      )
+      const timeout = new Promise<never>((_, reject) => {
+        timeoutHandle = setTimeout(() => reject(new Error(`Navigation to "${normalizedUrl}" timed out after ${timeoutMs / 1000}s`)), timeoutMs)
+      })
       await Promise.race([loaded, timeout])
       this.pushToolbarState(instance)
 
       return { url: instance.currentUrl, title: instance.title }
-    } catch (error) {
-      throw error
+    } finally {
+      if (timeoutHandle) {
+        clearTimeout(timeoutHandle)
+      }
     }
   }
 
@@ -522,9 +531,15 @@ export class BrowserPaneManager {
     const win = instance.window
     if (win.isDestroyed()) return
 
-    // If toolbar hasn't painted yet, defer showing until ready-to-show fires
+    // If toolbar hasn't painted yet, defer showing until ready-to-show fires.
+    // Token guard prevents stale deferred focus from showing after hide/destroy.
     if (!instance.toolbarReady) {
+      if (instance.pendingShowOnReady) return
+      instance.pendingShowOnReady = true
+      const token = ++instance.pendingShowToken
       win.once('ready-to-show', () => {
+        if (instance.pendingShowToken !== token) return
+        instance.pendingShowOnReady = false
         if (!win.isDestroyed()) {
           win.show()
           win.focus()
@@ -549,6 +564,13 @@ export class BrowserPaneManager {
 
     const win = instance.window
     if (win.isDestroyed()) return
+
+    // Cancel any deferred show request queued before toolbar was ready.
+    if (instance.pendingShowOnReady) {
+      instance.pendingShowOnReady = false
+      instance.pendingShowToken += 1
+    }
+
     win.hide()
 
     instance.isVisible = false
@@ -1380,8 +1402,9 @@ export class BrowserPaneManager {
     this.emitStateChange(instance)
   }
 
-  private installThemeObserver(instance: BrowserInstance): void {
+  private installThemeObserver(instance: BrowserInstance, allowRetry = true): void {
     const token = `${Date.now()}-${Math.random().toString(36).slice(2)}`
+    const urlAtInstall = instance.currentUrl
     instance.themeObserverToken = token
 
     void instance.pageView.webContents.executeJavaScript(`
@@ -1491,7 +1514,15 @@ export class BrowserPaneManager {
         // Fast first color for initial toolbar paint and after SPA route changes
         schedule();
       })()
-    `).catch(() => {})
+    `).catch(() => {
+      if (!allowRetry) return
+      setTimeout(() => {
+        if (!this.instances.has(instance.id)) return
+        if (instance.currentUrl !== urlAtInstall) return
+        if (instance.themeObserverToken !== token) return
+        this.installThemeObserver(instance, false)
+      }, 120)
+    })
   }
 
   private scheduleEarlyThemeExtraction(instance: BrowserInstance, urlAtSchedule: string): void {
@@ -1678,6 +1709,7 @@ export class BrowserPaneManager {
 
     toolbarWc.on('did-finish-load', () => {
       this.markToolbarReady(instance, 'did-finish-load')
+      this.pushToolbarState(instance)
     })
 
     toolbarWc.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
@@ -1710,6 +1742,10 @@ export class BrowserPaneManager {
     })
 
     pageWc.on('did-navigate', (_event, url) => {
+      if (instance.inPageThemeTimer) {
+        clearTimeout(instance.inPageThemeTimer)
+        instance.inPageThemeTimer = null
+      }
       instance.themeObserverToken = null
       instance.themeColor = null // reset for new page (batched with state push below)
       instance.currentUrl = url
@@ -1809,6 +1845,11 @@ export class BrowserPaneManager {
     instance.window.on('show', () => {
       instance.isVisible = true
       this.emitStateChange(instance)
+      this.reapplyAgentControlVisual(instance)
+      this.pushToolbarState(instance)
+      if (!instance.themeColor) {
+        void this.extractThemeColor(instance)
+      }
     })
 
     instance.window.on('hide', () => {

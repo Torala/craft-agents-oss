@@ -48,6 +48,7 @@ import {
 } from '../../shared/route-parser'
 import { routes, type Route, type ViewRoute } from '../../shared/routes'
 import { NAVIGATE_EVENT, type NavigateOptions } from '../lib/navigate'
+import { normalizePanelRouteForReconcile } from './navigation-reconcile'
 import * as storage from '@/lib/local-storage'
 import type {
   DeepLinkNavigation,
@@ -413,10 +414,14 @@ export function NavigationProvider({
           if (colonIdx > 0) {
             const proportion = parseFloat(entry.slice(colonIdx + 1))
             if (!isNaN(proportion) && proportion > 0 && proportion < 1) {
-              return { route: entry.slice(0, colonIdx) as ViewRoute, proportion }
+              const rawRoute = entry.slice(0, colonIdx) as ViewRoute
+              const route = normalizePanelRouteForReconcile(rawRoute, (state) => resolveAutoSelectionRef.current(state))
+              return { route, proportion }
             }
           }
-          return { route: entry as ViewRoute, proportion: 0 }
+          const rawRoute = entry as ViewRoute
+          const route = normalizePanelRouteForReconcile(rawRoute, (state) => resolveAutoSelectionRef.current(state))
+          return { route, proportion: 0 }
         })
 
         const hasProportions = entries.some(e => e.proportion > 0)
