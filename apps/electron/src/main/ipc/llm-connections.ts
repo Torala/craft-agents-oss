@@ -17,34 +17,34 @@ import type { IpcContext } from './types'
 let copilotOAuthAbort: AbortController | null = null
 
 export const HANDLED_CHANNELS = [
-  IPC_CHANNELS.LLM_CONNECTION_LIST,
-  IPC_CHANNELS.LLM_CONNECTION_LIST_WITH_STATUS,
-  IPC_CHANNELS.LLM_CONNECTION_GET,
-  IPC_CHANNELS.LLM_CONNECTION_GET_API_KEY,
-  IPC_CHANNELS.LLM_CONNECTION_SAVE,
-  IPC_CHANNELS.LLM_CONNECTION_DELETE,
-  IPC_CHANNELS.LLM_CONNECTION_TEST,
-  IPC_CHANNELS.LLM_CONNECTION_SET_DEFAULT,
-  IPC_CHANNELS.LLM_CONNECTION_SET_WORKSPACE_DEFAULT,
-  IPC_CHANNELS.LLM_CONNECTION_REFRESH_MODELS,
-  IPC_CHANNELS.CHATGPT_START_OAUTH,
-  IPC_CHANNELS.CHATGPT_CANCEL_OAUTH,
-  IPC_CHANNELS.CHATGPT_GET_AUTH_STATUS,
-  IPC_CHANNELS.CHATGPT_LOGOUT,
-  IPC_CHANNELS.COPILOT_START_OAUTH,
-  IPC_CHANNELS.COPILOT_CANCEL_OAUTH,
-  IPC_CHANNELS.COPILOT_GET_AUTH_STATUS,
-  IPC_CHANNELS.COPILOT_LOGOUT,
-  IPC_CHANNELS.SETUP_LLM_CONNECTION,
-  IPC_CHANNELS.SETTINGS_TEST_LLM_CONNECTION_SETUP,
-  IPC_CHANNELS.PI_GET_API_KEY_PROVIDERS,
-  IPC_CHANNELS.PI_GET_PROVIDER_BASE_URL,
-  IPC_CHANNELS.PI_GET_PROVIDER_MODELS,
+  IPC_CHANNELS.llmConnections.LIST,
+  IPC_CHANNELS.llmConnections.LIST_WITH_STATUS,
+  IPC_CHANNELS.llmConnections.GET,
+  IPC_CHANNELS.llmConnections.GET_API_KEY,
+  IPC_CHANNELS.llmConnections.SAVE,
+  IPC_CHANNELS.llmConnections.DELETE,
+  IPC_CHANNELS.llmConnections.TEST,
+  IPC_CHANNELS.llmConnections.SET_DEFAULT,
+  IPC_CHANNELS.llmConnections.SET_WORKSPACE_DEFAULT,
+  IPC_CHANNELS.llmConnections.REFRESH_MODELS,
+  IPC_CHANNELS.chatgpt.START_OAUTH,
+  IPC_CHANNELS.chatgpt.CANCEL_OAUTH,
+  IPC_CHANNELS.chatgpt.GET_AUTH_STATUS,
+  IPC_CHANNELS.chatgpt.LOGOUT,
+  IPC_CHANNELS.copilot.START_OAUTH,
+  IPC_CHANNELS.copilot.CANCEL_OAUTH,
+  IPC_CHANNELS.copilot.GET_AUTH_STATUS,
+  IPC_CHANNELS.copilot.LOGOUT,
+  IPC_CHANNELS.settings.SETUP_LLM_CONNECTION,
+  IPC_CHANNELS.settings.TEST_LLM_CONNECTION_SETUP,
+  IPC_CHANNELS.pi.GET_API_KEY_PROVIDERS,
+  IPC_CHANNELS.pi.GET_PROVIDER_BASE_URL,
+  IPC_CHANNELS.pi.GET_PROVIDER_MODELS,
 ] as const
 
 export function registerLlmConnectionsHandlers({ sessionManager, windowManager }: IpcContext): void {
   // Unified handler for LLM connection setup
-  ipcMain.handle(IPC_CHANNELS.SETUP_LLM_CONNECTION, async (_event, setup: LlmConnectionSetup): Promise<{ success: boolean; error?: string }> => {
+  ipcMain.handle(IPC_CHANNELS.settings.SETUP_LLM_CONNECTION, async (_event, setup: LlmConnectionSetup): Promise<{ success: boolean; error?: string }> => {
     try {
       const manager = getCredentialManager()
 
@@ -169,7 +169,7 @@ export function registerLlmConnectionsHandlers({ sessionManager, windowManager }
 
   // Unified connection test — uses the agent factory to spawn a real agent subprocess
   // and validate credentials via runMiniCompletion(). Same code path as actual chat.
-  ipcMain.handle(IPC_CHANNELS.SETTINGS_TEST_LLM_CONNECTION_SETUP, async (_event, params: import('../../shared/types').TestLlmConnectionParams): Promise<import('../../shared/types').TestLlmConnectionResult> => {
+  ipcMain.handle(IPC_CHANNELS.settings.TEST_LLM_CONNECTION_SETUP, async (_event, params: import('../../shared/types').TestLlmConnectionParams): Promise<import('../../shared/types').TestLlmConnectionResult> => {
     const { provider, apiKey, baseUrl, model, piAuthProvider } = params
     const trimmedKey = apiKey?.trim()
 
@@ -206,17 +206,17 @@ export function registerLlmConnectionsHandlers({ sessionManager, windowManager }
   // Pi Provider Discovery (main process only — Pi SDK can't run in renderer)
   // ============================================================
 
-  ipcMain.handle(IPC_CHANNELS.PI_GET_API_KEY_PROVIDERS, async () => {
+  ipcMain.handle(IPC_CHANNELS.pi.GET_API_KEY_PROVIDERS, async () => {
     const { getPiApiKeyProviders } = await import('@craft-agent/shared/config')
     return getPiApiKeyProviders()
   })
 
-  ipcMain.handle(IPC_CHANNELS.PI_GET_PROVIDER_BASE_URL, async (_event, provider: string) => {
+  ipcMain.handle(IPC_CHANNELS.pi.GET_PROVIDER_BASE_URL, async (_event, provider: string) => {
     const { getPiProviderBaseUrl } = await import('@craft-agent/shared/config')
     return getPiProviderBaseUrl(provider)
   })
 
-  ipcMain.handle(IPC_CHANNELS.PI_GET_PROVIDER_MODELS, async (_event, provider: string) => {
+  ipcMain.handle(IPC_CHANNELS.pi.GET_PROVIDER_MODELS, async (_event, provider: string) => {
     const { getModels } = await import('@mariozechner/pi-ai')
     try {
       const models = getModels(provider as Parameters<typeof getModels>[0])
@@ -242,12 +242,12 @@ export function registerLlmConnectionsHandlers({ sessionManager, windowManager }
   // ============================================================
 
   // List all LLM connections (includes built-in and custom)
-  ipcMain.handle(IPC_CHANNELS.LLM_CONNECTION_LIST, async (): Promise<LlmConnection[]> => {
+  ipcMain.handle(IPC_CHANNELS.llmConnections.LIST, async (): Promise<LlmConnection[]> => {
     return getLlmConnections()
   })
 
   // List all LLM connections with authentication status
-  ipcMain.handle(IPC_CHANNELS.LLM_CONNECTION_LIST_WITH_STATUS, async (): Promise<LlmConnectionWithStatus[]> => {
+  ipcMain.handle(IPC_CHANNELS.llmConnections.LIST_WITH_STATUS, async (): Promise<LlmConnectionWithStatus[]> => {
     const connections = getLlmConnections()
     const credentialManager = getCredentialManager()
     const defaultSlug = getDefaultLlmConnection()
@@ -264,19 +264,19 @@ export function registerLlmConnectionsHandlers({ sessionManager, windowManager }
   })
 
   // Get a specific LLM connection by slug
-  ipcMain.handle(IPC_CHANNELS.LLM_CONNECTION_GET, async (_event, slug: string): Promise<LlmConnection | null> => {
+  ipcMain.handle(IPC_CHANNELS.llmConnections.GET, async (_event, slug: string): Promise<LlmConnection | null> => {
     return getLlmConnection(slug)
   })
 
   // Get stored API key for an LLM connection (for edit pre-fill)
-  ipcMain.handle(IPC_CHANNELS.LLM_CONNECTION_GET_API_KEY, async (_event, slug: string): Promise<string | null> => {
+  ipcMain.handle(IPC_CHANNELS.llmConnections.GET_API_KEY, async (_event, slug: string): Promise<string | null> => {
     const manager = getCredentialManager()
     return manager.getLlmApiKey(slug)
   })
 
   // Save (create or update) an LLM connection
   // If connection.slug exists and is found, updates it; otherwise creates new
-  ipcMain.handle(IPC_CHANNELS.LLM_CONNECTION_SAVE, async (_event, connection: LlmConnection): Promise<{ success: boolean; error?: string }> => {
+  ipcMain.handle(IPC_CHANNELS.llmConnections.SAVE, async (_event, connection: LlmConnection): Promise<{ success: boolean; error?: string }> => {
     try {
       // Check if this is an update or create
       const existing = getLlmConnection(connection.slug)
@@ -309,7 +309,7 @@ export function registerLlmConnectionsHandlers({ sessionManager, windowManager }
   })
 
   // Delete an LLM connection (at least one connection must remain)
-  ipcMain.handle(IPC_CHANNELS.LLM_CONNECTION_DELETE, async (_event, slug: string): Promise<{ success: boolean; error?: string }> => {
+  ipcMain.handle(IPC_CHANNELS.llmConnections.DELETE, async (_event, slug: string): Promise<{ success: boolean; error?: string }> => {
     try {
       const connection = getLlmConnection(slug)
       if (!connection) {
@@ -333,7 +333,7 @@ export function registerLlmConnectionsHandlers({ sessionManager, windowManager }
   })
 
   // Test an LLM connection (validate credentials and connectivity with actual API call)
-  ipcMain.handle(IPC_CHANNELS.LLM_CONNECTION_TEST, async (_event, slug: string): Promise<{ success: boolean; error?: string }> => {
+  ipcMain.handle(IPC_CHANNELS.llmConnections.TEST, async (_event, slug: string): Promise<{ success: boolean; error?: string }> => {
     try {
       const result = await validateStoredBackendConnection({
         slug,
@@ -363,7 +363,7 @@ export function registerLlmConnectionsHandlers({ sessionManager, windowManager }
   })
 
   // Set global default LLM connection
-  ipcMain.handle(IPC_CHANNELS.LLM_CONNECTION_SET_DEFAULT, async (_event, slug: string): Promise<{ success: boolean; error?: string }> => {
+  ipcMain.handle(IPC_CHANNELS.llmConnections.SET_DEFAULT, async (_event, slug: string): Promise<{ success: boolean; error?: string }> => {
     try {
       const success = setDefaultLlmConnection(slug)
       if (success) {
@@ -379,7 +379,7 @@ export function registerLlmConnectionsHandlers({ sessionManager, windowManager }
   })
 
   // Set workspace default LLM connection
-  ipcMain.handle(IPC_CHANNELS.LLM_CONNECTION_SET_WORKSPACE_DEFAULT, async (_event, workspaceId: string, slug: string | null): Promise<{ success: boolean; error?: string }> => {
+  ipcMain.handle(IPC_CHANNELS.llmConnections.SET_WORKSPACE_DEFAULT, async (_event, workspaceId: string, slug: string | null): Promise<{ success: boolean; error?: string }> => {
     try {
       const workspace = getWorkspaceOrThrow(workspaceId)
 
@@ -415,7 +415,7 @@ export function registerLlmConnectionsHandlers({ sessionManager, windowManager }
   })
 
   // Refresh available models for a connection (dynamic model discovery)
-  ipcMain.handle(IPC_CHANNELS.LLM_CONNECTION_REFRESH_MODELS, async (_event, slug: string): Promise<{ success: boolean; error?: string }> => {
+  ipcMain.handle(IPC_CHANNELS.llmConnections.REFRESH_MODELS, async (_event, slug: string): Promise<{ success: boolean; error?: string }> => {
     try {
       const connection = getLlmConnection(slug)
       if (!connection) {
@@ -437,7 +437,7 @@ export function registerLlmConnectionsHandlers({ sessionManager, windowManager }
 
   // Start ChatGPT OAuth flow
   // Opens browser for authentication, waits for callback, exchanges code for tokens
-  ipcMain.handle(IPC_CHANNELS.CHATGPT_START_OAUTH, async (_event, connectionSlug: string): Promise<{
+  ipcMain.handle(IPC_CHANNELS.chatgpt.START_OAUTH, async (_event, connectionSlug: string): Promise<{
     success: boolean
     error?: string
   }> => {
@@ -478,7 +478,7 @@ export function registerLlmConnectionsHandlers({ sessionManager, windowManager }
   })
 
   // Cancel ongoing ChatGPT OAuth flow
-  ipcMain.handle(IPC_CHANNELS.CHATGPT_CANCEL_OAUTH, async (): Promise<{ success: boolean }> => {
+  ipcMain.handle(IPC_CHANNELS.chatgpt.CANCEL_OAUTH, async (): Promise<{ success: boolean }> => {
     try {
       const { cancelChatGptOAuth } = await import('@craft-agent/shared/auth')
       cancelChatGptOAuth()
@@ -491,7 +491,7 @@ export function registerLlmConnectionsHandlers({ sessionManager, windowManager }
   })
 
   // Get ChatGPT authentication status
-  ipcMain.handle(IPC_CHANNELS.CHATGPT_GET_AUTH_STATUS, async (_event, connectionSlug: string): Promise<{
+  ipcMain.handle(IPC_CHANNELS.chatgpt.GET_AUTH_STATUS, async (_event, connectionSlug: string): Promise<{
     authenticated: boolean
     expiresAt?: number
     hasRefreshToken?: boolean
@@ -519,7 +519,7 @@ export function registerLlmConnectionsHandlers({ sessionManager, windowManager }
   })
 
   // Logout from ChatGPT (clear stored tokens)
-  ipcMain.handle(IPC_CHANNELS.CHATGPT_LOGOUT, async (_event, connectionSlug: string): Promise<{ success: boolean }> => {
+  ipcMain.handle(IPC_CHANNELS.chatgpt.LOGOUT, async (_event, connectionSlug: string): Promise<{ success: boolean }> => {
     try {
       const credentialManager = getCredentialManager()
       await credentialManager.deleteLlmCredentials(connectionSlug)
@@ -536,7 +536,7 @@ export function registerLlmConnectionsHandlers({ sessionManager, windowManager }
   // ============================================================
 
   // Start GitHub Copilot OAuth flow (device flow via Pi SDK)
-  ipcMain.handle(IPC_CHANNELS.COPILOT_START_OAUTH, async (event, connectionSlug: string): Promise<{
+  ipcMain.handle(IPC_CHANNELS.copilot.START_OAUTH, async (event, connectionSlug: string): Promise<{
     success: boolean
     error?: string
   }> => {
@@ -559,7 +559,7 @@ export function registerLlmConnectionsHandlers({ sessionManager, windowManager }
           const codeMatch = instructions?.match(/:\s*(\S+)/)
           const userCode = codeMatch?.[1] ?? ''
           ipcLog.info(`[GitHub OAuth] Device code: ${userCode}`)
-          event.sender.send(IPC_CHANNELS.COPILOT_DEVICE_CODE, {
+          event.sender.send(IPC_CHANNELS.copilot.DEVICE_CODE, {
             userCode,
             verificationUri: url,
           })
@@ -603,7 +603,7 @@ export function registerLlmConnectionsHandlers({ sessionManager, windowManager }
   })
 
   // Cancel ongoing GitHub OAuth flow
-  ipcMain.handle(IPC_CHANNELS.COPILOT_CANCEL_OAUTH, async (): Promise<{ success: boolean }> => {
+  ipcMain.handle(IPC_CHANNELS.copilot.CANCEL_OAUTH, async (): Promise<{ success: boolean }> => {
     if (copilotOAuthAbort) {
       copilotOAuthAbort.abort()
       copilotOAuthAbort = null
@@ -613,7 +613,7 @@ export function registerLlmConnectionsHandlers({ sessionManager, windowManager }
   })
 
   // Get GitHub Copilot authentication status
-  ipcMain.handle(IPC_CHANNELS.COPILOT_GET_AUTH_STATUS, async (_event, connectionSlug: string): Promise<{
+  ipcMain.handle(IPC_CHANNELS.copilot.GET_AUTH_STATUS, async (_event, connectionSlug: string): Promise<{
     authenticated: boolean
   }> => {
     try {
@@ -630,7 +630,7 @@ export function registerLlmConnectionsHandlers({ sessionManager, windowManager }
   })
 
   // Logout from Copilot (clear stored tokens)
-  ipcMain.handle(IPC_CHANNELS.COPILOT_LOGOUT, async (_event, connectionSlug: string): Promise<{ success: boolean }> => {
+  ipcMain.handle(IPC_CHANNELS.copilot.LOGOUT, async (_event, connectionSlug: string): Promise<{ success: boolean }> => {
     try {
       const credentialManager = getCredentialManager()
       await credentialManager.deleteLlmCredentials(connectionSlug)

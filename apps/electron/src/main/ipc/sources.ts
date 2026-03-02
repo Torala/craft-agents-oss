@@ -8,20 +8,20 @@ import { ipcLog } from '../logger'
 import type { IpcContext } from './types'
 
 export const HANDLED_CHANNELS = [
-  IPC_CHANNELS.SOURCES_GET,
-  IPC_CHANNELS.SOURCES_CREATE,
-  IPC_CHANNELS.SOURCES_DELETE,
-  IPC_CHANNELS.SOURCES_START_OAUTH,
-  IPC_CHANNELS.SOURCES_SAVE_CREDENTIALS,
-  IPC_CHANNELS.SOURCES_GET_PERMISSIONS,
-  IPC_CHANNELS.WORKSPACE_GET_PERMISSIONS,
-  IPC_CHANNELS.DEFAULT_PERMISSIONS_GET,
-  IPC_CHANNELS.SOURCES_GET_MCP_TOOLS,
+  IPC_CHANNELS.sources.GET,
+  IPC_CHANNELS.sources.CREATE,
+  IPC_CHANNELS.sources.DELETE,
+  IPC_CHANNELS.sources.START_OAUTH,
+  IPC_CHANNELS.sources.SAVE_CREDENTIALS,
+  IPC_CHANNELS.sources.GET_PERMISSIONS,
+  IPC_CHANNELS.workspace.GET_PERMISSIONS,
+  IPC_CHANNELS.permissions.GET_DEFAULTS,
+  IPC_CHANNELS.sources.GET_MCP_TOOLS,
 ] as const
 
 export function registerSourcesHandlers(_ctx: IpcContext): void {
   // Get all sources for a workspace
-  ipcMain.handle(IPC_CHANNELS.SOURCES_GET, async (_event, workspaceId: string) => {
+  ipcMain.handle(IPC_CHANNELS.sources.GET, async (_event, workspaceId: string) => {
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) {
       ipcLog.error(`SOURCES_GET: Workspace not found: ${workspaceId}`)
@@ -31,7 +31,7 @@ export function registerSourcesHandlers(_ctx: IpcContext): void {
   })
 
   // Create a new source
-  ipcMain.handle(IPC_CHANNELS.SOURCES_CREATE, async (_event, workspaceId: string, config: Partial<import('@craft-agent/shared/sources').CreateSourceInput>) => {
+  ipcMain.handle(IPC_CHANNELS.sources.CREATE, async (_event, workspaceId: string, config: Partial<import('@craft-agent/shared/sources').CreateSourceInput>) => {
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) throw new Error(`Workspace not found: ${workspaceId}`)
     const { createSource } = await import('@craft-agent/shared/sources')
@@ -47,7 +47,7 @@ export function registerSourcesHandlers(_ctx: IpcContext): void {
   })
 
   // Delete a source
-  ipcMain.handle(IPC_CHANNELS.SOURCES_DELETE, async (_event, workspaceId: string, sourceSlug: string) => {
+  ipcMain.handle(IPC_CHANNELS.sources.DELETE, async (_event, workspaceId: string, sourceSlug: string) => {
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) throw new Error(`Workspace not found: ${workspaceId}`)
     const { deleteSource } = await import('@craft-agent/shared/sources')
@@ -63,7 +63,7 @@ export function registerSourcesHandlers(_ctx: IpcContext): void {
   })
 
   // Start OAuth flow for a source
-  ipcMain.handle(IPC_CHANNELS.SOURCES_START_OAUTH, async (_event, workspaceId: string, sourceSlug: string) => {
+  ipcMain.handle(IPC_CHANNELS.sources.START_OAUTH, async (_event, workspaceId: string, sourceSlug: string) => {
     try {
       const workspace = getWorkspaceByNameOrId(workspaceId)
       if (!workspace) {
@@ -101,7 +101,7 @@ export function registerSourcesHandlers(_ctx: IpcContext): void {
   })
 
   // Save credentials for a source (bearer token or API key)
-  ipcMain.handle(IPC_CHANNELS.SOURCES_SAVE_CREDENTIALS, async (_event, workspaceId: string, sourceSlug: string, credential: string) => {
+  ipcMain.handle(IPC_CHANNELS.sources.SAVE_CREDENTIALS, async (_event, workspaceId: string, sourceSlug: string, credential: string) => {
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) throw new Error(`Workspace not found: ${workspaceId}`)
     const { loadSource, getSourceCredentialManager } = await import('@craft-agent/shared/sources')
@@ -119,7 +119,7 @@ export function registerSourcesHandlers(_ctx: IpcContext): void {
   })
 
   // Get permissions config for a source (raw format for UI display)
-  ipcMain.handle(IPC_CHANNELS.SOURCES_GET_PERMISSIONS, async (_event, workspaceId: string, sourceSlug: string) => {
+  ipcMain.handle(IPC_CHANNELS.sources.GET_PERMISSIONS, async (_event, workspaceId: string, sourceSlug: string) => {
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) return null
 
@@ -140,7 +140,7 @@ export function registerSourcesHandlers(_ctx: IpcContext): void {
   })
 
   // Get permissions config for a workspace (raw format for UI display)
-  ipcMain.handle(IPC_CHANNELS.WORKSPACE_GET_PERMISSIONS, async (_event, workspaceId: string) => {
+  ipcMain.handle(IPC_CHANNELS.workspace.GET_PERMISSIONS, async (_event, workspaceId: string) => {
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) return null
 
@@ -162,7 +162,7 @@ export function registerSourcesHandlers(_ctx: IpcContext): void {
 
   // Get default permissions from ~/.craft-agent/permissions/default.json
   // Returns raw JSON for UI display (patterns with comments), plus the file path
-  ipcMain.handle(IPC_CHANNELS.DEFAULT_PERMISSIONS_GET, async () => {
+  ipcMain.handle(IPC_CHANNELS.permissions.GET_DEFAULTS, async () => {
     const { existsSync, readFileSync } = await import('fs')
     const { getAppPermissionsDir } = await import('@craft-agent/shared/agent')
     const { join } = await import('path')
@@ -180,7 +180,7 @@ export function registerSourcesHandlers(_ctx: IpcContext): void {
   })
 
   // Get MCP tools for a source with permission status
-  ipcMain.handle(IPC_CHANNELS.SOURCES_GET_MCP_TOOLS, async (_event, workspaceId: string, sourceSlug: string) => {
+  ipcMain.handle(IPC_CHANNELS.sources.GET_MCP_TOOLS, async (_event, workspaceId: string, sourceSlug: string) => {
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) return { success: false, error: 'Workspace not found' }
 

@@ -7,19 +7,7 @@
  */
 
 import { contextBridge, ipcRenderer } from 'electron'
-
-const CHANNELS = {
-  NAVIGATE: 'browser-toolbar:navigate',
-  GO_BACK: 'browser-toolbar:go-back',
-  GO_FORWARD: 'browser-toolbar:go-forward',
-  RELOAD: 'browser-toolbar:reload',
-  STOP: 'browser-toolbar:stop',
-  OPEN_MENU: 'browser-toolbar:open-menu',
-  HIDE: 'browser-toolbar:hide',
-  DESTROY: 'browser-toolbar:destroy',
-  STATE_UPDATE: 'browser-toolbar:state-update',
-  THEME_COLOR: 'browser-toolbar:theme-color',
-} as const
+import { BROWSER_TOOLBAR_CHANNELS as CHANNELS } from '../shared/types'
 
 // Instance ID is passed via query parameter by BrowserPaneManager
 const instanceId = new URLSearchParams(location.search).get('instanceId') || ''

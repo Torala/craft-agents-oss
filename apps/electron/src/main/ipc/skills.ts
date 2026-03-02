@@ -7,16 +7,16 @@ import { ipcLog } from '../logger'
 import type { IpcContext } from './types'
 
 export const HANDLED_CHANNELS = [
-  IPC_CHANNELS.SKILLS_GET,
-  IPC_CHANNELS.SKILLS_GET_FILES,
-  IPC_CHANNELS.SKILLS_DELETE,
-  IPC_CHANNELS.SKILLS_OPEN_EDITOR,
-  IPC_CHANNELS.SKILLS_OPEN_FINDER,
+  IPC_CHANNELS.skills.GET,
+  IPC_CHANNELS.skills.GET_FILES,
+  IPC_CHANNELS.skills.DELETE,
+  IPC_CHANNELS.skills.OPEN_EDITOR,
+  IPC_CHANNELS.skills.OPEN_FINDER,
 ] as const
 
 export function registerSkillsHandlers(_ctx: IpcContext): void {
   // Get all skills for a workspace (and optionally project-level skills from workingDirectory)
-  ipcMain.handle(IPC_CHANNELS.SKILLS_GET, async (_event, workspaceId: string, workingDirectory?: string) => {
+  ipcMain.handle(IPC_CHANNELS.skills.GET, async (_event, workspaceId: string, workingDirectory?: string) => {
     ipcLog.info(`SKILLS_GET: Loading skills for workspace: ${workspaceId}${workingDirectory ? `, workingDirectory: ${workingDirectory}` : ''}`)
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) {
@@ -30,7 +30,7 @@ export function registerSkillsHandlers(_ctx: IpcContext): void {
   })
 
   // Get files in a skill directory
-  ipcMain.handle(IPC_CHANNELS.SKILLS_GET_FILES, async (_event, workspaceId: string, skillSlug: string) => {
+  ipcMain.handle(IPC_CHANNELS.skills.GET_FILES, async (_event, workspaceId: string, skillSlug: string) => {
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) {
       ipcLog.error(`SKILLS_GET_FILES: Workspace not found: ${workspaceId}`)
@@ -79,7 +79,7 @@ export function registerSkillsHandlers(_ctx: IpcContext): void {
   })
 
   // Delete a skill from a workspace
-  ipcMain.handle(IPC_CHANNELS.SKILLS_DELETE, async (_event, workspaceId: string, skillSlug: string) => {
+  ipcMain.handle(IPC_CHANNELS.skills.DELETE, async (_event, workspaceId: string, skillSlug: string) => {
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) throw new Error('Workspace not found')
 
@@ -89,7 +89,7 @@ export function registerSkillsHandlers(_ctx: IpcContext): void {
   })
 
   // Open skill SKILL.md in editor
-  ipcMain.handle(IPC_CHANNELS.SKILLS_OPEN_EDITOR, async (_event, workspaceId: string, skillSlug: string) => {
+  ipcMain.handle(IPC_CHANNELS.skills.OPEN_EDITOR, async (_event, workspaceId: string, skillSlug: string) => {
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) throw new Error('Workspace not found')
 
@@ -101,7 +101,7 @@ export function registerSkillsHandlers(_ctx: IpcContext): void {
   })
 
   // Open skill folder in Finder/Explorer
-  ipcMain.handle(IPC_CHANNELS.SKILLS_OPEN_FINDER, async (_event, workspaceId: string, skillSlug: string) => {
+  ipcMain.handle(IPC_CHANNELS.skills.OPEN_FINDER, async (_event, workspaceId: string, skillSlug: string) => {
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) throw new Error('Workspace not found')
 

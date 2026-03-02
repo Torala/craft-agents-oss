@@ -12,7 +12,7 @@
   "scripts": {
     "test": "bun test",
     "typecheck": "cd packages/shared && bun run tsc --noEmit",
-    "typecheck:all": "cd packages/core && bun run tsc --noEmit && cd ../shared && bun run tsc --noEmit && cd ../session-tools-core && bun run tsc --noEmit",
+    "typecheck:all": "cd packages/core && bun run tsc --noEmit && cd ../shared && bun run tsc --noEmit && cd ../session-tools-core && bun run tsc --noEmit && cd ../../apps/electron && bun run typecheck",
     "lint:electron": "cd apps/electron && bun run lint",
     "lint:shared": "cd packages/shared && npx eslint .",
     "lint:ui": "cd packages/ui && npx eslint .",

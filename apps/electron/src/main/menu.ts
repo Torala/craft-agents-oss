@@ -71,7 +71,7 @@ export async function rebuildMenu(): Promise<void> {
           label: 'Settings...',
           accelerator: 'CmdOrCtrl+,',
           registerAccelerator: false,  // Action registry handles the keyboard shortcut
-          click: () => sendToRenderer(IPC_CHANNELS.MENU_OPEN_SETTINGS)
+          click: () => sendToRenderer(IPC_CHANNELS.menu.OPEN_SETTINGS)
         },
         { type: 'separator' as const },
         { role: 'hide' as const, label: 'Hide Craft Agents' },
@@ -90,7 +90,7 @@ export async function rebuildMenu(): Promise<void> {
           label: 'New Chat',
           accelerator: 'CmdOrCtrl+N',
           registerAccelerator: false,  // Action registry handles the keyboard shortcut
-          click: () => sendToRenderer(IPC_CHANNELS.MENU_NEW_CHAT)
+          click: () => sendToRenderer(IPC_CHANNELS.menu.NEW_CHAT)
         },
         {
           label: 'New Window',
@@ -220,7 +220,7 @@ export async function rebuildMenu(): Promise<void> {
           label: 'Keyboard Shortcuts',
           accelerator: 'CmdOrCtrl+/',
           registerAccelerator: false,  // Action registry handles the keyboard shortcut
-          click: () => sendToRenderer(IPC_CHANNELS.MENU_KEYBOARD_SHORTCUTS)
+          click: () => sendToRenderer(IPC_CHANNELS.menu.KEYBOARD_SHORTCUTS)
         }
       ]
     }

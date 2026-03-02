@@ -2,7 +2,7 @@ import { ipcRenderer, type IpcRendererEvent } from 'electron'
 
 /**
  * Create a function that invokes an IPC channel (request-response).
- * Usage: getSessions: invoke(IPC_CHANNELS.GET_SESSIONS)
+ * Usage: getSessions: invoke(IPC_CHANNELS.sessions.GET)
  */
 export function invoke(channel: string) {
   return (...args: unknown[]) => ipcRenderer.invoke(channel, ...args)
@@ -10,7 +10,7 @@ export function invoke(channel: string) {
 
 /**
  * Create a function that sends to an IPC channel (fire-and-forget).
- * Usage: debugLog: send(IPC_CHANNELS.DEBUG_LOG)
+ * Usage: debugLog: send(IPC_CHANNELS.debug.LOG)
  */
 export function send(channel: string) {
   return (...args: unknown[]) => ipcRenderer.send(channel, ...args)
@@ -19,7 +19,7 @@ export function send(channel: string) {
 /**
  * Create a function that listens on an IPC channel and returns a cleanup function.
  * The callback receives the first argument after the event.
- * Usage: onSessionEvent: listen(IPC_CHANNELS.SESSION_EVENT)
+ * Usage: onSessionEvent: listen(IPC_CHANNELS.sessions.EVENT)
  */
 export function listen<T = any>(channel: string) {
   return (callback: (data: T) => void): (() => void) => {
@@ -31,7 +31,7 @@ export function listen<T = any>(channel: string) {
 
 /**
  * Create a listener that passes no arguments (just notifies).
- * Usage: onCloseRequested: listenVoid(IPC_CHANNELS.WINDOW_CLOSE_REQUESTED)
+ * Usage: onCloseRequested: listenVoid(IPC_CHANNELS.window.CLOSE_REQUESTED)
  */
 export function listenVoid(channel: string) {
   return (callback: () => void): (() => void) => {

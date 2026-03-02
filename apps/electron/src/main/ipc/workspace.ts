@@ -9,44 +9,44 @@ import { ipcLog, windowLog } from '../logger'
 import type { IpcContext } from './types'
 
 export const HANDLED_CHANNELS = [
-  IPC_CHANNELS.GET_WORKSPACES,
-  IPC_CHANNELS.CREATE_WORKSPACE,
-  IPC_CHANNELS.CHECK_WORKSPACE_SLUG,
-  IPC_CHANNELS.GET_WINDOW_WORKSPACE,
-  IPC_CHANNELS.GET_WINDOW_MODE,
-  IPC_CHANNELS.OPEN_WORKSPACE,
-  IPC_CHANNELS.OPEN_SESSION_IN_NEW_WINDOW,
-  IPC_CHANNELS.SWITCH_WORKSPACE,
-  IPC_CHANNELS.CLOSE_WINDOW,
-  IPC_CHANNELS.WINDOW_CONFIRM_CLOSE,
-  IPC_CHANNELS.WINDOW_CANCEL_CLOSE,
-  IPC_CHANNELS.WINDOW_SET_TRAFFIC_LIGHTS,
-  IPC_CHANNELS.WORKSPACE_READ_IMAGE,
-  IPC_CHANNELS.WORKSPACE_WRITE_IMAGE,
-  IPC_CHANNELS.THEME_GET_APP,
-  IPC_CHANNELS.THEME_GET_PRESETS,
-  IPC_CHANNELS.THEME_LOAD_PRESET,
-  IPC_CHANNELS.THEME_GET_COLOR_THEME,
-  IPC_CHANNELS.THEME_SET_COLOR_THEME,
-  IPC_CHANNELS.THEME_BROADCAST_PREFERENCES,
-  IPC_CHANNELS.THEME_GET_WORKSPACE_COLOR_THEME,
-  IPC_CHANNELS.THEME_SET_WORKSPACE_COLOR_THEME,
-  IPC_CHANNELS.THEME_GET_ALL_WORKSPACE_THEMES,
-  IPC_CHANNELS.THEME_BROADCAST_WORKSPACE_THEME,
-  IPC_CHANNELS.VIEWS_LIST,
-  IPC_CHANNELS.VIEWS_SAVE,
-  IPC_CHANNELS.TOOL_ICONS_GET_MAPPINGS,
-  IPC_CHANNELS.LOGO_GET_URL,
+  IPC_CHANNELS.workspaces.GET,
+  IPC_CHANNELS.workspaces.CREATE,
+  IPC_CHANNELS.workspaces.CHECK_SLUG,
+  IPC_CHANNELS.window.GET_WORKSPACE,
+  IPC_CHANNELS.window.GET_MODE,
+  IPC_CHANNELS.window.OPEN_WORKSPACE,
+  IPC_CHANNELS.window.OPEN_SESSION_IN_NEW_WINDOW,
+  IPC_CHANNELS.window.SWITCH_WORKSPACE,
+  IPC_CHANNELS.window.CLOSE,
+  IPC_CHANNELS.window.CONFIRM_CLOSE,
+  IPC_CHANNELS.window.CANCEL_CLOSE,
+  IPC_CHANNELS.window.SET_TRAFFIC_LIGHTS,
+  IPC_CHANNELS.workspace.READ_IMAGE,
+  IPC_CHANNELS.workspace.WRITE_IMAGE,
+  IPC_CHANNELS.theme.GET_APP,
+  IPC_CHANNELS.theme.GET_PRESETS,
+  IPC_CHANNELS.theme.LOAD_PRESET,
+  IPC_CHANNELS.theme.GET_COLOR_THEME,
+  IPC_CHANNELS.theme.SET_COLOR_THEME,
+  IPC_CHANNELS.theme.BROADCAST_PREFERENCES,
+  IPC_CHANNELS.theme.GET_WORKSPACE_COLOR_THEME,
+  IPC_CHANNELS.theme.SET_WORKSPACE_COLOR_THEME,
+  IPC_CHANNELS.theme.GET_ALL_WORKSPACE_THEMES,
+  IPC_CHANNELS.theme.BROADCAST_WORKSPACE_THEME,
+  IPC_CHANNELS.views.LIST,
+  IPC_CHANNELS.views.SAVE,
+  IPC_CHANNELS.toolIcons.GET_MAPPINGS,
+  IPC_CHANNELS.logo.GET_URL,
 ] as const
 
 export function registerWorkspaceHandlers({ sessionManager, windowManager }: IpcContext): void {
   // Get workspaces
-  ipcMain.handle(IPC_CHANNELS.GET_WORKSPACES, async () => {
+  ipcMain.handle(IPC_CHANNELS.workspaces.GET, async () => {
     return sessionManager.getWorkspaces()
   })
 
   // Create a new workspace at a folder path (Obsidian-style: folder IS the workspace)
-  ipcMain.handle(IPC_CHANNELS.CREATE_WORKSPACE, async (_event, folderPath: string, name: string) => {
+  ipcMain.handle(IPC_CHANNELS.workspaces.CREATE, async (_event, folderPath: string, name: string) => {
     const rootPath = folderPath
     const workspace = addWorkspace({ name, rootPath })
     // Make it active
@@ -56,7 +56,7 @@ export function registerWorkspaceHandlers({ sessionManager, windowManager }: Ipc
   })
 
   // Check if a workspace slug already exists (for validation before creation)
-  ipcMain.handle(IPC_CHANNELS.CHECK_WORKSPACE_SLUG, async (_event, slug: string) => {
+  ipcMain.handle(IPC_CHANNELS.workspaces.CHECK_SLUG, async (_event, slug: string) => {
     const defaultWorkspacesDir = join(homedir(), '.craft-agent', 'workspaces')
     const workspacePath = join(defaultWorkspacesDir, slug)
     const exists = existsSync(workspacePath)
@@ -68,7 +68,7 @@ export function registerWorkspaceHandlers({ sessionManager, windowManager }: Ipc
   // ============================================================
 
   // Get workspace ID for the calling window
-  ipcMain.handle(IPC_CHANNELS.GET_WINDOW_WORKSPACE, (event) => {
+  ipcMain.handle(IPC_CHANNELS.window.GET_WORKSPACE, (event) => {
     const workspaceId = windowManager.getWorkspaceForWindow(event.sender.id)
     // Set up ConfigWatcher for live updates (labels, statuses, sources, themes)
     if (workspaceId) {
@@ -81,12 +81,12 @@ export function registerWorkspaceHandlers({ sessionManager, windowManager }: Ipc
   })
 
   // Open workspace in new window (or focus existing)
-  ipcMain.handle(IPC_CHANNELS.OPEN_WORKSPACE, async (_event, workspaceId: string) => {
+  ipcMain.handle(IPC_CHANNELS.window.OPEN_WORKSPACE, async (_event, workspaceId: string) => {
     windowManager.focusOrCreateWindow(workspaceId)
   })
 
   // Open a session in a new window
-  ipcMain.handle(IPC_CHANNELS.OPEN_SESSION_IN_NEW_WINDOW, async (_event, workspaceId: string, sessionId: string) => {
+  ipcMain.handle(IPC_CHANNELS.window.OPEN_SESSION_IN_NEW_WINDOW, async (_event, workspaceId: string, sessionId: string) => {
     // Build deep link for session navigation
     const deepLink = `craftagents://allSessions/session/${sessionId}`
     windowManager.createWindow({
@@ -97,34 +97,34 @@ export function registerWorkspaceHandlers({ sessionManager, windowManager }: Ipc
   })
 
   // Get mode for the calling window (always 'main' now)
-  ipcMain.handle(IPC_CHANNELS.GET_WINDOW_MODE, () => {
+  ipcMain.handle(IPC_CHANNELS.window.GET_MODE, () => {
     return 'main'
   })
 
   // Close the calling window (triggers close event which may be intercepted)
-  ipcMain.handle(IPC_CHANNELS.CLOSE_WINDOW, (event) => {
+  ipcMain.handle(IPC_CHANNELS.window.CLOSE, (event) => {
     windowManager.closeWindow(event.sender.id)
   })
 
   // Confirm close - force close the window (bypasses interception).
   // Called by renderer when it has no modals to close and wants to proceed.
-  ipcMain.handle(IPC_CHANNELS.WINDOW_CONFIRM_CLOSE, (event) => {
+  ipcMain.handle(IPC_CHANNELS.window.CONFIRM_CLOSE, (event) => {
     windowManager.forceCloseWindow(event.sender.id)
   })
 
   // Cancel close - renderer handled the request (closed a modal/panel).
   // Clears the fallback timeout so the window stays open.
-  ipcMain.handle(IPC_CHANNELS.WINDOW_CANCEL_CLOSE, (event) => {
+  ipcMain.handle(IPC_CHANNELS.window.CANCEL_CLOSE, (event) => {
     windowManager.cancelPendingClose(event.sender.id)
   })
 
   // Show/hide macOS traffic light buttons (for fullscreen overlays)
-  ipcMain.handle(IPC_CHANNELS.WINDOW_SET_TRAFFIC_LIGHTS, (event, visible: boolean) => {
+  ipcMain.handle(IPC_CHANNELS.window.SET_TRAFFIC_LIGHTS, (event, visible: boolean) => {
     windowManager.setTrafficLightsVisible(event.sender.id, visible)
   })
 
   // Switch workspace in current window (in-window switching)
-  ipcMain.handle(IPC_CHANNELS.SWITCH_WORKSPACE, async (event, workspaceId: string) => {
+  ipcMain.handle(IPC_CHANNELS.window.SWITCH_WORKSPACE, async (event, workspaceId: string) => {
     const end = perf.start('ipc.switchWorkspace', { workspaceId })
 
     // Get the old workspace ID before updating
@@ -165,7 +165,7 @@ export function registerWorkspaceHandlers({ sessionManager, windowManager }: Ipc
   // ============================================================
 
   // Generic workspace image loading (for source icons, status icons, etc.)
-  ipcMain.handle(IPC_CHANNELS.WORKSPACE_READ_IMAGE, async (_event, workspaceId: string, relativePath: string) => {
+  ipcMain.handle(IPC_CHANNELS.workspace.READ_IMAGE, async (_event, workspaceId: string, relativePath: string) => {
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) throw new Error('Workspace not found')
 
@@ -221,7 +221,7 @@ export function registerWorkspaceHandlers({ sessionManager, windowManager }: Ipc
 
   // Generic workspace image writing (for workspace icon, etc.)
   // Resizes images to max 256x256 to keep file sizes small
-  ipcMain.handle(IPC_CHANNELS.WORKSPACE_WRITE_IMAGE, async (_event, workspaceId: string, relativePath: string, base64: string, mimeType: string) => {
+  ipcMain.handle(IPC_CHANNELS.workspace.WRITE_IMAGE, async (_event, workspaceId: string, relativePath: string, base64: string, mimeType: string) => {
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) throw new Error('Workspace not found')
 
@@ -296,34 +296,34 @@ export function registerWorkspaceHandlers({ sessionManager, windowManager }: Ipc
   // Theme (app-level only)
   // ============================================================
 
-  ipcMain.handle(IPC_CHANNELS.THEME_GET_APP, async () => {
+  ipcMain.handle(IPC_CHANNELS.theme.GET_APP, async () => {
     const { loadAppTheme } = await import('@craft-agent/shared/config/storage')
     return loadAppTheme()
   })
 
   // Preset themes (app-level)
-  ipcMain.handle(IPC_CHANNELS.THEME_GET_PRESETS, async () => {
+  ipcMain.handle(IPC_CHANNELS.theme.GET_PRESETS, async () => {
     const { loadPresetThemes } = await import('@craft-agent/shared/config/storage')
     return loadPresetThemes()
   })
 
-  ipcMain.handle(IPC_CHANNELS.THEME_LOAD_PRESET, async (_event, themeId: string) => {
+  ipcMain.handle(IPC_CHANNELS.theme.LOAD_PRESET, async (_event, themeId: string) => {
     const { loadPresetTheme } = await import('@craft-agent/shared/config/storage')
     return loadPresetTheme(themeId)
   })
 
-  ipcMain.handle(IPC_CHANNELS.THEME_GET_COLOR_THEME, async () => {
+  ipcMain.handle(IPC_CHANNELS.theme.GET_COLOR_THEME, async () => {
     const { getColorTheme } = await import('@craft-agent/shared/config/storage')
     return getColorTheme()
   })
 
-  ipcMain.handle(IPC_CHANNELS.THEME_SET_COLOR_THEME, async (_event, themeId: string) => {
+  ipcMain.handle(IPC_CHANNELS.theme.SET_COLOR_THEME, async (_event, themeId: string) => {
     const { setColorTheme } = await import('@craft-agent/shared/config/storage')
     setColorTheme(themeId)
   })
 
   // Broadcast theme preferences to all other windows (for cross-window sync)
-  ipcMain.handle(IPC_CHANNELS.THEME_BROADCAST_PREFERENCES, async (event, preferences: { mode: string; colorTheme: string; font: string }) => {
+  ipcMain.handle(IPC_CHANNELS.theme.BROADCAST_PREFERENCES, async (event, preferences: { mode: string; colorTheme: string; font: string }) => {
     const senderId = event.sender.id
     // Broadcast to all windows except the sender
     for (const managed of windowManager.getAllWindows()) {
@@ -331,13 +331,13 @@ export function registerWorkspaceHandlers({ sessionManager, windowManager }: Ipc
           !managed.window.webContents.isDestroyed() &&
           managed.window.webContents.mainFrame &&
           managed.window.webContents.id !== senderId) {
-        managed.window.webContents.send(IPC_CHANNELS.THEME_PREFERENCES_CHANGED, preferences)
+        managed.window.webContents.send(IPC_CHANNELS.theme.PREFERENCES_CHANGED, preferences)
       }
     }
   })
 
   // Workspace-level theme overrides
-  ipcMain.handle(IPC_CHANNELS.THEME_GET_WORKSPACE_COLOR_THEME, async (_event, workspaceId: string) => {
+  ipcMain.handle(IPC_CHANNELS.theme.GET_WORKSPACE_COLOR_THEME, async (_event, workspaceId: string) => {
     const { getWorkspaces } = await import('@craft-agent/shared/config/storage')
     const { getWorkspaceColorTheme } = await import('@craft-agent/shared/workspaces/storage')
     const workspaces = getWorkspaces()
@@ -346,7 +346,7 @@ export function registerWorkspaceHandlers({ sessionManager, windowManager }: Ipc
     return getWorkspaceColorTheme(workspace.rootPath) ?? null
   })
 
-  ipcMain.handle(IPC_CHANNELS.THEME_SET_WORKSPACE_COLOR_THEME, async (_event, workspaceId: string, themeId: string | null) => {
+  ipcMain.handle(IPC_CHANNELS.theme.SET_WORKSPACE_COLOR_THEME, async (_event, workspaceId: string, themeId: string | null) => {
     const { getWorkspaces } = await import('@craft-agent/shared/config/storage')
     const { setWorkspaceColorTheme } = await import('@craft-agent/shared/workspaces/storage')
     const workspaces = getWorkspaces()
@@ -355,7 +355,7 @@ export function registerWorkspaceHandlers({ sessionManager, windowManager }: Ipc
     setWorkspaceColorTheme(workspace.rootPath, themeId ?? undefined)
   })
 
-  ipcMain.handle(IPC_CHANNELS.THEME_GET_ALL_WORKSPACE_THEMES, async () => {
+  ipcMain.handle(IPC_CHANNELS.theme.GET_ALL_WORKSPACE_THEMES, async () => {
     const { getWorkspaces } = await import('@craft-agent/shared/config/storage')
     const { getWorkspaceColorTheme } = await import('@craft-agent/shared/workspaces/storage')
     const workspaces = getWorkspaces()
@@ -367,7 +367,7 @@ export function registerWorkspaceHandlers({ sessionManager, windowManager }: Ipc
   })
 
   // Broadcast workspace theme change to all other windows (for cross-window sync)
-  ipcMain.handle(IPC_CHANNELS.THEME_BROADCAST_WORKSPACE_THEME, async (event, workspaceId: string, themeId: string | null) => {
+  ipcMain.handle(IPC_CHANNELS.theme.BROADCAST_WORKSPACE_THEME, async (event, workspaceId: string, themeId: string | null) => {
     const senderId = event.sender.id
     // Broadcast to all windows except the sender
     for (const managed of windowManager.getAllWindows()) {
@@ -375,7 +375,7 @@ export function registerWorkspaceHandlers({ sessionManager, windowManager }: Ipc
           !managed.window.webContents.isDestroyed() &&
           managed.window.webContents.mainFrame &&
           managed.window.webContents.id !== senderId) {
-        managed.window.webContents.send(IPC_CHANNELS.THEME_WORKSPACE_THEME_CHANGED, { workspaceId, themeId })
+        managed.window.webContents.send(IPC_CHANNELS.theme.WORKSPACE_THEME_CHANGED, { workspaceId, themeId })
       }
     }
   })
@@ -385,7 +385,7 @@ export function registerWorkspaceHandlers({ sessionManager, windowManager }: Ipc
   // ============================================================
 
   // List views for a workspace (dynamic expression-based filters stored in views.json)
-  ipcMain.handle(IPC_CHANNELS.VIEWS_LIST, async (_event, workspaceId: string) => {
+  ipcMain.handle(IPC_CHANNELS.views.LIST, async (_event, workspaceId: string) => {
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) throw new Error('Workspace not found')
 
@@ -394,14 +394,14 @@ export function registerWorkspaceHandlers({ sessionManager, windowManager }: Ipc
   })
 
   // Save views (replaces full array)
-  ipcMain.handle(IPC_CHANNELS.VIEWS_SAVE, async (_event, workspaceId: string, views: import('@craft-agent/shared/views').ViewConfig[]) => {
+  ipcMain.handle(IPC_CHANNELS.views.SAVE, async (_event, workspaceId: string, views: import('@craft-agent/shared/views').ViewConfig[]) => {
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) throw new Error('Workspace not found')
 
     const { saveViews } = await import('@craft-agent/shared/views/storage')
     saveViews(workspace.rootPath, views)
     // Broadcast labels changed since views are used alongside labels in sidebar
-    windowManager.broadcastToAll(IPC_CHANNELS.LABELS_CHANGED, workspaceId)
+    windowManager.broadcastToAll(IPC_CHANNELS.labels.CHANGED, workspaceId)
   })
 
   // ============================================================
@@ -410,7 +410,7 @@ export function registerWorkspaceHandlers({ sessionManager, windowManager }: Ipc
 
   // Tool icon mappings — loads tool-icons.json and resolves each entry's icon to a data URL
   // for display in the Appearance settings page
-  ipcMain.handle(IPC_CHANNELS.TOOL_ICONS_GET_MAPPINGS, async () => {
+  ipcMain.handle(IPC_CHANNELS.toolIcons.GET_MAPPINGS, async () => {
     const { getToolIconsDir } = await import('@craft-agent/shared/config/storage')
     const { loadToolIconConfig } = await import('@craft-agent/shared/utils/cli-icon-resolver')
     const { encodeIconToDataUrl } = await import('@craft-agent/shared/utils/icon-encoder')
@@ -436,7 +436,7 @@ export function registerWorkspaceHandlers({ sessionManager, windowManager }: Ipc
   })
 
   // Logo URL resolution (uses Node.js filesystem cache for provider domains)
-  ipcMain.handle(IPC_CHANNELS.LOGO_GET_URL, async (_event, serviceUrl: string, provider?: string) => {
+  ipcMain.handle(IPC_CHANNELS.logo.GET_URL, async (_event, serviceUrl: string, provider?: string) => {
     const { getLogoUrl } = await import('@craft-agent/shared/utils/logo')
     const result = getLogoUrl(serviceUrl, provider)
     return result

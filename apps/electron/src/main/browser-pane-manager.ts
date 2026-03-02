@@ -14,7 +14,12 @@ import { BrowserView, BrowserWindow, Menu, app, ipcMain, nativeTheme, session, s
 import { mainLog } from './logger'
 import type { WindowManager } from './window-manager'
 import { BrowserCDP, type AccessibilitySnapshot, type ElementGeometry } from './browser-cdp'
-import type { BrowserEmptyStateLaunchPayload, BrowserEmptyStateLaunchResult, BrowserInstanceInfo } from '../shared/types'
+import {
+  BROWSER_TOOLBAR_CHANNELS as TOOLBAR_CHANNELS,
+  type BrowserEmptyStateLaunchPayload,
+  type BrowserEmptyStateLaunchResult,
+  type BrowserInstanceInfo,
+} from '../shared/types'
 import { DEFAULT_THEME, loadAppTheme } from '@craft-agent/shared/config'
 import { getBrowserLiveFxCornerRadii } from '../shared/browser-live-fx'
 
@@ -95,20 +100,6 @@ const THEME_COLOR_EXTRACTOR_FN = String.raw`
   return parseBg(document.body) || parseBg(document.documentElement) || null;
 }
 `
-
-/** IPC channels for the browser toolbar preload */
-const TOOLBAR_CHANNELS = {
-  NAVIGATE: 'browser-toolbar:navigate',
-  GO_BACK: 'browser-toolbar:go-back',
-  GO_FORWARD: 'browser-toolbar:go-forward',
-  RELOAD: 'browser-toolbar:reload',
-  STOP: 'browser-toolbar:stop',
-  OPEN_MENU: 'browser-toolbar:open-menu',
-  HIDE: 'browser-toolbar:hide',
-  DESTROY: 'browser-toolbar:destroy',
-  STATE_UPDATE: 'browser-toolbar:state-update',
-  THEME_COLOR: 'browser-toolbar:theme-color',
-} as const
 
 const SESSION_PARTITION = 'persist:browser-pane'
 

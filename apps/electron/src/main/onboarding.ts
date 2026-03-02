@@ -16,16 +16,26 @@ import type { SessionManager } from './sessions'
 // IPC Handlers
 // ============================================
 
+export const HANDLED_CHANNELS = [
+  IPC_CHANNELS.onboarding.GET_AUTH_STATE,
+  IPC_CHANNELS.onboarding.VALIDATE_MCP,
+  IPC_CHANNELS.onboarding.START_MCP_OAUTH,
+  IPC_CHANNELS.onboarding.START_CLAUDE_OAUTH,
+  IPC_CHANNELS.onboarding.EXCHANGE_CLAUDE_CODE,
+  IPC_CHANNELS.onboarding.HAS_CLAUDE_OAUTH_STATE,
+  IPC_CHANNELS.onboarding.CLEAR_CLAUDE_OAUTH_STATE,
+] as const
+
 export function registerOnboardingHandlers(sessionManager: SessionManager): void {
   // Get current auth state
-  ipcMain.handle(IPC_CHANNELS.ONBOARDING_GET_AUTH_STATE, async () => {
+  ipcMain.handle(IPC_CHANNELS.onboarding.GET_AUTH_STATE, async () => {
     const authState = await getAuthState()
     const setupNeeds = getSetupNeeds(authState)
     return { authState, setupNeeds }
   })
 
   // Validate MCP connection
-  ipcMain.handle(IPC_CHANNELS.ONBOARDING_VALIDATE_MCP, async (_event, mcpUrl: string, accessToken?: string) => {
+  ipcMain.handle(IPC_CHANNELS.onboarding.VALIDATE_MCP, async (_event, mcpUrl: string, accessToken?: string) => {
     try {
       const result = await validateMcpConnection({
         mcpUrl,
@@ -39,7 +49,7 @@ export function registerOnboardingHandlers(sessionManager: SessionManager): void
   })
 
   // Start MCP server OAuth
-  ipcMain.handle(IPC_CHANNELS.ONBOARDING_START_MCP_OAUTH, async (_event, mcpUrl: string) => {
+  ipcMain.handle(IPC_CHANNELS.onboarding.START_MCP_OAUTH, async (_event, mcpUrl: string) => {
     mainLog.info('[Onboarding:Main] ONBOARDING_START_MCP_OAUTH received', { mcpUrl })
     try {
       mainLog.info('[Onboarding:Main] MCP OAuth mcpUrl:', mcpUrl)
@@ -70,7 +80,7 @@ export function registerOnboardingHandlers(sessionManager: SessionManager): void
   })
 
   // Start Claude OAuth flow (opens browser, returns URL)
-  ipcMain.handle(IPC_CHANNELS.ONBOARDING_START_CLAUDE_OAUTH, async () => {
+  ipcMain.handle(IPC_CHANNELS.onboarding.START_CLAUDE_OAUTH, async () => {
     try {
       mainLog.info('[Onboarding] Starting Claude OAuth flow...')
 
@@ -88,7 +98,7 @@ export function registerOnboardingHandlers(sessionManager: SessionManager): void
   })
 
   // Exchange authorization code for tokens
-  ipcMain.handle(IPC_CHANNELS.ONBOARDING_EXCHANGE_CLAUDE_CODE, async (_event, authorizationCode: string, connectionSlug: string) => {
+  ipcMain.handle(IPC_CHANNELS.onboarding.EXCHANGE_CLAUDE_CODE, async (_event, authorizationCode: string, connectionSlug: string) => {
     try {
       mainLog.info(`[Onboarding] Exchanging Claude authorization code for connection: ${connectionSlug}`)
 
@@ -132,12 +142,12 @@ export function registerOnboardingHandlers(sessionManager: SessionManager): void
   })
 
   // Check if there's a valid OAuth state in progress
-  ipcMain.handle(IPC_CHANNELS.ONBOARDING_HAS_CLAUDE_OAUTH_STATE, async () => {
+  ipcMain.handle(IPC_CHANNELS.onboarding.HAS_CLAUDE_OAUTH_STATE, async () => {
     return hasValidOAuthState()
   })
 
   // Clear OAuth state (for cancel/reset)
-  ipcMain.handle(IPC_CHANNELS.ONBOARDING_CLEAR_CLAUDE_OAUTH_STATE, async () => {
+  ipcMain.handle(IPC_CHANNELS.onboarding.CLEAR_CLAUDE_OAUTH_STATE, async () => {
     clearOAuthState()
     return { success: true }
   })

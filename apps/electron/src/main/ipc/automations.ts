@@ -54,16 +54,16 @@ async function withAutomationMatcher(workspaceId: string, eventName: string, mat
 }
 
 export const HANDLED_CHANNELS = [
-  IPC_CHANNELS.TEST_AUTOMATION,
-  IPC_CHANNELS.AUTOMATIONS_SET_ENABLED,
-  IPC_CHANNELS.AUTOMATIONS_DUPLICATE,
-  IPC_CHANNELS.AUTOMATIONS_DELETE,
-  IPC_CHANNELS.AUTOMATIONS_GET_HISTORY,
-  IPC_CHANNELS.AUTOMATIONS_GET_LAST_EXECUTED,
+  IPC_CHANNELS.automations.TEST,
+  IPC_CHANNELS.automations.SET_ENABLED,
+  IPC_CHANNELS.automations.DUPLICATE,
+  IPC_CHANNELS.automations.DELETE,
+  IPC_CHANNELS.automations.GET_HISTORY,
+  IPC_CHANNELS.automations.GET_LAST_EXECUTED,
 ] as const
 
 export function registerAutomationsHandlers({ sessionManager }: IpcContext): void {
-  ipcMain.handle(IPC_CHANNELS.TEST_AUTOMATION, async (_event, payload: import('../../shared/types').TestAutomationPayload) => {
+  ipcMain.handle(IPC_CHANNELS.automations.TEST, async (_event, payload: import('../../shared/types').TestAutomationPayload) => {
     const workspace = getWorkspaceByNameOrId(payload.workspaceId)
     if (!workspace) throw new Error('Workspace not found')
 
@@ -123,7 +123,7 @@ export function registerAutomationsHandlers({ sessionManager }: IpcContext): voi
   })
 
   // Automation enabled state management (toggle enabled/disabled in automations.json)
-  ipcMain.handle(IPC_CHANNELS.AUTOMATIONS_SET_ENABLED, async (_event, workspaceId: string, eventName: string, matcherIndex: number, enabled: boolean) => {
+  ipcMain.handle(IPC_CHANNELS.automations.SET_ENABLED, async (_event, workspaceId: string, eventName: string, matcherIndex: number, enabled: boolean) => {
     await withAutomationMatcher(workspaceId, eventName, matcherIndex, (matchers, idx) => {
       if (enabled) {
         // Remove the enabled field entirely (defaults to true) to keep JSON clean
@@ -135,7 +135,7 @@ export function registerAutomationsHandlers({ sessionManager }: IpcContext): voi
   })
 
   // Duplicate an automation matcher (deep-clone, new ID, append " Copy" to name, insert after original)
-  ipcMain.handle(IPC_CHANNELS.AUTOMATIONS_DUPLICATE, async (_event, workspaceId: string, eventName: string, matcherIndex: number) => {
+  ipcMain.handle(IPC_CHANNELS.automations.DUPLICATE, async (_event, workspaceId: string, eventName: string, matcherIndex: number) => {
     await withAutomationMatcher(workspaceId, eventName, matcherIndex, (matchers, idx, _config, genId) => {
       const clone = JSON.parse(JSON.stringify(matchers[idx]))
       clone.id = genId()
@@ -145,7 +145,7 @@ export function registerAutomationsHandlers({ sessionManager }: IpcContext): voi
   })
 
   // Delete an automation matcher (remove from array, clean up empty event key)
-  ipcMain.handle(IPC_CHANNELS.AUTOMATIONS_DELETE, async (_event, workspaceId: string, eventName: string, matcherIndex: number) => {
+  ipcMain.handle(IPC_CHANNELS.automations.DELETE, async (_event, workspaceId: string, eventName: string, matcherIndex: number) => {
     await withAutomationMatcher(workspaceId, eventName, matcherIndex, (matchers, idx, config) => {
       matchers.splice(idx, 1)
       if (matchers.length === 0) {
@@ -156,7 +156,7 @@ export function registerAutomationsHandlers({ sessionManager }: IpcContext): voi
   })
 
   // Read execution history for a specific automation
-  ipcMain.handle(IPC_CHANNELS.AUTOMATIONS_GET_HISTORY, async (_event, workspaceId: string, automationId: string, limit = 20) => {
+  ipcMain.handle(IPC_CHANNELS.automations.GET_HISTORY, async (_event, workspaceId: string, automationId: string, limit = 20) => {
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) throw new Error('Workspace not found')
 
@@ -176,7 +176,7 @@ export function registerAutomationsHandlers({ sessionManager }: IpcContext): voi
   })
 
   // Return last execution timestamp for all automations (for lastExecutedAt in list)
-  ipcMain.handle(IPC_CHANNELS.AUTOMATIONS_GET_LAST_EXECUTED, async (_event, workspaceId: string) => {
+  ipcMain.handle(IPC_CHANNELS.automations.GET_LAST_EXECUTED, async (_event, workspaceId: string) => {
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) throw new Error('Workspace not found')
 

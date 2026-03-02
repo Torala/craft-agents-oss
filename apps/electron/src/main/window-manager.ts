@@ -245,7 +245,7 @@ export class WindowManager {
             // Wait a bit for React to mount and register IPC listeners
             setTimeout(() => {
               if (!window.isDestroyed() && !window.webContents.isDestroyed()) {
-                window.webContents.send(IPC_CHANNELS.DEEP_LINK_NAVIGATE, {
+                window.webContents.send(IPC_CHANNELS.deeplink.NAVIGATE, {
                   view: target.view,
                   action: target.action,
                   actionParams: target.actionParams,
@@ -270,7 +270,7 @@ export class WindowManager {
     const themeHandler = () => {
       // Check mainFrame - it becomes null when render frame is disposed
       if (!window.isDestroyed() && !window.webContents.isDestroyed() && window.webContents.mainFrame) {
-        window.webContents.send(IPC_CHANNELS.SYSTEM_THEME_CHANGED, nativeTheme.shouldUseDarkColors)
+        window.webContents.send(IPC_CHANNELS.theme.SYSTEM_CHANGED, nativeTheme.shouldUseDarkColors)
       }
     }
     nativeTheme.on('updated', themeHandler)
@@ -278,12 +278,12 @@ export class WindowManager {
     // Handle focus/blur to broadcast window focus state
     window.on('focus', () => {
       if (!window.isDestroyed() && !window.webContents.isDestroyed() && window.webContents.mainFrame) {
-        window.webContents.send(IPC_CHANNELS.WINDOW_FOCUS_STATE, true)
+        window.webContents.send(IPC_CHANNELS.window.FOCUS_STATE, true)
       }
     })
     window.on('blur', () => {
       if (!window.isDestroyed() && !window.webContents.isDestroyed() && window.webContents.mainFrame) {
-        window.webContents.send(IPC_CHANNELS.WINDOW_FOCUS_STATE, false)
+        window.webContents.send(IPC_CHANNELS.window.FOCUS_STATE, false)
       }
     })
 
@@ -294,7 +294,7 @@ export class WindowManager {
       if (!window.webContents.isDestroyed() && window.webContents.mainFrame) {
         event.preventDefault()
         // Send close request to renderer - it will either close a modal or confirm close
-        window.webContents.send(IPC_CHANNELS.WINDOW_CLOSE_REQUESTED)
+        window.webContents.send(IPC_CHANNELS.window.CLOSE_REQUESTED)
 
         // Fallback timeout: if IPC fails (e.g., on Hyprland/Wayland), force close after 3s.
         // Reset timeout on each attempt so active users closing modals aren't interrupted.

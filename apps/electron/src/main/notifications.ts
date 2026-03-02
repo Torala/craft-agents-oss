@@ -90,7 +90,7 @@ function handleNotificationClick(workspaceId: string, sessionId: string): void {
     window.focus()
 
     // Send navigation event to renderer to open the session
-    window.webContents.send('notification:navigate', {
+    window.webContents.send(IPC_CHANNELS.notification.NAVIGATE, {
       workspaceId,
       sessionId,
     })
@@ -149,7 +149,7 @@ function updateBadgeCountMacOS(count: number): void {
       // Use windowManager to target only app windows — BrowserWindow.getAllWindows()
       // includes browser pane windows which have no onBadgeDraw listener
       if (windowManager && baseIconDataUrl) {
-        windowManager.broadcastToAll(IPC_CHANNELS.BADGE_DRAW, { count, iconDataUrl: baseIconDataUrl })
+        windowManager.broadcastToAll(IPC_CHANNELS.badge.DRAW, { count, iconDataUrl: baseIconDataUrl })
       }
     } else {
       // Reset to original icon (no badge)
@@ -173,7 +173,7 @@ function updateBadgeCountWindows(count: number): void {
       // Draw overlay icon using the renderer process (Canvas API)
       // Use windowManager to target only app windows
       if (windowManager) {
-        windowManager.broadcastToAll(IPC_CHANNELS.BADGE_DRAW_WINDOWS, { count })
+        windowManager.broadcastToAll(IPC_CHANNELS.badge.DRAW_WINDOWS, { count })
       }
     } else {
       // Clear the overlay on all windows

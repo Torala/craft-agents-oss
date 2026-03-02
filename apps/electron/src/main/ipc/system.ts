@@ -11,75 +11,75 @@ import { validateFilePath } from './files'
 import type { IpcContext } from './types'
 
 export const HANDLED_CHANNELS = [
-  IPC_CHANNELS.GET_SYSTEM_THEME,
-  IPC_CHANNELS.GET_HOME_DIR,
-  IPC_CHANNELS.IS_DEBUG_MODE,
-  IPC_CHANNELS.DEBUG_LOG,
-  IPC_CHANNELS.UPDATE_CHECK,
-  IPC_CHANNELS.UPDATE_GET_INFO,
-  IPC_CHANNELS.UPDATE_INSTALL,
-  IPC_CHANNELS.UPDATE_DISMISS,
-  IPC_CHANNELS.UPDATE_GET_DISMISSED,
-  IPC_CHANNELS.OPEN_URL,
-  IPC_CHANNELS.OPEN_FILE,
-  IPC_CHANNELS.SHOW_IN_FOLDER,
-  IPC_CHANNELS.GET_RELEASE_NOTES,
-  IPC_CHANNELS.GET_LATEST_RELEASE_VERSION,
-  IPC_CHANNELS.GET_GIT_BRANCH,
-  IPC_CHANNELS.GITBASH_CHECK,
-  IPC_CHANNELS.GITBASH_BROWSE,
-  IPC_CHANNELS.GITBASH_SET_PATH,
-  IPC_CHANNELS.BADGE_REFRESH,
-  IPC_CHANNELS.BADGE_SET_ICON,
-  IPC_CHANNELS.WINDOW_GET_FOCUS_STATE,
-  IPC_CHANNELS.NOTIFICATION_SHOW,
-  IPC_CHANNELS.NOTIFICATION_GET_ENABLED,
-  IPC_CHANNELS.NOTIFICATION_SET_ENABLED,
-  IPC_CHANNELS.MENU_QUIT,
-  IPC_CHANNELS.MENU_NEW_WINDOW,
-  IPC_CHANNELS.MENU_MINIMIZE,
-  IPC_CHANNELS.MENU_MAXIMIZE,
-  IPC_CHANNELS.MENU_ZOOM_IN,
-  IPC_CHANNELS.MENU_ZOOM_OUT,
-  IPC_CHANNELS.MENU_ZOOM_RESET,
-  IPC_CHANNELS.MENU_TOGGLE_DEVTOOLS,
-  IPC_CHANNELS.MENU_UNDO,
-  IPC_CHANNELS.MENU_REDO,
-  IPC_CHANNELS.MENU_CUT,
-  IPC_CHANNELS.MENU_COPY,
-  IPC_CHANNELS.MENU_PASTE,
-  IPC_CHANNELS.MENU_SELECT_ALL,
+  IPC_CHANNELS.theme.GET_SYSTEM_PREFERENCE,
+  IPC_CHANNELS.system.HOME_DIR,
+  IPC_CHANNELS.system.IS_DEBUG_MODE,
+  IPC_CHANNELS.debug.LOG,
+  IPC_CHANNELS.update.CHECK,
+  IPC_CHANNELS.update.GET_INFO,
+  IPC_CHANNELS.update.INSTALL,
+  IPC_CHANNELS.update.DISMISS,
+  IPC_CHANNELS.update.GET_DISMISSED,
+  IPC_CHANNELS.shell.OPEN_URL,
+  IPC_CHANNELS.shell.OPEN_FILE,
+  IPC_CHANNELS.shell.SHOW_IN_FOLDER,
+  IPC_CHANNELS.releaseNotes.GET,
+  IPC_CHANNELS.releaseNotes.GET_LATEST_VERSION,
+  IPC_CHANNELS.git.GET_BRANCH,
+  IPC_CHANNELS.gitbash.CHECK,
+  IPC_CHANNELS.gitbash.BROWSE,
+  IPC_CHANNELS.gitbash.SET_PATH,
+  IPC_CHANNELS.badge.REFRESH,
+  IPC_CHANNELS.badge.SET_ICON,
+  IPC_CHANNELS.window.GET_FOCUS_STATE,
+  IPC_CHANNELS.notification.SHOW,
+  IPC_CHANNELS.notification.GET_ENABLED,
+  IPC_CHANNELS.notification.SET_ENABLED,
+  IPC_CHANNELS.menu.QUIT,
+  IPC_CHANNELS.menu.NEW_WINDOW,
+  IPC_CHANNELS.menu.MINIMIZE,
+  IPC_CHANNELS.menu.MAXIMIZE,
+  IPC_CHANNELS.menu.ZOOM_IN,
+  IPC_CHANNELS.menu.ZOOM_OUT,
+  IPC_CHANNELS.menu.ZOOM_RESET,
+  IPC_CHANNELS.menu.TOGGLE_DEV_TOOLS,
+  IPC_CHANNELS.menu.UNDO,
+  IPC_CHANNELS.menu.REDO,
+  IPC_CHANNELS.menu.CUT,
+  IPC_CHANNELS.menu.COPY,
+  IPC_CHANNELS.menu.PASTE,
+  IPC_CHANNELS.menu.SELECT_ALL,
 ] as const
 
 export function registerSystemHandlers({ sessionManager, windowManager }: IpcContext): void {
   // Get system theme preference (dark = true, light = false)
-  ipcMain.handle(IPC_CHANNELS.GET_SYSTEM_THEME, () => {
+  ipcMain.handle(IPC_CHANNELS.theme.GET_SYSTEM_PREFERENCE, () => {
     return nativeTheme.shouldUseDarkColors
   })
 
   // Get user's home directory
-  ipcMain.handle(IPC_CHANNELS.GET_HOME_DIR, () => {
+  ipcMain.handle(IPC_CHANNELS.system.HOME_DIR, () => {
     return homedir()
   })
 
   // Check if running in debug mode (from source)
-  ipcMain.handle(IPC_CHANNELS.IS_DEBUG_MODE, () => {
+  ipcMain.handle(IPC_CHANNELS.system.IS_DEBUG_MODE, () => {
     return !app.isPackaged
   })
 
   // Release notes
-  ipcMain.handle(IPC_CHANNELS.GET_RELEASE_NOTES, () => {
+  ipcMain.handle(IPC_CHANNELS.releaseNotes.GET, () => {
     const { getCombinedReleaseNotes } = require('@craft-agent/shared/release-notes') as typeof import('@craft-agent/shared/release-notes')
     return getCombinedReleaseNotes()
   })
 
-  ipcMain.handle(IPC_CHANNELS.GET_LATEST_RELEASE_VERSION, () => {
+  ipcMain.handle(IPC_CHANNELS.releaseNotes.GET_LATEST_VERSION, () => {
     const { getLatestReleaseVersion } = require('@craft-agent/shared/release-notes') as typeof import('@craft-agent/shared/release-notes')
     return getLatestReleaseVersion()
   })
 
   // Get git branch for a directory (returns null if not a git repo or git unavailable)
-  ipcMain.handle(IPC_CHANNELS.GET_GIT_BRANCH, (_event, dirPath: string) => {
+  ipcMain.handle(IPC_CHANNELS.git.GET_BRANCH, (_event, dirPath: string) => {
     try {
       const branch = execSync('git rev-parse --abbrev-ref HEAD', {
         cwd: dirPath,
@@ -95,7 +95,7 @@ export function registerSystemHandlers({ sessionManager, windowManager }: IpcCon
   })
 
   // Git Bash detection and configuration (Windows only)
-  ipcMain.handle(IPC_CHANNELS.GITBASH_CHECK, async () => {
+  ipcMain.handle(IPC_CHANNELS.gitbash.CHECK, async () => {
     const platform = process.platform as 'win32' | 'darwin' | 'linux'
 
     // Non-Windows platforms don't need Git Bash
@@ -152,7 +152,7 @@ export function registerSystemHandlers({ sessionManager, windowManager }: IpcCon
     return { found: false, path: null, platform }
   })
 
-  ipcMain.handle(IPC_CHANNELS.GITBASH_BROWSE, async (event) => {
+  ipcMain.handle(IPC_CHANNELS.gitbash.BROWSE, async (event) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     if (!win) return null
 
@@ -170,7 +170,7 @@ export function registerSystemHandlers({ sessionManager, windowManager }: IpcCon
     return result.filePaths[0]
   })
 
-  ipcMain.handle(IPC_CHANNELS.GITBASH_SET_PATH, async (_event, bashPath: string) => {
+  ipcMain.handle(IPC_CHANNELS.gitbash.SET_PATH, async (_event, bashPath: string) => {
     const validation = await validateGitBashPath(bashPath)
     if (!validation.valid) {
       return { success: false, error: validation.error }
@@ -183,41 +183,41 @@ export function registerSystemHandlers({ sessionManager, windowManager }: IpcCon
   })
 
   // Debug logging from renderer -> main log file (fire-and-forget, no response)
-  ipcMain.on(IPC_CHANNELS.DEBUG_LOG, (_event, ...args: unknown[]) => {
+  ipcMain.on(IPC_CHANNELS.debug.LOG, (_event, ...args: unknown[]) => {
     ipcLog.info('[renderer]', ...args)
   })
 
   // Auto-update handlers
   // Manual check from UI - don't auto-download (user might be on metered connection)
-  ipcMain.handle(IPC_CHANNELS.UPDATE_CHECK, async () => {
+  ipcMain.handle(IPC_CHANNELS.update.CHECK, async () => {
     const { checkForUpdates } = await import('../auto-update')
     return checkForUpdates({ autoDownload: false })
   })
 
-  ipcMain.handle(IPC_CHANNELS.UPDATE_GET_INFO, async () => {
+  ipcMain.handle(IPC_CHANNELS.update.GET_INFO, async () => {
     const { getUpdateInfo } = await import('../auto-update')
     return getUpdateInfo()
   })
 
-  ipcMain.handle(IPC_CHANNELS.UPDATE_INSTALL, async () => {
+  ipcMain.handle(IPC_CHANNELS.update.INSTALL, async () => {
     const { installUpdate } = await import('../auto-update')
     return installUpdate()
   })
 
   // Dismiss update for this version (persists across restarts)
-  ipcMain.handle(IPC_CHANNELS.UPDATE_DISMISS, async (_event, version: string) => {
+  ipcMain.handle(IPC_CHANNELS.update.DISMISS, async (_event, version: string) => {
     const { setDismissedUpdateVersion } = await import('@craft-agent/shared/config')
     setDismissedUpdateVersion(version)
   })
 
   // Get dismissed version
-  ipcMain.handle(IPC_CHANNELS.UPDATE_GET_DISMISSED, async () => {
+  ipcMain.handle(IPC_CHANNELS.update.GET_DISMISSED, async () => {
     const { getDismissedUpdateVersion } = await import('@craft-agent/shared/config')
     return getDismissedUpdateVersion()
   })
 
   // Shell operations - open URL in external browser (or handle craftagents:// internally)
-  ipcMain.handle(IPC_CHANNELS.OPEN_URL, async (_event, url: string) => {
+  ipcMain.handle(IPC_CHANNELS.shell.OPEN_URL, async (_event, url: string) => {
     ipcLog.info('[OPEN_URL] Received request:', url)
     try {
       // Validate URL format
@@ -246,7 +246,7 @@ export function registerSystemHandlers({ sessionManager, windowManager }: IpcCon
   })
 
   // Shell operations - open file in default application
-  ipcMain.handle(IPC_CHANNELS.OPEN_FILE, async (_event, path: string) => {
+  ipcMain.handle(IPC_CHANNELS.shell.OPEN_FILE, async (_event, path: string) => {
     try {
       // Resolve relative paths to absolute before validation
       const absolutePath = resolve(path)
@@ -266,7 +266,7 @@ export function registerSystemHandlers({ sessionManager, windowManager }: IpcCon
   })
 
   // Shell operations - show file in folder (opens Finder/Explorer with file selected)
-  ipcMain.handle(IPC_CHANNELS.SHOW_IN_FOLDER, async (_event, path: string) => {
+  ipcMain.handle(IPC_CHANNELS.shell.SHOW_IN_FOLDER, async (_event, path: string) => {
     try {
       // Resolve relative paths to absolute before validation
       const absolutePath = resolve(path)
@@ -281,24 +281,24 @@ export function registerSystemHandlers({ sessionManager, windowManager }: IpcCon
   })
 
   // Menu actions from renderer (for unified Craft menu)
-  ipcMain.handle(IPC_CHANNELS.MENU_QUIT, () => {
+  ipcMain.handle(IPC_CHANNELS.menu.QUIT, () => {
     app.quit()
   })
 
   // New Window: create a new window for the current workspace
-  ipcMain.handle(IPC_CHANNELS.MENU_NEW_WINDOW, (event) => {
+  ipcMain.handle(IPC_CHANNELS.menu.NEW_WINDOW, (event) => {
     const workspaceId = windowManager.getWorkspaceForWindow(event.sender.id)
     if (workspaceId) {
       windowManager.createWindow({ workspaceId })
     }
   })
 
-  ipcMain.handle(IPC_CHANNELS.MENU_MINIMIZE, (event) => {
+  ipcMain.handle(IPC_CHANNELS.menu.MINIMIZE, (event) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     win?.minimize()
   })
 
-  ipcMain.handle(IPC_CHANNELS.MENU_MAXIMIZE, (event) => {
+  ipcMain.handle(IPC_CHANNELS.menu.MAXIMIZE, (event) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     if (win) {
       if (win.isMaximized()) {
@@ -309,7 +309,7 @@ export function registerSystemHandlers({ sessionManager, windowManager }: IpcCon
     }
   })
 
-  ipcMain.handle(IPC_CHANNELS.MENU_ZOOM_IN, (event) => {
+  ipcMain.handle(IPC_CHANNELS.menu.ZOOM_IN, (event) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     if (win) {
       const currentZoom = win.webContents.getZoomFactor()
@@ -317,7 +317,7 @@ export function registerSystemHandlers({ sessionManager, windowManager }: IpcCon
     }
   })
 
-  ipcMain.handle(IPC_CHANNELS.MENU_ZOOM_OUT, (event) => {
+  ipcMain.handle(IPC_CHANNELS.menu.ZOOM_OUT, (event) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     if (win) {
       const currentZoom = win.webContents.getZoomFactor()
@@ -325,52 +325,52 @@ export function registerSystemHandlers({ sessionManager, windowManager }: IpcCon
     }
   })
 
-  ipcMain.handle(IPC_CHANNELS.MENU_ZOOM_RESET, (event) => {
+  ipcMain.handle(IPC_CHANNELS.menu.ZOOM_RESET, (event) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     win?.webContents.setZoomFactor(1.0)
   })
 
-  ipcMain.handle(IPC_CHANNELS.MENU_TOGGLE_DEVTOOLS, (event) => {
+  ipcMain.handle(IPC_CHANNELS.menu.TOGGLE_DEV_TOOLS, (event) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     win?.webContents.toggleDevTools()
   })
 
-  ipcMain.handle(IPC_CHANNELS.MENU_UNDO, (event) => {
+  ipcMain.handle(IPC_CHANNELS.menu.UNDO, (event) => {
     event.sender.undo()
   })
 
-  ipcMain.handle(IPC_CHANNELS.MENU_REDO, (event) => {
+  ipcMain.handle(IPC_CHANNELS.menu.REDO, (event) => {
     event.sender.redo()
   })
 
-  ipcMain.handle(IPC_CHANNELS.MENU_CUT, (event) => {
+  ipcMain.handle(IPC_CHANNELS.menu.CUT, (event) => {
     event.sender.cut()
   })
 
-  ipcMain.handle(IPC_CHANNELS.MENU_COPY, (event) => {
+  ipcMain.handle(IPC_CHANNELS.menu.COPY, (event) => {
     event.sender.copy()
   })
 
-  ipcMain.handle(IPC_CHANNELS.MENU_PASTE, (event) => {
+  ipcMain.handle(IPC_CHANNELS.menu.PASTE, (event) => {
     event.sender.paste()
   })
 
-  ipcMain.handle(IPC_CHANNELS.MENU_SELECT_ALL, (event) => {
+  ipcMain.handle(IPC_CHANNELS.menu.SELECT_ALL, (event) => {
     event.sender.selectAll()
   })
 
   // Notifications
-  ipcMain.handle(IPC_CHANNELS.NOTIFICATION_SHOW, async (_event, title: string, body: string, workspaceId: string, sessionId: string) => {
+  ipcMain.handle(IPC_CHANNELS.notification.SHOW, async (_event, title: string, body: string, workspaceId: string, sessionId: string) => {
     const { showNotification } = await import('../notifications')
     showNotification(title, body, workspaceId, sessionId)
   })
 
-  ipcMain.handle(IPC_CHANNELS.NOTIFICATION_GET_ENABLED, async () => {
+  ipcMain.handle(IPC_CHANNELS.notification.GET_ENABLED, async () => {
     const { getNotificationsEnabled } = await import('@craft-agent/shared/config/storage')
     return getNotificationsEnabled()
   })
 
-  ipcMain.handle(IPC_CHANNELS.NOTIFICATION_SET_ENABLED, async (_event, enabled: boolean) => {
+  ipcMain.handle(IPC_CHANNELS.notification.SET_ENABLED, async (_event, enabled: boolean) => {
     const { setNotificationsEnabled } = await import('@craft-agent/shared/config/storage')
     setNotificationsEnabled(enabled)
 
@@ -382,19 +382,19 @@ export function registerSystemHandlers({ sessionManager, windowManager }: IpcCon
   })
 
   // Badge and window focus
-  ipcMain.handle(IPC_CHANNELS.BADGE_REFRESH, async () => {
+  ipcMain.handle(IPC_CHANNELS.badge.REFRESH, async () => {
     try {
       await sessionManager.waitForInit()
     } catch { /* continue */ }
     sessionManager.refreshBadge()
   })
 
-  ipcMain.handle(IPC_CHANNELS.BADGE_SET_ICON, async (_event, dataUrl: string) => {
+  ipcMain.handle(IPC_CHANNELS.badge.SET_ICON, async (_event, dataUrl: string) => {
     const { setDockIconWithBadge } = await import('../notifications')
     setDockIconWithBadge(dataUrl)
   })
 
-  ipcMain.handle(IPC_CHANNELS.WINDOW_GET_FOCUS_STATE, () => {
+  ipcMain.handle(IPC_CHANNELS.window.GET_FOCUS_STATE, () => {
     const { isAnyWindowFocused } = require('../notifications')
     return isAnyWindowFocused()
   })

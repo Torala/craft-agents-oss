@@ -1,75 +1,161 @@
-/**
- * Validates IPC handler registration integrity by statically parsing
- * HANDLED_CHANNELS arrays from all domain files. This avoids importing
- * the domain modules (which depend on Electron runtime).
- */
-import { describe, it, expect } from 'bun:test'
-import { readdirSync, readFileSync } from 'fs'
-import { join } from 'path'
+import { beforeEach, describe, expect, it, mock } from 'bun:test'
+import type { IpcContext } from '../types'
 
-const IPC_DIR = join(__dirname, '..')
+type RegistrationKind = 'handle' | 'on'
 
-/** Extract IPC_CHANNELS.XXX references from a HANDLED_CHANNELS array in source text */
-function extractHandledChannels(source: string): string[] {
-  const match = source.match(/export const HANDLED_CHANNELS\s*=\s*\[([\s\S]*?)\]\s*as const/)
-  if (!match) return []
-  const body = match[1]
-  const channels: string[] = []
-  for (const m of body.matchAll(/IPC_CHANNELS\.(\w+)/g)) {
-    channels.push(m[1])
-  }
-  return channels
+const registrationCounts = new Map<string, number>()
+const registrations: Array<{ channel: string; kind: RegistrationKind }> = []
+
+function recordRegistration(channel: string, kind: RegistrationKind): void {
+  registrationCounts.set(channel, (registrationCounts.get(channel) ?? 0) + 1)
+  registrations.push({ channel, kind })
 }
 
-// Discover all domain handler files (skip index.ts, types.ts, utils.ts, __tests__)
-const domainFiles = readdirSync(IPC_DIR)
-  .filter(f => f.endsWith('.ts') && !['index.ts', 'types.ts', 'utils.ts'].includes(f))
-  .sort()
+mock.module('electron', () => ({
+  ipcMain: {
+    handle: (channel: string, _handler: unknown) => recordRegistration(channel, 'handle'),
+    on: (channel: string, _handler: unknown) => recordRegistration(channel, 'on'),
+  },
+  // Minimal stubs for symbols imported by IPC domain modules
+  app: {
+    isPackaged: false,
+    getAppPath: () => '/',
+    quit: () => {},
+    dock: { setIcon: () => {}, setBadge: () => {} },
+  },
+  nativeTheme: { shouldUseDarkColors: false },
+  nativeImage: {
+    createFromPath: () => ({ isEmpty: () => true }),
+    createFromDataURL: () => ({}),
+  },
+  dialog: {
+    showOpenDialog: async () => ({ canceled: true, filePaths: [] }),
+    showMessageBox: async () => ({ response: 0 }),
+  },
+  shell: {
+    openExternal: async () => {},
+    openPath: async () => '',
+    showItemInFolder: () => {},
+  },
+  BrowserWindow: {
+    fromWebContents: () => null,
+    getFocusedWindow: () => null,
+    getAllWindows: () => [],
+  },
+  BrowserView: class {},
+  Menu: {
+    buildFromTemplate: () => ({ popup: () => {} }),
+  },
+  session: {},
+}))
 
-const domainChannels = new Map<string, string[]>()
-for (const file of domainFiles) {
-  const source = readFileSync(join(IPC_DIR, file), 'utf-8')
-  const channels = extractHandledChannels(source)
-  if (channels.length > 0) {
-    domainChannels.set(file, channels)
+function createMockContext(): IpcContext {
+  const sessionManager = {} as IpcContext['sessionManager']
+  const windowManager = {} as IpcContext['windowManager']
+  const browserPaneManager = {
+    onStateChange: () => {},
+    onRemoved: () => {},
+    onInteracted: () => {},
+  } as unknown as NonNullable<IpcContext['browserPaneManager']>
+
+  return {
+    sessionManager,
+    windowManager,
+    browserPaneManager,
   }
+}
+
+async function getExpectedChannels(): Promise<Set<string>> {
+  const [
+    auth,
+    automations,
+    browser,
+    files,
+    labels,
+    llm,
+    sessions,
+    settings,
+    skills,
+    sources,
+    statuses,
+    system,
+    workspace,
+    onboarding,
+  ] = await Promise.all([
+    import('../auth'),
+    import('../automations'),
+    import('../browser'),
+    import('../files'),
+    import('../labels'),
+    import('../llm-connections'),
+    import('../sessions'),
+    import('../settings'),
+    import('../skills'),
+    import('../sources'),
+    import('../statuses'),
+    import('../system'),
+    import('../workspace'),
+    import('../../onboarding'),
+  ])
+
+  return new Set([
+    ...auth.HANDLED_CHANNELS,
+    ...automations.HANDLED_CHANNELS,
+    ...browser.HANDLED_CHANNELS,
+    ...files.HANDLED_CHANNELS,
+    ...labels.HANDLED_CHANNELS,
+    ...llm.HANDLED_CHANNELS,
+    ...sessions.HANDLED_CHANNELS,
+    ...settings.HANDLED_CHANNELS,
+    ...skills.HANDLED_CHANNELS,
+    ...sources.HANDLED_CHANNELS,
+    ...statuses.HANDLED_CHANNELS,
+    ...system.HANDLED_CHANNELS,
+    ...workspace.HANDLED_CHANNELS,
+    ...onboarding.HANDLED_CHANNELS,
+  ])
 }
 
 describe('IPC handler registration', () => {
-  it('has no duplicate channel registrations across domains', () => {
-    const seen = new Map<string, string>()
-    const duplicates: string[] = []
+  beforeEach(() => {
+    registrationCounts.clear()
+    registrations.length = 0
+  })
 
-    for (const [file, channels] of domainChannels) {
-      for (const ch of channels) {
-        if (seen.has(ch)) {
-          duplicates.push(`IPC_CHANNELS.${ch} registered in both "${seen.get(ch)}" and "${file}"`)
-        }
-        seen.set(ch, file)
-      }
-    }
+  it('registers all declared handled channels exactly once', async () => {
+    const expected = await getExpectedChannels()
+    const { registerAllIpcHandlers } = await import('../index')
+
+    registerAllIpcHandlers(createMockContext())
+
+    const appChannels = registrations
+      .map(r => r.channel)
+      .filter(ch => ch.includes(':'))
+    const actual = new Set(appChannels)
+
+    const missing = [...expected].filter(ch => !actual.has(ch)).sort()
+    const unexpected = [...actual].filter(ch => !expected.has(ch)).sort()
+
+    expect(missing).toEqual([])
+    expect(unexpected).toEqual([])
+
+    const duplicates = [...registrationCounts.entries()]
+      .filter(([channel, count]) => channel.includes(':') && count > 1)
+      .map(([channel, count]) => `${channel} (${count}x)`)
+      .sort()
 
     expect(duplicates).toEqual([])
   })
 
-  it('all domain files have non-empty HANDLED_CHANNELS', () => {
-    for (const [file, channels] of domainChannels) {
-      expect(channels.length).toBeGreaterThan(0)
-      // Also verify within the file — no duplicates internally
-      const unique = new Set(channels)
-      if (unique.size !== channels.length) {
-        const dupes = channels.filter((ch, i) => channels.indexOf(ch) !== i)
-        throw new Error(`${file} has internal duplicates: ${dupes.join(', ')}`)
-      }
-    }
-  })
+  it('keeps onboarding channels in registration coverage', async () => {
+    const { HANDLED_CHANNELS } = await import('../../onboarding')
+    const { registerAllIpcHandlers } = await import('../index')
 
-  it('covers all 13 domain files', () => {
-    expect(domainChannels.size).toBe(13)
-  })
+    registerAllIpcHandlers(createMockContext())
 
-  it('registers a reasonable total number of channels (>100)', () => {
-    const total = [...domainChannels.values()].reduce((sum, chs) => sum + chs.length, 0)
-    expect(total).toBeGreaterThanOrEqual(100)
+    const actual = new Set(registrations.map(r => r.channel))
+    const missingOnboarding = HANDLED_CHANNELS.filter(ch => !actual.has(ch))
+
+    expect(missingOnboarding).toEqual([])
   })
 })

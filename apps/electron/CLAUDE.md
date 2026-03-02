@@ -391,7 +391,11 @@ apps/electron/
 ├── src/
 │   ├── main/              # Electron main process (Node.js)
 │   │   ├── index.ts       # Window creation, app lifecycle, nativeTheme listener
-│   │   ├── ipc.ts         # IPC handler registration
+│   │   ├── ipc/           # Modular IPC handler registration
+│   │   │   ├── index.ts   # registerAllIpcHandlers() composition root
+│   │   │   ├── sessions.ts # Session-related IPC handlers
+│   │   │   ├── sources.ts  # Source/permissions IPC handlers
+│   │   │   └── ...         # Other domain handler files
 │   │   ├── menu.ts        # Application menu (File, Edit, View, Help menus)
 │   │   ├── sessions.ts    # SessionManager - CraftAgent integration
 │   │   ├── deep-link.ts   # Deep link URL parsing and handling
@@ -428,21 +432,25 @@ export const IPC_CHANNELS = {
   // ...
 }
 
-// 2. Add handler in main/ipc.ts
-ipcMain.handle(IPC_CHANNELS.SOURCES_GET_PERMISSIONS, async (_event, workspaceId: string, sourceSlug: string) => {
-  const { loadSourcePermissionsConfig } = await import('@craft-agent/shared/agent')
-  const workspace = getWorkspaceByNameOrId(workspaceId)
-  return loadSourcePermissionsConfig(workspace.rootPath, sourceSlug)
-})
+// 2. Add handler in the relevant domain file (e.g. main/ipc/sources.ts)
+export function registerSourcesHandlers(_ctx: IpcContext): void {
+  ipcMain.handle(IPC_CHANNELS.SOURCES_GET_PERMISSIONS, async (_event, workspaceId: string, sourceSlug: string) => {
+    const { loadSourcePermissionsConfig } = await import('@craft-agent/shared/agent')
+    const workspace = getWorkspaceByNameOrId(workspaceId)
+    return loadSourcePermissionsConfig(workspace.rootPath, sourceSlug)
+  })
+}
 
-// 3. Add to preload/index.ts
+// 3. Ensure the domain registrar is wired in main/ipc/index.ts via registerAllIpcHandlers()
+
+// 4. Add to preload/index.ts
 contextBridge.exposeInMainWorld('electronAPI', {
   getSourcePermissionsConfig: (workspaceId: string, sourceSlug: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.SOURCES_GET_PERMISSIONS, workspaceId, sourceSlug),
   // ...
 })
 
-// 4. Use in renderer
+// 5. Use in renderer
 const config = await window.electronAPI.getSourcePermissionsConfig(workspaceId, sourceSlug)
 ```
 

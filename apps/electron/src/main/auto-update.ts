@@ -26,7 +26,7 @@ import {
   clearDismissedUpdateVersion,
 } from '@craft-agent/shared/config'
 import { readJsonFileSync } from '@craft-agent/shared/utils/files'
-import type { UpdateInfo } from '../shared/types'
+import { IPC_CHANNELS, type UpdateInfo } from '../shared/types'
 import type { WindowManager } from './window-manager'
 
 // Platform detection
@@ -100,7 +100,7 @@ function broadcastUpdateInfo(): void {
   const windows = windowManager.getAllWindows()
   for (const { window } of windows) {
     if (!window.isDestroyed()) {
-      window.webContents.send('update:available', snapshot)
+      window.webContents.send(IPC_CHANNELS.update.AVAILABLE, snapshot)
     }
   }
 }
@@ -114,7 +114,7 @@ function broadcastDownloadProgress(progress: number): void {
   const windows = windowManager.getAllWindows()
   for (const { window } of windows) {
     if (!window.isDestroyed()) {
-      window.webContents.send('update:downloadProgress', progress)
+      window.webContents.send(IPC_CHANNELS.update.DOWNLOAD_PROGRESS, progress)
     }
   }
 }

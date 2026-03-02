@@ -5,29 +5,29 @@ import { ipcLog } from '../logger'
 import type { IpcContext } from './types'
 
 export const HANDLED_CHANNELS = [
-  IPC_CHANNELS.BROWSER_PANE_CREATE,
-  IPC_CHANNELS.BROWSER_PANE_DESTROY,
-  IPC_CHANNELS.BROWSER_PANE_LIST,
-  IPC_CHANNELS.BROWSER_PANE_NAVIGATE,
-  IPC_CHANNELS.BROWSER_PANE_GO_BACK,
-  IPC_CHANNELS.BROWSER_PANE_GO_FORWARD,
-  IPC_CHANNELS.BROWSER_PANE_RELOAD,
-  IPC_CHANNELS.BROWSER_PANE_STOP,
-  IPC_CHANNELS.BROWSER_PANE_FOCUS,
-  IPC_CHANNELS.BROWSER_EMPTY_STATE_LAUNCH,
-  IPC_CHANNELS.BROWSER_PANE_SNAPSHOT,
-  IPC_CHANNELS.BROWSER_PANE_CLICK,
-  IPC_CHANNELS.BROWSER_PANE_FILL,
-  IPC_CHANNELS.BROWSER_PANE_SELECT,
-  IPC_CHANNELS.BROWSER_PANE_SCREENSHOT,
-  IPC_CHANNELS.BROWSER_PANE_EVALUATE,
-  IPC_CHANNELS.BROWSER_PANE_SCROLL,
+  IPC_CHANNELS.browserPane.CREATE,
+  IPC_CHANNELS.browserPane.DESTROY,
+  IPC_CHANNELS.browserPane.LIST,
+  IPC_CHANNELS.browserPane.NAVIGATE,
+  IPC_CHANNELS.browserPane.GO_BACK,
+  IPC_CHANNELS.browserPane.GO_FORWARD,
+  IPC_CHANNELS.browserPane.RELOAD,
+  IPC_CHANNELS.browserPane.STOP,
+  IPC_CHANNELS.browserPane.FOCUS,
+  IPC_CHANNELS.browserPane.LAUNCH,
+  IPC_CHANNELS.browserPane.SNAPSHOT,
+  IPC_CHANNELS.browserPane.CLICK,
+  IPC_CHANNELS.browserPane.FILL,
+  IPC_CHANNELS.browserPane.SELECT,
+  IPC_CHANNELS.browserPane.SCREENSHOT,
+  IPC_CHANNELS.browserPane.EVALUATE,
+  IPC_CHANNELS.browserPane.SCROLL,
 ] as const
 
 export function registerBrowserHandlers({ browserPaneManager, windowManager }: IpcContext): void {
   if (!browserPaneManager) return
 
-  ipcMain.handle(IPC_CHANNELS.BROWSER_PANE_CREATE, (_event, input?: string | BrowserPaneCreateOptions) => {
+  ipcMain.handle(IPC_CHANNELS.browserPane.CREATE, (_event, input?: string | BrowserPaneCreateOptions) => {
     if (typeof input === 'string') {
       return browserPaneManager.createInstance(input)
     }
@@ -39,15 +39,15 @@ export function registerBrowserHandlers({ browserPaneManager, windowManager }: I
     return browserPaneManager.createInstance(input?.id, { show: input?.show })
   })
 
-  ipcMain.handle(IPC_CHANNELS.BROWSER_PANE_DESTROY, (_event, id: string) => {
+  ipcMain.handle(IPC_CHANNELS.browserPane.DESTROY, (_event, id: string) => {
     browserPaneManager.destroyInstance(id)
   })
 
-  ipcMain.handle(IPC_CHANNELS.BROWSER_PANE_LIST, () => {
+  ipcMain.handle(IPC_CHANNELS.browserPane.LIST, () => {
     return browserPaneManager.listInstances()
   })
 
-  ipcMain.handle(IPC_CHANNELS.BROWSER_PANE_NAVIGATE, async (_event, id: string, url: string) => {
+  ipcMain.handle(IPC_CHANNELS.browserPane.NAVIGATE, async (_event, id: string, url: string) => {
     try {
       return await browserPaneManager.navigate(id, url)
     } catch (err) {
@@ -56,7 +56,7 @@ export function registerBrowserHandlers({ browserPaneManager, windowManager }: I
     }
   })
 
-  ipcMain.handle(IPC_CHANNELS.BROWSER_PANE_GO_BACK, async (_event, id: string) => {
+  ipcMain.handle(IPC_CHANNELS.browserPane.GO_BACK, async (_event, id: string) => {
     try {
       return await browserPaneManager.goBack(id)
     } catch (err) {
@@ -65,7 +65,7 @@ export function registerBrowserHandlers({ browserPaneManager, windowManager }: I
     }
   })
 
-  ipcMain.handle(IPC_CHANNELS.BROWSER_PANE_GO_FORWARD, async (_event, id: string) => {
+  ipcMain.handle(IPC_CHANNELS.browserPane.GO_FORWARD, async (_event, id: string) => {
     try {
       return await browserPaneManager.goForward(id)
     } catch (err) {
@@ -74,19 +74,19 @@ export function registerBrowserHandlers({ browserPaneManager, windowManager }: I
     }
   })
 
-  ipcMain.handle(IPC_CHANNELS.BROWSER_PANE_RELOAD, (_event, id: string) => {
+  ipcMain.handle(IPC_CHANNELS.browserPane.RELOAD, (_event, id: string) => {
     browserPaneManager.reload(id)
   })
 
-  ipcMain.handle(IPC_CHANNELS.BROWSER_PANE_STOP, (_event, id: string) => {
+  ipcMain.handle(IPC_CHANNELS.browserPane.STOP, (_event, id: string) => {
     browserPaneManager.stop(id)
   })
 
-  ipcMain.handle(IPC_CHANNELS.BROWSER_PANE_FOCUS, (_event, id: string) => {
+  ipcMain.handle(IPC_CHANNELS.browserPane.FOCUS, (_event, id: string) => {
     browserPaneManager.focus(id)
   })
 
-  ipcMain.handle(IPC_CHANNELS.BROWSER_EMPTY_STATE_LAUNCH, async (event, payload: BrowserEmptyStateLaunchPayload) => {
+  ipcMain.handle(IPC_CHANNELS.browserPane.LAUNCH, async (event, payload: BrowserEmptyStateLaunchPayload) => {
     try {
       return await browserPaneManager.handleEmptyStateLaunchFromRenderer(event.sender.id, payload)
     } catch (err) {
@@ -95,7 +95,7 @@ export function registerBrowserHandlers({ browserPaneManager, windowManager }: I
     }
   })
 
-  ipcMain.handle(IPC_CHANNELS.BROWSER_PANE_SNAPSHOT, async (_event, id: string) => {
+  ipcMain.handle(IPC_CHANNELS.browserPane.SNAPSHOT, async (_event, id: string) => {
     try {
       return await browserPaneManager.getAccessibilitySnapshot(id)
     } catch (err) {
@@ -104,7 +104,7 @@ export function registerBrowserHandlers({ browserPaneManager, windowManager }: I
     }
   })
 
-  ipcMain.handle(IPC_CHANNELS.BROWSER_PANE_CLICK, async (_event, id: string, ref: string) => {
+  ipcMain.handle(IPC_CHANNELS.browserPane.CLICK, async (_event, id: string, ref: string) => {
     try {
       return await browserPaneManager.clickElement(id, ref)
     } catch (err) {
@@ -113,7 +113,7 @@ export function registerBrowserHandlers({ browserPaneManager, windowManager }: I
     }
   })
 
-  ipcMain.handle(IPC_CHANNELS.BROWSER_PANE_FILL, async (_event, id: string, ref: string, value: string) => {
+  ipcMain.handle(IPC_CHANNELS.browserPane.FILL, async (_event, id: string, ref: string, value: string) => {
     try {
       return await browserPaneManager.fillElement(id, ref, value)
     } catch (err) {
@@ -122,7 +122,7 @@ export function registerBrowserHandlers({ browserPaneManager, windowManager }: I
     }
   })
 
-  ipcMain.handle(IPC_CHANNELS.BROWSER_PANE_SELECT, async (_event, id: string, ref: string, value: string) => {
+  ipcMain.handle(IPC_CHANNELS.browserPane.SELECT, async (_event, id: string, ref: string, value: string) => {
     try {
       return await browserPaneManager.selectOption(id, ref, value)
     } catch (err) {
@@ -131,7 +131,7 @@ export function registerBrowserHandlers({ browserPaneManager, windowManager }: I
     }
   })
 
-  ipcMain.handle(IPC_CHANNELS.BROWSER_PANE_SCREENSHOT, async (_event, id: string, options?: BrowserScreenshotOptions) => {
+  ipcMain.handle(IPC_CHANNELS.browserPane.SCREENSHOT, async (_event, id: string, options?: BrowserScreenshotOptions) => {
     try {
       const result = await browserPaneManager.screenshot(id, options)
       return {
@@ -145,7 +145,7 @@ export function registerBrowserHandlers({ browserPaneManager, windowManager }: I
     }
   })
 
-  ipcMain.handle(IPC_CHANNELS.BROWSER_PANE_EVALUATE, async (_event, id: string, expression: string) => {
+  ipcMain.handle(IPC_CHANNELS.browserPane.EVALUATE, async (_event, id: string, expression: string) => {
     try {
       return await browserPaneManager.evaluate(id, expression)
     } catch (err) {
@@ -154,7 +154,7 @@ export function registerBrowserHandlers({ browserPaneManager, windowManager }: I
     }
   })
 
-  ipcMain.handle(IPC_CHANNELS.BROWSER_PANE_SCROLL, async (_event, id: string, direction: string, amount?: number) => {
+  ipcMain.handle(IPC_CHANNELS.browserPane.SCROLL, async (_event, id: string, direction: string, amount?: number) => {
     const validDirections = ['up', 'down', 'left', 'right']
     if (!validDirections.includes(direction)) {
       throw new Error(`Invalid scroll direction: ${direction}`)
@@ -169,16 +169,16 @@ export function registerBrowserHandlers({ browserPaneManager, windowManager }: I
 
   // Forward browser state changes to all windows
   browserPaneManager.onStateChange((info) => {
-    windowManager.broadcastToAll(IPC_CHANNELS.BROWSER_PANE_STATE_CHANGED, info)
+    windowManager.broadcastToAll(IPC_CHANNELS.browserPane.STATE_CHANGED, info)
   })
 
   // Forward browser removals so renderer can immediately drop stale tabs
   browserPaneManager.onRemoved((id) => {
-    windowManager.broadcastToAll(IPC_CHANNELS.BROWSER_PANE_REMOVED, id)
+    windowManager.broadcastToAll(IPC_CHANNELS.browserPane.REMOVED, id)
   })
 
   // Forward browser interaction/focus events so renderer can align panel focus.
   browserPaneManager.onInteracted((id) => {
-    windowManager.broadcastToAll(IPC_CHANNELS.BROWSER_PANE_INTERACTED, id)
+    windowManager.broadcastToAll(IPC_CHANNELS.browserPane.INTERACTED, id)
   })
 }

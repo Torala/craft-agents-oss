@@ -321,7 +321,7 @@ export async function handleDeepLink(
       actionParams: target.actionParams,
     }
     if (!window.isDestroyed() && !window.webContents.isDestroyed()) {
-      window.webContents.send(IPC_CHANNELS.DEEP_LINK_NAVIGATE, navigation)
+      window.webContents.send(IPC_CHANNELS.deeplink.NAVIGATE, navigation)
     }
   }
 

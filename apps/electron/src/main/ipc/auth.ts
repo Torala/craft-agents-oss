@@ -8,15 +8,15 @@ import { ipcLog } from '../logger'
 import type { IpcContext } from './types'
 
 export const HANDLED_CHANNELS = [
-  IPC_CHANNELS.LOGOUT,
-  IPC_CHANNELS.SHOW_LOGOUT_CONFIRMATION,
-  IPC_CHANNELS.SHOW_DELETE_SESSION_CONFIRMATION,
-  IPC_CHANNELS.CREDENTIAL_HEALTH_CHECK,
+  IPC_CHANNELS.auth.LOGOUT,
+  IPC_CHANNELS.auth.SHOW_LOGOUT_CONFIRMATION,
+  IPC_CHANNELS.auth.SHOW_DELETE_SESSION_CONFIRMATION,
+  IPC_CHANNELS.credentials.HEALTH_CHECK,
 ] as const
 
 export function registerAuthHandlers(_ctx: IpcContext): void {
   // Show logout confirmation dialog
-  ipcMain.handle(IPC_CHANNELS.SHOW_LOGOUT_CONFIRMATION, async () => {
+  ipcMain.handle(IPC_CHANNELS.auth.SHOW_LOGOUT_CONFIRMATION, async () => {
     const window = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0]
     const result = await dialog.showMessageBox(window, {
       type: 'warning',
@@ -33,7 +33,7 @@ export function registerAuthHandlers(_ctx: IpcContext): void {
   })
 
   // Show delete session confirmation dialog
-  ipcMain.handle(IPC_CHANNELS.SHOW_DELETE_SESSION_CONFIRMATION, async (_event, name: string) => {
+  ipcMain.handle(IPC_CHANNELS.auth.SHOW_DELETE_SESSION_CONFIRMATION, async (_event, name: string) => {
     const window = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0]
     const result = await dialog.showMessageBox(window, {
       type: 'warning',
@@ -50,7 +50,7 @@ export function registerAuthHandlers(_ctx: IpcContext): void {
   })
 
   // Logout - clear all credentials and config
-  ipcMain.handle(IPC_CHANNELS.LOGOUT, async () => {
+  ipcMain.handle(IPC_CHANNELS.auth.LOGOUT, async () => {
     try {
       const manager = getCredentialManager()
 
@@ -75,7 +75,7 @@ export function registerAuthHandlers(_ctx: IpcContext): void {
 
   // Credential health check - validates credential store is readable and usable
   // Called on app startup to detect corruption, machine migration, or missing credentials
-  ipcMain.handle(IPC_CHANNELS.CREDENTIAL_HEALTH_CHECK, async () => {
+  ipcMain.handle(IPC_CHANNELS.credentials.HEALTH_CHECK, async () => {
     const manager = getCredentialManager()
     return manager.checkHealth()
   })

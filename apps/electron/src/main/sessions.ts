@@ -1096,7 +1096,7 @@ export class SessionManager {
   private broadcastSourcesChanged(sources: LoadedSource[]): void {
     if (!this.windowManager) return
 
-    this.windowManager.broadcastToAll(IPC_CHANNELS.SOURCES_CHANGED, sources)
+    this.windowManager.broadcastToAll(IPC_CHANNELS.sources.CHANGED, sources)
   }
 
   /**
@@ -1105,7 +1105,7 @@ export class SessionManager {
   private broadcastStatusesChanged(workspaceId: string): void {
     if (!this.windowManager) return
     sessionLog.info(`Broadcasting statuses changed for ${workspaceId}`)
-    this.windowManager.broadcastToAll(IPC_CHANNELS.STATUSES_CHANGED, workspaceId)
+    this.windowManager.broadcastToAll(IPC_CHANNELS.statuses.CHANGED, workspaceId)
   }
 
   /**
@@ -1114,7 +1114,7 @@ export class SessionManager {
   private broadcastLabelsChanged(workspaceId: string): void {
     if (!this.windowManager) return
     sessionLog.info(`Broadcasting labels changed for ${workspaceId}`)
-    this.windowManager.broadcastToAll(IPC_CHANNELS.LABELS_CHANGED, workspaceId)
+    this.windowManager.broadcastToAll(IPC_CHANNELS.labels.CHANGED, workspaceId)
   }
 
   /**
@@ -1123,7 +1123,7 @@ export class SessionManager {
   private broadcastAutomationsChanged(workspaceId: string): void {
     if (!this.windowManager) return
     sessionLog.info(`Broadcasting automations changed for ${workspaceId}`)
-    this.windowManager.broadcastToAll(IPC_CHANNELS.AUTOMATIONS_CHANGED, workspaceId)
+    this.windowManager.broadcastToAll(IPC_CHANNELS.automations.CHANGED, workspaceId)
   }
 
   /**
@@ -1132,7 +1132,7 @@ export class SessionManager {
   private broadcastAppThemeChanged(theme: import('@craft-agent/shared/config').ThemeOverrides | null): void {
     if (!this.windowManager) return
     sessionLog.info(`Broadcasting app theme changed`)
-    this.windowManager.broadcastToAll(IPC_CHANNELS.THEME_APP_CHANGED, theme)
+    this.windowManager.broadcastToAll(IPC_CHANNELS.theme.APP_CHANGED, theme)
   }
 
   /**
@@ -1141,7 +1141,7 @@ export class SessionManager {
   private broadcastLlmConnectionsChanged(): void {
     if (!this.windowManager) return
     sessionLog.info('Broadcasting LLM connections changed')
-    this.windowManager.broadcastToAll(IPC_CHANNELS.LLM_CONNECTIONS_CHANGED)
+    this.windowManager.broadcastToAll(IPC_CHANNELS.llmConnections.CHANGED)
   }
 
   /**
@@ -1150,7 +1150,7 @@ export class SessionManager {
   private broadcastSkillsChanged(skills: import('@craft-agent/shared/skills').LoadedSkill[]): void {
     if (!this.windowManager) return
     sessionLog.info(`Broadcasting skills changed (${skills.length} skills)`)
-    this.windowManager.broadcastToAll(IPC_CHANNELS.SKILLS_CHANGED, skills)
+    this.windowManager.broadcastToAll(IPC_CHANNELS.skills.CHANGED, skills)
   }
 
   /**
@@ -1160,7 +1160,7 @@ export class SessionManager {
   private broadcastDefaultPermissionsChanged(): void {
     if (!this.windowManager) return
     sessionLog.info('Broadcasting default permissions changed')
-    this.windowManager.broadcastToAll(IPC_CHANNELS.DEFAULT_PERMISSIONS_CHANGED, null)
+    this.windowManager.broadcastToAll(IPC_CHANNELS.permissions.DEFAULTS_CHANGED, null)
   }
 
   /**
@@ -1772,7 +1772,7 @@ export class SessionManager {
         if (sentTo.has(webContentsId)) continue
         if (window.isDestroyed() || window.webContents.isDestroyed() || !window.webContents.mainFrame) continue
 
-        window.webContents.send(IPC_CHANNELS.SESSIONS_UNREAD_SUMMARY_CHANGED, summary)
+        window.webContents.send(IPC_CHANNELS.sessions.UNREAD_SUMMARY_CHANGED, summary)
         sentTo.add(webContentsId)
       }
     }
@@ -5549,7 +5549,7 @@ To view this task's output:
           !window.webContents.isDestroyed() &&
           window.webContents.mainFrame) {
         try {
-          window.webContents.send(IPC_CHANNELS.SESSION_EVENT, event)
+          window.webContents.send(IPC_CHANNELS.sessions.EVENT, event)
         } catch {
           // Silently ignore - expected during window closure race conditions
         }

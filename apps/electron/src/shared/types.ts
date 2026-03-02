@@ -581,343 +581,337 @@ export interface NewChatActionParams {
   name?: string
 }
 
-// IPC channel names
+// IPC channel names — organized by domain namespace.
+// Wire-format strings (values) are the stable API contract.
+// Key paths are internal and may be reorganized freely.
 export const IPC_CHANNELS = {
-  // Session management
-  GET_SESSIONS: 'sessions:get',
-  GET_UNREAD_SUMMARY: 'sessions:getUnreadSummary',
-  MARK_ALL_SESSIONS_READ: 'sessions:markAllRead',
-  SESSIONS_UNREAD_SUMMARY_CHANGED: 'sessions:unreadSummaryChanged',  // Broadcast: UnreadSummary
-  CREATE_SESSION: 'sessions:create',
-  DELETE_SESSION: 'sessions:delete',
-  GET_SESSION_MESSAGES: 'sessions:getMessages',
-  SEND_MESSAGE: 'sessions:sendMessage',
-  CANCEL_PROCESSING: 'sessions:cancel',
-  KILL_SHELL: 'sessions:killShell',
-  GET_TASK_OUTPUT: 'tasks:getOutput',
-  RESPOND_TO_PERMISSION: 'sessions:respondToPermission',
-  RESPOND_TO_CREDENTIAL: 'sessions:respondToCredential',
+  sessions: {
+    GET: 'sessions:get',
+    GET_UNREAD_SUMMARY: 'sessions:getUnreadSummary',
+    MARK_ALL_READ: 'sessions:markAllRead',
+    UNREAD_SUMMARY_CHANGED: 'sessions:unreadSummaryChanged',
+    CREATE: 'sessions:create',
+    DELETE: 'sessions:delete',
+    GET_MESSAGES: 'sessions:getMessages',
+    SEND_MESSAGE: 'sessions:sendMessage',
+    CANCEL: 'sessions:cancel',
+    KILL_SHELL: 'sessions:killShell',
+    RESPOND_TO_PERMISSION: 'sessions:respondToPermission',
+    RESPOND_TO_CREDENTIAL: 'sessions:respondToCredential',
+    COMMAND: 'sessions:command',
+    GET_PENDING_PLAN_EXECUTION: 'sessions:getPendingPlanExecution',
+    GET_PERMISSION_MODE_STATE: 'sessions:getPermissionModeState',
+    EVENT: 'session:event',               // merged from 'session' prefix
+    GET_MODEL: 'session:getModel',         // merged from 'session' prefix
+    SET_MODEL: 'session:setModel',         // merged from 'session' prefix
+    GET_FILES: 'sessions:getFiles',
+    GET_NOTES: 'sessions:getNotes',
+    SET_NOTES: 'sessions:setNotes',
+    WATCH_FILES: 'sessions:watchFiles',
+    UNWATCH_FILES: 'sessions:unwatchFiles',
+    FILES_CHANGED: 'sessions:filesChanged',
+    SEARCH_CONTENT: 'sessions:searchContent',
+  },
+  tasks: {
+    GET_OUTPUT: 'tasks:getOutput',
+  },
+  workspaces: {
+    GET: 'workspaces:get',
+    CREATE: 'workspaces:create',
+    CHECK_SLUG: 'workspaces:checkSlug',
+  },
+  window: {
+    GET_WORKSPACE: 'window:getWorkspace',
+    GET_MODE: 'window:getMode',
+    OPEN_WORKSPACE: 'window:openWorkspace',
+    OPEN_SESSION_IN_NEW_WINDOW: 'window:openSessionInNewWindow',
+    SWITCH_WORKSPACE: 'window:switchWorkspace',
+    CLOSE: 'window:close',
+    CLOSE_REQUESTED: 'window:closeRequested',
+    CONFIRM_CLOSE: 'window:confirmClose',
+    CANCEL_CLOSE: 'window:cancelClose',
+    SET_TRAFFIC_LIGHTS: 'window:setTrafficLights',
+    FOCUS_STATE: 'window:focusState',
+    GET_FOCUS_STATE: 'window:getFocusState',
+  },
+  file: {
+    READ: 'file:read',
+    READ_DATA_URL: 'file:readDataUrl',
+    READ_BINARY: 'file:readBinary',
+    OPEN_DIALOG: 'file:openDialog',
+    READ_ATTACHMENT: 'file:readAttachment',
+    STORE_ATTACHMENT: 'file:storeAttachment',
+    GENERATE_THUMBNAIL: 'file:generateThumbnail',
+  },
+  fs: {
+    SEARCH: 'fs:search',
+  },
+  debug: {
+    LOG: 'debug:log',
+  },
+  theme: {
+    GET_SYSTEM_PREFERENCE: 'theme:getSystemPreference',
+    SYSTEM_CHANGED: 'theme:systemChanged',
+    APP_CHANGED: 'theme:appChanged',
+    GET_APP: 'theme:getApp',
+    GET_PRESETS: 'theme:getPresets',
+    LOAD_PRESET: 'theme:loadPreset',
+    GET_COLOR_THEME: 'theme:getColorTheme',
+    SET_COLOR_THEME: 'theme:setColorTheme',
+    BROADCAST_PREFERENCES: 'theme:broadcastPreferences',
+    PREFERENCES_CHANGED: 'theme:preferencesChanged',
+    GET_WORKSPACE_COLOR_THEME: 'theme:getWorkspaceColorTheme',
+    SET_WORKSPACE_COLOR_THEME: 'theme:setWorkspaceColorTheme',
+    GET_ALL_WORKSPACE_THEMES: 'theme:getAllWorkspaceThemes',
+    BROADCAST_WORKSPACE_THEME: 'theme:broadcastWorkspaceTheme',
+    WORKSPACE_THEME_CHANGED: 'theme:workspaceThemeChanged',
+  },
+  system: {
+    VERSIONS: 'system:versions',
+    HOME_DIR: 'system:homeDir',
+    IS_DEBUG_MODE: 'system:isDebugMode',
+  },
+  update: {
+    CHECK: 'update:check',
+    GET_INFO: 'update:getInfo',
+    INSTALL: 'update:install',
+    DISMISS: 'update:dismiss',
+    GET_DISMISSED: 'update:getDismissed',
+    AVAILABLE: 'update:available',
+    DOWNLOAD_PROGRESS: 'update:downloadProgress',
+  },
+  shell: {
+    OPEN_URL: 'shell:openUrl',
+    OPEN_FILE: 'shell:openFile',
+    SHOW_IN_FOLDER: 'shell:showInFolder',
+  },
+  menu: {
+    NEW_CHAT: 'menu:newChat',
+    NEW_WINDOW: 'menu:newWindow',
+    OPEN_SETTINGS: 'menu:openSettings',
+    KEYBOARD_SHORTCUTS: 'menu:keyboardShortcuts',
+    TOGGLE_FOCUS_MODE: 'menu:toggleFocusMode',
+    TOGGLE_SIDEBAR: 'menu:toggleSidebar',
+    QUIT: 'menu:quit',
+    MINIMIZE: 'menu:minimize',
+    MAXIMIZE: 'menu:maximize',
+    ZOOM_IN: 'menu:zoomIn',
+    ZOOM_OUT: 'menu:zoomOut',
+    ZOOM_RESET: 'menu:zoomReset',
+    TOGGLE_DEV_TOOLS: 'menu:toggleDevTools',
+    UNDO: 'menu:undo',
+    REDO: 'menu:redo',
+    CUT: 'menu:cut',
+    COPY: 'menu:copy',
+    PASTE: 'menu:paste',
+    SELECT_ALL: 'menu:selectAll',
+  },
+  deeplink: {
+    NAVIGATE: 'deeplink:navigate',
+  },
+  auth: {
+    LOGOUT: 'auth:logout',
+    SHOW_LOGOUT_CONFIRMATION: 'auth:showLogoutConfirmation',
+    SHOW_DELETE_SESSION_CONFIRMATION: 'auth:showDeleteSessionConfirmation',
+  },
+  credentials: {
+    HEALTH_CHECK: 'credentials:healthCheck',
+  },
+  onboarding: {
+    GET_AUTH_STATE: 'onboarding:getAuthState',
+    VALIDATE_MCP: 'onboarding:validateMcp',
+    START_MCP_OAUTH: 'onboarding:startMcpOAuth',
+    START_CLAUDE_OAUTH: 'onboarding:startClaudeOAuth',
+    EXCHANGE_CLAUDE_CODE: 'onboarding:exchangeClaudeCode',
+    HAS_CLAUDE_OAUTH_STATE: 'onboarding:hasClaudeOAuthState',
+    CLEAR_CLAUDE_OAUTH_STATE: 'onboarding:clearClaudeOAuthState',
+  },
+  llmConnections: {
+    LIST: 'LLM_Connection:list',
+    LIST_WITH_STATUS: 'LLM_Connection:listWithStatus',
+    GET: 'LLM_Connection:get',
+    GET_API_KEY: 'LLM_Connection:getApiKey',
+    SAVE: 'LLM_Connection:save',
+    DELETE: 'LLM_Connection:delete',
+    TEST: 'LLM_Connection:test',
+    SET_DEFAULT: 'LLM_Connection:setDefault',
+    SET_WORKSPACE_DEFAULT: 'LLM_Connection:setWorkspaceDefault',
+    REFRESH_MODELS: 'LLM_Connection:refreshModels',
+    CHANGED: 'LLM_Connection:changed',
+  },
+  chatgpt: {
+    START_OAUTH: 'chatgpt:startOAuth',
+    CANCEL_OAUTH: 'chatgpt:cancelOAuth',
+    GET_AUTH_STATUS: 'chatgpt:getAuthStatus',
+    LOGOUT: 'chatgpt:logout',
+  },
+  copilot: {
+    START_OAUTH: 'copilot:startOAuth',
+    CANCEL_OAUTH: 'copilot:cancelOAuth',
+    GET_AUTH_STATUS: 'copilot:getAuthStatus',
+    LOGOUT: 'copilot:logout',
+    DEVICE_CODE: 'copilot:deviceCode',
+  },
+  settings: {
+    SETUP_LLM_CONNECTION: 'settings:setupLlmConnection',
+    TEST_LLM_CONNECTION_SETUP: 'settings:testLlmConnectionSetup',
+  },
+  pi: {
+    GET_API_KEY_PROVIDERS: 'pi:getApiKeyProviders',
+    GET_PROVIDER_BASE_URL: 'pi:getProviderBaseUrl',
+    GET_PROVIDER_MODELS: 'pi:getProviderModels',
+  },
+  dialog: {
+    OPEN_FOLDER: 'dialog:openFolder',
+  },
+  preferences: {
+    READ: 'preferences:read',
+    WRITE: 'preferences:write',
+  },
+  drafts: {
+    GET: 'drafts:get',
+    SET: 'drafts:set',
+    DELETE: 'drafts:delete',
+    GET_ALL: 'drafts:getAll',
+  },
+  sources: {
+    GET: 'sources:get',
+    CREATE: 'sources:create',
+    DELETE: 'sources:delete',
+    START_OAUTH: 'sources:startOAuth',
+    SAVE_CREDENTIALS: 'sources:saveCredentials',
+    CHANGED: 'sources:changed',
+    GET_PERMISSIONS: 'sources:getPermissions',
+    GET_MCP_TOOLS: 'sources:getMcpTools',
+  },
+  workspace: {
+    GET_PERMISSIONS: 'workspace:getPermissions',
+    READ_IMAGE: 'workspace:readImage',
+    WRITE_IMAGE: 'workspace:writeImage',
+    SETTINGS_GET: 'workspaceSettings:get',         // merged from 'workspaceSettings' prefix
+    SETTINGS_UPDATE: 'workspaceSettings:update',   // merged from 'workspaceSettings' prefix
+  },
+  permissions: {
+    GET_DEFAULTS: 'permissions:getDefaults',
+    DEFAULTS_CHANGED: 'permissions:defaultsChanged',
+  },
+  skills: {
+    GET: 'skills:get',
+    GET_FILES: 'skills:getFiles',
+    DELETE: 'skills:delete',
+    OPEN_EDITOR: 'skills:openEditor',
+    OPEN_FINDER: 'skills:openFinder',
+    CHANGED: 'skills:changed',
+  },
+  statuses: {
+    LIST: 'statuses:list',
+    REORDER: 'statuses:reorder',
+    CHANGED: 'statuses:changed',
+  },
+  labels: {
+    LIST: 'labels:list',
+    CREATE: 'labels:create',
+    DELETE: 'labels:delete',
+    CHANGED: 'labels:changed',
+  },
+  views: {
+    LIST: 'views:list',
+    SAVE: 'views:save',
+  },
+  toolIcons: {
+    GET_MAPPINGS: 'toolIcons:getMappings',
+  },
+  logo: {
+    GET_URL: 'logo:getUrl',
+  },
+  notification: {
+    SHOW: 'notification:show',
+    NAVIGATE: 'notification:navigate',
+    GET_ENABLED: 'notification:getEnabled',
+    SET_ENABLED: 'notification:setEnabled',
+  },
+  input: {
+    GET_AUTO_CAPITALISATION: 'input:getAutoCapitalisation',
+    SET_AUTO_CAPITALISATION: 'input:setAutoCapitalisation',
+    GET_SEND_MESSAGE_KEY: 'input:getSendMessageKey',
+    SET_SEND_MESSAGE_KEY: 'input:setSendMessageKey',
+    GET_SPELL_CHECK: 'input:getSpellCheck',
+    SET_SPELL_CHECK: 'input:setSpellCheck',
+  },
+  power: {
+    GET_KEEP_AWAKE: 'power:getKeepAwake',
+    SET_KEEP_AWAKE: 'power:setKeepAwake',
+  },
+  appearance: {
+    GET_RICH_TOOL_DESCRIPTIONS: 'appearance:getRichToolDescriptions',
+    SET_RICH_TOOL_DESCRIPTIONS: 'appearance:setRichToolDescriptions',
+  },
+  badge: {
+    REFRESH: 'badge:refresh',
+    SET_ICON: 'badge:setIcon',
+    DRAW: 'badge:draw',
+    DRAW_WINDOWS: 'badge:draw-windows',
+  },
+  releaseNotes: {
+    GET: 'releaseNotes:get',
+    GET_LATEST_VERSION: 'releaseNotes:getLatestVersion',
+  },
+  git: {
+    GET_BRANCH: 'git:getBranch',
+  },
+  gitbash: {
+    CHECK: 'gitbash:check',
+    BROWSE: 'gitbash:browse',
+    SET_PATH: 'gitbash:setPath',
+  },
+  browserPane: {
+    CREATE: 'browser-pane:create',
+    DESTROY: 'browser-pane:destroy',
+    LIST: 'browser-pane:list',
+    NAVIGATE: 'browser-pane:navigate',
+    GO_BACK: 'browser-pane:go-back',
+    GO_FORWARD: 'browser-pane:go-forward',
+    RELOAD: 'browser-pane:reload',
+    STOP: 'browser-pane:stop',
+    FOCUS: 'browser-pane:focus',
+    SNAPSHOT: 'browser-pane:snapshot',
+    CLICK: 'browser-pane:click',
+    FILL: 'browser-pane:fill',
+    SELECT: 'browser-pane:select',
+    SCREENSHOT: 'browser-pane:screenshot',
+    EVALUATE: 'browser-pane:evaluate',
+    SCROLL: 'browser-pane:scroll',
+    LAUNCH: 'browser-empty-state:launch',  // merged from 'browser-empty-state' prefix
+    STATE_CHANGED: 'browser-pane:state-changed',
+    REMOVED: 'browser-pane:removed',
+    INTERACTED: 'browser-pane:interacted',
+  },
+  automations: {
+    TEST: 'automations:test',
+    SET_ENABLED: 'automations:setEnabled',
+    DUPLICATE: 'automations:duplicate',
+    DELETE: 'automations:delete',
+    GET_HISTORY: 'automations:getHistory',
+    GET_LAST_EXECUTED: 'automations:getLastExecuted',
+    CHANGED: 'automations:changed',
+  },
+} as const
 
-  // Consolidated session command
-  SESSION_COMMAND: 'sessions:command',
-
-  // Pending plan execution (for reload recovery)
-  GET_PENDING_PLAN_EXECUTION: 'sessions:getPendingPlanExecution',
-  // Authoritative permission mode diagnostics for renderer reconciliation
-  GET_SESSION_PERMISSION_MODE_STATE: 'sessions:getPermissionModeState',
-
-  // Workspace management
-  GET_WORKSPACES: 'workspaces:get',
-  CREATE_WORKSPACE: 'workspaces:create',
-  CHECK_WORKSPACE_SLUG: 'workspaces:checkSlug',
-
-  // Window management
-  GET_WINDOW_WORKSPACE: 'window:getWorkspace',
-  GET_WINDOW_MODE: 'window:getMode',
-  OPEN_WORKSPACE: 'window:openWorkspace',
-  OPEN_SESSION_IN_NEW_WINDOW: 'window:openSessionInNewWindow',
-  SWITCH_WORKSPACE: 'window:switchWorkspace',
-  CLOSE_WINDOW: 'window:close',
-  // Close request events (main → renderer, for intercepting X button / Cmd+W)
-  WINDOW_CLOSE_REQUESTED: 'window:closeRequested',
-  WINDOW_CONFIRM_CLOSE: 'window:confirmClose',
-  WINDOW_CANCEL_CLOSE: 'window:cancelClose',
-  // Traffic light visibility (macOS only - hide when fullscreen overlays are open)
-  WINDOW_SET_TRAFFIC_LIGHTS: 'window:setTrafficLights',
-
-  // Events from main to renderer
-  SESSION_EVENT: 'session:event',
-
-  // File operations
-  READ_FILE: 'file:read',
-  READ_FILE_DATA_URL: 'file:readDataUrl',
-  READ_FILE_BINARY: 'file:readBinary',
-  OPEN_FILE_DIALOG: 'file:openDialog',
-  READ_FILE_ATTACHMENT: 'file:readAttachment',
-  STORE_ATTACHMENT: 'file:storeAttachment',
-  GENERATE_THUMBNAIL: 'file:generateThumbnail',
-
-  // Filesystem search (for @ mention file selection)
-  FS_SEARCH: 'fs:search',
-  // Debug logging from renderer → main log file
-  DEBUG_LOG: 'debug:log',
-
-  // Session info panel
-  GET_SESSION_FILES: 'sessions:getFiles',
-  GET_SESSION_NOTES: 'sessions:getNotes',
-  SET_SESSION_NOTES: 'sessions:setNotes',
-  WATCH_SESSION_FILES: 'sessions:watchFiles',      // Start watching session directory
-  UNWATCH_SESSION_FILES: 'sessions:unwatchFiles',  // Stop watching
-  SESSION_FILES_CHANGED: 'sessions:filesChanged',  // Event: main → renderer
-
-  // Theme
-  GET_SYSTEM_THEME: 'theme:getSystemPreference',
-  SYSTEM_THEME_CHANGED: 'theme:systemChanged',
-
-  // System
-  GET_VERSIONS: 'system:versions',
-  GET_HOME_DIR: 'system:homeDir',
-  IS_DEBUG_MODE: 'system:isDebugMode',
-
-  // Auto-update
-  UPDATE_CHECK: 'update:check',
-  UPDATE_GET_INFO: 'update:getInfo',
-  UPDATE_INSTALL: 'update:install',
-  UPDATE_DISMISS: 'update:dismiss',  // Dismiss update for this version (persists across restarts)
-  UPDATE_GET_DISMISSED: 'update:getDismissed',  // Get dismissed version
-  UPDATE_AVAILABLE: 'update:available',  // main → renderer broadcast
-  UPDATE_DOWNLOAD_PROGRESS: 'update:downloadProgress',  // main → renderer broadcast
-
-  // Shell operations (open external URLs/files)
-  OPEN_URL: 'shell:openUrl',
-  OPEN_FILE: 'shell:openFile',
-  SHOW_IN_FOLDER: 'shell:showInFolder',
-
-  // Menu actions (main → renderer)
-  MENU_NEW_CHAT: 'menu:newChat',
-  MENU_NEW_WINDOW: 'menu:newWindow',
-  MENU_OPEN_SETTINGS: 'menu:openSettings',
-  MENU_KEYBOARD_SHORTCUTS: 'menu:keyboardShortcuts',
-  MENU_TOGGLE_FOCUS_MODE: 'menu:toggleFocusMode',
-  MENU_TOGGLE_SIDEBAR: 'menu:toggleSidebar',
-  // Deep link navigation (main → renderer, for external craftagents:// URLs)
-  DEEP_LINK_NAVIGATE: 'deeplink:navigate',
-
-  // Auth
-  LOGOUT: 'auth:logout',
-  SHOW_LOGOUT_CONFIRMATION: 'auth:showLogoutConfirmation',
-  SHOW_DELETE_SESSION_CONFIRMATION: 'auth:showDeleteSessionConfirmation',
-
-  // Credential health check (startup validation)
-  CREDENTIAL_HEALTH_CHECK: 'credentials:healthCheck',
-
-  // Onboarding
-  ONBOARDING_GET_AUTH_STATE: 'onboarding:getAuthState',
-  ONBOARDING_VALIDATE_MCP: 'onboarding:validateMcp',
-  ONBOARDING_START_MCP_OAUTH: 'onboarding:startMcpOAuth',
-  // Claude OAuth (two-step flow)
-  ONBOARDING_START_CLAUDE_OAUTH: 'onboarding:startClaudeOAuth',
-  ONBOARDING_EXCHANGE_CLAUDE_CODE: 'onboarding:exchangeClaudeCode',
-  ONBOARDING_HAS_CLAUDE_OAUTH_STATE: 'onboarding:hasClaudeOAuthState',
-  ONBOARDING_CLEAR_CLAUDE_OAUTH_STATE: 'onboarding:clearClaudeOAuthState',
-
-  // LLM Connections (provider configurations)
-  LLM_CONNECTION_LIST: 'LLM_Connection:list',
-  LLM_CONNECTION_LIST_WITH_STATUS: 'LLM_Connection:listWithStatus',
-  LLM_CONNECTION_GET: 'LLM_Connection:get',
-  LLM_CONNECTION_GET_API_KEY: 'LLM_Connection:getApiKey',
-  LLM_CONNECTION_SAVE: 'LLM_Connection:save',
-  LLM_CONNECTION_DELETE: 'LLM_Connection:delete',
-  LLM_CONNECTION_TEST: 'LLM_Connection:test',
-  LLM_CONNECTION_SET_DEFAULT: 'LLM_Connection:setDefault',
-  LLM_CONNECTION_SET_WORKSPACE_DEFAULT: 'LLM_Connection:setWorkspaceDefault',
-  LLM_CONNECTION_REFRESH_MODELS: 'LLM_Connection:refreshModels',
-  LLM_CONNECTIONS_CHANGED: 'LLM_Connection:changed',  // Broadcast event
-
-  // ChatGPT OAuth (for Codex chatgptAuthTokens mode)
-  CHATGPT_START_OAUTH: 'chatgpt:startOAuth',
-  CHATGPT_CANCEL_OAUTH: 'chatgpt:cancelOAuth',
-  CHATGPT_GET_AUTH_STATUS: 'chatgpt:getAuthStatus',
-  CHATGPT_LOGOUT: 'chatgpt:logout',
-
-  // GitHub Copilot OAuth
-  COPILOT_START_OAUTH: 'copilot:startOAuth',
-  COPILOT_CANCEL_OAUTH: 'copilot:cancelOAuth',
-  COPILOT_GET_AUTH_STATUS: 'copilot:getAuthStatus',
-  COPILOT_LOGOUT: 'copilot:logout',
-  COPILOT_DEVICE_CODE: 'copilot:deviceCode',
-
-  // Settings - API Setup
-  SETUP_LLM_CONNECTION: 'settings:setupLlmConnection',
-  SETTINGS_TEST_LLM_CONNECTION_SETUP: 'settings:testLlmConnectionSetup',
-
-  // Pi provider discovery (main process only — Pi SDK can't run in renderer)
-  PI_GET_API_KEY_PROVIDERS: 'pi:getApiKeyProviders',
-  PI_GET_PROVIDER_BASE_URL: 'pi:getProviderBaseUrl',
-  PI_GET_PROVIDER_MODELS: 'pi:getProviderModels',
-
-  // Settings - Model
-  SESSION_GET_MODEL: 'session:getModel',
-  SESSION_SET_MODEL: 'session:setModel',
-
-  // Folder dialog (for selecting working directory)
-  OPEN_FOLDER_DIALOG: 'dialog:openFolder',
-
-  // User Preferences
-  PREFERENCES_READ: 'preferences:read',
-  PREFERENCES_WRITE: 'preferences:write',
-
-  // Session Drafts (input text persisted across app restarts)
-  DRAFTS_GET: 'drafts:get',
-  DRAFTS_SET: 'drafts:set',
-  DRAFTS_DELETE: 'drafts:delete',
-  DRAFTS_GET_ALL: 'drafts:getAll',
-
-  // Sources (workspace-scoped)
-  SOURCES_GET: 'sources:get',
-  SOURCES_CREATE: 'sources:create',
-  SOURCES_DELETE: 'sources:delete',
-  SOURCES_START_OAUTH: 'sources:startOAuth',
-  SOURCES_SAVE_CREDENTIALS: 'sources:saveCredentials',
-  SOURCES_CHANGED: 'sources:changed',
-  
-  // Source permissions config
-  SOURCES_GET_PERMISSIONS: 'sources:getPermissions',
-  // Workspace permissions config (for Explore mode)
-  WORKSPACE_GET_PERMISSIONS: 'workspace:getPermissions',
-  // Default permissions from ~/.craft-agent/permissions/default.json
-  DEFAULT_PERMISSIONS_GET: 'permissions:getDefaults',
-  // Broadcast when default permissions change (file watcher)
-  DEFAULT_PERMISSIONS_CHANGED: 'permissions:defaultsChanged',
-  // MCP tools listing
-  SOURCES_GET_MCP_TOOLS: 'sources:getMcpTools',
-
-  // Session content search (full-text via ripgrep)
-  SEARCH_SESSIONS: 'sessions:searchContent',
-
-  // Skills (workspace-scoped)
-  SKILLS_GET: 'skills:get',
-  SKILLS_GET_FILES: 'skills:getFiles',
-  SKILLS_DELETE: 'skills:delete',
-  SKILLS_OPEN_EDITOR: 'skills:openEditor',
-  SKILLS_OPEN_FINDER: 'skills:openFinder',
-  SKILLS_CHANGED: 'skills:changed',
-
-  // Status management (workspace-scoped)
-  STATUSES_LIST: 'statuses:list',
-  STATUSES_REORDER: 'statuses:reorder',  // Reorder statuses (drag-and-drop)
-  STATUSES_CHANGED: 'statuses:changed',  // Broadcast event
-
-  // Label management (workspace-scoped)
-  LABELS_LIST: 'labels:list',
-  LABELS_CREATE: 'labels:create',
-  LABELS_DELETE: 'labels:delete',
-  LABELS_CHANGED: 'labels:changed',  // Broadcast event
-
-  // Views management (workspace-scoped, stored in views.json)
-  VIEWS_LIST: 'views:list',
-  VIEWS_SAVE: 'views:save',
-
-  // Theme management (cascading: app → workspace)
-  THEME_APP_CHANGED: 'theme:appChanged',        // Broadcast event
-
-  // Generic workspace image loading/saving (for icons, etc.)
-  WORKSPACE_READ_IMAGE: 'workspace:readImage',
-  WORKSPACE_WRITE_IMAGE: 'workspace:writeImage',
-
-  // Workspace settings (per-workspace configuration)
-  WORKSPACE_SETTINGS_GET: 'workspaceSettings:get',
-  WORKSPACE_SETTINGS_UPDATE: 'workspaceSettings:update',
-
-  // Theme (app-level default)
-  THEME_GET_APP: 'theme:getApp',
-  THEME_GET_PRESETS: 'theme:getPresets',
-  THEME_LOAD_PRESET: 'theme:loadPreset',
-  THEME_GET_COLOR_THEME: 'theme:getColorTheme',
-  THEME_SET_COLOR_THEME: 'theme:setColorTheme',
-  THEME_BROADCAST_PREFERENCES: 'theme:broadcastPreferences',  // Send preferences to main for broadcast
-  THEME_PREFERENCES_CHANGED: 'theme:preferencesChanged',  // Broadcast: preferences changed in another window
-
-  // Workspace-level theme overrides
-  THEME_GET_WORKSPACE_COLOR_THEME: 'theme:getWorkspaceColorTheme',
-  THEME_SET_WORKSPACE_COLOR_THEME: 'theme:setWorkspaceColorTheme',
-  THEME_GET_ALL_WORKSPACE_THEMES: 'theme:getAllWorkspaceThemes',
-  THEME_BROADCAST_WORKSPACE_THEME: 'theme:broadcastWorkspaceTheme',  // Send workspace theme change to main for broadcast
-  THEME_WORKSPACE_THEME_CHANGED: 'theme:workspaceThemeChanged',  // Broadcast: workspace theme changed in another window
-
-  // Tool icon mappings (for Appearance settings)
-  TOOL_ICONS_GET_MAPPINGS: 'toolIcons:getMappings',
-
-  // Logo URL resolution (uses Node.js filesystem cache)
-  LOGO_GET_URL: 'logo:getUrl',
-
-  // Notifications
-  NOTIFICATION_SHOW: 'notification:show',
-  NOTIFICATION_NAVIGATE: 'notification:navigate',  // Broadcast: { workspaceId, sessionId }
-  NOTIFICATION_GET_ENABLED: 'notification:getEnabled',
-  NOTIFICATION_SET_ENABLED: 'notification:setEnabled',
-
-  // Input settings
-  INPUT_GET_AUTO_CAPITALISATION: 'input:getAutoCapitalisation',
-  INPUT_SET_AUTO_CAPITALISATION: 'input:setAutoCapitalisation',
-  INPUT_GET_SEND_MESSAGE_KEY: 'input:getSendMessageKey',
-  INPUT_SET_SEND_MESSAGE_KEY: 'input:setSendMessageKey',
-  INPUT_GET_SPELL_CHECK: 'input:getSpellCheck',
-  INPUT_SET_SPELL_CHECK: 'input:setSpellCheck',
-
-  // Power settings
-  POWER_GET_KEEP_AWAKE: 'power:getKeepAwake',
-  POWER_SET_KEEP_AWAKE: 'power:setKeepAwake',
-
-  // Appearance settings
-  APPEARANCE_GET_RICH_TOOL_DESCRIPTIONS: 'appearance:getRichToolDescriptions',
-  APPEARANCE_SET_RICH_TOOL_DESCRIPTIONS: 'appearance:setRichToolDescriptions',
-
-  BADGE_REFRESH: 'badge:refresh',
-  BADGE_SET_ICON: 'badge:setIcon',
-  BADGE_DRAW: 'badge:draw',  // Broadcast: { count: number, iconDataUrl: string }
-  BADGE_DRAW_WINDOWS: 'badge:draw-windows',  // Broadcast: { count: number }
-  WINDOW_FOCUS_STATE: 'window:focusState',  // Broadcast: boolean (isFocused)
-  WINDOW_GET_FOCUS_STATE: 'window:getFocusState',
-
-  // Release notes
-  GET_RELEASE_NOTES: 'releaseNotes:get',
-  GET_LATEST_RELEASE_VERSION: 'releaseNotes:getLatestVersion',
-
-  // Git operations
-  GET_GIT_BRANCH: 'git:getBranch',
-
-  // Git Bash (Windows)
-  GITBASH_CHECK: 'gitbash:check',
-  GITBASH_BROWSE: 'gitbash:browse',
-  GITBASH_SET_PATH: 'gitbash:setPath',
-
-  // Browser pane management
-  BROWSER_PANE_CREATE: 'browser-pane:create',
-  BROWSER_PANE_DESTROY: 'browser-pane:destroy',
-  BROWSER_PANE_LIST: 'browser-pane:list',
-  BROWSER_PANE_NAVIGATE: 'browser-pane:navigate',
-  BROWSER_PANE_GO_BACK: 'browser-pane:go-back',
-  BROWSER_PANE_GO_FORWARD: 'browser-pane:go-forward',
-  BROWSER_PANE_RELOAD: 'browser-pane:reload',
-  BROWSER_PANE_STOP: 'browser-pane:stop',
-  BROWSER_PANE_FOCUS: 'browser-pane:focus',
-  BROWSER_PANE_SNAPSHOT: 'browser-pane:snapshot',
-  BROWSER_PANE_CLICK: 'browser-pane:click',
-  BROWSER_PANE_FILL: 'browser-pane:fill',
-  BROWSER_PANE_SELECT: 'browser-pane:select',
-  BROWSER_PANE_SCREENSHOT: 'browser-pane:screenshot',
-  BROWSER_PANE_EVALUATE: 'browser-pane:evaluate',
-  BROWSER_PANE_SCROLL: 'browser-pane:scroll',
-  BROWSER_EMPTY_STATE_LAUNCH: 'browser-empty-state:launch',
-  // Browser pane events (main → renderer)
-  BROWSER_PANE_STATE_CHANGED: 'browser-pane:state-changed',
-  BROWSER_PANE_REMOVED: 'browser-pane:removed',
-  BROWSER_PANE_INTERACTED: 'browser-pane:interacted',
-
-  // Menu actions (renderer → main for window/app control)
-  MENU_QUIT: 'menu:quit',
-  MENU_MINIMIZE: 'menu:minimize',
-  MENU_MAXIMIZE: 'menu:maximize',
-  MENU_ZOOM_IN: 'menu:zoomIn',
-  MENU_ZOOM_OUT: 'menu:zoomOut',
-  MENU_ZOOM_RESET: 'menu:zoomReset',
-  MENU_TOGGLE_DEVTOOLS: 'menu:toggleDevTools',
-  MENU_UNDO: 'menu:undo',
-  MENU_REDO: 'menu:redo',
-  MENU_CUT: 'menu:cut',
-  MENU_COPY: 'menu:copy',
-  MENU_PASTE: 'menu:paste',
-  MENU_SELECT_ALL: 'menu:selectAll',
-
-  // Automations (manual trigger + state management)
-  TEST_AUTOMATION: 'automations:test',
-  AUTOMATIONS_SET_ENABLED: 'automations:setEnabled',
-  AUTOMATIONS_DUPLICATE: 'automations:duplicate',
-  AUTOMATIONS_DELETE: 'automations:delete',
-  AUTOMATIONS_GET_HISTORY: 'automations:getHistory',
-  AUTOMATIONS_GET_LAST_EXECUTED: 'automations:getLastExecuted',
-  AUTOMATIONS_CHANGED: 'automations:changed',  // Broadcast event
+/**
+ * Browser toolbar window IPC channels (preload <-> BrowserPaneManager).
+ * Kept separate from IPC_CHANNELS because these are scoped to toolbar windows.
+ */
+export const BROWSER_TOOLBAR_CHANNELS = {
+  NAVIGATE: 'browser-toolbar:navigate',
+  GO_BACK: 'browser-toolbar:go-back',
+  GO_FORWARD: 'browser-toolbar:go-forward',
+  RELOAD: 'browser-toolbar:reload',
+  STOP: 'browser-toolbar:stop',
+  OPEN_MENU: 'browser-toolbar:open-menu',
+  HIDE: 'browser-toolbar:hide',
+  DESTROY: 'browser-toolbar:destroy',
+  STATE_UPDATE: 'browser-toolbar:state-update',
+  THEME_COLOR: 'browser-toolbar:theme-color',
 } as const
 
 // Re-import types for ElectronAPI

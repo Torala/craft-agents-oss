@@ -100,19 +100,19 @@ export async function validateFilePath(filePath: string): Promise<string> {
 }
 
 export const HANDLED_CHANNELS = [
-  IPC_CHANNELS.READ_FILE,
-  IPC_CHANNELS.READ_FILE_DATA_URL,
-  IPC_CHANNELS.READ_FILE_BINARY,
-  IPC_CHANNELS.OPEN_FILE_DIALOG,
-  IPC_CHANNELS.READ_FILE_ATTACHMENT,
-  IPC_CHANNELS.STORE_ATTACHMENT,
-  IPC_CHANNELS.GENERATE_THUMBNAIL,
-  IPC_CHANNELS.FS_SEARCH,
+  IPC_CHANNELS.file.READ,
+  IPC_CHANNELS.file.READ_DATA_URL,
+  IPC_CHANNELS.file.READ_BINARY,
+  IPC_CHANNELS.file.OPEN_DIALOG,
+  IPC_CHANNELS.file.READ_ATTACHMENT,
+  IPC_CHANNELS.file.STORE_ATTACHMENT,
+  IPC_CHANNELS.file.GENERATE_THUMBNAIL,
+  IPC_CHANNELS.fs.SEARCH,
 ] as const
 
 export function registerFilesHandlers({ windowManager }: IpcContext): void {
   // Read a file (with path validation to prevent traversal attacks)
-  ipcMain.handle(IPC_CHANNELS.READ_FILE, async (_event, path: string) => {
+  ipcMain.handle(IPC_CHANNELS.file.READ, async (_event, path: string) => {
     try {
       // Validate and normalize the path
       const safePath = await validateFilePath(path)
@@ -132,7 +132,7 @@ export function registerFilesHandlers({ windowManager }: IpcContext): void {
 
   // Read an image file as a data URL for in-app image preview overlays.
   // Returns data:{mime};base64,{content} — used by ImagePreviewOverlay and markdown image blocks.
-  ipcMain.handle(IPC_CHANNELS.READ_FILE_DATA_URL, async (_event, path: string) => {
+  ipcMain.handle(IPC_CHANNELS.file.READ_DATA_URL, async (_event, path: string) => {
     try {
       const safePath = await validateFilePath(path)
       const buffer = await readFile(safePath)
@@ -163,7 +163,7 @@ export function registerFilesHandlers({ windowManager }: IpcContext): void {
 
   // Read a file as raw binary (Uint8Array) for react-pdf.
   // Returns Uint8Array which IPC automatically converts to ArrayBuffer for the renderer.
-  ipcMain.handle(IPC_CHANNELS.READ_FILE_BINARY, async (_event, path: string) => {
+  ipcMain.handle(IPC_CHANNELS.file.READ_BINARY, async (_event, path: string) => {
     try {
       const safePath = await validateFilePath(path)
       const buffer = await readFile(safePath)
@@ -177,7 +177,7 @@ export function registerFilesHandlers({ windowManager }: IpcContext): void {
   })
 
   // Open native file dialog for selecting files to attach
-  ipcMain.handle(IPC_CHANNELS.OPEN_FILE_DIALOG, async () => {
+  ipcMain.handle(IPC_CHANNELS.file.OPEN_DIALOG, async () => {
     const result = await dialog.showOpenDialog({
       properties: ['openFile', 'multiSelections'],
       filters: [
@@ -192,7 +192,7 @@ export function registerFilesHandlers({ windowManager }: IpcContext): void {
   })
 
   // Read file and return as FileAttachment with Quick Look thumbnail
-  ipcMain.handle(IPC_CHANNELS.READ_FILE_ATTACHMENT, async (_event, path: string) => {
+  ipcMain.handle(IPC_CHANNELS.file.READ_ATTACHMENT, async (_event, path: string) => {
     try {
       // Validate path first to prevent path traversal
       const safePath = await validateFilePath(path)
@@ -220,7 +220,7 @@ export function registerFilesHandlers({ windowManager }: IpcContext): void {
   })
 
   // Generate thumbnail from base64 data (for drag-drop files where we don't have a path)
-  ipcMain.handle(IPC_CHANNELS.GENERATE_THUMBNAIL, async (_event, base64: string, mimeType: string): Promise<string | null> => {
+  ipcMain.handle(IPC_CHANNELS.file.GENERATE_THUMBNAIL, async (_event, base64: string, mimeType: string): Promise<string | null> => {
     // Save to temp file, generate thumbnail, clean up
     const tempDir = tmpdir()
     const ext = mimeType.split('/')[1] || 'bin'
@@ -251,7 +251,7 @@ export function registerFilesHandlers({ windowManager }: IpcContext): void {
 
   // Store an attachment to disk and generate thumbnail/markdown conversion
   // This is the core of the persistent file attachment system
-  ipcMain.handle(IPC_CHANNELS.STORE_ATTACHMENT, async (event, sessionId: string, attachment: FileAttachment): Promise<StoredAttachment> => {
+  ipcMain.handle(IPC_CHANNELS.file.STORE_ATTACHMENT, async (event, sessionId: string, attachment: FileAttachment): Promise<StoredAttachment> => {
     // Track files we've written for cleanup on error
     const filesToCleanup: string[] = []
 
@@ -470,7 +470,7 @@ export function registerFilesHandlers({ windowManager }: IpcContext): void {
   // Parallel BFS walk that skips ignored directories BEFORE entering them,
   // avoiding reading node_modules/etc. contents entirely. Uses withFileTypes
   // to get entry types without separate stat calls.
-  ipcMain.handle(IPC_CHANNELS.FS_SEARCH, async (_event, basePath: string, query: string) => {
+  ipcMain.handle(IPC_CHANNELS.fs.SEARCH, async (_event, basePath: string, query: string) => {
     ipcLog.info('[FS_SEARCH] called:', basePath, query)
     const MAX_RESULTS = 50
 
