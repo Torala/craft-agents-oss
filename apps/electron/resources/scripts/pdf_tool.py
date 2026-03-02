@@ -31,9 +31,31 @@ import sys
 from pathlib import Path
 
 import click
-import fitz  # pymupdf
 from pypdf import PdfReader, PdfWriter
 from pypdf.generic import BooleanObject, NameObject, RectangleObject
+
+
+class _MissingFitz:
+    """Fallback proxy when PyMuPDF is unavailable on the host runtime."""
+
+    def __init__(self, error: Exception) -> None:
+        self._error = error
+
+    def __getattr__(self, _name: str):
+        raise click.ClickException(
+            "PyMuPDF (fitz) is unavailable in this environment. "
+            f"Install Microsoft Visual C++ Redistributable and retry. Details: {self._error}"
+        )
+
+
+try:
+    import fitz  # pymupdf
+except Exception as e:  # pragma: no cover - environment-specific runtime dependency
+    fitz = _MissingFitz(e)
+
+
+def has_fitz() -> bool:
+    return not isinstance(fitz, _MissingFitz)
 
 # Standard page sizes in points (width x height)
 PAGE_SIZES: dict[str, tuple[float, float]] = {
@@ -180,22 +202,28 @@ def extract(file: str, pages: str | None, output: str | None) -> None:
     Extracts all text by default, or specific pages with --pages.
     """
     try:
-        doc = fitz.open(file)
-        try:
-            total = len(doc)
+        parts: list[str] = []
 
-            if pages:
-                page_indices = parse_page_range(pages, total)
-            else:
-                page_indices = list(range(total))
+        if has_fitz():
+            doc = fitz.open(file)
+            try:
+                total = len(doc)
+                page_indices = parse_page_range(pages, total) if pages else list(range(total))
 
-            parts: list[str] = []
+                for idx in page_indices:
+                    page = doc[idx]
+                    text = page.get_text()
+                    parts.append(f"--- Page {idx + 1} ---\n{text}")
+            finally:
+                doc.close()
+        else:
+            reader = PdfReader(file)
+            total = len(reader.pages)
+            page_indices = parse_page_range(pages, total) if pages else list(range(total))
             for idx in page_indices:
-                page = doc[idx]
-                text = page.get_text()
+                text = reader.pages[idx].extract_text() or ""
                 parts.append(f"--- Page {idx + 1} ---\n{text}")
-        finally:
-            doc.close()
+
         write_output("\n".join(parts), output)
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
@@ -899,23 +927,37 @@ def to_docx(file: str, pages: str | None, output: str) -> None:
     from docx import Document as DocxDocument
 
     try:
-        doc = fitz.open(file)
-        try:
-            total = len(doc)
+        docx_doc = DocxDocument()
+
+        if has_fitz():
+            doc = fitz.open(file)
+            try:
+                total = len(doc)
+                indices = parse_page_range(pages, total) if pages else list(range(total))
+                for i, idx in enumerate(indices):
+                    page = doc[idx]
+                    blocks = page.get_text("blocks")
+                    for block in sorted(blocks, key=lambda b: (b[1], b[0])):
+                        if block[6] == 0:  # text block
+                            text = block[4].strip()
+                            if text:
+                                docx_doc.add_paragraph(text)
+                    if i < len(indices) - 1:
+                        docx_doc.add_page_break()
+            finally:
+                doc.close()
+        else:
+            reader = PdfReader(file)
+            total = len(reader.pages)
             indices = parse_page_range(pages, total) if pages else list(range(total))
-            docx_doc = DocxDocument()
             for i, idx in enumerate(indices):
-                page = doc[idx]
-                blocks = page.get_text("blocks")
-                for block in sorted(blocks, key=lambda b: (b[1], b[0])):
-                    if block[6] == 0:  # text block
-                        text = block[4].strip()
-                        if text:
-                            docx_doc.add_paragraph(text)
+                text = reader.pages[idx].extract_text() or ""
+                for line in text.splitlines():
+                    if line.strip():
+                        docx_doc.add_paragraph(line.strip())
                 if i < len(indices) - 1:
                     docx_doc.add_page_break()
-        finally:
-            doc.close()
+
         docx_doc.save(output)
         click.echo(f"DOCX written to {output}", err=True)
     except Exception as e:
@@ -935,31 +977,44 @@ def to_xlsx(file: str, pages: str | None, output: str) -> None:
     from openpyxl import Workbook
 
     try:
-        doc = fitz.open(file)
-        try:
-            total = len(doc)
-            indices = parse_page_range(pages, total) if pages else list(range(total))
-            wb = Workbook()
-            wb.remove(wb.active)
-            table_count = 0
-            for idx in indices:
-                page = doc[idx]
-                tabs = page.find_tables()
-                for j, table in enumerate(tabs.tables):
-                    table_count += 1
-                    ws = wb.create_sheet(title=f"Page{idx + 1}_Table{j + 1}")
-                    for row in table.extract():
-                        ws.append([cell if cell else "" for cell in row])
-            if table_count == 0:
-                # No tables found — extract text as fallback
-                ws = wb.create_sheet(title="Text")
+        wb = Workbook()
+        wb.remove(wb.active)
+        table_count = 0
+
+        if has_fitz():
+            doc = fitz.open(file)
+            try:
+                total = len(doc)
+                indices = parse_page_range(pages, total) if pages else list(range(total))
                 for idx in indices:
                     page = doc[idx]
-                    for line in page.get_text().split("\n"):
-                        if line.strip():
-                            ws.append([line.strip()])
-        finally:
-            doc.close()
+                    tabs = page.find_tables()
+                    for j, table in enumerate(tabs.tables):
+                        table_count += 1
+                        ws = wb.create_sheet(title=f"Page{idx + 1}_Table{j + 1}")
+                        for row in table.extract():
+                            ws.append([cell if cell else "" for cell in row])
+                if table_count == 0:
+                    ws = wb.create_sheet(title="Text")
+                    for idx in indices:
+                        page = doc[idx]
+                        for line in page.get_text().split("\n"):
+                            if line.strip():
+                                ws.append([line.strip()])
+            finally:
+                doc.close()
+        else:
+            reader = PdfReader(file)
+            total = len(reader.pages)
+            indices = parse_page_range(pages, total) if pages else list(range(total))
+            ws = wb.create_sheet(title="Text")
+            for idx in indices:
+                ws.append([f"--- Page {idx + 1} ---"])
+                text = reader.pages[idx].extract_text() or ""
+                for line in text.splitlines():
+                    if line.strip():
+                        ws.append([line.strip()])
+
         wb.save(output)
         click.echo(f"XLSX written to {output} ({table_count} tables extracted)", err=True)
     except Exception as e:
@@ -978,30 +1033,55 @@ def to_pptx(file: str, dpi: int, pages: str | None, output: str) -> None:
     from pptx.util import Emu
 
     try:
-        doc = fitz.open(file)
-        try:
-            total = len(doc)
+        prs = Presentation()
+
+        if has_fitz():
+            doc = fitz.open(file)
+            try:
+                total = len(doc)
+                indices = parse_page_range(pages, total) if pages else list(range(total))
+                if not indices:
+                    click.echo("Error: no pages selected for conversion.", err=True)
+                    sys.exit(1)
+                # Set slide size to match first page aspect ratio (points -> EMU: 1pt = 12700 EMU)
+                first_page = doc[indices[0]]
+                prs.slide_width = Emu(int(first_page.rect.width * 12700))
+                prs.slide_height = Emu(int(first_page.rect.height * 12700))
+                blank_layout = prs.slide_layouts[6]  # blank slide
+                for idx in indices:
+                    page = doc[idx]
+                    pix = page.get_pixmap(dpi=dpi)
+                    img_bytes = pix.tobytes("png")
+                    slide = prs.slides.add_slide(blank_layout)
+                    slide.shapes.add_picture(
+                        io.BytesIO(img_bytes), 0, 0,
+                        prs.slide_width, prs.slide_height,
+                    )
+            finally:
+                doc.close()
+        else:
+            reader = PdfReader(file)
+            total = len(reader.pages)
             indices = parse_page_range(pages, total) if pages else list(range(total))
             if not indices:
                 click.echo("Error: no pages selected for conversion.", err=True)
                 sys.exit(1)
-            prs = Presentation()
-            # Set slide size to match first page aspect ratio (points -> EMU: 1pt = 12700 EMU)
-            first_page = doc[indices[0]]
-            prs.slide_width = Emu(int(first_page.rect.width * 12700))
-            prs.slide_height = Emu(int(first_page.rect.height * 12700))
-            blank_layout = prs.slide_layouts[6]  # blank slide
+
+            # Text-only fallback layout
+            layout = prs.slide_layouts[1]  # title + content
             for idx in indices:
-                page = doc[idx]
-                pix = page.get_pixmap(dpi=dpi)
-                img_bytes = pix.tobytes("png")
-                slide = prs.slides.add_slide(blank_layout)
-                slide.shapes.add_picture(
-                    io.BytesIO(img_bytes), 0, 0,
-                    prs.slide_width, prs.slide_height,
-                )
-        finally:
-            doc.close()
+                slide = prs.slides.add_slide(layout)
+                slide.shapes.title.text = f"Page {idx + 1}"
+                body = slide.placeholders[1].text_frame
+                body.clear()
+                text = reader.pages[idx].extract_text() or ""
+                lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+                if not lines:
+                    lines = ["(No extractable text)"]
+                for i, line in enumerate(lines[:20]):
+                    p = body.paragraphs[0] if i == 0 else body.add_paragraph()
+                    p.text = line
+
         prs.save(output)
         click.echo(f"PPTX written to {output} ({len(indices)} slides)", err=True)
     except Exception as e:
