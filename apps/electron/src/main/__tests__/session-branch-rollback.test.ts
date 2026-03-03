@@ -15,9 +15,21 @@ mock.module('electron', () => ({
   app: {
     isPackaged: false,
     getAppPath: () => process.cwd(),
+    dock: { setIcon: () => {}, setBadge: () => {} },
+    setBadgeCount: () => {},
   },
   nativeImage: {
     createFromPath: () => ({ isEmpty: () => true }),
+    createFromDataURL: () => ({}),
+  },
+  Notification: class {
+    static isSupported() { return false }
+    on() {}
+    show() {}
+  },
+  BrowserWindow: {
+    getAllWindows: () => [],
+    getFocusedWindow: () => null,
   },
 }))
 
@@ -38,10 +50,6 @@ mock.module('../logger', () => {
     getLogFilePath: () => '/tmp/main.log',
   }
 })
-
-mock.module('../notifications', () => ({
-  updateBadgeCount: () => {},
-}))
 
 mock.module('@craft-agent/shared/config', () => ({
   getWorkspaceByNameOrId: (id: string) => (id === workspace.id ? workspace : null),
@@ -77,6 +85,22 @@ mock.module('@craft-agent/shared/config', () => ({
   getSummarizationModel: () => 'claude-haiku-4-5-20251001',
   ensureConfigDir: () => {},
   ensureConfigDefaults: () => {},
+  addWorkspace: async () => null,
+  getAllSessionDrafts: () => [],
+  getGitBashPath: () => null,
+  // Handler-required stubs: prevent SyntaxError in handler modules loaded by registration test
+  getPreferencesPath: () => '/tmp/preferences.json',
+  getSessionDraft: () => null,
+  setSessionDraft: async () => {},
+  deleteSessionDraft: async () => {},
+  getLlmConnections: () => [],
+  addLlmConnection: async () => null,
+  updateLlmConnection: async () => null,
+  deleteLlmConnection: async () => {},
+  setDefaultLlmConnection: async () => {},
+  touchLlmConnection: async () => {},
+  isCompatProvider: () => false,
+  isAnthropicProvider: () => true,
 }))
 
 mock.module('@craft-agent/shared/workspaces', () => ({
@@ -212,7 +236,24 @@ mock.module('@craft-agent/shared/sessions', () => ({
   getSessionPath: (_root: string, id: string) => `${workspaceRootPath}/sessions/${id}`,
   getOrCreateLatestSession: async () => null,
   sessionPersistenceQueue: { flush: async () => {} },
-  pickSessionFields: (s: any) => ({ ...s }),
+  pickSessionFields: (s: any) => {
+    // Must match SESSION_PERSISTENT_FIELDS to prevent contamination of persistence tests
+    const fields = [
+      'id','workspaceRootPath','sdkSessionId','sdkCwd',
+      'createdAt','lastUsedAt','lastMessageAt',
+      'name','isFlagged','sessionStatus','labels','hidden',
+      'lastReadMessageId','hasUnread',
+      'enabledSourceSlugs','permissionMode','previousPermissionMode','workingDirectory',
+      'model','llmConnection','connectionLocked','thinkingLevel',
+      'sharedUrl','sharedId','pendingPlanExecution',
+      'isArchived','archivedAt',
+      'branchFromMessageId','branchFromSdkSessionId','branchFromSessionPath',
+    ]
+    const result: Record<string, unknown> = {}
+    for (const f of fields) if (f in s) result[f] = (s as Record<string, unknown>)[f]
+    return result
+  },
+  validateSessionId: () => true,
 }))
 
 const { SessionManager } = await import('../sessions')
