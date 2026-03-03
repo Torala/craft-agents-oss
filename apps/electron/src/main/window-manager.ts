@@ -70,6 +70,16 @@ export class WindowManager {
     this.clientResolver = resolver
   }
 
+  /** Return current RPC event sink, if transport has been initialized. */
+  getRpcEventSink(): ((channel: string, target: import('@craft-agent/shared/protocol').PushTarget, ...args: any[]) => void) | null {
+    return this.eventSink
+  }
+
+  /** Resolve a window's current clientId from transport handshake state. */
+  getClientIdForWindow(webContentsId: number): string | undefined {
+    return this.clientResolver?.(webContentsId)
+  }
+
   /** Push an event to a specific window via the RPC event sink. Falls back to webContents.send. */
   private pushToWindow(window: BrowserWindow, channel: string, ...args: any[]): void {
     if (this.eventSink && this.clientResolver) {

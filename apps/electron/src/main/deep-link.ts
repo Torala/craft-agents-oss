@@ -325,7 +325,11 @@ export async function handleDeepLink(
       actionParams: target.actionParams,
     }
     const wsId = target.workspaceId ?? windowManager.getWorkspaceForWindow(window.webContents.id)
-    const clientId = preferredClientId ?? resolveClientId?.(window.webContents.id)
+    const resolvedClientId = resolveClientId?.(window.webContents.id)
+
+    // Prefer the resolved target window client. Only use preferredClientId as
+    // fallback when no resolver was provided (legacy call sites).
+    const clientId = resolvedClientId ?? (!resolveClientId ? preferredClientId : undefined)
 
     if (sink && clientId) {
       sink(IPC_CHANNELS.deeplink.NAVIGATE, { to: 'client', clientId }, navigation)
