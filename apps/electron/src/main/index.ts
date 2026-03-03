@@ -536,6 +536,14 @@ app.whenReady().then(async () => {
 
       oauthFlowStore = new OAuthFlowStore()
 
+      // Ensure global config.json exists before handlers can be called.
+      // In GUI mode, createInitialWindows() also ensures this, but in headless
+      // mode that function is skipped — so we must do it here.
+      if (!loadStoredConfig()) {
+        saveConfig({ workspaces: [], activeWorkspaceId: null, activeSessionId: null })
+        mainLog.info('Initialized missing global config')
+      }
+
       const deps: HandlerDeps = {
         sessionManager,
         platform,
