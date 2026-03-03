@@ -70,7 +70,7 @@ export async function createCallbackServer(options?: CreateCallbackServerOptions
     try {
       const url = new URL(req.url || '/', `http://localhost:${boundPort}`);
 
-      if (url.pathname !== '/callback') {
+      if (url.pathname !== '/callback' && url.pathname !== '/oauth/callback') {
         res.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8' });
         res.end('Not found');
         return;
