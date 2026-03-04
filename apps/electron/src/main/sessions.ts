@@ -19,7 +19,7 @@ import {
 } from '@craft-agent/shared/agent/backend'
 import { getLlmConnection, getDefaultLlmConnection } from '@craft-agent/shared/config'
 import { PrivilegedExecutionBroker } from './privileged-execution-broker'
-import { InitGate } from './init-gate'
+import { InitGate } from '@craft-agent/server-core/domain'
 import {
   getWorkspaces,
   getWorkspaceByNameOrId,
@@ -74,12 +74,9 @@ import { listLabels } from '@craft-agent/shared/labels/storage'
 import { extractLabelId } from '@craft-agent/shared/labels'
 import { AutomationSystem, AUTOMATIONS_HISTORY_FILE, type AutomationSystemMetadataSnapshot } from '@craft-agent/shared/automations'
 
-// Import and re-export (extracted to avoid Electron dependency in tests)
-import { sanitizeForTitle } from './title-sanitizer'
-import { shouldActivateBrowserOverlay, normalizeBrowserToolName } from './browser-tool-detection'
-import { rollbackFailedBranchCreation } from './session-branch-cleanup'
+// Import from server-core domain utilities
+import { sanitizeForTitle, shouldActivateBrowserOverlay, normalizeBrowserToolName, rollbackFailedBranchCreation, releaseBrowserOwnershipOnForcedStop } from '@craft-agent/server-core/domain'
 import { resizeImageForAPI, resizeIconBuffer } from './image-utils'
-import { releaseBrowserOwnershipOnForcedStop } from './session-browser-release'
 export { sanitizeForTitle }
 
 // Module-level platform ref — set once during init via setSessionPlatform()
