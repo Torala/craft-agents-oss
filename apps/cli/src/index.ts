@@ -29,6 +29,7 @@ export interface CliArgs {
   mode: string
   outputFormat: string
   noCleanup: boolean
+  noSpinner: boolean
   serverEntry?: string
   workspaceDir?: string
   // LLM configuration
@@ -53,6 +54,7 @@ export function parseArgs(argv: string[]): CliArgs {
   let mode = ''
   let outputFormat = 'text'
   let noCleanup = false
+  let noSpinner = false
   let serverEntry: string | undefined
   let workspaceDir: string | undefined
   let provider = ''
@@ -95,6 +97,10 @@ export function parseArgs(argv: string[]): CliArgs {
         break
       case '--no-cleanup':
         noCleanup = true
+        break
+      case '--disable-spinner':
+      case '--no-spinner':
+        noSpinner = true
         break
       case '--server-entry':
         serverEntry = args[++i]
@@ -142,7 +148,7 @@ export function parseArgs(argv: string[]): CliArgs {
   if (!apiKey) apiKey = process.env.LLM_API_KEY ?? ''
   if (!baseUrl) baseUrl = process.env.LLM_BASE_URL ?? ''
 
-  return { url, token, workspace, timeout, json, tlsCa, sendTimeout, command, rest, sources, mode, outputFormat, noCleanup, serverEntry, workspaceDir, provider, model, apiKey, baseUrl }
+  return { url, token, workspace, timeout, json, tlsCa, sendTimeout, command, rest, sources, mode, outputFormat, noCleanup, noSpinner, serverEntry, workspaceDir, provider, model, apiKey, baseUrl }
 }
 
 // ---------------------------------------------------------------------------
@@ -671,7 +677,7 @@ async function cmdValidate(args: CliArgs): Promise<void> {
   }
 
   try {
-    const exitCode = await runValidation(client, args.json)
+    const exitCode = await runValidation(client, args.json, args.noSpinner)
     client.destroy()
     if (server) await server.stop()
     process.exit(exitCode)
@@ -1054,7 +1060,7 @@ SKILLEOF`, 90_000, true, undefined, ctx.onEvent)
   ]
 }
 
-export async function runValidation(client: CliRpcClient, jsonMode: boolean): Promise<number> {
+export async function runValidation(client: CliRpcClient, jsonMode: boolean, noSpinner?: boolean): Promise<number> {
   const steps = getValidateSteps()
   const total = steps.length
   const ctx: ValidateContext = {}
@@ -1079,7 +1085,7 @@ export async function runValidation(client: CliRpcClient, jsonMode: boolean): Pr
       let textFlushed = false
       let bufferedPrompt = ''
 
-      if (_useColor) {
+      if (_useColor && !noSpinner) {
         spinner = createSpinner(`${c.cyan(num)} ${step.name}`)
       }
 
