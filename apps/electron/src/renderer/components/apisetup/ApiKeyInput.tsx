@@ -254,7 +254,17 @@ export function ApiKeyInput({
   const handleBaseUrlChange = (value: string) => {
     setBaseUrl(value)
     const presetKey = getPresetForUrl(value, presets)
-    setActivePreset(presetKey)
+    if (presetKey !== 'custom') {
+      setActivePreset(presetKey)
+    } else {
+      const currentPresetObj = presets.find(p => p.key === activePreset)
+      // Only fall back to 'custom' if the current preset has a non-empty default URL.
+      // Presets with empty URLs (e.g. Azure OpenAI) expect user-provided endpoints;
+      // switching them to custom would drop piAuthProvider routing metadata.
+      if (currentPresetObj && currentPresetObj.url !== '') {
+        setActivePreset('custom')
+      }
+    }
     setModelError(null)
     if (!connectionDefaultModel.trim()) {
       if (presetKey === 'ollama') {
