@@ -294,6 +294,7 @@ export interface LlmConnectionSetup {
   defaultModel?: string | null
   models?: string[] | null
   piAuthProvider?: string
+  modelSelectionMode?: 'automaticallySyncedFromProvider' | 'userDefined3Tier'
 }
 
 export interface TestLlmConnectionParams {
