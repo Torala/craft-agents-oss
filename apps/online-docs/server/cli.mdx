@@ -41,13 +41,36 @@ craft-cli send <session-id> "What files changed in the last commit?"
 
 ## Common Workflows
 
+### Run a One-Off Task (Self-Contained)
+
+The `run` command spawns a headless server, creates a session, sends your prompt, streams the response, and exits — no separate server setup needed:
+
+```bash
+# Simple prompt
+craft-cli run "Summarize the project structure"
+
+# With a workspace directory and sources
+craft-cli run --workspace-dir ./my-project --source github "List open PRs"
+
+# Stream JSON output for CI
+craft-cli run --output-format stream-json "Run the test suite"
+```
+
+Requires `ANTHROPIC_API_KEY` in the environment. See the [CLI Reference](/reference/cli) for all `run` flags.
+
 ### Validate a Server Deployment
 
 After deploying or updating the server, run the built-in validation:
 
 ```bash
+# Against a running server
+craft-cli --validate-server --url ws://127.0.0.1:9100 --token <token>
+
+# Self-contained (auto-spawns a server, no --url needed)
 craft-cli --validate-server
 ```
+
+When no `--url` is provided, `--validate-server` automatically spawns a local headless server, runs the validation, and shuts it down.
 
 This exercises 21 steps covering connectivity, credential health, workspace listing, session lifecycle, source/skill creation and cleanup. **Note:** it mutates workspace state (creates and deletes temporary resources). Use `--json` for CI-friendly output:
 

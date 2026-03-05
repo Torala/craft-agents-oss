@@ -165,6 +165,45 @@ function err(msg: string): void {
 }
 
 // ---------------------------------------------------------------------------
+// ANSI colors (disabled when NO_COLOR is set or stdout is not a TTY)
+// ---------------------------------------------------------------------------
+
+const _useColor = !process.env.NO_COLOR && process.stdout.isTTY !== false
+const c = {
+  dim: (s: string) => _useColor ? `\x1b[2m${s}\x1b[22m` : s,
+  green: (s: string) => _useColor ? `\x1b[32m${s}\x1b[39m` : s,
+  red: (s: string) => _useColor ? `\x1b[31m${s}\x1b[39m` : s,
+  cyan: (s: string) => _useColor ? `\x1b[36m${s}\x1b[39m` : s,
+  bold: (s: string) => _useColor ? `\x1b[1m${s}\x1b[22m` : s,
+  yellow: (s: string) => _useColor ? `\x1b[33m${s}\x1b[39m` : s,
+  blue: (s: string) => _useColor ? `\x1b[34m${s}\x1b[39m` : s,
+}
+
+// ---------------------------------------------------------------------------
+// Spinner (TTY only — skipped when piped or NO_COLOR)
+// ---------------------------------------------------------------------------
+
+const _spinnerFrames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+
+function createSpinner(text: string): { stop(): void } {
+  let i = 0
+  let stopped = false
+  // Render first frame immediately — setInterval alone misses fast steps
+  process.stdout.write(`${text} ${c.dim(_spinnerFrames[i++ % _spinnerFrames.length])}`)
+  const timer = setInterval(() => {
+    process.stdout.write(`\r\x1b[2K${text} ${c.dim(_spinnerFrames[i++ % _spinnerFrames.length])}`)
+  }, 80)
+  return {
+    stop() {
+      if (stopped) return
+      stopped = true
+      clearInterval(timer)
+      process.stdout.write('\r\x1b[2K')
+    },
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Commands
 // ---------------------------------------------------------------------------
 
@@ -412,9 +451,28 @@ async function cmdSend(client: CliRpcClient, args: CliArgs): Promise<void> {
   process.exit(exitCode)
 }
 
-async function cmdRun(args: CliArgs): Promise<void> {
-  const { spawnServer } = await import('./server-spawner.ts')
+interface LocalServer {
+  client: CliRpcClient
+  stop: () => Promise<void>
+}
 
+async function spawnLocalServer(args: CliArgs, opts?: { quiet?: boolean }): Promise<LocalServer> {
+  const { spawnServer } = await import('./server-spawner.ts')
+  process.stderr.write('Starting server...\n')
+  const server = await spawnServer({
+    serverEntry: args.serverEntry,
+    startupTimeout: args.timeout > 30_000 ? args.timeout : 30_000,
+    quiet: opts?.quiet,
+  })
+  process.stderr.write(`Server ready: ${server.url}\n`)
+  const client = new CliRpcClient(server.url, {
+    token: server.token,
+    requestTimeout: args.timeout,
+  })
+  return { client, stop: server.stop }
+}
+
+async function cmdRun(args: CliArgs): Promise<void> {
   // Prompt = all positional args (no session ID needed, unlike send)
   const message = await readPrompt(args.rest, args.rest)
   if (!message.trim()) {
@@ -422,15 +480,9 @@ async function cmdRun(args: CliArgs): Promise<void> {
     process.exit(1)
   }
 
-  // Spawn headless server
-  process.stderr.write('Starting server...\n')
-  const server = await spawnServer({
-    serverEntry: args.serverEntry,
-    startupTimeout: args.timeout > 30_000 ? args.timeout : 30_000,
-  })
-  process.stderr.write(`Server ready: ${server.url}\n`)
+  const server = await spawnLocalServer(args)
 
-  let client: CliRpcClient | undefined
+  let client: CliRpcClient | undefined = server.client
   let sessionId: string | undefined
 
   const cleanup = async () => {
@@ -453,10 +505,6 @@ async function cmdRun(args: CliArgs): Promise<void> {
   process.on('SIGTERM', onSignal)
 
   try {
-    client = new CliRpcClient(server.url, {
-      token: server.token,
-      requestTimeout: args.timeout,
-    })
     await client.connect()
 
     // Bootstrap workspace from directory if specified
@@ -517,6 +565,35 @@ async function cmdRun(args: CliArgs): Promise<void> {
   } finally {
     process.off('SIGINT', onSignal)
     process.off('SIGTERM', onSignal)
+  }
+}
+
+async function cmdValidate(args: CliArgs): Promise<void> {
+  let server: LocalServer | undefined
+  let client: CliRpcClient
+
+  if (args.url) {
+    client = new CliRpcClient(args.url, {
+      token: args.token || undefined,
+      requestTimeout: args.timeout,
+      connectTimeout: args.timeout,
+    })
+  } else {
+    server = await spawnLocalServer(args, { quiet: true })
+    client = server.client
+  }
+
+  try {
+    const exitCode = await runValidation(client, args.json)
+    client.destroy()
+    if (server) await server.stop()
+    process.exit(exitCode)
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    err(msg)
+    client.destroy()
+    if (server) await server.stop()
+    process.exit(1)
   }
 }
 
@@ -588,6 +665,7 @@ export interface ValidateContext {
   createdSessionId?: string
   createdSourceSlug?: string
   createdSkillSlug?: string
+  onEvent?: (ev: { type: string; [key: string]: unknown }) => void
 }
 
 /**
@@ -602,6 +680,7 @@ async function waitForSendEvents(
   timeoutMs: number,
   expectTool: boolean,
   sendOptions?: Record<string, unknown>,
+  onEvent?: (ev: { type: string; [key: string]: unknown }) => void,
 ): Promise<string> {
   const seen = new Set<string>()
   let textChunks = 0
@@ -618,6 +697,7 @@ async function waitForSendEvents(
     if (ev.type === 'complete' || ev.type === 'error' || ev.type === 'interrupted') {
       finished = true
     }
+    onEvent?.(ev)
   })
 
   try {
@@ -742,7 +822,7 @@ export function getValidateSteps(): ValidateStep[] {
       fn: async (client, ctx) => {
         if (!ctx.createdSessionId) return 'skipped (no session)'
         return await waitForSendEvents(client, ctx.createdSessionId,
-          'Reply with exactly: VALIDATION_OK', 60_000, false)
+          'Reply with exactly: VALIDATION_OK', 60_000, false, undefined, ctx.onEvent)
       },
     },
     {
@@ -750,7 +830,7 @@ export function getValidateSteps(): ValidateStep[] {
       fn: async (client, ctx) => {
         if (!ctx.createdSessionId) return 'skipped (no session)'
         return await waitForSendEvents(client, ctx.createdSessionId,
-          'Use the Bash tool to run: echo TOOL_VALIDATION_OK', 90_000, true)
+          'Use the Bash tool to run: echo TOOL_VALIDATION_OK', 90_000, true, undefined, ctx.onEvent)
       },
     },
     // ----- Source lifecycle -----
@@ -779,7 +859,7 @@ export function getValidateSteps(): ValidateStep[] {
           sourceSlugs: [ctx.createdSourceSlug],
         })
         return await waitForSendEvents(client, ctx.createdSessionId,
-          `[source:${ctx.createdSourceSlug}] Get me a cat fact`, 90_000, false)
+          `[source:${ctx.createdSourceSlug}] Get me a cat fact`, 90_000, false, undefined, ctx.onEvent)
       },
     },
     // ----- Skill lifecycle -----
@@ -806,7 +886,7 @@ This skill does two things:
 2. Use the Cat Facts source to get a random cat fact
 
 Always perform both steps when this skill is invoked.
-SKILLEOF`, 90_000, true)
+SKILLEOF`, 90_000, true, undefined, ctx.onEvent)
       },
     },
     {
@@ -825,7 +905,7 @@ SKILLEOF`, 90_000, true)
         if (!ctx.createdSessionId || !ctx.createdSkillSlug) return 'skipped (no session or skill)'
         return await waitForSendEvents(client, ctx.createdSessionId,
           `[skill:${ctx.createdSkillSlug}] Run the skill`, 120_000, false,
-          { skillSlugs: [ctx.createdSkillSlug] })
+          { skillSlugs: [ctx.createdSkillSlug] }, ctx.onEvent)
       },
     },
     {
@@ -833,7 +913,7 @@ SKILLEOF`, 90_000, true)
       fn: async (client, ctx) => {
         if (!ctx.workspaceId || !ctx.createdSkillSlug) return 'skipped (no skill)'
         await client.invoke('skills:delete', ctx.workspaceId, ctx.createdSkillSlug)
-        return 'cleaned up'
+        return `deleted skill: ${ctx.createdSkillSlug}`
       },
     },
     {
@@ -841,7 +921,7 @@ SKILLEOF`, 90_000, true)
       fn: async (client, ctx) => {
         if (!ctx.workspaceId || !ctx.createdSourceSlug) return 'skipped (no source)'
         await client.invoke('sources:delete', ctx.workspaceId, ctx.createdSourceSlug)
-        return 'cleaned up'
+        return `deleted source: ${ctx.createdSourceSlug}`
       },
     },
     {
@@ -849,7 +929,7 @@ SKILLEOF`, 90_000, true)
       fn: async (client, ctx) => {
         if (!ctx.createdSessionId) return 'skipped (no session)'
         await client.invoke('sessions:delete', ctx.createdSessionId)
-        return 'cleaned up'
+        return `deleted session: ${ctx.createdSessionId}`
       },
     },
     {
@@ -868,26 +948,101 @@ export async function runValidation(client: CliRpcClient, jsonMode: boolean): Pr
   const ctx: ValidateContext = {}
   let passed = 0
   let failed = 0
-  const results: Array<{ step: string; status: string; detail: string }> = []
+  const results: Array<{ step: string; status: string; detail: string; elapsed: number }> = []
+  const totalStart = performance.now()
 
   for (let i = 0; i < steps.length; i++) {
     const step = steps[i]
-    const prefix = `[${i + 1}/${total}] ${step.name}`
-    const dots = '.'.repeat(Math.max(1, 45 - prefix.length))
+    const num = `[${i + 1}/${total}]`
+    const plainLen = num.length + 1 + step.name.length
 
+    // Spinner + live event printer
+    let spinner: { stop(): void } | undefined
+    if (!jsonMode) {
+      let headerPrinted = false
+      let accText = ''
+      let textFlushed = false
+
+      // Start spinner — replaced by events or result line
+      if (_useColor) {
+        spinner = createSpinner(`${c.cyan(num)} ${step.name}`)
+      }
+
+      const flushText = () => {
+        if (textFlushed || !accText) return
+        const clean = accText.replace(/\n/g, ' ').trim()
+        if (!clean) return
+        const display = clean.length > 120 ? clean.slice(0, 120) + '…' : clean
+        process.stdout.write(`    ${c.dim('↳')} ${c.yellow(display)}\n`)
+        textFlushed = true
+      }
+
+      ctx.onEvent = (ev) => {
+        if (!headerPrinted) {
+          spinner?.stop()
+          process.stdout.write(`${c.cyan(num)} ${step.name}\n`)
+          headerPrinted = true
+        }
+        switch (ev.type) {
+          case 'user_message': {
+            const msg = ev.message as any
+            let text = ''
+            if (typeof msg?.content === 'string') {
+              text = msg.content
+            } else if (Array.isArray(msg?.content)) {
+              text = msg.content.filter((b: any) => b.type === 'text').map((b: any) => b.text).join(' ')
+            }
+            const clean = text.replace(/\n/g, ' ').trim()
+            const display = clean.length > 100 ? clean.slice(0, 100) + '…' : clean
+            if (display) {
+              process.stdout.write(`    ${c.dim('→')} ${c.blue(`"${display}"`)}\n`)
+            }
+            break
+          }
+          case 'text_delta':
+            accText += String(ev.delta ?? '')
+            if (!textFlushed && accText.length > 40) flushText()
+            break
+          case 'text_complete':
+            flushText()
+            break
+          case 'tool_start': {
+            flushText()
+            const name = String(ev.toolName ?? '?')
+            const intent = ev.toolIntent ? ` — "${ev.toolIntent}"` : ''
+            process.stdout.write(`    ${c.dim('↳')} ${c.dim(`tool: ${name}${intent}`)}\n`)
+            accText = ''
+            textFlushed = false
+            break
+          }
+        }
+      }
+    } else {
+      ctx.onEvent = undefined
+    }
+
+    const stepStart = performance.now()
     try {
       const detail = await step.fn(client, ctx)
+      const elapsed = (performance.now() - stepStart) / 1000
       passed++
-      results.push({ step: step.name, status: 'OK', detail })
+      results.push({ step: step.name, status: 'OK', detail, elapsed })
+      spinner?.stop()
       if (!jsonMode) {
-        process.stdout.write(`${prefix} ${dots} OK  ${detail}\n`)
+        const dots = c.dim('.'.repeat(Math.max(1, 50 - plainLen)))
+        const time = c.dim(elapsed < 1 ? `(${Math.round(elapsed * 1000)}ms)` : `(${elapsed.toFixed(1)}s)`)
+        process.stdout.write(`${c.cyan(num)} ${step.name} ${dots} ${c.green('✓')}  ${detail}  ${time}\n`)
       }
     } catch (e) {
+      const elapsed = (performance.now() - stepStart) / 1000
       failed++
       const msg = e instanceof Error ? e.message : String(e)
-      results.push({ step: step.name, status: 'FAIL', detail: msg })
+      results.push({ step: step.name, status: 'FAIL', detail: msg, elapsed })
+      spinner?.stop()
       if (!jsonMode) {
-        process.stderr.write(`${prefix} ${dots} FAIL  ${msg}\n`)
+        const dots = c.dim('.'.repeat(Math.max(1, 50 - plainLen)))
+        const time = c.dim(elapsed < 1 ? `(${Math.round(elapsed * 1000)}ms)` : `(${elapsed.toFixed(1)}s)`)
+        process.stderr.write(`${c.cyan(num)} ${step.name} ${dots} ${c.red('✗')}  ${msg}  ${time}\n`)
       }
     }
   }
@@ -901,12 +1056,16 @@ export async function runValidation(client: CliRpcClient, jsonMode: boolean): Pr
     }
   }
 
+  const totalSec = ((performance.now() - totalStart) / 1000).toFixed(1)
+
   if (jsonMode) {
-    out({ total, passed, failed, results }, true)
+    out({ total, passed, failed, results, elapsedSeconds: parseFloat(totalSec) }, true)
   } else {
-    process.stdout.write(`\nResult: ${passed}/${total} passed`)
-    if (failed > 0) process.stdout.write(` (${failed} failed)`)
-    process.stdout.write('\n')
+    if (failed === 0) {
+      process.stdout.write(`\n${c.green(`✓ ${passed}/${total} passed`)} ${c.dim(`in ${totalSec}s`)}\n`)
+    } else {
+      process.stdout.write(`\n${c.red(`✗ ${passed}/${total} passed, ${failed} failed`)} ${c.dim(`in ${totalSec}s`)}\n`)
+    }
   }
 
   return failed > 0 ? 1 : 0
@@ -997,6 +1156,12 @@ export async function main(argv: string[] = process.argv): Promise<void> {
     return
   }
 
+  // validate can spawn its own server or use --url
+  if (args.command === 'validate') {
+    await cmdValidate(args)
+    return
+  }
+
   // All other commands need a server URL
   if (!args.url) {
     err('No server URL. Use --url <ws://...> or set $CRAFT_SERVER_URL')
@@ -1012,9 +1177,6 @@ export async function main(argv: string[] = process.argv): Promise<void> {
 
   try {
     switch (args.command) {
-      case 'validate':
-        process.exit(await runValidation(client, args.json))
-        break
       case 'ping':
         await cmdPing(client, args)
         break

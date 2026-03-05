@@ -288,7 +288,21 @@ For TLS connections (`wss://`), use `--tls-ca <path>` for self-signed certificat
 | `cancel <id>` | Cancel in-progress processing |
 | `invoke <channel> [args]` | Raw RPC call with JSON args |
 | `listen <channel>` | Subscribe to push events (Ctrl+C to stop) |
-| `--validate-server` | Multi-step server integration test |
+| `run <prompt>` | Self-contained: spawn server, run prompt, stream response, exit |
+| `--validate-server` | 21-step integration test (auto-spawns server if no `--url`) |
+
+#### Run Command Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--workspace-dir <path>` | — | Register a workspace directory before running |
+| `--source <slug>` | — | Enable a source (repeatable) |
+| `--output-format <fmt>` | `text` | Output format: `text` or `stream-json` |
+| `--mode <mode>` | `allow-all` | Permission mode for the session |
+| `--no-cleanup` | `false` | Skip session deletion on exit |
+| `--server-entry <path>` | — | Custom server entry point |
+
+The `run` command is fully self-contained — it spawns a headless server, creates a session, sends the prompt, streams the response, and exits. No separate server setup needed. Requires `ANTHROPIC_API_KEY` in the environment.
 
 ### Examples
 
@@ -308,8 +322,13 @@ echo "Summarize this" | craft-cli send abc-123
 # JSON output for scripting
 craft-cli --json workspaces | jq '.[].name'
 
-# Validate the server is working correctly
+# Self-contained run (spawns its own server)
+craft-cli run "Summarize the README"
+craft-cli run --workspace-dir ./my-project --source github "List open PRs"
+
+# Validate the server (auto-spawns if no --url)
 craft-cli --validate-server
+craft-cli --validate-server --url ws://127.0.0.1:9100 --token <token>
 ```
 
 ## Architecture

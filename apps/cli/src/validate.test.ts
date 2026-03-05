@@ -262,7 +262,7 @@ describe('runValidation', () => {
       const output = out.chunks.join('')
       expect(output).toContain(`${TOTAL_STEPS - 1}/${TOTAL_STEPS} passed`)
       expect(output).toContain('1 failed')
-      expect(err.chunks.join('')).toContain('FAIL')
+      expect(err.chunks.join('')).toContain('✗')
       expect(err.chunks.join('')).toContain('system:versions')
     } finally {
       out.restore()

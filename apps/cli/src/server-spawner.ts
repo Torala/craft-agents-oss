@@ -25,6 +25,8 @@ export interface SpawnServerOptions {
   env?: Record<string, string>
   /** How long to wait for the server to print its URL (ms). Default: 30000. */
   startupTimeout?: number
+  /** Suppress server stderr output (useful for validation where only test output matters). */
+  quiet?: boolean
 }
 
 // ---------------------------------------------------------------------------
@@ -67,8 +69,8 @@ export async function spawnServer(opts?: SpawnServerOptions): Promise<SpawnedSer
     stderr: 'pipe',
   })
 
-  // Pipe server stderr to our stderr so --debug logs are visible
-  if (proc.stderr) {
+  // Pipe server stderr to our stderr so --debug logs are visible (unless quiet)
+  if (proc.stderr && !opts?.quiet) {
     ;(async () => {
       const reader = proc.stderr!.getReader()
       try {

@@ -5,8 +5,8 @@ Terminal client for Craft Agent server. Connects over WebSocket (`ws://` or `wss
 ## Prerequisites
 
 - [Bun](https://bun.sh/) runtime installed
-- A running Craft Agent headless server (see `packages/server/`)
-- Server URL and authentication token
+- For `run` and `--validate-server`: `ANTHROPIC_API_KEY` in the environment (server is auto-spawned)
+- For all other commands: a running Craft Agent headless server with URL and token
 
 ## Connection Options
 
@@ -88,11 +88,41 @@ craft-cli invoke sessions:get '"workspace-123"'
 craft-cli listen session:event
 ```
 
+### Run (Self-Contained)
+
+```bash
+craft-cli run <prompt>
+craft-cli run --workspace-dir ./project --source github "List open PRs"
+```
+
+The `run` command is fully self-contained — it spawns a headless server, creates a session, sends the prompt, streams the response, and exits. No separate server setup needed. Requires `ANTHROPIC_API_KEY` in the environment.
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--workspace-dir <path>` | — | Register a workspace directory before running |
+| `--source <slug>` | — | Enable a source (repeatable) |
+| `--output-format <fmt>` | `text` | Output format: `text` or `stream-json` |
+| `--mode <mode>` | `allow-all` | Permission mode for the session |
+| `--no-cleanup` | `false` | Skip session deletion on exit |
+| `--server-entry <path>` | — | Custom server entry point |
+
+Prompt can also be piped via stdin:
+```bash
+echo "Summarize this file" | craft-cli run
+cat error.log | craft-cli run "What's causing these errors?"
+```
+
 ### Validate Server
 
 ```bash
+# Against a running server
+craft-cli --validate-server --url ws://127.0.0.1:9100 --token <token>
+
+# Self-contained (auto-spawns a server)
 craft-cli --validate-server
 ```
+
+When no `--url` is provided, `--validate-server` automatically spawns a local headless server (same as the `run` command), runs the validation, and shuts it down.
 
 Runs a 21-step integration test covering the full server lifecycle including source and skill creation:
 
