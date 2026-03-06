@@ -211,6 +211,10 @@ export class PiAgent extends BaseAgent {
   }
   private tokenRefreshInProgress: Promise<void> | null = null;
 
+  // Global mutex: keyed by connectionSlug so multiple PiAgent instances
+  // sharing the same connection don't race concurrent token refreshes.
+  private static globalRefreshMutex: Map<string, Promise<void>> = new Map();
+
   // ============================================================
   // Constructor
   // ============================================================
@@ -520,14 +524,27 @@ export class PiAgent extends BaseAgent {
   private async refreshAndPushTokens(): Promise<void> {
     if (this.config.authType !== 'oauth') return;
 
-    // Mutex — don't stack concurrent refreshes
-    if (this.tokenRefreshInProgress) {
-      await this.tokenRefreshInProgress;
+    const slug = this.config.connectionSlug || 'pi';
+
+    // Global mutex — if another PiAgent instance on the same connection slug
+    // is already refreshing, just wait for that to finish and push the
+    // (now-fresh) credentials to our subprocess.
+    const existing = PiAgent.globalRefreshMutex.get(slug);
+    if (existing) {
+      this.debug(`Waiting on existing refresh for slug "${slug}"`);
+      await existing;
+      // The other instance refreshed the credential store — push to our subprocess
+      if (this.subprocess) {
+        const piAuth = await this.getPiAuth();
+        if (piAuth) {
+          this.send({ type: 'token_update', piAuth });
+          this.debug('Pushed credentials refreshed by sibling instance');
+        }
+      }
       return;
     }
 
-    this.tokenRefreshInProgress = (async () => {
-      const slug = this.config.connectionSlug || 'pi';
+    const refreshPromise = (async () => {
       const piAuthProvider = getBackendRuntime(this.config).piAuthProvider;
       const credentialManager = getCredentialManager();
       const stored = await credentialManager.getLlmOAuth(slug);
@@ -575,10 +592,18 @@ export class PiAgent extends BaseAgent {
       }
     })();
 
+    // Store in both instance and global mutex
+    this.tokenRefreshInProgress = refreshPromise;
+    PiAgent.globalRefreshMutex.set(slug, refreshPromise);
+
     try {
-      await this.tokenRefreshInProgress;
+      await refreshPromise;
     } finally {
       this.tokenRefreshInProgress = null;
+      // Only clear global if it's still our promise (no newer refresh started)
+      if (PiAgent.globalRefreshMutex.get(slug) === refreshPromise) {
+        PiAgent.globalRefreshMutex.delete(slug);
+      }
     }
   }
 
