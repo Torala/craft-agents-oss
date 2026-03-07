@@ -5177,33 +5177,6 @@ To view this task's output:
         managed.agent.setPermissionMode(mode)
       }
 
-      // Restrictive transition guard:
-      // If a turn is actively processing and user switches into Explore mode,
-      // interrupt the current run so prompt snapshot and enforcement stay aligned.
-      const shouldInterruptForRestrictiveTransition =
-        managed.isProcessing &&
-        !managed.stopRequested &&
-        mode === 'safe' &&
-        previousEffectiveMode !== 'safe'
-
-      if (shouldInterruptForRestrictiveTransition && managed.agent) {
-        managed.wasInterrupted = true
-        managed.stopRequested = true
-        sessionLog.info('Interrupting active turn due to restrictive permission mode transition', {
-          sessionId,
-          fromMode: previousEffectiveMode,
-          toMode: mode,
-          modeVersion: diagnostics.modeVersion,
-        })
-        managed.agent.forceAbort(AbortReason.Redirect)
-        this.sendEvent({
-          type: 'info',
-          sessionId: managed.id,
-          message: 'Processing interrupted after switching to Explore mode. Send your next message to continue with updated permissions.',
-          level: 'info',
-        }, managed.workspace.id)
-      }
-
       this.sendEvent({
         type: 'permission_mode_changed',
         sessionId: managed.id,

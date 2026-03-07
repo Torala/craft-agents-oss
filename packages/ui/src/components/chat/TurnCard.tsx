@@ -1931,15 +1931,20 @@ export function ResponseCard({
     requestEdit()
   }, [requestEdit])
 
-  const saveFollowUp = useCallback(async (note: string, sendAfterSave = false) => {
+  const saveFollowUp = useCallback(async (note: string): Promise<{
+    messageId: string
+    annotationId: string
+    note: string
+    selectedText: string
+  } | null> => {
     const normalizedNote = note.trim()
 
-    if (!messageId) return
+    if (!messageId) return null
 
     if (activeAnnotationDetail) {
       if (!onUpdateAnnotation || !activeAnnotation) {
         closeSelectionMenu()
-        return
+        return null
       }
 
       const existingOtherBodies = activeAnnotation.body.filter(body => body.type !== 'highlight' && body.type !== 'note')
@@ -1968,27 +1973,26 @@ export function ResponseCard({
             : (Object.keys(nextMeta).length > 0 ? nextMeta : undefined),
         }))
       } catch {
-        return
-      }
-
-      if (sendAfterSave && normalizedNote.length > 0) {
-        onSaveAndSendFollowUp?.({
-          messageId,
-          annotationId: activeAnnotationDetail.annotationId,
-          note: normalizedNote,
-          selectedText: extractAnnotationSelectedText(activeAnnotation, text),
-        })
+        return null
       }
 
       markSubmitSuccess()
-      return
+
+      if (normalizedNote.length === 0) return null
+
+      return {
+        messageId,
+        annotationId: activeAnnotationDetail.annotationId,
+        note: normalizedNote,
+        selectedText: extractAnnotationSelectedText(activeAnnotation, text),
+      }
     }
 
-    if (!onAddAnnotation || !pendingSelection) return
+    if (!onAddAnnotation || !pendingSelection) return null
 
     if (hasExistingTextRangeAnnotation(annotations, pendingSelection.start, pendingSelection.end)) {
       closeSelectionMenu()
-      return
+      return null
     }
 
     const annotation = createTextSelectionAnnotation(messageId, pendingSelection, normalizedNote, sessionId ?? '')
@@ -1996,20 +2000,20 @@ export function ResponseCard({
     try {
       await Promise.resolve(onAddAnnotation(messageId, annotation))
     } catch {
-      return
-    }
-
-    if (sendAfterSave && normalizedNote.length > 0) {
-      onSaveAndSendFollowUp?.({
-        messageId,
-        annotationId: annotation.id,
-        note: normalizedNote,
-        selectedText: pendingSelection.selectedText,
-      })
+      return null
     }
 
     markSubmitSuccess()
     clearDomSelection()
+
+    if (normalizedNote.length === 0) return null
+
+    return {
+      messageId,
+      annotationId: annotation.id,
+      note: normalizedNote,
+      selectedText: pendingSelection.selectedText,
+    }
   }, [
     messageId,
     activeAnnotationDetail,
@@ -2021,17 +2025,19 @@ export function ResponseCard({
     closeSelectionMenu,
     sessionId,
     markSubmitSuccess,
-    onSaveAndSendFollowUp,
     text,
   ])
 
   const handleSubmitFollowUp = useCallback((note: string) => {
-    void saveFollowUp(note, false)
+    void saveFollowUp(note)
   }, [saveFollowUp])
 
   const handleSubmitAndSendFollowUp = useCallback((note: string) => {
-    void saveFollowUp(note, true)
-  }, [saveFollowUp])
+    void saveFollowUp(note).then((savedFollowUp) => {
+      if (!savedFollowUp) return
+      onSaveAndSendFollowUp?.(savedFollowUp)
+    })
+  }, [saveFollowUp, onSaveAndSendFollowUp])
 
   const handleCancelFollowUp = useAnnotationCancelRestore({
     contentRootRef: contentLayerRef,

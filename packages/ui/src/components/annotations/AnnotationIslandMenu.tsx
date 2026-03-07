@@ -98,6 +98,7 @@ export function AnnotationIslandMenu({
         dialogBehavior="back-or-close"
         onRequestBack={onRequestBack}
         onRequestClose={onCancel}
+        overlayZIndex={zIndex - 1}
       >
         <IslandContentView id="compact" anchorX="center" anchorY="bottom">
           <div className="p-1 flex items-center gap-1">
@@ -132,6 +133,7 @@ export function AnnotationIslandMenu({
           maxInputHeight={320}
           sendMessageKey={sendMessageKey}
           lockScroll
+          blockOutsideInteraction
         />
       </Island>
     </div>

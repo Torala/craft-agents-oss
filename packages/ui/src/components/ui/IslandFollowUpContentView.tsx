@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { ChevronDown } from 'lucide-react'
+import { ChevronDown, Send } from 'lucide-react'
 import { IslandContentView, type IslandMorphTarget } from './Island'
 import {
   DropdownMenu,
@@ -28,6 +28,7 @@ export interface IslandFollowUpContentViewProps {
   sendMessageKey?: 'enter' | 'cmd-enter'
   morphFrom?: IslandMorphTarget | null
   lockScroll?: boolean
+  blockOutsideInteraction?: boolean
   mode?: IslandFollowUpMode
   onRequestEdit?: () => void
 }
@@ -57,6 +58,7 @@ export function IslandFollowUpContentView({
   sendMessageKey = 'enter',
   morphFrom = null,
   lockScroll = false,
+  blockOutsideInteraction = false,
   mode = 'edit',
   onRequestEdit,
 }: IslandFollowUpContentViewProps) {
@@ -124,7 +126,7 @@ export function IslandFollowUpContentView({
   }, [canSubmitAndSend, submitMenuOpen])
 
   return (
-    <IslandContentView id={id} anchorX="center" anchorY="top" morphFrom={morphFrom} lockScroll={lockScroll}>
+    <IslandContentView id={id} anchorX="center" anchorY="top" morphFrom={morphFrom} lockScroll={lockScroll} blockOutsideInteraction={blockOutsideInteraction}>
       <div className="w-[330px] px-3 pb-3 pt-3 space-y-2.5 select-none">
         <div className="flex items-center">
           <div className="pl-[4px] text-sm font-medium">{title}</div>
@@ -230,7 +232,7 @@ export function IslandFollowUpContentView({
                       disabled={isEmpty}
                       aria-label="More submit actions"
                       title="More submit actions"
-                      className="h-8 w-8 border-l border-border/40 inline-flex items-center justify-center text-foreground/70 hover:text-foreground hover:bg-foreground/2 data-[state=open]:bg-foreground/2 data-[state=open]:text-foreground disabled:opacity-40 disabled:cursor-default disabled:hover:bg-transparent disabled:hover:text-foreground/70"
+                      className="h-8 w-6 border-l border-border/40 inline-flex items-center justify-center text-foreground/70 hover:text-foreground hover:bg-foreground/2 data-[state=open]:bg-foreground/2 data-[state=open]:text-foreground disabled:opacity-40 disabled:cursor-default disabled:hover:bg-transparent disabled:hover:text-foreground/70"
                     >
                       <ChevronDown className="h-3 w-3" />
                     </button>
@@ -240,8 +242,9 @@ export function IslandFollowUpContentView({
                     side="bottom"
                     align="end"
                     sideOffset={6}
-                    minWidth="min-w-[150px]"
+                    minWidth=""
                     onInteractOutside={handleSubmitMenuInteractOutside}
+                    data-ca-annotation-island="true"
                   >
                     <StyledDropdownMenuItem
                       onSelect={() => {
@@ -249,6 +252,7 @@ export function IslandFollowUpContentView({
                         onSubmitAndSend?.(value)
                       }}
                     >
+                      <Send className="h-3.5 w-3.5" />
                       {submitAndSendLabel}
                     </StyledDropdownMenuItem>
                   </StyledDropdownMenuContent>

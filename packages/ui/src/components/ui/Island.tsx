@@ -1,4 +1,5 @@
 import * as React from 'react'
+import * as ReactDOM from 'react-dom'
 import { AnimatePresence, motion } from 'motion/react'
 import { cn } from '../../lib/utils'
 import { getDismissibleLayerBridge } from '../../lib/dismissible-layer-bridge'
@@ -22,6 +23,8 @@ export interface IslandContentViewProps {
   morphFrom?: IslandMorphTarget | null
   /** Locks document scrolling while this view is active and visible (dialog-like behavior). */
   lockScroll?: boolean
+  /** Renders a full-viewport capture layer that blocks pointer interaction outside the island. Implies lockScroll. */
+  blockOutsideInteraction?: boolean
   children: React.ReactNode
 }
 
@@ -85,6 +88,8 @@ export interface IslandProps {
   replayEntryKey?: string | number
   /** Controls whether visible transitions always run through an internal priming frame for deterministic entry replay. */
   replayOnVisible?: 'auto' | 'always'
+  /** z-index for the blockOutsideInteraction overlay (portaled to body). Set to containerZIndex − 1. */
+  overlayZIndex?: number
 }
 
 const DEFAULT_TRANSITION: Required<IslandTransitionConfig> = {
@@ -289,6 +294,7 @@ export function Island({
   lockScrollWhileVisible = false,
   replayEntryKey,
   replayOnVisible = 'auto',
+  overlayZIndex,
 }: IslandProps) {
   const shellRef = React.useRef<HTMLDivElement | null>(null)
   const activeViewRef = React.useRef<HTMLDivElement | null>(null)
@@ -327,6 +333,7 @@ export function Island({
     className?: string
     morphFrom?: IslandMorphTarget | null
     lockScroll?: boolean
+    blockOutsideInteraction?: boolean
     node: React.ReactNode
   }
 
@@ -346,6 +353,7 @@ export function Island({
           className: props.className,
           morphFrom: props.morphFrom,
           lockScroll: props.lockScroll,
+          blockOutsideInteraction: props.blockOutsideInteraction,
           node: props.children,
         })
         return
@@ -361,6 +369,7 @@ export function Island({
           className: props.className,
           morphFrom: props.morphFrom,
           lockScroll: props.lockScroll,
+          blockOutsideInteraction: props.blockOutsideInteraction,
           node: child,
         })
       }
@@ -502,7 +511,7 @@ export function Island({
     }
   }, [isVisible, replayEntryKey, replayOnVisible, isVisibilityPrimed])
 
-  const shouldLockScroll = (activeView?.lockScroll ?? false) || lockScrollWhileVisible
+  const shouldLockScroll = (activeView?.lockScroll ?? false) || (activeView?.blockOutsideInteraction ?? false) || lockScrollWhileVisible
   const isDialogMode = dialogBehavior !== 'none'
 
   React.useEffect(() => {
@@ -728,6 +737,7 @@ export function Island({
   const shouldHideForWarmup = shouldMorph && isVisible && !isMorphWarmReady && !hasRenderedVisibleRef.current
   const shouldHideForReplayPriming = replayOnVisible === 'always' && isVisible && !isVisibilityPrimed
   const effectiveVisible = isVisible && !shouldHideForWarmup && !shouldHideForReplayPriming
+  const shouldBlockOutside = (activeView?.blockOutsideInteraction ?? false) && effectiveVisible
   const exitHiddenPose = spawnHiddenPoseRef.current ?? hiddenPose
 
   React.useEffect(() => {
@@ -778,6 +788,18 @@ export function Island({
 
   return (
     <IslandAnimationContext.Provider value={cfg}>
+      {shouldBlockOutside && typeof document !== 'undefined' && ReactDOM.createPortal(
+        <div
+          className="fixed inset-0"
+          style={overlayZIndex != null ? { zIndex: overlayZIndex } : undefined}
+          onPointerDown={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            onRequestClose?.()
+          }}
+        />,
+        document.body
+      )}
       <motion.div
         key={replayEntryKey != null ? `replay:${String(replayEntryKey)}` : 'replay:default'}
         ref={shellRef}

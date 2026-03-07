@@ -50,27 +50,27 @@ if has_changed_in '^packages/shared/'; then
 fi
 
 if has_changed_in '^packages/core/'; then
-  run_step "Typecheck Core" "cd packages/core && bun run tsc --noEmit"
+  run_step "Typecheck Core" "(cd packages/core && bun run tsc --noEmit)"
   ran_any=true
 fi
 
 if has_changed_in '^packages/server-core/'; then
-  run_step "Typecheck Server Core" "cd packages/server-core && bun run tsc --noEmit"
+  run_step "Typecheck Server Core" "(cd packages/server-core && bun run tsc --noEmit)"
   ran_any=true
 fi
 
 if has_changed_in '^packages/server/'; then
-  run_step "Typecheck Server" "cd packages/server && bun run tsc --noEmit"
+  run_step "Typecheck Server" "(cd packages/server && bun run tsc --noEmit)"
   ran_any=true
 fi
 
 if has_changed_in '^packages/session-tools-core/'; then
-  run_step "Typecheck Session Tools" "cd packages/session-tools-core && bun run tsc --noEmit"
+  run_step "Typecheck Session Tools" "(cd packages/session-tools-core && bun run tsc --noEmit)"
   ran_any=true
 fi
 
 if has_changed_in '^packages/ui/'; then
-  run_step "Typecheck UI" "cd packages/ui && bun run tsc --noEmit"
+  run_step "Typecheck UI" "(cd packages/ui && bun run tsc --noEmit)"
   ran_any=true
 fi
 
