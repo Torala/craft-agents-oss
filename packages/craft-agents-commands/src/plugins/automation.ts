@@ -311,7 +311,10 @@ export const automationPlugin: CommandPlugin = {
       }
 
       if (Array.isArray(matcher.labels) && matcher.labels.length > 0) {
-        matcher.labels = ensureLabelsExist(workspaceRootPath, matcher.labels as string[])
+        const stringLabels = (matcher.labels as unknown[]).filter((l): l is string => typeof l === 'string')
+        if (stringLabels.length > 0) {
+          matcher.labels = ensureLabelsExist(workspaceRootPath, stringLabels)
+        }
       }
 
       const list = config.automations[event] ?? []
@@ -339,7 +342,10 @@ export const automationPlugin: CommandPlugin = {
       }
 
       if (Array.isArray(merged.labels) && merged.labels.length > 0) {
-        merged.labels = ensureLabelsExist(workspaceRootPath, merged.labels as string[])
+        const stringLabels = (merged.labels as unknown[]).filter((l): l is string => typeof l === 'string')
+        if (stringLabels.length > 0) {
+          merged.labels = ensureLabelsExist(workspaceRootPath, stringLabels)
+        }
       }
 
       config.automations[found.event]!.splice(found.index, 1)
