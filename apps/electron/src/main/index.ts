@@ -374,6 +374,10 @@ app.whenReady().then(async () => {
     const isClientOnly = !!process.env.CRAFT_SERVER_URL
     const isHeadless = !!process.env.CRAFT_HEADLESS
 
+    if (isClientOnly) {
+      mainLog.info(`Client-only mode: CRAFT_SERVER_URL=${process.env.CRAFT_SERVER_URL} (server initialization skipped)`)
+    }
+
     // Initialize session manager (server-side only — thin client delegates to remote server)
     let modelRefreshService: ReturnType<typeof initModelRefreshService> | null = null
     if (!isClientOnly) {
