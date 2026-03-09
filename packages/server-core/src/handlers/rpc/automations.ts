@@ -59,6 +59,7 @@ export const HANDLED_CHANNELS = [
   RPC_CHANNELS.automations.DELETE,
   RPC_CHANNELS.automations.GET_HISTORY,
   RPC_CHANNELS.automations.GET_LAST_EXECUTED,
+  RPC_CHANNELS.automations.REPLAY,
 ] as const
 
 export function registerAutomationsHandlers(server: RpcServer, deps: HandlerDeps): void {
@@ -70,59 +71,25 @@ export function registerAutomationsHandlers(server: RpcServer, deps: HandlerDeps
 
     const results: import('@craft-agent/shared/protocol').TestAutomationActionResult[] = []
     const { parsePromptReferences } = await import('@craft-agent/shared/automations')
+    const { executeWebhookRequest } = await import('@craft-agent/shared/automations/webhook-utils')
 
     for (const action of payload.actions) {
       const start = Date.now()
 
       if (action.type === 'webhook') {
-        // Execute webhook action
-        try {
-          const method = action.method ?? 'POST'
-          const headers: Record<string, string> = { ...action.headers }
-          let body: string | undefined
+        // Execute webhook action using shared utility (no env expansion for test — raw URLs)
+        // Cast needed: protocol DTO uses loose `method?: string`, WebhookAction uses strict union
+        const result = await executeWebhookRequest(action as import('@craft-agent/shared/automations').WebhookAction)
+        const method = action.method ?? 'POST'
 
-          if (method !== 'GET' && action.body !== undefined) {
-            const bodyFormat = action.bodyFormat ?? 'json'
-            if (bodyFormat === 'json') {
-              if (!headers['Content-Type'] && !headers['content-type']) {
-                headers['Content-Type'] = 'application/json'
-              }
-              body = typeof action.body === 'string' ? action.body : JSON.stringify(action.body)
-            } else {
-              body = String(action.body)
-            }
-          }
+        results.push({
+          ...result,
+          duration: Date.now() - start,
+        })
 
-          const response = await fetch(action.url, { method, headers, body })
-          const success = response.status >= 200 && response.status < 300
-
-          results.push({
-            type: 'webhook',
-            success,
-            url: action.url,
-            statusCode: response.status,
-            error: success ? undefined : `HTTP ${response.status} ${response.statusText}`,
-            duration: Date.now() - start,
-          })
-
-          if (payload.automationId) {
-            const entry = { id: payload.automationId, ts: Date.now(), ok: success, prompt: `Webhook ${method} ${action.url}`.slice(0, 200) }
-            appendFile(join(workspace.rootPath, HISTORY_FILE), JSON.stringify(entry) + '\n', 'utf-8').catch(e => log.warn('[Automations] Failed to write history:', e))
-          }
-        } catch (err: unknown) {
-          results.push({
-            type: 'webhook',
-            success: false,
-            url: action.url,
-            statusCode: 0,
-            error: (err as Error).message,
-            duration: Date.now() - start,
-          })
-
-          if (payload.automationId) {
-            const entry = { id: payload.automationId, ts: Date.now(), ok: false, error: ((err as Error).message ?? '').slice(0, 200), prompt: `Webhook ${action.method ?? 'POST'} ${action.url}`.slice(0, 200) }
-            appendFile(join(workspace.rootPath, HISTORY_FILE), JSON.stringify(entry) + '\n', 'utf-8').catch(e => log.warn('[Automations] Failed to write history:', e))
-          }
+        if (payload.automationId) {
+          const entry = { id: payload.automationId, ts: Date.now(), ok: result.success, ...(result.error ? { error: result.error.slice(0, 200) } : {}), prompt: `Webhook ${method} ${action.url}`.slice(0, 200) }
+          appendFile(join(workspace.rootPath, HISTORY_FILE), JSON.stringify(entry) + '\n', 'utf-8').catch(e => log.warn('[Automations] Failed to write history:', e))
         }
         continue
       }
@@ -224,6 +191,50 @@ export function registerAutomationsHandlers(server: RpcServer, deps: HandlerDeps
     } catch {
       return [] // File doesn't exist yet
     }
+  })
+
+  // Replay webhook actions for a specific automation matcher
+  server.handle(RPC_CHANNELS.automations.REPLAY, async (_ctx, workspaceId: string, automationId: string, eventName: string) => {
+    const workspace = getWorkspaceByNameOrId(workspaceId)
+    if (!workspace) throw new Error('Workspace not found')
+
+    const { resolveAutomationsConfigPath } = await import('@craft-agent/shared/automations/resolve-config-path')
+    const configPath = resolveAutomationsConfigPath(workspace.rootPath)
+    const raw = await readFile(configPath, 'utf-8')
+    const config = JSON.parse(raw) as { automations?: Record<string, Array<{ id?: string; actions?: Array<{ type: string; [key: string]: unknown }> }>> }
+
+    const matchers = config.automations?.[eventName] ?? []
+    const matcher = matchers.find(m => m.id === automationId)
+    if (!matcher) throw new Error('Automation not found')
+
+    const webhookActions = (matcher.actions ?? []).filter(a => a.type === 'webhook')
+    if (webhookActions.length === 0) throw new Error('No webhook actions to replay')
+
+    const { executeWebhookRequest } = await import('@craft-agent/shared/automations/webhook-utils')
+    const results = await Promise.all(
+      webhookActions.map(a => executeWebhookRequest(a as unknown as import('@craft-agent/shared/automations').WebhookAction))
+    )
+
+    // Write history entries for replay
+    for (const result of results) {
+      const method = (webhookActions.find(a => a.url === result.url) as { method?: string })?.method ?? 'POST'
+      const entry = {
+        id: automationId,
+        ts: Date.now(),
+        ok: result.success,
+        webhook: {
+          method,
+          url: result.url.length > 50 ? result.url.slice(0, 50) + '...' : result.url,
+          statusCode: result.statusCode,
+          durationMs: result.durationMs ?? 0,
+          ...(result.error ? { error: result.error.slice(0, 200) } : {}),
+        },
+      }
+      appendFile(join(workspace.rootPath, HISTORY_FILE), JSON.stringify(entry) + '\n', 'utf-8')
+        .catch(e => log.warn('[Automations] Failed to write replay history:', e))
+    }
+
+    return { results: results.map(r => ({ ...r, duration: r.durationMs ?? 0 })) }
   })
 
   // Return last execution timestamp for all automations

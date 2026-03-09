@@ -33,6 +33,7 @@ export interface UseAutomationsResult {
   handleDeleteAutomation: (automationId: string) => void
   confirmDeleteAutomation: () => void
   getAutomationHistory: (automationId: string) => Promise<ExecutionEntry[]>
+  handleReplayAutomation: (automationId: string, event: string) => void
 }
 
 export function useAutomations(
@@ -162,21 +163,35 @@ export function useAutomations(
     try {
       const entries = await window.electronAPI.getAutomationHistory(activeWorkspaceId, automationId, 20)
       const automation = findAutomation(automationId)
-      return entries.map((e: { id: string; ts: number; ok: boolean; sessionId?: string; prompt?: string; error?: string }) => ({
+      return entries.map((e: { id: string; ts: number; ok: boolean; sessionId?: string; prompt?: string; error?: string; webhook?: { method: string; url: string; statusCode: number; durationMs: number; attempts?: number; error?: string } }) => ({
         id: `${e.id}-${e.ts}`,
         automationId: e.id,
         event: automation?.event ?? 'LabelAdd',
         status: e.ok ? 'success' as const : 'error' as const,
-        duration: 0,
+        duration: e.webhook?.durationMs ?? 0,
         timestamp: e.ts,
         sessionId: e.sessionId,
-        actionSummary: e.prompt,
-        error: e.error,
+        actionSummary: e.webhook
+          ? `Webhook ${e.webhook.method} ${e.webhook.url}${e.webhook.attempts && e.webhook.attempts > 1 ? ` (${e.webhook.attempts} attempts)` : ''}`
+          : e.prompt,
+        error: e.webhook?.error ?? e.error,
       }))
     } catch {
       return []
     }
   }, [activeWorkspaceId, findAutomation])
+
+  // Replay failed webhook actions for a specific automation
+  const handleReplayAutomation = useCallback((automationId: string, event: string) => {
+    if (!activeWorkspaceId) return
+    window.electronAPI.replayAutomation(activeWorkspaceId, automationId, event)
+      .then(() => {
+        toast.success('Webhook replay completed')
+      })
+      .catch((err: Error) => {
+        toast.error(`Replay failed: ${err.message}`)
+      })
+  }, [activeWorkspaceId])
 
   return {
     automations,
@@ -190,5 +205,6 @@ export function useAutomations(
     handleDeleteAutomation,
     confirmDeleteAutomation,
     getAutomationHistory,
+    handleReplayAutomation,
   }
 }

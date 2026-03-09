@@ -65,7 +65,12 @@ export interface PromptAction {
 export type WebhookHttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
 /** Body format for webhook actions */
-export type WebhookBodyFormat = 'json' | 'raw';
+export type WebhookBodyFormat = 'json' | 'form' | 'raw';
+
+/** Authentication shorthand for webhook actions */
+export type WebhookAuth =
+  | { type: 'basic'; username: string; password: string }
+  | { type: 'bearer'; token: string };
 
 /** A webhook action - sends an HTTP request to an endpoint */
 export interface WebhookAction {
@@ -76,10 +81,14 @@ export interface WebhookAction {
   method?: WebhookHttpMethod;
   /** HTTP headers as key-value pairs */
   headers?: Record<string, string>;
-  /** Body format: 'json' sends Content-Type application/json, 'raw' sends as-is */
+  /** Body format: 'json' sends Content-Type application/json, 'form' URL-encodes, 'raw' sends as-is */
   bodyFormat?: WebhookBodyFormat;
-  /** Request body — JSON object when bodyFormat is 'json', string when 'raw' */
+  /** Request body — JSON object when bodyFormat is 'json' or 'form', string when 'raw' */
   body?: unknown;
+  /** Capture response body in result (truncated to 4KB). Default: false */
+  captureResponse?: boolean;
+  /** Authentication shorthand (applied before custom headers) */
+  auth?: WebhookAuth;
 }
 
 export type AutomationAction = PromptAction | WebhookAction;
@@ -143,6 +152,12 @@ export interface WebhookActionResult {
   success: boolean;
   /** Error message if the request failed */
   error?: string;
+  /** Number of attempts made (1 = no retry, 2+ = retried) */
+  attempts?: number;
+  /** Total duration including retries, in ms */
+  durationMs?: number;
+  /** Captured response body (only when captureResponse is true, truncated to 4KB) */
+  responseBody?: string;
 }
 
 export type ActionExecutionResult = PromptActionResult | WebhookActionResult;

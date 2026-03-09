@@ -28,9 +28,10 @@ const statusConfig: Record<ExecutionStatus, { icon: React.ElementType; classes: 
 export interface AutomationEventTimelineProps {
   entries: ExecutionEntry[]
   className?: string
+  onReplay?: (automationId: string, event: string) => void
 }
 
-export function AutomationEventTimeline({ entries, className }: AutomationEventTimelineProps) {
+export function AutomationEventTimeline({ entries, className, onReplay }: AutomationEventTimelineProps) {
   const { navigateToSession } = useNavigation()
 
   if (entries.length === 0) {
@@ -69,6 +70,16 @@ export function AutomationEventTimeline({ entries, className }: AutomationEventT
                 onClick={() => navigateToSession(entry.sessionId!)}
               >
                 Open session
+              </button>
+            )}
+
+            {/* Retry button for failed webhook entries */}
+            {entry.status === 'error' && entry.actionSummary?.startsWith('Webhook') && onReplay && (
+              <button
+                className="shrink-0 text-[11px] text-accent hover:underline cursor-pointer"
+                onClick={() => onReplay(entry.automationId, entry.event)}
+              >
+                Retry
               </button>
             )}
           </div>

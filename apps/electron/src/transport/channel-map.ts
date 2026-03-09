@@ -330,5 +330,6 @@ export const CHANNEL_MAP = {
   deleteAutomation: invoke(RPC_CHANNELS.automations.DELETE),
   getAutomationHistory: invoke(RPC_CHANNELS.automations.GET_HISTORY),
   getAutomationLastExecuted: invoke(RPC_CHANNELS.automations.GET_LAST_EXECUTED),
+  replayAutomation: invoke(RPC_CHANNELS.automations.REPLAY),
   onAutomationsChanged: listener(RPC_CHANNELS.automations.CHANGED),
 } satisfies ChannelMap

@@ -64,8 +64,10 @@ export interface WebhookAction {
   url: string
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
   headers?: Record<string, string>
-  bodyFormat?: 'json' | 'raw'
+  bodyFormat?: 'json' | 'form' | 'raw'
   body?: unknown
+  captureResponse?: boolean
+  auth?: { type: 'basic'; username: string; password: string } | { type: 'bearer'; token: string }
 }
 
 export type AutomationAction = PromptAction | WebhookAction
@@ -231,7 +233,7 @@ interface AutomationsConfigFile {
 
 type RawAction =
   | { type: 'prompt'; prompt: string }
-  | { type: 'webhook'; url: string; method?: string; headers?: Record<string, string>; bodyFormat?: 'json' | 'raw'; body?: unknown }
+  | { type: 'webhook'; url: string; method?: string; headers?: Record<string, string>; bodyFormat?: 'json' | 'form' | 'raw'; body?: unknown; captureResponse?: boolean; auth?: WebhookAction['auth'] }
 
 interface AutomationsConfigMatcher {
   id?: string

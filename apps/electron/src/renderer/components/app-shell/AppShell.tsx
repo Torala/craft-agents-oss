@@ -783,7 +783,7 @@ function AppShellContent({
     automations, automationTestResults,
     automationPendingDelete, pendingDeleteAutomation, setAutomationPendingDelete,
     handleTestAutomation, handleToggleAutomation, handleDuplicateAutomation, handleDeleteAutomation, confirmDeleteAutomation,
-    getAutomationHistory,
+    getAutomationHistory, handleReplayAutomation,
   } = useAutomations(activeWorkspaceId, activeWorkspace?.rootPath)
 
   // Whether local MCP servers are enabled (affects stdio source status)
@@ -1551,7 +1551,8 @@ function AppShellContent({
     onDeleteAutomation: handleDeleteAutomation,
     automationTestResults,
     getAutomationHistory,
-  }), [contextValue, handleDeleteSession, sources, skills, labelConfigs, handleSessionLabelsChange, enabledModes, effectiveSessionStatuses, handleSessionSourcesChange, searchActive, searchQuery, handleChatMatchInfoChange, handleTestAutomation, handleToggleAutomation, handleDuplicateAutomation, handleDeleteAutomation, automationTestResults, getAutomationHistory])
+    onReplayAutomation: handleReplayAutomation,
+  }), [contextValue, handleDeleteSession, sources, skills, labelConfigs, handleSessionLabelsChange, enabledModes, effectiveSessionStatuses, handleSessionSourcesChange, searchActive, searchQuery, handleChatMatchInfoChange, handleTestAutomation, handleToggleAutomation, handleDuplicateAutomation, handleDeleteAutomation, automationTestResults, getAutomationHistory, handleReplayAutomation])
 
   // Persist expanded folders to localStorage (workspace-scoped)
   React.useEffect(() => {

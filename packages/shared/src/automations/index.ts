@@ -23,6 +23,7 @@ export type {
   WebhookAction,
   WebhookHttpMethod,
   WebhookBodyFormat,
+  WebhookAuth,
   AutomationAction,
   AutomationMatcher,
   AutomationsConfig,
@@ -76,8 +77,14 @@ export { AutomationsConfigSchema, zodErrorToIssues, VALID_EVENTS } from './schem
 // Security utilities
 export { sanitizeForShell } from './security.ts';
 
+// Webhook execution utilities
+export { executeWebhookRequest, executeWithRetry, type ExecuteWebhookOptions, type RetryConfig } from './webhook-utils.ts';
+
+// Retry scheduler
+export { RetryScheduler, type RetryQueueEntry, type RetrySchedulerOptions } from './retry-scheduler.ts';
+
 // Config constants
-export { AUTOMATIONS_CONFIG_FILE, AUTOMATIONS_HISTORY_FILE } from './constants.ts';
+export { AUTOMATIONS_CONFIG_FILE, AUTOMATIONS_HISTORY_FILE, AUTOMATIONS_RETRY_QUEUE_FILE } from './constants.ts';
 
 // Config path resolution
 export { resolveAutomationsConfigPath, generateShortId } from './resolve-config-path.ts';

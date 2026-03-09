@@ -22,14 +22,36 @@ export const PromptActionSchema = z.object({
 
 export const WebhookActionSchema = z.object({
   type: z.literal('webhook'),
-  url: z.string().url('Must be a valid URL').refine(
-    (url) => url.startsWith('http://') || url.startsWith('https://'),
-    'URL must use http or https protocol'
+  url: z.string().min(1, 'URL cannot be empty').refine(
+    (url) => {
+      // Allow env var templates — validated at runtime after expansion
+      if (url.includes('$')) return true;
+      // Literal URLs must be valid http/https
+      try {
+        const parsed = new URL(url);
+        return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+      } catch {
+        return false;
+      }
+    },
+    'URL must be a valid http/https URL or contain $VAR templates'
   ),
   method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).optional(),
   headers: z.record(z.string(), z.string()).optional(),
-  bodyFormat: z.enum(['json', 'raw']).optional(),
+  bodyFormat: z.enum(['json', 'form', 'raw']).optional(),
   body: z.unknown().optional(),
+  captureResponse: z.boolean().optional(),
+  auth: z.union([
+    z.object({
+      type: z.literal('basic'),
+      username: z.string().min(1),
+      password: z.string(),
+    }),
+    z.object({
+      type: z.literal('bearer'),
+      token: z.string().min(1),
+    }),
+  ]).optional(),
 });
 
 /** Accepts prompt and webhook actions strictly; passes through legacy/unknown action types without erroring */

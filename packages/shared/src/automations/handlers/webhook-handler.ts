@@ -6,11 +6,16 @@
  * method, headers, and body format (JSON or raw).
  */
 
+import { appendFile } from 'fs/promises';
+import { join } from 'path';
 import { createLogger } from '../../utils/debug.ts';
 import type { EventBus, BaseEventPayload } from '../event-bus.ts';
 import type { AutomationHandler, AutomationsConfigProvider } from './types.ts';
 import { APP_EVENTS, type AutomationEvent, type WebhookAction, type WebhookActionResult, type AppEvent } from '../types.ts';
-import { matcherMatches, buildEnvFromPayload, expandEnvVars } from '../utils.ts';
+import { matcherMatches, buildWebhookEnv, expandEnvVars } from '../utils.ts';
+import { executeWithRetry } from '../webhook-utils.ts';
+import { RetryScheduler } from '../retry-scheduler.ts';
+import { AUTOMATIONS_HISTORY_FILE } from '../constants.ts';
 
 const log = createLogger('webhook-handler');
 
@@ -29,6 +34,94 @@ export interface WebhookHandlerOptions {
   onError?: (event: AutomationEvent, error: Error) => void;
 }
 
+/** A webhook action paired with the matcher that triggered it */
+interface WebhookTask {
+  action: WebhookAction;
+  matcherId: string;
+}
+
+// ============================================================================
+// Utilities
+// ============================================================================
+
+/**
+ * Redact a URL for safe logging. Webhook URLs may contain secrets
+ * (e.g., Slack webhook paths). Keep scheme + host, truncate long paths.
+ */
+function redactUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    if (parsed.pathname.length > 20) {
+      return `${parsed.origin}${parsed.pathname.slice(0, 15)}...`;
+    }
+    return `${parsed.origin}${parsed.pathname}`;
+  } catch {
+    return url.slice(0, 30) + '...';
+  }
+}
+
+// ============================================================================
+// Per-Endpoint Rate Limiter
+// ============================================================================
+
+/** Sliding-window rate limiter per URL origin. Prevents flooding a single server. */
+class EndpointRateLimiter {
+  private windows = new Map<string, number[]>();
+  private readonly maxPerMinute: number;
+  private cleanupTimer: ReturnType<typeof setInterval> | null = null;
+
+  constructor(maxPerMinute = 30) {
+    this.maxPerMinute = maxPerMinute;
+    // Prune stale origins every 5 minutes
+    this.cleanupTimer = setInterval(() => {
+      const cutoff = Date.now() - 120_000;
+      for (const [origin, timestamps] of this.windows) {
+        if (timestamps.every(t => t < cutoff)) {
+          this.windows.delete(origin);
+        }
+      }
+    }, 300_000);
+  }
+
+  /** Returns true if the request is allowed */
+  allow(url: string): boolean {
+    const origin = this.getOrigin(url);
+    const now = Date.now();
+    const windowStart = now - 60_000;
+
+    let timestamps = this.windows.get(origin);
+    if (timestamps) {
+      timestamps = timestamps.filter(t => t > windowStart);
+    } else {
+      timestamps = [];
+    }
+
+    if (timestamps.length >= this.maxPerMinute) {
+      return false;
+    }
+
+    timestamps.push(now);
+    this.windows.set(origin, timestamps);
+    return true;
+  }
+
+  private getOrigin(url: string): string {
+    try {
+      return new URL(url).origin;
+    } catch {
+      return url;
+    }
+  }
+
+  dispose(): void {
+    if (this.cleanupTimer) {
+      clearInterval(this.cleanupTimer);
+      this.cleanupTimer = null;
+    }
+    this.windows.clear();
+  }
+}
+
 // ============================================================================
 // WebhookHandler Implementation
 // ============================================================================
@@ -36,12 +129,15 @@ export interface WebhookHandlerOptions {
 export class WebhookHandler implements AutomationHandler {
   private readonly options: WebhookHandlerOptions;
   private readonly configProvider: AutomationsConfigProvider;
+  private readonly rateLimiter = new EndpointRateLimiter(30);
+  private readonly retryScheduler: RetryScheduler;
   private bus: EventBus | null = null;
   private boundHandler: ((event: AutomationEvent, payload: BaseEventPayload) => Promise<void>) | null = null;
 
   constructor(options: WebhookHandlerOptions, configProvider: AutomationsConfigProvider) {
     this.options = options;
     this.configProvider = configProvider;
+    this.retryScheduler = new RetryScheduler({ workspaceRootPath: options.workspaceRootPath });
   }
 
   /**
@@ -51,6 +147,7 @@ export class WebhookHandler implements AutomationHandler {
     this.bus = bus;
     this.boundHandler = this.handleEvent.bind(this);
     bus.onAny(this.boundHandler);
+    this.retryScheduler.start();
     log.debug(`[WebhookHandler] Subscribed to event bus`);
   }
 
@@ -66,113 +163,118 @@ export class WebhookHandler implements AutomationHandler {
     const matchers = this.configProvider.getMatchersForEvent(event);
     if (matchers.length === 0) return;
 
-    // Collect webhook actions from matching matchers
-    const webhookActions: WebhookAction[] = [];
+    // Collect webhook actions from matching matchers, threading matcher IDs for history
+    const webhookTasks: WebhookTask[] = [];
 
     for (const matcher of matchers) {
       if (!matcherMatches(matcher, event, payload as unknown as Record<string, unknown>)) continue;
 
       for (const action of matcher.actions) {
         if (action.type === 'webhook') {
-          webhookActions.push(action);
+          webhookTasks.push({ action, matcherId: matcher.id ?? 'unknown' });
         }
       }
     }
 
-    if (webhookActions.length === 0) return;
+    if (webhookTasks.length === 0) return;
 
-    log.debug(`[WebhookHandler] Processing ${webhookActions.length} webhooks for ${event}`);
+    log.debug(`[WebhookHandler] Processing ${webhookTasks.length} webhooks for ${event}`);
 
-    // Build environment variables for URL/body expansion
-    const env = buildEnvFromPayload(event, payload);
+    // Build environment variables for URL/body expansion (webhook-safe: no process.env leak)
+    const env = buildWebhookEnv(event, payload);
 
-    // Execute webhook requests
-    const results: WebhookActionResult[] = [];
+    // Apply per-endpoint rate limiting before execution.
+    // Resolve URLs first (expand env vars) so rate limiting works on actual endpoints.
+    const results: WebhookActionResult[] = new Array(webhookTasks.length);
+    const toExecute: Array<{ index: number; task: WebhookTask }> = [];
 
-    for (const action of webhookActions) {
-      const result = await this.executeWebhook(action, env);
-      results.push(result);
+    for (let i = 0; i < webhookTasks.length; i++) {
+      const task = webhookTasks[i]!;
+      const resolvedUrl = expandEnvVars(task.action.url, env);
+
+      if (!this.rateLimiter.allow(resolvedUrl)) {
+        log.debug(`[WebhookHandler] Rate-limited: ${redactUrl(resolvedUrl)}`);
+        results[i] = {
+          type: 'webhook',
+          url: resolvedUrl,
+          statusCode: 0,
+          success: false,
+          error: 'Rate-limited: too many requests to this endpoint',
+          durationMs: 0,
+          attempts: 0,
+        };
+      } else {
+        toExecute.push({ index: i, task });
+      }
+    }
+
+    // Execute allowed webhook requests in parallel with retry for transient failures
+    if (toExecute.length > 0) {
+      const webhookOpts = { env, retry: { maxAttempts: 2 } };
+      const outcomes = await Promise.allSettled(
+        toExecute.map(({ task }) => executeWithRetry(task.action, webhookOpts))
+      );
+
+      for (let j = 0; j < outcomes.length; j++) {
+        const outcome = outcomes[j]!;
+        const { index, task } = toExecute[j]!;
+
+        if (outcome.status === 'fulfilled') {
+          results[index] = outcome.value;
+        } else {
+          results[index] = {
+            type: 'webhook',
+            url: task.action.url,
+            statusCode: 0,
+            success: false,
+            error: outcome.reason?.message ?? 'Unknown error',
+          };
+        }
+      }
+    }
+
+    // Log failures and write history entries
+    const historyPath = join(this.options.workspaceRootPath, AUTOMATIONS_HISTORY_FILE);
+    for (let i = 0; i < results.length; i++) {
+      const result = results[i]!;
+      const task = webhookTasks[i]!;
+
+      if (!result.success) {
+        log.debug(`[WebhookHandler] ${result.url} → ${result.error}`);
+      }
+
+      // Write history entry for each webhook execution
+      const entry = {
+        id: task.matcherId,
+        ts: Date.now(),
+        ok: result.success,
+        webhook: {
+          method: task.action.method ?? 'POST',
+          url: redactUrl(result.url),
+          statusCode: result.statusCode,
+          durationMs: result.durationMs ?? 0,
+          ...(result.attempts && result.attempts > 1 ? { attempts: result.attempts } : {}),
+          ...(result.error ? { error: result.error.slice(0, 200) } : {}),
+          ...(result.responseBody ? { responseBody: result.responseBody.slice(0, 500) } : {}),
+        },
+      };
+      appendFile(historyPath, JSON.stringify(entry) + '\n', 'utf-8')
+        .catch(e => log.debug(`[WebhookHandler] Failed to write history: ${e}`));
+
+      // Enqueue for deferred retry if it's a transient failure (5xx / timeout)
+      // and immediate retries were exhausted (attempts > 1 means retries ran)
+      if (!result.success && result.statusCode !== 0 ? result.statusCode >= 500 : result.statusCode === 0) {
+        if (result.attempts && result.attempts > 1) {
+          this.retryScheduler.enqueue(task.matcherId, task.action, result.url, result.error)
+            .catch(e => log.debug(`[WebhookHandler] Failed to enqueue for deferred retry: ${e}`));
+        }
+      }
     }
 
     // Deliver results via callback
     if (results.length > 0 && this.options.onWebhookResults) {
       log.debug(`[WebhookHandler] Delivering ${results.length} webhook results`);
       this.options.onWebhookResults(results);
-    }
-  }
-
-  /**
-   * Execute a single webhook request.
-   */
-  private async executeWebhook(
-    action: WebhookAction,
-    env: Record<string, string>
-  ): Promise<WebhookActionResult> {
-    const method = action.method ?? 'POST';
-    const url = expandEnvVars(action.url, env);
-
-    try {
-      // Build headers
-      const headers: Record<string, string> = {};
-      if (action.headers) {
-        for (const [key, value] of Object.entries(action.headers)) {
-          headers[key] = expandEnvVars(value, env);
-        }
-      }
-
-      // Build body
-      let requestBody: string | undefined;
-      if (method !== 'GET' && action.body !== undefined) {
-        const bodyFormat = action.bodyFormat ?? 'json';
-
-        if (bodyFormat === 'json') {
-          if (!headers['Content-Type'] && !headers['content-type']) {
-            headers['Content-Type'] = 'application/json';
-          }
-          if (typeof action.body === 'string') {
-            requestBody = expandEnvVars(action.body, env);
-          } else {
-            // For objects, stringify and expand env vars in the result
-            requestBody = expandEnvVars(JSON.stringify(action.body), env);
-          }
-        } else {
-          // Raw body
-          requestBody = expandEnvVars(String(action.body), env);
-        }
-      }
-
-      log.debug(`[WebhookHandler] ${method} ${url}`);
-
-      const response = await fetch(url, {
-        method,
-        headers,
-        body: requestBody,
-      });
-
-      const success = response.status >= 200 && response.status < 300;
-
-      if (!success) {
-        log.debug(`[WebhookHandler] ${method} ${url} → ${response.status}`);
-      }
-
-      return {
-        type: 'webhook',
-        url,
-        statusCode: response.status,
-        success,
-        error: success ? undefined : `HTTP ${response.status} ${response.statusText}`,
-      };
-    } catch (err) {
-      const error = err instanceof Error ? err.message : 'Unknown error';
-      log.debug(`[WebhookHandler] ${method} ${url} → error: ${error}`);
-
-      return {
-        type: 'webhook',
-        url,
-        statusCode: 0,
-        success: false,
-        error,
-      };
     }
   }
 
@@ -185,6 +287,8 @@ export class WebhookHandler implements AutomationHandler {
       this.boundHandler = null;
     }
     this.bus = null;
+    this.rateLimiter.dispose();
+    this.retryScheduler.dispose();
     log.debug(`[WebhookHandler] Disposed`);
   }
 }

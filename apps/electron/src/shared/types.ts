@@ -553,6 +553,7 @@ export interface ElectronAPI {
   deleteAutomation(workspaceId: string, eventName: string, matcherIndex: number): Promise<void>
   getAutomationHistory(workspaceId: string, automationId: string, limit?: number): Promise<Array<{ id: string; ts: number; ok: boolean; sessionId?: string; prompt?: string; error?: string }>>
   getAutomationLastExecuted(workspaceId: string): Promise<Record<string, number>>
+  replayAutomation(workspaceId: string, automationId: string, eventName: string): Promise<{ results: Array<{ type: string; url: string; statusCode: number; success: boolean; error?: string; duration: number }> }>
 
   // Automations change listener
   onAutomationsChanged(callback: (workspaceId: string) => void): () => void

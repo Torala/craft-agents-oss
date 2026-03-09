@@ -319,6 +319,7 @@ export const RPC_CHANNELS = {
     DELETE: 'automations:delete',
     GET_HISTORY: 'automations:getHistory',
     GET_LAST_EXECUTED: 'automations:getLastExecuted',
+    REPLAY: 'automations:replay',
     CHANGED: 'automations:changed',
   },
 } as const
