@@ -534,8 +534,8 @@ export interface EditPopoverProps {
   example?: string
   /** Context passed to the new chat session */
   context: EditContext
-  /** Permission mode for the new session (default: 'allow-all' for fast execution) */
-  permissionMode?: 'safe' | 'ask' | 'allow-all'
+  /** Permission mode for the new session (default: 'allow-all' / canonical: execute for fast execution) */
+  permissionMode?: CreateSessionOptions['permissionMode']
   /**
    * Working directory for the new session:
    * - 'none' (default): No working directory (session folder only) - best for config edits

@@ -656,26 +656,28 @@ export function useInlineMention({
       const before = currentValue.slice(0, atStart)
       const after = currentValue.slice(cursorPosition)
 
+      const buildMentionText = (kind: 'skill' | 'source' | 'file' | 'folder', value: string): string =>
+        '[' + kind + ':' + value + '] '
+
       // Build the mention text based on type using bracket syntax.
       // Skills use fully-qualified names (workspaceId:slug) because the SDK's
       // Skill tool requires this format to resolve workspace-scoped skills.
       let mentionText: string
       if (item.type === 'skill') {
-        // Use fully-qualified name for skills: [skill:pluginName:slug]
         // Plugin name depends on which tier the skill came from:
         //   workspace → workspaceId, project/global → ".agents"
         const pluginName = item.skill?.source === 'workspace' ? workspaceId : AGENTS_PLUGIN_NAME
         const qualifiedName = pluginName ? `${pluginName}:${item.id}` : item.id
-        mentionText = `[skill:${qualifiedName}] `
+        mentionText = buildMentionText('skill', qualifiedName)
       } else if (item.type === 'source') {
-        mentionText = `[source:${item.id}] `
+        mentionText = buildMentionText('source', item.id)
       } else if (item.type === 'file') {
         // Use relative path for file mentions
-        mentionText = `[file:${item.file?.relativePath || item.id}] `
+        mentionText = buildMentionText('file', item.file?.relativePath || item.id)
       } else if (item.type === 'folder') {
-        mentionText = `[folder:${item.file?.relativePath || item.id}] `
+        mentionText = buildMentionText('folder', item.file?.relativePath || item.id)
       } else {
-        mentionText = `[skill:${item.id}] `
+        mentionText = buildMentionText('skill', item.id)
       }
 
       result = before + mentionText + after

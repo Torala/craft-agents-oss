@@ -1,25 +1,12 @@
-# CLAUDE.md
+# CLAUDE.md — Electron App (`apps/electron`)
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+## Purpose
+Primary desktop interface for Craft Agents:
+- Multi-session chat UI
+- Session/source/workspace management
+- Main-process integration with `@craft-agent/shared`
 
-**Important:** Keep this file and `README.md` up-to-date whenever functionality changes. After making changes to this package, update the documentation to reflect the current state.
-
-## Overview
-
-This is the Electron desktop app for Craft Agents - the primary interface for the application. It provides a multi-session inbox with chat interface for interacting with Claude via Craft workspaces.
-
-**Note:** This app reuses the `@craft-agent/shared` package for core business logic. Dependencies are managed in the root `package.json`.
-
-## UI Components
-
-**Always use shadcn/ui components** for building the UI. Never create custom button, input, or other primitive components - use the existing shadcn components from `@/components/ui/`.
-
-Available components in `src/renderer/components/ui/`:
-- `avatar`, `avatar-group`, `badge`, `button`, `collapsible`, `source-avatar`, `dialog`, `dropdown-menu`
-- `input`, `kbd`, `label`, `loading-indicator`, `popover`, `resizable`, `scroll-area`
-- `select`, `separator`, `service-logo`, `sonner`, `switch`, `tabs`, `textarea`, `tooltip`
-
-To add new shadcn components:
+## Commands (run from repo root)
 ```bash
 # From project root - ALWAYS use @latest for Tailwind CSS v4 compatibility
 cd apps/electron && npx shadcn@latest add <component-name>
@@ -436,7 +423,7 @@ apps/electron/
 │   │   │   ├── sources.ts  # Source/permissions handlers
 │   │   │   └── ...         # Other domain handler files
 │   │   ├── menu.ts        # Application menu (File, Edit, View, Help menus)
-│   │   ├── sessions.ts    # SessionManager - CraftAgent integration
+│   │   ├── (delegated)    # SessionManager lives in packages/server-core/src/sessions/SessionManager.ts
 │   │   ├── deep-link.ts   # Deep link URL parsing and handling
 │   │   ├── agent-service.ts # Agent listing, caching, auth checking
 │   │   ├── sources-service.ts # Source and authentication service
@@ -474,7 +461,7 @@ export const RPC_CHANNELS = {
   // ...
 }
 
-// 2. Add handler in the relevant domain file (e.g. main/handlers/sources.ts)
+// 2. Add handler in the relevant domain file (e.g. packages/server-core/src/handlers/rpc/sources.ts)
 export function registerSourcesHandlers(server: RpcServer, deps: HandlerDeps): void {
   server.handle(RPC_CHANNELS.SOURCES_GET_PERMISSIONS, async (_ctx, workspaceId: string, sourceSlug: string) => {
     const { loadSourcePermissionsConfig } = await import('@craft-agent/shared/agent')
@@ -483,7 +470,7 @@ export function registerSourcesHandlers(server: RpcServer, deps: HandlerDeps): v
   })
 }
 
-// 3. Ensure the domain registrar is wired in main/handlers/index.ts via registerAllRpcHandlers()
+// 3. Ensure the domain registrar is wired in packages/server-core/src/handlers/rpc/index.ts via registerAllRpcHandlers()
 
 // 4. Add method mapping in transport/channel-map.ts
 // buildClientApi() exposes the generated electronAPI proxy automatically.
@@ -555,7 +542,7 @@ The app uses a WebSocket RPC transport for main ↔ renderer communication (`WsR
 | **Sessions** | | |
 | `sessions:*` | renderer → main | Session CRUD (create, delete, rename, archive) |
 | `sessions:sendMessage` | renderer → main | Send message with optional file attachments |
-| `sessions:setPermissionMode` | renderer → main | Set permission mode ('safe', 'ask', 'allow-all') |
+| `sessions:setPermissionMode` | renderer → main | Set permission mode (Explore/Ask/Execute → internal: 'safe'/'ask'/'allow-all') |
 | `sessions:flag/unflag` | renderer → main | Flag/unflag session for attention |
 | `sessions:setTodoState` | renderer → main | Set session workflow status |
 | `sessions:markRead/markUnread` | renderer → main | Mark session read status |
@@ -728,7 +715,7 @@ craftagents://workspace/{workspaceId}/{compoundRoute}
 
 ### Key Integration Points
 
-**SessionManager** (`main/sessions.ts`):
+**SessionManager** (`packages/server-core/src/sessions/SessionManager.ts`):
 - Wraps `CraftAgent` from `@craft-agent/shared`
 - Sets up SDK path and authentication on initialization
 - Processes `AgentEvent` stream and forwards to renderer
@@ -978,10 +965,11 @@ The Electron app has two logging systems:
 ```bash
 # Start Electron in development (debug mode automatic)
 bun run electron:start
-
-# Logs appear in:
-# 1. Terminal console (stderr) - immediate visibility
-# 2. File: ~/Library/Logs/@craft-agent/electron/main.log - JSON Lines format
+bun run electron:build
+bun run electron:build:main
+bun run electron:build:preload
+bun run electron:build:renderer
+bun run electron:build:resources
 ```
 
 ### Main Process Loggers (electron-log)
@@ -1149,15 +1137,15 @@ Sessions support naming, archiving, and persistence:
 
 Sessions use a three-level permission mode system to control tool execution:
 
-| Mode | Behavior | Use Case |
-|------|----------|----------|
-| `'safe'` | Blocks all write operations, never prompts | Read-only exploration, planning |
-| `'ask'` | Prompts user for bash commands (default) | Normal interactive use |
-| `'allow-all'` | Auto-approves all commands | Trusted automation |
+| Canonical Mode | Internal Key | Behavior | Use Case |
+|------|----------|----------|----------|
+| `explore` | `'safe'` | Blocks all write operations, never prompts | Read-only exploration, planning |
+| `ask` | `'ask'` | Prompts user for bash commands (default) | Normal interactive use |
+| `execute` | `'allow-all'` | Auto-approves all commands | Trusted automation |
 
 **Session-level:**
 ```typescript
-// Set permission mode for a session
+// Internal wire value ('safe' maps to canonical 'explore')
 await window.electronAPI.setPermissionMode(sessionId, 'safe')
 ```
 
@@ -1400,6 +1388,27 @@ Native OS notifications and dock badge for session activity:
 - Clicking notification navigates to session
 - Dock badge shows unread count
 - User preference to enable/disable
+
+## Local Development Build
+
+Build a standalone `.app` you can keep opening without running `electron:dev`:
+
+```bash
+# Build + package (from repo root)
+bun run electron:dist:dev:mac
+
+# Launch — just double-click or:
+open "apps/electron/release/mac-arm64/Craft Agents.app"
+```
+
+`electron:dist:dev:mac` bakes `CRAFT_DEV_RUNTIME=1` into the build at compile time (via esbuild `--define`). This tells the runtime resolver to look outside the `.app` bundle for dependencies that `build-dmg.sh` would normally copy in:
+- **SDK**: walks up from the bundle to find `node_modules/@anthropic-ai/claude-agent-sdk/cli.js` in the monorepo root
+- **Interceptor**: walks up to find `packages/shared/src/unified-network-interceptor.ts`
+- **Bun**: falls back to system `bun` instead of requiring the vendored copy
+
+Production builds (`build-dmg.sh`, `electron:dist:mac`) don't set this flag — they bundle all dependencies and use strict path resolution.
+
+The dev scripts also set `CSC_IDENTITY_AUTO_DISCOVERY=false` to skip code signing (avoids "ambiguous" errors from duplicate developer certificates in keychain).
 
 ## Building for Distribution
 

@@ -2038,7 +2038,7 @@ function AppShellContent({
       return 'All Skills'
     }
 
-    // Tasks navigator
+    // Automations navigator
     if (isAutomationsNavigation(navState)) {
       if (!automationFilter) return 'All Automations'
       switch (automationFilter.automationType) {
@@ -3057,7 +3057,7 @@ function AppShellContent({
                       {...getEditConfig('add-skill', activeWorkspace.rootPath)}
                     />
                   )}
-                  {/* Add Automation button (only for tasks mode) */}
+                  {/* Add Automation button (only for automations mode) */}
                   {isAutomationsNavigation(navState) && activeWorkspace && (
                     <EditPopover
                       trigger={
@@ -3375,7 +3375,7 @@ function AppShellContent({
             align="start"
             {...getEditConfig('add-skill', activeWorkspace.rootPath)}
           />
-          {/* Add Automation EditPopover - triggered from "Add Automation" context menu on tasks */}
+          {/* Add Automation EditPopover - triggered from "Add Automation" context menu in automations */}
           <EditPopover
             open={editPopoverOpen === 'automation-config'}
             onOpenChange={(isOpen) => setEditPopoverOpen(isOpen ? 'automation-config' : null)}
