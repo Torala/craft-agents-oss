@@ -151,12 +151,12 @@ function readJsonOption(options: Record<string, OptionValue>): unknown {
 }
 
 export function parseStructuredInput(options: Record<string, OptionValue>): Record<string, unknown> {
-  const stdinObj = readStdinIfNeeded(options)
-  const jsonObj = readJsonOption(options)
-
-  if (stdinObj !== undefined && jsonObj !== undefined) {
+  if (options.stdin && options.json !== undefined) {
     usageError('Use either --stdin or --json, not both')
   }
+
+  const jsonObj = readJsonOption(options)
+  const stdinObj = readStdinIfNeeded(options)
 
   if (jsonObj !== undefined) {
     if (!jsonObj || typeof jsonObj !== 'object' || Array.isArray(jsonObj)) {

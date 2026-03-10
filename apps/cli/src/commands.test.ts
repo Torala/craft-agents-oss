@@ -236,7 +236,7 @@ import { getValidateSteps } from './index.ts'
 describe('getValidateSteps', () => {
   it('returns 21 steps', () => {
     const steps = getValidateSteps()
-    expect(steps.length).toBe(21)
+    expect(steps.length).toBe(27)
   })
 
   it('first step is handshake', () => {

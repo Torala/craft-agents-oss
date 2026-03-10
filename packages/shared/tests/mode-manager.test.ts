@@ -656,7 +656,7 @@ describe('SAFE_MODE_CONFIG', () => {
   });
 
   it('should have display properties', () => {
-    expect(SAFE_MODE_CONFIG.displayName).toBe('Safe Mode');
+    expect(SAFE_MODE_CONFIG.displayName).toBe('Explore');
     expect(SAFE_MODE_CONFIG.shortcutHint).toBe('SHIFT+TAB');
   });
 });

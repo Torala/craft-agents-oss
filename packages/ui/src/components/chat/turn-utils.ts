@@ -154,7 +154,7 @@ export function deriveTurnPhase(turn: AssistantTurn): TurnPhase {
   // Check if any TOOL activities are currently running.
   // Only tool-type activities count - intermediate text and status activities
   // with 'running' status should show "Thinking...", not tool spinners.
-  const hasRunningTools = turn.activities.some(a => a.type === 'tool' && (a.status === 'running' || a.status === 'backgrounded'))
+  const hasRunningTools = turn.activities.some(a => a.type === 'tool' && a.status === 'running')
   if (hasRunningTools) {
     return 'tool_active'
   }
