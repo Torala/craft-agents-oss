@@ -227,17 +227,23 @@ function convertResult(result: ToolResult): { content: Array<{ type: 'text'; tex
 // Cache for Session-Scoped Tools
 // ============================================================
 
-// Cache tools by session to avoid recreating them
-const sessionScopedToolsCache = new Map<string, ReturnType<typeof createSdkMcpServer>>();
+// Cache tools by session to avoid recreating them on every query.
+// We cache the tools array (expensive to build) but NOT the MCP server wrapper,
+// because createSdkMcpServer returns an MCP Server instance that holds transport
+// state. The SDK's query() calls connect() on it, setting _transport. On the next
+// query(), connect() is called again — but if the previous Query's subprocess hasn't
+// fully exited yet, _transport is still set and connect() throws
+// "Already connected to a transport". Creating a fresh server wrapper per query avoids this.
+const sessionToolsCache = new Map<string, ReturnType<typeof tool>[]>();
 
 /**
  * Clean up cached tools for a session
  */
 export function cleanupSessionScopedTools(sessionId: string): void {
   const prefix = `${sessionId}::`;
-  for (const key of sessionScopedToolsCache.keys()) {
+  for (const key of sessionToolsCache.keys()) {
     if (key.startsWith(prefix)) {
-      sessionScopedToolsCache.delete(key);
+      sessionToolsCache.delete(key);
     }
   }
 }
@@ -273,91 +279,90 @@ export function getSessionScopedTools(
 ): ReturnType<typeof createSdkMcpServer> {
   const cacheKey = `${sessionId}::${workspaceRootPath}`;
 
-  // Return cached if available
-  let cached = sessionScopedToolsCache.get(cacheKey);
-  if (cached) {
-    return cached;
-  }
-
-  // Create Claude context with full capabilities
-  const ctx = createClaudeContext({
-    sessionId,
-    workspacePath: workspaceRootPath,
-    workspaceId: workspaceId || basename(workspaceRootPath) || '',
-    onPlanSubmitted: (planPath: string) => {
-      setLastPlanFilePath(sessionId, planPath);
-      const callbacks = getSessionScopedToolCallbacks(sessionId);
-      callbacks?.onPlanSubmitted?.(planPath);
-    },
-    onAuthRequest: (request: unknown) => {
-      const callbacks = getSessionScopedToolCallbacks(sessionId);
-      callbacks?.onAuthRequest?.(request as AuthRequest);
-    },
-  });
-
-  // Helper to create a tool from the canonical registry.
-  // The `as any` on schema bridges a Zod generic-variance issue when .shape
-  // types (ZodType<string>) flow into Record<string, ZodType<unknown>>.
+  // Return cached tools if available, but always create a fresh MCP server wrapper
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  function registryTool(name: string, schema: any) {
-    const def = SESSION_TOOL_REGISTRY.get(name)!;
-    return tool(name, TOOL_DESCRIPTIONS[name] || def.description, schema, async (args: any) => {
-      const result = await def.handler!(ctx, args);
-      return convertResult(result);
+  let tools: any[] | undefined = sessionToolsCache.get(cacheKey);
+  if (!tools) {
+    // Create Claude context with full capabilities
+    const ctx = createClaudeContext({
+      sessionId,
+      workspacePath: workspaceRootPath,
+      workspaceId: workspaceId || basename(workspaceRootPath) || '',
+      onPlanSubmitted: (planPath: string) => {
+        setLastPlanFilePath(sessionId, planPath);
+        const callbacks = getSessionScopedToolCallbacks(sessionId);
+        callbacks?.onPlanSubmitted?.(planPath);
+      },
+      onAuthRequest: (request: unknown) => {
+        const callbacks = getSessionScopedToolCallbacks(sessionId);
+        callbacks?.onAuthRequest?.(request as AuthRequest);
+      },
     });
+
+    // Helper to create a tool from the canonical registry.
+    // The `as any` on schema bridges a Zod generic-variance issue when .shape
+    // types (ZodType<string>) flow into Record<string, ZodType<unknown>>.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    function registryTool(name: string, schema: any) {
+      const def = SESSION_TOOL_REGISTRY.get(name)!;
+      return tool(name, TOOL_DESCRIPTIONS[name] || def.description, schema, async (args: any) => {
+        const result = await def.handler!(ctx, args);
+        return convertResult(result);
+      });
+    }
+
+    // Ensure backend-mode tool wiring is in sync with core metadata.
+    assertClaudeBackendSessionToolParity();
+
+    // Create tools from the canonical registry — all tools with handlers.
+    // Tool visibility is centrally filtered in session-tools-core to avoid backend drift.
+    tools = getSessionToolDefs({ includeDeveloperFeedback: FEATURE_FLAGS.developerFeedback })
+      .filter(def => def.handler !== null) // Skip backend-specific tools (call_llm)
+      .map(def => registryTool(def.name, def.inputSchema.shape));
+
+    // Add call_llm — backend-specific (not in registry handler)
+    const sessionPath = getSessionPath(workspaceRootPath, sessionId);
+    tools.push(
+      createLLMTool({
+        sessionId,
+        sessionPath,
+        getQueryFn: () => {
+          const callbacks = getSessionScopedToolCallbacks(sessionId);
+          return callbacks?.queryFn;
+        },
+      }),
+    );
+
+    // Add spawn_session — backend-specific (not in registry handler)
+    tools.push(
+      createSpawnSessionTool({
+        sessionId,
+        getSpawnSessionFn: () => {
+          const callbacks = getSessionScopedToolCallbacks(sessionId);
+          return callbacks?.spawnSessionFn;
+        },
+      }),
+    );
+
+    // Add browser_* tools — backend-specific (requires BrowserPaneManager in Electron)
+    tools.push(
+      ...createBrowserTools({
+        sessionId,
+        getBrowserPaneFns: () => {
+          const callbacks = getSessionScopedToolCallbacks(sessionId);
+          return callbacks?.browserPaneFns;
+        },
+      }),
+    );
+
+    sessionToolsCache.set(cacheKey, tools);
   }
 
-  // Ensure backend-mode tool wiring is in sync with core metadata.
-  assertClaudeBackendSessionToolParity();
-
-  // Create tools from the canonical registry — all tools with handlers.
-  // Tool visibility is centrally filtered in session-tools-core to avoid backend drift.
-  const tools = getSessionToolDefs({ includeDeveloperFeedback: FEATURE_FLAGS.developerFeedback })
-    .filter(def => def.handler !== null) // Skip backend-specific tools (call_llm)
-    .map(def => registryTool(def.name, def.inputSchema.shape));
-
-  // Add call_llm — backend-specific (not in registry handler)
-  const sessionPath = getSessionPath(workspaceRootPath, sessionId);
-  tools.push(
-    createLLMTool({
-      sessionId,
-      sessionPath,
-      getQueryFn: () => {
-        const callbacks = getSessionScopedToolCallbacks(sessionId);
-        return callbacks?.queryFn;
-      },
-    }),
-  );
-
-  // Add spawn_session — backend-specific (not in registry handler)
-  tools.push(
-    createSpawnSessionTool({
-      sessionId,
-      getSpawnSessionFn: () => {
-        const callbacks = getSessionScopedToolCallbacks(sessionId);
-        return callbacks?.spawnSessionFn;
-      },
-    }),
-  );
-
-  // Add browser_* tools — backend-specific (requires BrowserPaneManager in Electron)
-  tools.push(
-    ...createBrowserTools({
-      sessionId,
-      getBrowserPaneFns: () => {
-        const callbacks = getSessionScopedToolCallbacks(sessionId);
-        return callbacks?.browserPaneFns;
-      },
-    }),
-  );
-
-  // Create MCP server
-  cached = createSdkMcpServer({
+  // Always create a fresh MCP server wrapper to avoid "Already connected to a transport"
+  // race condition when queries are sent back-to-back (see comment on sessionToolsCache).
+  return createSdkMcpServer({
     name: 'session',
     version: '1.0.0',
     tools,
   });
-
-  sessionScopedToolsCache.set(cacheKey, cached);
-  return cached;
 }

@@ -1,6 +1,21 @@
-import { describe, expect, it } from 'bun:test'
+import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
 import { PiAgent } from '../pi-agent.ts'
 import type { BackendConfig } from '../backend/types.ts'
+
+let origFlag: string | undefined
+
+beforeAll(() => {
+  origFlag = process.env.CRAFT_FEATURE_CRAFT_AGENTS_CLI
+  process.env.CRAFT_FEATURE_CRAFT_AGENTS_CLI = '1'
+})
+
+afterAll(() => {
+  if (origFlag === undefined) {
+    delete process.env.CRAFT_FEATURE_CRAFT_AGENTS_CLI
+  } else {
+    process.env.CRAFT_FEATURE_CRAFT_AGENTS_CLI = origFlag
+  }
+})
 
 function createConfig(overrides?: {
   workspaceRootPath?: string

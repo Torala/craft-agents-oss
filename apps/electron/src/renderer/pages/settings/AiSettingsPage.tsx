@@ -182,6 +182,16 @@ function ConnectionRow({ connection, isLastConnection, onRenameClick, onDelete, 
   const [menuOpen, setMenuOpen] = useState(false)
   const [piBaseUrl, setPiBaseUrl] = useState<string | undefined>(undefined)
 
+  // Opening dialog/overlay flows directly from a dropdown item can race with
+  // menu teardown and leave a transient interaction lock behind on some systems.
+  // Force menu close first, then trigger action on next frame.
+  const runAfterMenuClose = useCallback((action: () => void) => {
+    setMenuOpen(false)
+    requestAnimationFrame(() => {
+      action()
+    })
+  }, [])
+
   // Load Pi provider base URL via IPC (Pi SDK can't run in renderer)
   useEffect(() => {
     const provider = connection.providerType || connection.type
@@ -262,7 +272,7 @@ function ConnectionRow({ connection, isLastConnection, onRenameClick, onDelete, 
       )}
       description={getDescription()}
     >
-      <DropdownMenu modal={true} onOpenChange={setMenuOpen}>
+      <DropdownMenu modal={false} onOpenChange={setMenuOpen}>
         <DropdownMenuTrigger asChild>
           <button
             className="p-1.5 rounded-md hover:bg-foreground/[0.05] data-[state=open]:bg-foreground/[0.05] transition-colors"
@@ -272,7 +282,7 @@ function ConnectionRow({ connection, isLastConnection, onRenameClick, onDelete, 
           </button>
         </DropdownMenuTrigger>
         <StyledDropdownMenuContent align="end">
-          <StyledDropdownMenuItem onClick={onRenameClick}>
+          <StyledDropdownMenuItem onClick={() => runAfterMenuClose(onRenameClick)}>
             <Pencil className="h-3.5 w-3.5" />
             <span>Rename</span>
           </StyledDropdownMenuItem>
@@ -283,12 +293,12 @@ function ConnectionRow({ connection, isLastConnection, onRenameClick, onDelete, 
             </StyledDropdownMenuItem>
           )}
           {connection.authType === 'oauth' ? (
-            <StyledDropdownMenuItem onClick={onReauthenticate}>
+            <StyledDropdownMenuItem onClick={() => runAfterMenuClose(onReauthenticate)}>
               <RefreshCcw className="h-3.5 w-3.5" />
               <span>Re-authenticate</span>
             </StyledDropdownMenuItem>
           ) : (
-            <StyledDropdownMenuItem onClick={onEdit}>
+            <StyledDropdownMenuItem onClick={() => runAfterMenuClose(onEdit)}>
               <Settings2 className="h-3.5 w-3.5" />
               <span>Edit</span>
             </StyledDropdownMenuItem>

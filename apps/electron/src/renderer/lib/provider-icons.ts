@@ -116,6 +116,8 @@ function piAuthProviderToIcon(piAuthProvider: string): ProviderIconKey | null {
     case 'kimi-coding':
       return 'kimi'
     case 'minimax':
+    case 'minimax-global':
+    case 'minimax-cn':
       return 'minimax'
     case 'mistral':
       return 'mistral'

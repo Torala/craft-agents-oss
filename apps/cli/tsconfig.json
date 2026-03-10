@@ -25,6 +25,6 @@
       "@craft-agent/server-core/*": ["../../packages/server-core/src/*"]
     }
   },
-  "include": ["src/**/*"],
+  "include": ["src/**/*", "../../packages/shared/src/**/*.d.ts"],
   "exclude": ["node_modules", "dist"]
 }

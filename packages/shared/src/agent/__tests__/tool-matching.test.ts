@@ -640,8 +640,8 @@ describe('extractToolResults', () => {
 
   // --- Background event detection ---
 
-  it('detects background Task from agentId in result', () => {
-    toolIndex.register('toolu_task', 'Task', { _intent: 'Search codebase' })
+  it('detects background Task from agentId in result when run_in_background is true', () => {
+    toolIndex.register('toolu_task', 'Task', { _intent: 'Search codebase', run_in_background: true })
 
     const blocks: ContentBlock[] = [
       makeToolResultBlock('toolu_task', 'Done.\nagentId: abc123'),
@@ -658,6 +658,21 @@ describe('extractToolResults', () => {
       taskId: 'abc123',
       intent: 'Search codebase',
     })
+  })
+
+  it('does NOT emit task_backgrounded for foreground Agent with agentId in result', () => {
+    // Foreground Agent tool (no run_in_background) — agentId in result should be ignored
+    toolIndex.register('toolu_agent', 'Agent', { _intent: 'Explore codebase', prompt: 'Find auth code' })
+
+    const blocks: ContentBlock[] = [
+      makeToolResultBlock('toolu_agent', 'Found auth in /src/auth.ts\nagentId: fg_agent_xyz'),
+    ]
+
+    const events = extractToolResults(blocks, null, undefined, toolIndex)
+
+    // Should ONLY have tool_result — no task_backgrounded
+    expect(events).toHaveLength(1)
+    expect(events[0]).toMatchObject({ type: 'tool_result', toolUseId: 'toolu_agent' })
   })
 
   it('detects background Shell from shell_id in result', () => {

@@ -72,7 +72,8 @@ export async function spawnServer(opts?: SpawnServerOptions): Promise<SpawnedSer
   // Pipe server stderr to our stderr so --debug logs are visible (unless quiet)
   if (proc.stderr && !opts?.quiet) {
     ;(async () => {
-      const reader = proc.stderr!.getReader()
+      // @ts-expect-error — Bun Subprocess types don't narrow stderr to ReadableStream when stderr: 'pipe'
+      const reader = proc.stderr.getReader()
       try {
         while (true) {
           const { done, value } = await reader.read()
@@ -122,7 +123,8 @@ export async function spawnServer(opts?: SpawnServerOptions): Promise<SpawnedSer
     }
 
     ;(async () => {
-      const reader = proc.stdout!.getReader()
+      // @ts-expect-error — Bun Subprocess types don't narrow stdout to ReadableStream when stdout: 'pipe'
+      const reader = proc.stdout.getReader()
       const decoder = new TextDecoder()
       try {
         while (true) {

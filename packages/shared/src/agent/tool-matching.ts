@@ -398,8 +398,13 @@ function detectBackgroundEvents(
 ): AgentEvent[] {
   const events: AgentEvent[] = [];
 
-  // Background Task detection — Task/Agent tool with agentId in result
-  if (isParentTaskTool(entry.name) && !isError && resultStr) {
+  // Background Task detection — Task/Agent tool with agentId in result.
+  // Only trigger when the tool was explicitly launched with run_in_background: true.
+  // Without this guard, foreground Agent tools whose result text happens to contain
+  // "agentId:" would be spuriously marked as backgrounded — and since no task_completed
+  // event ever arrives for them, they'd stay stuck in 'backgrounded' status forever.
+  const wasRunInBackground = entry.input?.run_in_background === true;
+  if (isParentTaskTool(entry.name) && wasRunInBackground && !isError && resultStr) {
     const agentIdMatch = resultStr.match(/agentId:\s*([a-zA-Z0-9_-]+)/);
     if (agentIdMatch?.[1]) {
       const intentValue = entry.input._intent;

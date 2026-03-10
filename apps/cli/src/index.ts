@@ -30,6 +30,7 @@ export interface CliArgs {
   outputFormat: string
   noCleanup: boolean
   noSpinner: boolean
+  verbose: boolean
   serverEntry?: string
   workspaceDir?: string
   // LLM configuration
@@ -55,6 +56,7 @@ export function parseArgs(argv: string[]): CliArgs {
   let outputFormat = 'text'
   let noCleanup = false
   let noSpinner = false
+  let verbose = false
   let serverEntry: string | undefined
   let workspaceDir: string | undefined
   let provider = ''
@@ -102,6 +104,10 @@ export function parseArgs(argv: string[]): CliArgs {
       case '--no-spinner':
         noSpinner = true
         break
+      case '--verbose':
+      case '-v':
+        verbose = true
+        break
       case '--server-entry':
         serverEntry = args[++i]
         break
@@ -148,7 +154,7 @@ export function parseArgs(argv: string[]): CliArgs {
   if (!apiKey) apiKey = process.env.LLM_API_KEY ?? ''
   if (!baseUrl) baseUrl = process.env.LLM_BASE_URL ?? ''
 
-  return { url, token, workspace, timeout, json, tlsCa, sendTimeout, command, rest, sources, mode, outputFormat, noCleanup, noSpinner, serverEntry, workspaceDir, provider, model, apiKey, baseUrl }
+  return { url, token, workspace, timeout, json, tlsCa, sendTimeout, command, rest, sources, mode, outputFormat, noCleanup, noSpinner, verbose, serverEntry, workspaceDir, provider, model, apiKey, baseUrl }
 }
 
 // ---------------------------------------------------------------------------
@@ -672,7 +678,7 @@ async function cmdValidate(args: CliArgs): Promise<void> {
       connectTimeout: args.timeout,
     })
   } else {
-    server = await spawnLocalServer(args, { quiet: true })
+    server = await spawnLocalServer(args, { quiet: !args.verbose })
     client = server.client
   }
 
@@ -759,7 +765,47 @@ export interface ValidateContext {
   createdSessionId?: string
   createdSourceSlug?: string
   createdSkillSlug?: string
+  createdAutomation?: boolean
+  automationTestSessionId?: string
+  automationName?: string
+  createdLabelId?: string
+  /** Backup of existing automations.json before overwrite (undefined = didn't exist) */
+  automationsJsonBackup?: string | null
+  /** Backup of existing automations-history.jsonl before overwrite (undefined = didn't exist) */
+  automationsHistoryBackup?: string | null
   onEvent?: (ev: { type: string; [key: string]: unknown }) => void
+}
+
+/** Minimal shapes for RPC responses used in validation steps. */
+interface ValidateStatus {
+  id?: string
+  label?: string
+}
+
+interface ValidateSession {
+  id: string
+  name?: string
+  labels?: string[]
+}
+
+interface ValidateLabel {
+  id?: string
+  name?: string
+}
+
+interface ValidateMessageBlock {
+  type: string
+  text?: string
+}
+
+interface ValidateMessage {
+  role: string
+  content: string | ValidateMessageBlock[]
+}
+
+interface ValidateMessagesResponse {
+  messages?: ValidateMessage[]
+  conversation?: ValidateMessage[]
 }
 
 /**
@@ -819,6 +865,59 @@ async function waitForSendEvents(
   } finally {
     unsub()
   }
+}
+
+/**
+ * Clean up automation test artifacts (config files, session, label).
+ * Shared between the automation:cleanup test step and runValidation error recovery.
+ */
+async function cleanupAutomationArtifacts(
+  client: CliRpcClient,
+  ctx: ValidateContext,
+): Promise<string[]> {
+  const cleaned: string[] = []
+
+  // Restore or remove automation config files
+  if (ctx.workspaceRootPath && ctx.createdAutomation) {
+    try {
+      const { writeFile, unlink } = await import('fs/promises')
+      const configPath = `${ctx.workspaceRootPath}/automations.json`
+      const historyPath = `${ctx.workspaceRootPath}/automations-history.jsonl`
+      if (ctx.automationsJsonBackup != null) {
+        await writeFile(configPath, ctx.automationsJsonBackup).catch(() => {})
+        cleaned.push('automations.json (restored)')
+      } else {
+        await unlink(configPath).catch(() => {})
+        cleaned.push('automations.json (removed)')
+      }
+      if (ctx.automationsHistoryBackup != null) {
+        await writeFile(historyPath, ctx.automationsHistoryBackup).catch(() => {})
+      } else {
+        await unlink(historyPath).catch(() => {})
+      }
+      ctx.createdAutomation = false
+    } catch { /* best effort */ }
+  }
+
+  // Delete automation-triggered session
+  if (ctx.automationTestSessionId && client.isConnected) {
+    try {
+      await client.invoke('sessions:delete', ctx.automationTestSessionId)
+      cleaned.push(`session ${ctx.automationTestSessionId}`)
+      ctx.automationTestSessionId = undefined
+    } catch { /* best effort */ }
+  }
+
+  // Delete test label
+  if (ctx.workspaceId && ctx.createdLabelId && client.isConnected) {
+    try {
+      await client.invoke('labels:delete', ctx.workspaceId, ctx.createdLabelId)
+      cleaned.push(`label ${ctx.createdLabelId}`)
+      ctx.createdLabelId = undefined
+    } catch { /* best effort */ }
+  }
+
+  return cleaned
 }
 
 export function getValidateSteps(): ValidateStep[] {
@@ -1034,6 +1133,139 @@ SKILLEOF`, 90_000, true, undefined, ctx.onEvent)
         return `deleted skill: ${ctx.createdSkillSlug}`
       },
     },
+    // ----- Automation lifecycle -----
+    {
+      name: 'automation:create',
+      fn: async (client, ctx) => {
+        if (!ctx.createdSessionId || !ctx.workspaceRootPath) return 'skipped (no session or workspace)'
+        ctx.automationName = `CLI Validate Automation ${Date.now()}`
+        const configPath = `${ctx.workspaceRootPath}/automations.json`
+        const historyPath = `${ctx.workspaceRootPath}/automations-history.jsonl`
+        // Backup existing files before overwriting (protects real workspace data)
+        const { readFile } = await import('fs/promises')
+        ctx.automationsJsonBackup = await readFile(configPath, 'utf-8').catch(() => null)
+        ctx.automationsHistoryBackup = await readFile(historyPath, 'utf-8').catch(() => null)
+        const config = JSON.stringify({
+          version: 2,
+          automations: {
+            SessionStatusChange: [{
+              name: ctx.automationName,
+              matcher: 'in-progress',
+              labels: ['cli-validate-label'],
+              actions: [{ type: 'prompt', prompt: 'Reply with exactly: AUTOMATION_TRIGGERED' }],
+            }],
+          },
+        }, null, 2)
+        return await waitForSendEvents(client, ctx.createdSessionId,
+          `Use the Bash tool to run this exact command:
+cat > "${configPath}" << 'AUTOMATIONEOF'
+${config}
+AUTOMATIONEOF`, 90_000, true, undefined, ctx.onEvent)
+          .then((r) => { ctx.createdAutomation = true; return r })
+      },
+    },
+    {
+      name: 'automation:trigger (status change)',
+      fn: async (client, ctx) => {
+        if (!ctx.createdSessionId || !ctx.workspaceId) return 'skipped (no session or workspace)'
+        // Get available statuses to find one containing "in-progress"
+        const statuses = (await client.invoke('statuses:list', ctx.workspaceId)) as ValidateStatus[]
+        const inProgress = statuses?.find((s) =>
+          (s.id ?? '').toLowerCase().includes('in-progress') ||
+          (s.label ?? '').toLowerCase().includes('in progress')
+        )
+        const statusValue = inProgress?.id ?? 'in-progress'
+
+        // Change session status to trigger the automation
+        await client.invoke('sessions:command', ctx.createdSessionId, {
+          type: 'setSessionStatus',
+          state: statusValue,
+        })
+
+        // Poll for the automation-created session (automation fires asynchronously)
+        let delay = 1000
+        const deadline = Date.now() + 60_000
+        while (Date.now() < deadline) {
+          await new Promise((r) => setTimeout(r, delay))
+          delay = Math.min(delay * 1.5, 10_000)
+          const sessions = (await client.invoke('sessions:get', ctx.workspaceId)) as ValidateSession[]
+          const automationSession = sessions?.find((s) =>
+            s.name === ctx.automationName && s.id !== ctx.createdSessionId
+          )
+          if (automationSession) {
+            ctx.automationTestSessionId = automationSession.id
+            return `triggered → session ${automationSession.id} (status=${statusValue})`
+          }
+        }
+        throw new Error('Automation-created session not found within 60s')
+      },
+    },
+    {
+      name: 'automation:verify session',
+      fn: async (client, ctx) => {
+        if (!ctx.automationTestSessionId) return 'skipped (no automation session)'
+        // Wait for the automation session to complete
+        let delay = 1000
+        const deadline = Date.now() + 90_000
+        while (Date.now() < deadline) {
+          const session = (await client.invoke('sessions:getMessages', ctx.automationTestSessionId)) as ValidateMessagesResponse
+          const messages = session?.messages ?? session?.conversation ?? []
+          const hasAssistant = messages.some((m) => m.role === 'assistant')
+          if (hasAssistant) {
+            const lastAssistant = [...messages].reverse().find((m) => m.role === 'assistant')
+            const text = typeof lastAssistant?.content === 'string'
+              ? lastAssistant.content
+              : Array.isArray(lastAssistant?.content)
+                ? lastAssistant.content.filter((b) => b.type === 'text').map((b) => b.text ?? '').join(' ')
+                : ''
+            return `session has assistant response (${text.slice(0, 80).trim()})`
+          }
+          await new Promise((r) => setTimeout(r, delay))
+          delay = Math.min(delay * 1.5, 10_000)
+        }
+        throw new Error('Automation session did not complete within 90s')
+      },
+    },
+    {
+      name: 'automation:verify labels',
+      fn: async (client, ctx) => {
+        if (!ctx.automationTestSessionId || !ctx.workspaceId) return 'skipped (no automation session)'
+        // Verify label was auto-created
+        const labels = (await client.invoke('labels:list', ctx.workspaceId)) as ValidateLabel[]
+        const found = labels?.find((l) => (l.id ?? l.name ?? '') === 'cli-validate-label')
+        if (!found) throw new Error('Label cli-validate-label was not auto-created')
+        ctx.createdLabelId = found.id ?? 'cli-validate-label'
+
+        // Verify the automation session has the label
+        const sessions = (await client.invoke('sessions:get', ctx.workspaceId)) as ValidateSession[]
+        const automationSession = sessions?.find((s) => s.id === ctx.automationTestSessionId)
+        const sessionLabels: string[] = automationSession?.labels ?? []
+        const hasLabel = sessionLabels.some((l: string) => l.includes('cli-validate-label'))
+        if (!hasLabel) throw new Error(`Automation session missing label (has: ${sessionLabels.join(', ')})`)
+        return `label created and assigned: ${ctx.createdLabelId}`
+      },
+    },
+    {
+      name: 'automations:getLastExecuted',
+      fn: async (client, ctx) => {
+        if (!ctx.workspaceId) return 'skipped (no workspace)'
+        const history = (await client.invoke('automations:getLastExecuted', ctx.workspaceId)) as Record<string, number>
+        const entries = Object.entries(history)
+        if (entries.length === 0) throw new Error('No automation execution history found')
+        // Verify at least one automation ran recently (within last 2 minutes)
+        const recentThreshold = Date.now() - 120_000
+        const recent = entries.find(([, ts]) => ts > recentThreshold)
+        if (!recent) throw new Error(`No recent automation execution (latest: ${Math.max(...entries.map(([, ts]) => ts))})`)
+        return `${entries.length} automation(s), latest ran ${Math.round((Date.now() - recent[1]) / 1000)}s ago`
+      },
+    },
+    {
+      name: 'automation:cleanup',
+      fn: async (client, ctx) => {
+        const cleaned = await cleanupAutomationArtifacts(client, ctx)
+        return cleaned.length > 0 ? `cleaned: ${cleaned.join(', ')}` : 'nothing to clean'
+      },
+    },
     {
       name: 'sources:delete',
       fn: async (client, ctx) => {
@@ -1186,6 +1418,9 @@ export async function runValidation(client: CliRpcClient, jsonMode: boolean, noS
     }
   }
 
+  // Cleanup: automation artifacts
+  await cleanupAutomationArtifacts(client, ctx)
+
   // Cleanup: if we auto-created a temp workspace, remove it
   if (ctx.createdWorkspace && ctx.workspaceId && client.isConnected) {
     try {
@@ -1265,6 +1500,7 @@ Commands:
   invoke <channel> [...] Raw RPC call with JSON args
   listen <channel>       Subscribe to push events (Ctrl+C to stop)
   --validate-server      Multi-step server integration test
+                         --verbose, -v       Show server stderr output
 
 Examples:
   craft-cli run "What files are in the current directory?"

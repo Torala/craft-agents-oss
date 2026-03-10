@@ -169,6 +169,8 @@ const EXPECTED_CHANNELS: string[] = [
   'sessions:unreadSummaryChanged',
   'sessions:unwatchFiles',
   'sessions:watchFiles',
+  'settings:getDefaultThinkingLevel',
+  'settings:setDefaultThinkingLevel',
   'settings:setupLlmConnection',
   'settings:testLlmConnectionSetup',
   'shell:openFile',
