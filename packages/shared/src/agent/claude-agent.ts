@@ -1580,10 +1580,11 @@ export class ClaudeAgent extends BaseAgent {
         // through different paths depending on version/timing.
         const SESSION_EXPIRED_MARKER = 'No conversation found with session ID';
         const isSessionExpired =
+          suppressedSessionExpiredError ||  // stream-level suppression already detected this
           errorMsg.includes(SESSION_EXPIRED_MARKER) ||
           (rawErrorMsg || '').includes(SESSION_EXPIRED_MARKER) ||
           (stderrContext || '').includes(SESSION_EXPIRED_MARKER);
-        debug('[SESSION_DEBUG] isSessionExpired:', isSessionExpired);
+        debug('[SESSION_DEBUG] isSessionExpired:', isSessionExpired, 'suppressedSessionExpiredError:', suppressedSessionExpiredError);
 
         if (isSessionExpired && wasResuming && !_isRetry) {
           debug('[SESSION_DEBUG] >>> TAKING PATH: Session expired recovery');
