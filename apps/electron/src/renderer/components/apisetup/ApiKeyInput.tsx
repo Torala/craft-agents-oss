@@ -439,8 +439,8 @@ export function ApiKeyInput({
       </div>
       )}
 
-      {/* Protocol Toggle — only for custom endpoints with a base URL */}
-      {activePreset === 'custom' && !isDefaultProviderPreset && baseUrl.trim() && (
+      {/* Protocol Toggle — visible as soon as Custom preset is selected */}
+      {activePreset === 'custom' && !isDefaultProviderPreset && (
         <div className="space-y-2">
           <Label>Protocol</Label>
           <div className={cn(
