@@ -16,6 +16,7 @@ import type {
 } from '@craft-agent/core/types'
 import type { PermissionMode } from '../agent/mode-types'
 import type { ThinkingLevel } from '../agent/thinking-levels'
+import type { CustomEndpointConfig } from '../config/llm-connections'
 import type {
   AuthRequest as SharedAuthRequest,
   CredentialInputMode as SharedCredentialInputMode,
@@ -307,6 +308,8 @@ export interface LlmConnectionSetup {
   modelSelectionMode?: 'automaticallySyncedFromProvider' | 'userDefined3Tier'
   /** When true, reject setup if the connection doesn't already exist (reauth guard). */
   updateOnly?: boolean
+  /** Custom endpoint protocol for arbitrary OpenAI/Anthropic-compatible APIs */
+  customEndpoint?: CustomEndpointConfig
 }
 
 export interface TestLlmConnectionParams {
@@ -315,6 +318,8 @@ export interface TestLlmConnectionParams {
   baseUrl?: string
   model?: string
   piAuthProvider?: string
+  /** Optional custom endpoint protocol hint so setup tests mirror runtime routing */
+  customEndpoint?: CustomEndpointConfig
 }
 
 export interface TestLlmConnectionResult {

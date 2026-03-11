@@ -202,6 +202,140 @@ async function validateSpawnAttachmentPath(filePath: string): Promise<string> {
   return realFilePath
 }
 
+const PI_TURN_ANCHORS_VERSION = 1
+const PI_TURN_ANCHORS_FILE = 'pi-turn-anchors.json'
+
+interface PiTurnAnchorsIndex {
+  version: number
+  anchors: Record<string, string>
+}
+
+function getPiTurnAnchorsPath(sessionPath: string): string {
+  return join(sessionPath, 'meta', PI_TURN_ANCHORS_FILE)
+}
+
+async function loadPiTurnAnchors(sessionPath: string): Promise<PiTurnAnchorsIndex> {
+  const filePath = getPiTurnAnchorsPath(sessionPath)
+  try {
+    const raw = await readFile(filePath, 'utf-8')
+    const parsed = JSON.parse(raw) as Partial<PiTurnAnchorsIndex>
+    const anchors = (parsed.anchors && typeof parsed.anchors === 'object') ? parsed.anchors : {}
+    const normalized: Record<string, string> = {}
+    for (const [messageId, anchor] of Object.entries(anchors)) {
+      if (typeof messageId === 'string' && typeof anchor === 'string' && messageId && anchor) {
+        normalized[messageId] = anchor
+      }
+    }
+    return {
+      version: PI_TURN_ANCHORS_VERSION,
+      anchors: normalized,
+    }
+  } catch {
+    return {
+      version: PI_TURN_ANCHORS_VERSION,
+      anchors: {},
+    }
+  }
+}
+
+async function getPiTurnAnchor(sessionPath: string, messageId: string): Promise<string | undefined> {
+  if (!messageId) return undefined
+  const index = await loadPiTurnAnchors(sessionPath)
+  return index.anchors[messageId]
+}
+
+async function savePiTurnAnchor(sessionPath: string, messageId: string, anchorId: string): Promise<void> {
+  if (!messageId || !anchorId) return
+
+  const index = await loadPiTurnAnchors(sessionPath)
+  if (index.anchors[messageId] === anchorId) return
+
+  index.anchors[messageId] = anchorId
+
+  const filePath = getPiTurnAnchorsPath(sessionPath)
+  await mkdir(join(sessionPath, 'meta'), { recursive: true })
+  await writeFile(filePath, JSON.stringify(index), 'utf-8')
+}
+
+const CLAUDE_TURN_ANCHORS_VERSION = 1
+const CLAUDE_TURN_ANCHORS_FILE = 'claude-turn-anchors.json'
+
+interface ClaudeTurnAnchorRecord {
+  sdkSessionId: string
+  sdkMessageUuid: string
+}
+
+interface ClaudeTurnAnchorsIndex {
+  version: number
+  anchors: Record<string, ClaudeTurnAnchorRecord>
+}
+
+function getClaudeTurnAnchorsPath(sessionPath: string): string {
+  return join(sessionPath, 'meta', CLAUDE_TURN_ANCHORS_FILE)
+}
+
+function isClaudeMessageUuid(turnId: string): boolean {
+  return /^msg_[A-Za-z0-9]+$/.test(turnId)
+}
+
+async function loadClaudeTurnAnchors(sessionPath: string): Promise<ClaudeTurnAnchorsIndex> {
+  const filePath = getClaudeTurnAnchorsPath(sessionPath)
+  try {
+    const raw = await readFile(filePath, 'utf-8')
+    const parsed = JSON.parse(raw) as Partial<ClaudeTurnAnchorsIndex>
+    const anchors = (parsed.anchors && typeof parsed.anchors === 'object') ? parsed.anchors : {}
+    const normalized: Record<string, ClaudeTurnAnchorRecord> = {}
+
+    for (const [messageId, value] of Object.entries(anchors)) {
+      if (!messageId || typeof messageId !== 'string') continue
+      if (!value || typeof value !== 'object') continue
+      const sdkSessionId = (value as { sdkSessionId?: unknown }).sdkSessionId
+      const sdkMessageUuid = (value as { sdkMessageUuid?: unknown }).sdkMessageUuid
+      if (typeof sdkSessionId === 'string' && sdkSessionId && typeof sdkMessageUuid === 'string' && sdkMessageUuid) {
+        normalized[messageId] = { sdkSessionId, sdkMessageUuid }
+      }
+    }
+
+    return {
+      version: CLAUDE_TURN_ANCHORS_VERSION,
+      anchors: normalized,
+    }
+  } catch {
+    return {
+      version: CLAUDE_TURN_ANCHORS_VERSION,
+      anchors: {},
+    }
+  }
+}
+
+async function getClaudeTurnAnchor(sessionPath: string, messageId: string): Promise<ClaudeTurnAnchorRecord | undefined> {
+  if (!messageId) return undefined
+  const index = await loadClaudeTurnAnchors(sessionPath)
+  return index.anchors[messageId]
+}
+
+async function saveClaudeTurnAnchor(
+  sessionPath: string,
+  messageId: string,
+  sdkSessionId: string,
+  sdkMessageUuid: string,
+): Promise<void> {
+  if (!messageId || !sdkSessionId || !sdkMessageUuid) return
+
+  const index = await loadClaudeTurnAnchors(sessionPath)
+  const previous = index.anchors[messageId]
+  if (previous && previous.sdkSessionId === sdkSessionId && previous.sdkMessageUuid === sdkMessageUuid) return
+
+  index.anchors[messageId] = {
+    sdkSessionId,
+    sdkMessageUuid,
+  }
+
+  const filePath = getClaudeTurnAnchorsPath(sessionPath)
+  await mkdir(join(sessionPath, 'meta'), { recursive: true })
+  await writeFile(filePath, JSON.stringify(index), 'utf-8')
+}
+
 /**
  * Build MCP and API servers from sources using the new unified modules.
  * Handles credential loading and server building in one step.
@@ -728,6 +862,12 @@ interface ManagedSession {
   branchFromSdkSessionId?: string
   // Parent session's storage path (used only when branchContextStrategy === 'sdk-fork')
   branchFromSessionPath?: string
+  // Parent session's sdkCwd — needed so the fork subprocess uses the correct
+  // ~/.claude/projects/{cwd-hash}/ directory to find the parent's session file.
+  branchFromSdkCwd?: string
+  // SDK assistant message UUID at the branch point — used as resumeSessionAt
+  // to trim the forked conversation at the branch point.
+  branchFromSdkTurnId?: string
   // One-shot flag for seeded branch mode - set true after first turn seed injection.
   branchSeedApplied?: boolean
   // Token refresh manager for OAuth token refresh with rate limiting
@@ -1948,6 +2088,8 @@ export class SessionManager implements ISessionManager {
       branchContextStrategy: 'sdk-fork' | 'seeded-fresh-session'
       branchFromSdkSessionId?: string
       branchFromSessionPath?: string
+      branchFromSdkCwd?: string
+      branchFromSdkTurnId?: string
     } | undefined
 
     if (options?.branchFromSessionId || options?.branchFromMessageId) {
@@ -2034,6 +2176,62 @@ export class SessionManager implements ISessionManager {
       const branchFromSessionPath = branchContextStrategy === 'sdk-fork'
         ? getSessionStoragePath(workspaceRootPath, options.branchFromSessionId)
         : undefined
+      // Capture parent's sdkCwd so the child SDK subprocess can find the parent's
+      // session file (stored under ~/.claude/projects/{cwd-hash}/).
+      const branchFromSdkCwd = branchContextStrategy === 'sdk-fork'
+        ? (sourceManaged?.sdkCwd || sourceSession.sdkCwd)
+        : undefined
+
+      // Provider-native branch anchor at branch point.
+      // - Claude: assistant message UUID (resumeSessionAt), but only when anchor lineage
+      //   matches the parent SDK session being resumed.
+      // - Pi: session entry ID loaded from sidecar (pi-turn-anchors.json)
+      const branchMessage = sourceSession.messages[branchIdx]
+      let branchFromSdkTurnId: string | undefined
+      if (branchContextStrategy === 'sdk-fork') {
+        if (sourceBackendContext.provider === 'pi') {
+          if (branchFromSessionPath) {
+            branchFromSdkTurnId = await getPiTurnAnchor(branchFromSessionPath, options.branchFromMessageId)
+            if (!branchFromSdkTurnId) {
+              sessionLog.warn('Pi branch anchor missing: falling back to full-history fork for this branch', {
+                workspaceId,
+                branchFromSessionId: options.branchFromSessionId,
+                branchFromMessageId: options.branchFromMessageId,
+              })
+            }
+          }
+        } else if (sourceBackendContext.provider === 'anthropic') {
+          if (branchFromSessionPath && branchFromSdkSessionId) {
+            const anchor = await getClaudeTurnAnchor(branchFromSessionPath, options.branchFromMessageId)
+            if (!anchor) {
+              sessionLog.warn('Claude branch anchor missing: falling back to full-history fork for this branch', {
+                workspaceId,
+                branchFromSessionId: options.branchFromSessionId,
+                branchFromMessageId: options.branchFromMessageId,
+              })
+            } else if (!anchor.sdkMessageUuid || !isClaudeMessageUuid(anchor.sdkMessageUuid)) {
+              sessionLog.warn('Claude branch anchor malformed: falling back to full-history fork for this branch', {
+                workspaceId,
+                branchFromSessionId: options.branchFromSessionId,
+                branchFromMessageId: options.branchFromMessageId,
+                anchorSdkSessionId: anchor.sdkSessionId,
+              })
+            } else if (anchor.sdkSessionId !== branchFromSdkSessionId) {
+              sessionLog.warn('Claude branch anchor lineage mismatch: falling back to full-history fork for this branch', {
+                workspaceId,
+                branchFromSessionId: options.branchFromSessionId,
+                branchFromMessageId: options.branchFromMessageId,
+                anchorSdkSessionId: anchor.sdkSessionId,
+                parentSdkSessionId: branchFromSdkSessionId,
+              })
+            } else {
+              branchFromSdkTurnId = anchor.sdkMessageUuid
+            }
+          }
+        } else {
+          branchFromSdkTurnId = branchMessage?.turnId
+        }
+      }
 
       if (branchContextStrategy === 'sdk-fork' && !branchFromSdkSessionId) {
         sessionLog.warn('Branch validation failed: sdk-fork requires parent SDK session ID', {
@@ -2053,6 +2251,8 @@ export class SessionManager implements ISessionManager {
         branchContextStrategy,
         branchFromSdkSessionId,
         branchFromSessionPath,
+        branchFromSdkCwd,
+        branchFromSdkTurnId,
       }
 
       sessionLog.info('Branch validation succeeded', {
@@ -2088,9 +2288,13 @@ export class SessionManager implements ISessionManager {
       if (validatedBranch.branchContextStrategy === 'sdk-fork') {
         branchedStored.branchFromSdkSessionId = validatedBranch.branchFromSdkSessionId
         branchedStored.branchFromSessionPath = validatedBranch.branchFromSessionPath
+        branchedStored.branchFromSdkCwd = validatedBranch.branchFromSdkCwd
+        branchedStored.branchFromSdkTurnId = validatedBranch.branchFromSdkTurnId
       } else {
         delete branchedStored.branchFromSdkSessionId
         delete branchedStored.branchFromSessionPath
+        delete branchedStored.branchFromSdkCwd
+        delete branchedStored.branchFromSdkTurnId
       }
       await saveStoredSession(branchedStored)
     }
@@ -2119,6 +2323,8 @@ export class SessionManager implements ISessionManager {
       branchContextStrategy: validatedBranch?.branchContextStrategy,
       branchFromSdkSessionId: validatedBranch?.branchFromSdkSessionId,
       branchFromSessionPath: validatedBranch?.branchFromSessionPath,
+      branchFromSdkCwd: validatedBranch?.branchFromSdkCwd,
+      branchFromSdkTurnId: validatedBranch?.branchFromSdkTurnId,
       branchSeedApplied: validatedBranch ? validatedBranch.branchContextStrategy === 'sdk-fork' : undefined,
       messagesLoaded: !isBranch,  // Branched sessions: lazy-load messages from JSONL
     })
@@ -2285,6 +2491,8 @@ export class SessionManager implements ISessionManager {
         sdkSessionId: managed.sdkSessionId,
         branchFromSdkSessionId: managed.branchContextStrategy === 'sdk-fork' ? managed.branchFromSdkSessionId : undefined,
         branchFromSessionPath: managed.branchContextStrategy === 'sdk-fork' ? managed.branchFromSessionPath : undefined,
+        branchFromSdkCwd: managed.branchContextStrategy === 'sdk-fork' ? managed.branchFromSdkCwd : undefined,
+        branchFromSdkTurnId: managed.branchContextStrategy === 'sdk-fork' ? managed.branchFromSdkTurnId : undefined,
         branchFromMessageId: managed.branchFromMessageId,
         createdAt: managed.lastMessageAt,
         lastUsedAt: managed.lastMessageAt,
@@ -2298,7 +2506,15 @@ export class SessionManager implements ISessionManager {
 
       const onSdkSessionIdUpdate = (sdkSessionId: string) => {
         managed.sdkSessionId = sdkSessionId
-        sessionLog.info(`SDK session ID captured for ${managed.id}: ${sdkSessionId}`)
+        // Retire branch-only fork metadata now that child session is established
+        if (managed.branchFromSdkSessionId) {
+          sessionLog.info(`Branch fork established for ${managed.id}: child=${sdkSessionId}, retiring parent fork metadata (parent=${managed.branchFromSdkSessionId})`)
+          managed.branchFromSdkSessionId = undefined
+          managed.branchFromSdkCwd = undefined
+          managed.branchFromSdkTurnId = undefined
+        } else {
+          sessionLog.info(`SDK session ID captured for ${managed.id}: ${sdkSessionId}`)
+        }
         this.persistSession(managed)
         sessionPersistenceQueue.flush(managed.id)
       }
@@ -3026,6 +3242,11 @@ export class SessionManager implements ISessionManager {
           }
           if (attachments.length > 0) fileAttachments = attachments
         }
+
+        // Notify renderer to hydrate full session metadata (including name)
+        // before streaming events arrive. Without this, the renderer creates
+        // a synthetic empty session and shows "New Chat" in the sidebar.
+        this.sendEvent({ type: 'session_created', sessionId: session.id }, managed.workspace.id)
 
         // Fire and forget — send the message but don't await completion
         this.sendMessage(session.id, request.prompt, fileAttachments).catch(err => {
@@ -5463,6 +5684,28 @@ export class SessionManager implements ISessionManager {
         if (!event.isIntermediate) {
           managed.lastMessageRole = 'assistant'
           managed.lastFinalMessageId = assistantMessage.id
+
+          const sessionPath = getSessionStoragePath(managed.workspace.rootPath, sessionId)
+
+          // Claude branch-cutoff support: persist message UUID + SDK session lineage in sidecar.
+          // Used to guard resumeSessionAt so we only send anchors valid for the parent SDK session.
+          if (event.turnId && managed.sdkSessionId && isClaudeMessageUuid(event.turnId)) {
+            try {
+              await saveClaudeTurnAnchor(sessionPath, assistantMessage.id, managed.sdkSessionId, event.turnId)
+            } catch (error) {
+              sessionLog.warn(`Failed to persist Claude turn anchor for session ${sessionId}:`, error)
+            }
+          }
+
+          // Pi branch-cutoff support: persist provider-native turn anchor in session sidecar.
+          // Keeps session.jsonl schema unchanged while enabling strict branch cutoffs later.
+          if (event.sdkTurnAnchor) {
+            try {
+              await savePiTurnAnchor(sessionPath, assistantMessage.id, event.sdkTurnAnchor)
+            } catch (error) {
+              sessionLog.warn(`Failed to persist Pi turn anchor for session ${sessionId}:`, error)
+            }
+          }
         }
 
         this.sendEvent({ type: 'text_complete', sessionId, text: event.text, isIntermediate: event.isIntermediate, turnId: event.turnId, parentToolUseId: event.parentToolUseId, timestamp: assistantMessage.timestamp, messageId: assistantMessage.id }, workspaceId)
