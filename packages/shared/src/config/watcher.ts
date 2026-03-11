@@ -22,6 +22,7 @@ import { platform } from 'os';
 import type { FSWatcher } from 'fs';
 import { CONFIG_DIR } from './paths.ts';
 import { debug } from '../utils/debug.ts';
+import { expandPath } from '../utils/paths.ts';
 import { readJsonFileSync } from '../utils/files.ts';
 import { perf } from '../utils/perf.ts';
 import { loadStoredConfig, type StoredConfig } from './storage.ts';
@@ -208,7 +209,7 @@ export class ConfigWatcher {
     // Paths contain '/' or '\\' (Windows) while IDs don't
     const isPath = workspaceIdOrPath.includes('/') || workspaceIdOrPath.includes('\\');
     if (isPath) {
-      this.workspaceDir = workspaceIdOrPath;
+      this.workspaceDir = expandPath(workspaceIdOrPath);
       // Extract workspace ID from path (last segment) - handle both separators
       this.workspaceId = workspaceIdOrPath.split(/[/\\]/).pop() || workspaceIdOrPath;
     } else {
