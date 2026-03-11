@@ -18,6 +18,7 @@ import type {
 import type { ProviderChoice } from '@/components/onboarding/ProviderSelectStep'
 import type { LocalModelSubmitData } from '@/components/onboarding/LocalModelStep'
 import type { ApiKeySubmitData } from '@/components/apisetup'
+import type { CustomEndpointConfig } from '@config/llm-connections'
 import type { SetupNeeds, LlmConnectionSetup } from '../../shared/types'
 
 interface UseOnboardingOptions {
@@ -126,7 +127,7 @@ export function apiSetupMethodToConnectionSetup(
     models?: string[]
     piAuthProvider?: string
     modelSelectionMode?: 'automaticallySyncedFromProvider' | 'userDefined3Tier'
-    customEndpoint?: { api: 'openai-completions' | 'anthropic-messages' }
+    customEndpoint?: CustomEndpointConfig
   },
   editingSlug: string | null,
   existingSlugs: Set<string>,
@@ -225,7 +226,7 @@ export function useOnboarding({
       models?: string[]
       piAuthProvider?: string
       modelSelectionMode?: 'automaticallySyncedFromProvider' | 'userDefined3Tier'
-      customEndpoint?: { api: 'openai-completions' | 'anthropic-messages' }
+      customEndpoint?: CustomEndpointConfig
     },
     methodOverride?: ApiSetupMethod,
     connectionSlugOverride?: string,

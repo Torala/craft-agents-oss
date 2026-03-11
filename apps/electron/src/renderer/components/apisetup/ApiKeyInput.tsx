@@ -29,9 +29,11 @@ import {
   type PresetKey,
 } from "./submit-helpers"
 
+import type { CustomEndpointApi, CustomEndpointConfig } from '@config/llm-connections'
+
 export type ApiKeyStatus = 'idle' | 'validating' | 'success' | 'error'
 
-export type CustomEndpointApi = 'openai-completions' | 'anthropic-messages'
+export type { CustomEndpointApi }
 
 export interface ApiKeySubmitData {
   apiKey: string
@@ -41,9 +43,7 @@ export interface ApiKeySubmitData {
   piAuthProvider?: string
   modelSelectionMode?: 'automaticallySyncedFromProvider' | 'userDefined3Tier'
   /** Custom endpoint protocol — set when user configures an arbitrary API endpoint */
-  customEndpoint?: {
-    api: CustomEndpointApi
-  }
+  customEndpoint?: CustomEndpointConfig
 }
 
 export interface ApiKeyInputProps {

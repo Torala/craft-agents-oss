@@ -110,11 +110,12 @@ export function JSONPreviewOverlay({
   }, [theme])
 
   // Recursively parse any stringified JSON within the data for better display.
-  // Guard: @uiw/react-json-view crashes on null/undefined/primitive values — wrap them.
+  // Guard: @uiw/react-json-view crashes on null/undefined/primitive values — wrap them
+  // in an object so the viewer can render them safely.
   const processedData = useMemo(() => {
     const parsed = deepParseJson(data)
-    if (parsed === null || parsed === undefined) return {}
-    if (typeof parsed !== 'object') return { value: parsed }
+    if (parsed === null || parsed === undefined) return { '(empty)': null }
+    if (typeof parsed !== 'object') return { '(root)': parsed }
     return parsed as object
   }, [data])
 

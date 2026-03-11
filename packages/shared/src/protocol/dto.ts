@@ -16,6 +16,7 @@ import type {
 } from '@craft-agent/core/types'
 import type { PermissionMode } from '../agent/mode-types'
 import type { ThinkingLevel } from '../agent/thinking-levels'
+import type { CustomEndpointConfig } from '../config/llm-connections'
 import type {
   AuthRequest as SharedAuthRequest,
   CredentialInputMode as SharedCredentialInputMode,
@@ -308,9 +309,7 @@ export interface LlmConnectionSetup {
   /** When true, reject setup if the connection doesn't already exist (reauth guard). */
   updateOnly?: boolean
   /** Custom endpoint protocol for arbitrary OpenAI/Anthropic-compatible APIs */
-  customEndpoint?: {
-    api: 'openai-completions' | 'anthropic-messages'
-  }
+  customEndpoint?: CustomEndpointConfig
 }
 
 export interface TestLlmConnectionParams {
