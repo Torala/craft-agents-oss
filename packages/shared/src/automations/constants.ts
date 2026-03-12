@@ -9,3 +9,6 @@ export const AUTOMATIONS_RETRY_QUEUE_FILE = 'automations-retry-queue.jsonl';
 
 /** Default HTTP method for webhook actions */
 export const DEFAULT_WEBHOOK_METHOD = 'POST';
+
+/** Maximum length for string fields written to automations-history.jsonl (error, responseBody, prompt). */
+export const HISTORY_FIELD_MAX_LENGTH = 2000;

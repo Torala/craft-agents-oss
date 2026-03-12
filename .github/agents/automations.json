@@ -1,0 +1,27 @@
+{
+  "version": 2,
+  "automations": {
+    "SessionStatusChange": [
+      {
+        "name": "CLI Validate Prompt Automation",
+        "matcher": "in-progress",
+        "labels": ["cli-validate-label"],
+        "actions": [{ "type": "prompt", "prompt": "Reply with exactly: AUTOMATION_TRIGGERED" }]
+      },
+      {
+        "name": "CLI Validate Webhook",
+        "matcher": "in-progress",
+        "actions": [{
+          "type": "webhook",
+          "url": "http://127.0.0.1:19999/validate-webhook",
+          "method": "POST",
+          "bodyFormat": "json",
+          "body": {
+            "event": "$CRAFT_EVENT",
+            "session": "$CRAFT_SESSION_ID"
+          }
+        }]
+      }
+    ]
+  }
+}

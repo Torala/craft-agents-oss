@@ -175,6 +175,15 @@ export function useAutomations(
           ? `Webhook ${e.webhook.method} ${e.webhook.url}${e.webhook.attempts && e.webhook.attempts > 1 ? ` (${e.webhook.attempts} attempts)` : ''}`
           : e.prompt,
         error: e.webhook?.error ?? e.error,
+        webhookDetails: e.webhook ? {
+          method: e.webhook.method,
+          url: e.webhook.url,
+          statusCode: e.webhook.statusCode,
+          durationMs: e.webhook.durationMs,
+          attempts: e.webhook.attempts,
+          error: e.webhook.error,
+          responseBody: e.webhook.responseBody,
+        } : undefined,
       }))
     } catch {
       return []

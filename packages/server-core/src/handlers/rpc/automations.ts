@@ -71,7 +71,7 @@ export function registerAutomationsHandlers(server: RpcServer, deps: HandlerDeps
 
     const results: import('@craft-agent/shared/protocol').TestAutomationActionResult[] = []
     const { parsePromptReferences } = await import('@craft-agent/shared/automations')
-    const { executeWebhookRequest } = await import('@craft-agent/shared/automations/webhook-utils')
+    const { executeWebhookRequest, createWebhookHistoryEntry, createPromptHistoryEntry } = await import('@craft-agent/shared/automations/webhook-utils')
 
     for (const action of payload.actions) {
       const start = Date.now()
@@ -88,7 +88,16 @@ export function registerAutomationsHandlers(server: RpcServer, deps: HandlerDeps
         })
 
         if (payload.automationId) {
-          const entry = { id: payload.automationId, ts: Date.now(), ok: result.success, ...(result.error ? { error: result.error.slice(0, 200) } : {}), prompt: `Webhook ${method} ${action.url}`.slice(0, 200) }
+          const entry = createWebhookHistoryEntry({
+            matcherId: payload.automationId,
+            ok: result.success,
+            method,
+            url: action.url as string,
+            statusCode: result.statusCode,
+            durationMs: result.durationMs ?? 0,
+            error: result.error,
+            responseBody: result.responseBody,
+          })
           appendFile(join(workspace.rootPath, HISTORY_FILE), JSON.stringify(entry) + '\n', 'utf-8').catch(e => log.warn('[Automations] Failed to write history:', e))
         }
         continue
@@ -119,7 +128,7 @@ export function registerAutomationsHandlers(server: RpcServer, deps: HandlerDeps
 
         // Write history entry for test runs
         if (payload.automationId) {
-          const entry = { id: payload.automationId, ts: Date.now(), ok: true, sessionId, prompt: action.prompt.slice(0, 200) }
+          const entry = createPromptHistoryEntry({ matcherId: payload.automationId, ok: true, sessionId, prompt: action.prompt })
           appendFile(join(workspace.rootPath, HISTORY_FILE), JSON.stringify(entry) + '\n', 'utf-8').catch(e => log.warn('[Automations] Failed to write history:', e))
         }
       } catch (err: unknown) {
@@ -132,7 +141,7 @@ export function registerAutomationsHandlers(server: RpcServer, deps: HandlerDeps
 
         // Write failed history entry
         if (payload.automationId) {
-          const entry = { id: payload.automationId, ts: Date.now(), ok: false, error: ((err as Error).message ?? '').slice(0, 200), prompt: action.prompt.slice(0, 200) }
+          const entry = createPromptHistoryEntry({ matcherId: payload.automationId, ok: false, error: (err as Error).message, prompt: action.prompt })
           appendFile(join(workspace.rootPath, HISTORY_FILE), JSON.stringify(entry) + '\n', 'utf-8').catch(e => log.warn('[Automations] Failed to write history:', e))
         }
       }

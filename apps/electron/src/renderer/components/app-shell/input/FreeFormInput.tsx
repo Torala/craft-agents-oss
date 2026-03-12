@@ -2241,7 +2241,7 @@ function WorkingDirectoryBadge({
                   <button
                     type="button"
                     onClick={(e) => handleRemoveRecent(e, path)}
-                    className="shrink-0 h-4 w-4 rounded-[3px] flex items-center justify-center opacity-0 group-hover/item:opacity-100 text-muted-foreground hover:text-foreground hover:bg-foreground/10 transition-all"
+                    className="shrink-0 h-3 w-3 rounded-[3px] flex items-center justify-center opacity-0 group-hover/item:opacity-100 text-muted-foreground hover:text-foreground hover:bg-foreground/10 transition-all"
                   >
                     <X className="h-3 w-3" />
                   </button>

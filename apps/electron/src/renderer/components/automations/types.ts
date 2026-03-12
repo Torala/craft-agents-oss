@@ -130,6 +130,16 @@ export const AUTOMATION_TYPE_TO_FILTER_KIND: Record<string, AutomationFilterKind
 
 export type ExecutionStatus = 'success' | 'error' | 'blocked'
 
+export interface WebhookDetails {
+  method: string
+  url: string
+  statusCode: number
+  durationMs: number
+  attempts?: number
+  error?: string
+  responseBody?: string
+}
+
 export interface ExecutionEntry {
   id: string
   automationId: string
@@ -145,6 +155,8 @@ export interface ExecutionEntry {
   actionSummary?: string
   /** Session ID created by this execution (for deep linking) */
   sessionId?: string
+  /** Structured webhook execution details (expandable in timeline) */
+  webhookDetails?: WebhookDetails
 }
 
 // ============================================================================

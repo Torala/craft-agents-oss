@@ -8,7 +8,7 @@
 
 import type { WebhookAction, WebhookActionResult } from './types.ts';
 import { expandEnvVars } from './utils.ts';
-import { DEFAULT_WEBHOOK_METHOD } from './constants.ts';
+import { DEFAULT_WEBHOOK_METHOD, HISTORY_FIELD_MAX_LENGTH } from './constants.ts';
 
 /**
  * Redact a URL for safe logging. Webhook URLs may contain secrets
@@ -50,9 +50,29 @@ export function createWebhookHistoryEntry(opts: {
       statusCode: opts.statusCode,
       durationMs: opts.durationMs,
       ...(opts.attempts && opts.attempts > 1 ? { attempts: opts.attempts } : {}),
-      ...(opts.error ? { error: opts.error.slice(0, 200) } : {}),
-      ...(opts.responseBody ? { responseBody: opts.responseBody.slice(0, 500) } : {}),
+      ...(opts.error ? { error: opts.error.slice(0, HISTORY_FIELD_MAX_LENGTH) } : {}),
+      ...(opts.responseBody ? { responseBody: opts.responseBody.slice(0, HISTORY_FIELD_MAX_LENGTH) } : {}),
     },
+  };
+}
+
+/**
+ * Create a prompt-action history entry for appending to the history JSONL file.
+ */
+export function createPromptHistoryEntry(opts: {
+  matcherId: string;
+  ok: boolean;
+  sessionId?: string;
+  prompt?: string;
+  error?: string;
+}): Record<string, unknown> {
+  return {
+    id: opts.matcherId,
+    ts: Date.now(),
+    ok: opts.ok,
+    ...(opts.sessionId ? { sessionId: opts.sessionId } : {}),
+    ...(opts.prompt ? { prompt: opts.prompt.slice(0, HISTORY_FIELD_MAX_LENGTH) } : {}),
+    ...(opts.error ? { error: opts.error.slice(0, HISTORY_FIELD_MAX_LENGTH) } : {}),
   };
 }
 

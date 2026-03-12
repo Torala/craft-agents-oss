@@ -56,6 +56,58 @@ Text blocks can serve as:
 - **List items**: Numbered, bullet, or toggle lists
 - **Rich text**: Content styled with CommonMark markdown
 
+## Collections
+
+Collections are database-like structures embedded within documents. They have a schema (columns) and items (rows).
+
+### Creating a Collection
+
+Use `collections_create` with a schema defining the collection name, content property (primary column), and typed properties:
+
+```json
+{
+  "name": "Movies",
+  "contentPropDetails": { "name": "Title" },
+  "properties": [
+    { "type": "number", "name": "Year" },
+    { "type": "number", "name": "Rating" },
+    { "type": "text", "name": "Director" },
+    { "type": "singleSelect", "name": "Genre", "options": [
+      { "name": "Drama" }, { "name": "Action" }, { "name": "Comedy" }
+    ]}
+  ]
+}
+```
+
+**Available property types:** `text`, `number`, `date`, `url`, `email`, `phone`, `boolean`, `singleSelect`, `multiSelect`, `blockLink`, `relation`
+
+### Adding Items (CRITICAL)
+
+**Always call `collectionSchema_get(format='json-schema-items')` before `collectionItems_add`.** The returned schema tells you the exact item shape and property keys.
+
+Items use a **nested structure** — NOT flat key/value objects:
+
+```json
+{
+  "title": "The Shawshank Redemption",
+  "properties": {
+    "year": 1994,
+    "rating": 9.3,
+    "director": "Frank Darabont",
+    "genre": "Drama"
+  }
+}
+```
+
+- `title` (string) — the content/primary column value
+- `properties` (object) — values keyed by property **key** from the schema (not the display name)
+
+**Do NOT** send flat objects like `{ "title": "...", "year": 1994 }`. The item schema is loosely typed (`properties: {}`), so validation won't catch the mistake — fields will be silently lost.
+
+### Updating Schema
+
+`collectionSchema_update` **replaces the entire schema**. Always include all existing fields you want to keep. Property keys must remain stable — renaming select options loses associated data.
+
 ---
 
 ## Setup Guide
