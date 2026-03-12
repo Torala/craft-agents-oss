@@ -72,6 +72,11 @@ import { ToolbarStatusSlot } from './ToolbarStatusSlot'
 import { buildPlanApprovalMessage } from '../plan-approval-message'
 import { shouldHandleScopedInputEvent } from './input-event-guards'
 import { clearPendingFocusForSession, consumePendingFocusForSession } from './focus-input-events'
+import {
+  getRecentWorkingDirs,
+  addRecentWorkingDir,
+  removeRecentWorkingDir,
+} from './working-directory-history'
 
 /**
  * Format token count for display (e.g., 1500 -> "1.5k", 200000 -> "200k")
@@ -829,8 +834,7 @@ export function FreeFormInput({
   // Handle folder selection from slash command menu
   const handleSlashFolderSelect = React.useCallback((path: string) => {
     if (onWorkingDirectoryChange) {
-      addRecentDir(path)
-      setRecentFolders(getRecentDirs())
+      setRecentFolders(addRecentWorkingDir(path))
       onWorkingDirectoryChange(path)
     }
   }, [onWorkingDirectoryChange])
@@ -840,7 +844,7 @@ export function FreeFormInput({
   const [homeDir, setHomeDir] = React.useState<string>('')
 
   React.useEffect(() => {
-    setRecentFolders(getRecentDirs())
+    setRecentFolders(getRecentWorkingDirs())
     window.electronAPI?.getHomeDir?.().then((dir: string) => {
       if (dir) setHomeDir(dir)
     })
@@ -2040,24 +2044,6 @@ Model
 }
 
 /**
- * Helper functions for recent directories storage
- */
-function getRecentDirs(): string[] {
-  return storage.get<string[]>(storage.KEYS.recentWorkingDirs, [])
-}
-
-function addRecentDir(path: string): void {
-  const recent = getRecentDirs().filter(p => p !== path)
-  const updated = [path, ...recent].slice(0, 25)
-  storage.set(storage.KEYS.recentWorkingDirs, updated)
-}
-
-function removeRecentDir(path: string): void {
-  const updated = getRecentDirs().filter(p => p !== path)
-  storage.set(storage.KEYS.recentWorkingDirs, updated)
-}
-
-/**
  * Format path for display, with home directory shortened
  */
 function formatPathForDisplay(path: string, homeDir: string): string {
@@ -2096,7 +2082,7 @@ function WorkingDirectoryBadge({
 
   // Load home directory and recent directories on mount
   React.useEffect(() => {
-    setRecentDirs(getRecentDirs())
+    setRecentDirs(getRecentWorkingDirs())
     window.electronAPI?.getHomeDir?.().then((dir: string) => {
       if (dir) setHomeDir(dir)
     })
@@ -2113,10 +2099,11 @@ function WorkingDirectoryBadge({
     }
   }, [workingDirectory])
 
-  // Reset filter and focus input when popover opens
+  // Reset filter, refresh history, and focus input when popover opens
   React.useEffect(() => {
     if (popoverOpen) {
       setFilter('')
+      setRecentDirs(getRecentWorkingDirs())
       // Focus input after popover animation completes (only if filter is shown)
       const timer = setTimeout(() => {
         inputRef.current?.focus()
@@ -2130,15 +2117,13 @@ function WorkingDirectoryBadge({
     setPopoverOpen(false)
     const selectedPath = await window.electronAPI.openFolderDialog()
     if (selectedPath) {
-      addRecentDir(selectedPath)
-      setRecentDirs(getRecentDirs())
+      setRecentDirs(addRecentWorkingDir(selectedPath))
       onWorkingDirectoryChange(selectedPath)
     }
   }
 
   const handleSelectRecent = (path: string) => {
-    addRecentDir(path) // Move to top of recent list
-    setRecentDirs(getRecentDirs())
+    setRecentDirs(addRecentWorkingDir(path)) // Move to top of recent list
     onWorkingDirectoryChange(path)
     setPopoverOpen(false)
   }
@@ -2152,8 +2137,7 @@ function WorkingDirectoryBadge({
 
   const handleRemoveRecent = (e: React.MouseEvent, path: string) => {
     e.stopPropagation() // Don't trigger the item's onSelect
-    removeRecentDir(path)
-    setRecentDirs(getRecentDirs())
+    setRecentDirs(removeRecentWorkingDir(path))
   }
 
   // Filter out current directory from recent list and sort alphabetically by folder name

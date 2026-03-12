@@ -25,6 +25,10 @@ export interface BackendRuntimePayload extends Record<string, unknown> {
   piAuthProvider?: string;
   /** Custom base URL from the LLM connection (e.g. Azure OpenAI endpoint). */
   baseUrl?: string;
+  /** Custom endpoint protocol config (api type for routing). */
+  customEndpoint?: { api: string };
+  /** Model IDs registered for a custom endpoint. */
+  customModels?: string[];
 }
 
 export interface BackendResolutionContext {
@@ -84,7 +88,7 @@ export interface DriverTestConnectionArgs extends DriverHostRuntimeArgs {
   apiKey: string;
   model: string;
   baseUrl?: string;
-  connection?: Pick<LlmConnection, 'providerType' | 'piAuthProvider'>;
+  connection?: Pick<LlmConnection, 'providerType' | 'piAuthProvider' | 'customEndpoint'>;
   timeoutMs: number;
 }
 
