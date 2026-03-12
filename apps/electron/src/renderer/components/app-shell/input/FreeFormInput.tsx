@@ -10,6 +10,7 @@ import {
   DatabaseZap,
   ChevronDown,
   AlertCircle,
+  X,
 } from 'lucide-react'
 import { Icon_Home, Icon_Folder, Spinner } from '@craft-agent/ui'
 
@@ -2051,6 +2052,11 @@ function addRecentDir(path: string): void {
   storage.set(storage.KEYS.recentWorkingDirs, updated)
 }
 
+function removeRecentDir(path: string): void {
+  const updated = getRecentDirs().filter(p => p !== path)
+  storage.set(storage.KEYS.recentWorkingDirs, updated)
+}
+
 /**
  * Format path for display, with home directory shortened
  */
@@ -2144,6 +2150,12 @@ function WorkingDirectoryBadge({
     }
   }
 
+  const handleRemoveRecent = (e: React.MouseEvent, path: string) => {
+    e.stopPropagation() // Don't trigger the item's onSelect
+    removeRecentDir(path)
+    setRecentDirs(getRecentDirs())
+  }
+
   // Filter out current directory from recent list and sort alphabetically by folder name
   const filteredRecent = recentDirs
     .filter(p => p !== workingDirectory)
@@ -2235,13 +2247,20 @@ function WorkingDirectoryBadge({
                   key={path}
                   value={`${recentFolderName} ${path}`}
                   onSelect={() => handleSelectRecent(path)}
-                  className={cn(MENU_ITEM_STYLE, 'data-[selected=true]:bg-foreground/5')}
+                  className={cn(MENU_ITEM_STYLE, 'group/item data-[selected=true]:bg-foreground/5')}
                 >
                   <Icon_Folder className="h-4 w-4 shrink-0 text-muted-foreground" />
                   <span className="flex-1 min-w-0 truncate">
                     <span>{recentFolderName}</span>
                     <span className="text-muted-foreground ml-1.5">{formatPathForDisplay(path, homeDir)}</span>
                   </span>
+                  <button
+                    type="button"
+                    onClick={(e) => handleRemoveRecent(e, path)}
+                    className="shrink-0 h-4 w-4 rounded-[3px] flex items-center justify-center opacity-0 group-hover/item:opacity-100 text-muted-foreground hover:text-foreground hover:bg-foreground/10 transition-all"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
                 </CommandPrimitive.Item>
               )
             })}
