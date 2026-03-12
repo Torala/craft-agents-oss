@@ -320,12 +320,12 @@ export function jsonPropToZod(prop: any, depth = 0): z.ZodTypeAny {
       if (prop.properties && typeof prop.properties === 'object') {
         const shape = jsonSchemaToZodShape(prop, depth + 1);
         const obj = z.object(shape);
-        // Preserve additionalProperties so the round-tripped JSON Schema
-        // tells the LLM that extra keys are allowed (e.g. collection items).
-        if (prop.additionalProperties !== undefined && prop.additionalProperties !== false) {
-          return withDesc(obj.passthrough());
+        // JSON Schema defaults additionalProperties to true when omitted.
+        // Only use strict (strip) mode when explicitly set to false.
+        if (prop.additionalProperties === false) {
+          return withDesc(obj);
         }
-        return withDesc(obj);
+        return withDesc(obj.passthrough());
       }
       // Generic object (no properties defined)
       return withDesc(z.record(z.string(), z.unknown()));
