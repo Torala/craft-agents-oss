@@ -521,6 +521,7 @@ export function FreeFormInput({
   const dragCounterRef = React.useRef(0)
   const containerRef = React.useRef<HTMLDivElement>(null)
   const sourceButtonRef = React.useRef<HTMLButtonElement>(null)
+  const fileInputRef = React.useRef<HTMLInputElement>(null)
 
   // Merge refs for RichTextInput
   const internalInputRef = React.useRef<RichTextInputHandle>(null)
@@ -951,19 +952,32 @@ export function FreeFormInput({
   const hasElectronAPI = typeof window !== 'undefined' && !!window.electronAPI
 
   // File attachment handlers
-  const handleAttachClick = async () => {
-    if (disabled || !hasElectronAPI) return
-    try {
-      const paths = await window.electronAPI.openFileDialog()
-      for (const path of paths) {
-        const attachment = await window.electronAPI.readFileAttachment(path)
+  const handleAttachClick = () => {
+    if (disabled) return
+    fileInputRef.current?.click()
+  }
+
+  const handleFileInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
+    if (!files || files.length === 0) return
+
+    const fileList = Array.from(files)
+    setLoadingCount(prev => prev + fileList.length)
+
+    for (const file of fileList) {
+      try {
+        const attachment = await readFileAsAttachment(file)
         if (attachment) {
           setAttachments(prev => [...prev, attachment])
         }
+      } catch (error) {
+        console.error('[FreeFormInput] Failed to attach file:', error)
       }
-    } catch (error) {
-      console.error('[FreeFormInput] Failed to attach files:', error)
+      setLoadingCount(prev => prev - 1)
     }
+
+    // Reset input so re-selecting the same file triggers onChange again
+    e.target.value = ''
   }
 
   const handleRemoveAttachment = (index: number) => {
@@ -1109,21 +1123,10 @@ export function FreeFormInput({
     setLoadingCount(files.length)
 
     for (const file of files) {
-      const filePath = (file as File & { path?: string }).path
-      if (filePath && hasElectronAPI) {
-        try {
-          const attachment = await window.electronAPI.readFileAttachment(filePath)
-          if (attachment) {
-            setAttachments(prev => [...prev, attachment])
-            setLoadingCount(prev => prev - 1)
-            continue
-          }
-        } catch (error) {
-          console.error('[FreeFormInput] Failed to read via IPC:', error)
-        }
-      }
-
       try {
+        // Always read via browser FileReader — works in both local and thin client modes.
+        // Previously tried server-side readFileAttachment first, but that fails in thin client
+        // mode because local file paths don't exist on the remote server.
         const attachment = await readFileAsAttachment(file)
         if (attachment) {
           setAttachments(prev => [...prev, attachment])
@@ -1629,6 +1632,14 @@ export function FreeFormInput({
           {/* Hidden in compact mode (EditPopover embedding) */}
           {!compactMode && (
           <div className="flex items-center gap-1 min-w-32 shrink overflow-hidden">
+          {/* Hidden file input for attach button */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            className="hidden"
+            onChange={handleFileInputChange}
+          />
           {/* 1. Attach Files Badge */}
           <FreeFormInputContextBadge
             icon={<Paperclip className="h-4 w-4" />}
