@@ -62,8 +62,8 @@ import type { LoadedSkill, SkillMetadata } from '@craft-agent/shared/skills/type
 export type { LoadedSkill, SkillMetadata };
 
 // LLM connection types
-import type { LlmConnection, LlmConnectionWithStatus, LlmAuthType, LlmProviderType } from '@craft-agent/shared/config';
-export type { LlmConnection, LlmConnectionWithStatus, LlmAuthType, LlmProviderType };
+import type { LlmConnection, LlmConnectionWithStatus, LlmAuthType, LlmProviderType, NetworkProxySettings } from '@craft-agent/shared/config';
+export type { LlmConnection, LlmConnectionWithStatus, LlmAuthType, LlmProviderType, NetworkProxySettings };
 
 // =============================================================================
 // GUI-only types (not used by server/handler code)
@@ -476,6 +476,10 @@ export interface ElectronAPI {
   // Appearance settings
   getRichToolDescriptions(): Promise<boolean>
   setRichToolDescriptions(enabled: boolean): Promise<void>
+
+  // Network proxy settings
+  getNetworkProxySettings(): Promise<NetworkProxySettings | undefined>
+  setNetworkProxySettings(settings: NetworkProxySettings): Promise<void>
 
   refreshBadge(): Promise<void>
   setDockIconWithBadge(dataUrl: string): Promise<void>

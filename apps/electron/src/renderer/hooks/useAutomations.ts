@@ -163,7 +163,7 @@ export function useAutomations(
     try {
       const entries = await window.electronAPI.getAutomationHistory(activeWorkspaceId, automationId, 20)
       const automation = findAutomation(automationId)
-      return entries.map((e) => ({
+      return entries.map(e => ({
         id: `${e.id}-${e.ts}`,
         automationId: e.id,
         event: automation?.event ?? 'LabelAdd',

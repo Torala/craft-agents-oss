@@ -222,26 +222,24 @@ export function registerAutomationsHandlers(server: RpcServer, deps: HandlerDeps
     const webhookActions = (matcher.actions ?? []).filter(a => a.type === 'webhook')
     if (webhookActions.length === 0) throw new Error('No webhook actions to replay')
 
-    const { executeWebhookRequest } = await import('@craft-agent/shared/automations/webhook-utils')
+    const { executeWebhookRequest, createWebhookHistoryEntry } = await import('@craft-agent/shared/automations/webhook-utils')
     const results = await Promise.all(
       webhookActions.map(a => executeWebhookRequest(a as unknown as import('@craft-agent/shared/automations').WebhookAction))
     )
 
-    // Write history entries for replay
-    for (const result of results) {
-      const method = (webhookActions.find(a => a.url === result.url) as { method?: string })?.method ?? 'POST'
-      const entry = {
-        id: automationId,
-        ts: Date.now(),
+    // Write history entries for replay — use index to correctly attribute method per action
+    for (let i = 0; i < results.length; i++) {
+      const result = results[i]!
+      const action = webhookActions[i]!
+      const entry = createWebhookHistoryEntry({
+        matcherId: automationId,
         ok: result.success,
-        webhook: {
-          method,
-          url: result.url.length > 50 ? result.url.slice(0, 50) + '...' : result.url,
-          statusCode: result.statusCode,
-          durationMs: result.durationMs ?? 0,
-          ...(result.error ? { error: result.error.slice(0, 200) } : {}),
-        },
-      }
+        method: (action as { method?: string }).method,
+        url: result.url,
+        statusCode: result.statusCode,
+        durationMs: result.durationMs ?? 0,
+        error: result.error,
+      })
       appendFile(join(workspace.rootPath, HISTORY_FILE), JSON.stringify(entry) + '\n', 'utf-8')
         .catch(e => log.warn('[Automations] Failed to write replay history:', e))
     }
