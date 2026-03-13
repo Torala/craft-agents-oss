@@ -23,7 +23,7 @@ import { AutomationActionRow } from './AutomationActionRow'
 import { AutomationTestPanel } from './AutomationTestPanel'
 import { AutomationEventTimeline } from './AutomationEventTimeline'
 import { PhaseBadge } from './PhaseBadge'
-import { getEventDisplayName, getPermissionDisplayName, type AutomationListItem, type ExecutionEntry, type TestResult } from './types'
+import { getEventDisplayName, getPermissionDisplayName, describeCondition, type AutomationListItem, type ExecutionEntry, type TestResult } from './types'
 import { describeCron, computeNextRuns } from './utils'
 import { buildFlowDiagram } from './buildFlowDiagram'
 
@@ -152,6 +152,32 @@ export function AutomationInfoPage({
             )}
           </Info_Table>
         </Info_Section>
+
+        {/* Section: If (conditions) — hidden when empty */}
+        {automation.conditions && automation.conditions.length > 0 && (
+          <Info_Section
+            title="If"
+            description="Conditions that must pass before actions run"
+            actions={editActions}
+          >
+            <Info_Table>
+              {automation.conditions.map((condition, i) => (
+                <Info_Table.Row
+                  key={i}
+                  label={
+                    condition.condition === 'time' ? 'Time'
+                    : condition.condition === 'state' ? 'State'
+                    : condition.condition.toUpperCase()
+                  }
+                >
+                  <span className="text-sm text-foreground/70">
+                    {describeCondition(condition)}
+                  </span>
+                </Info_Table.Row>
+              ))}
+            </Info_Table>
+          </Info_Section>
+        )}
 
         {/* Section: Automation Flow Diagram */}
         {flowDiagram && (

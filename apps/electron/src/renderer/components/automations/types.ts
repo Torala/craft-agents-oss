@@ -103,6 +103,40 @@ export interface LogicalConditionUI {
 
 export type AutomationConditionUI = TimeConditionUI | StateConditionUI | LogicalConditionUI
 
+/** Produce a short human-readable label for a condition (recursive for logical ops) */
+export function describeCondition(c: AutomationConditionUI): string {
+  switch (c.condition) {
+    case 'time': {
+      const parts: string[] = []
+      if (c.weekday?.length) parts.push(c.weekday.join(', '))
+      if (c.after) parts.push(`after ${c.after}`)
+      if (c.before) parts.push(`before ${c.before}`)
+      if (c.timezone) parts.push(`(${c.timezone})`)
+      return parts.length ? parts.join(' ') : 'any time'
+    }
+    case 'state': {
+      if (c.from !== undefined || c.to !== undefined) {
+        const from = c.from !== undefined ? String(c.from) : '*'
+        const to = c.to !== undefined ? String(c.to) : '*'
+        return `${c.field}: ${from} → ${to}`
+      }
+      if (c.contains) return `${c.field} contains "${c.contains}"`
+      if (c.not_value !== undefined) return `${c.field} ≠ ${String(c.not_value)}`
+      if (c.value !== undefined) return `${c.field} = ${String(c.value)}`
+      return c.field
+    }
+    case 'and':
+    case 'or':
+    case 'not': {
+      const op = c.condition.toUpperCase()
+      const inner = c.conditions.map(describeCondition).join(', ')
+      return `${op}(${inner})`
+    }
+    default:
+      return 'unknown condition'
+  }
+}
+
 // ============================================================================
 // List Item (flattened from automations.json for display)
 // ============================================================================
