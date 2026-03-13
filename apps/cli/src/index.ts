@@ -1170,7 +1170,7 @@ export function getValidateSteps(): ValidateStep[] {
           sourceSlugs: enableSlugs,
         })
         return await waitForSendEvents(client, ctx.createdSessionId,
-          `[source:stitch-mcp] List available tools from this MCP server.`,
+          `Use the source_test tool to test the stitch-mcp source. Report the result.`,
           90_000, false, undefined, ctx.onEvent)
       },
     },
