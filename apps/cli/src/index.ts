@@ -687,7 +687,7 @@ async function cmdValidate(args: CliArgs): Promise<void> {
   }
 
   try {
-    const exitCode = await runValidation(client, args.json, args.noSpinner)
+    const exitCode = await runValidation(client, args.json, args.noSpinner, args.workspaceDir)
     client.destroy()
     if (server) await server.stop()
     process.exit(exitCode)
@@ -763,6 +763,8 @@ export interface ValidateStep {
 }
 
 export interface ValidateContext {
+  /** Pre-existing workspace directory (from --workspace-dir) */
+  workspaceDir?: string
   workspaceId?: string
   workspaceRootPath?: string
   createdWorkspace?: boolean
@@ -960,6 +962,16 @@ export function getValidateSteps(): ValidateStep[] {
     {
       name: 'workspaces:get',
       fn: async (client, ctx) => {
+        // Register workspace from --workspace-dir if provided
+        if (ctx.workspaceDir) {
+          const { resolve } = await import('path')
+          const absPath = resolve(ctx.workspaceDir)
+          const ws = (await client.invoke('workspaces:create', absPath, 'ci-workspace')) as { id: string }
+          ctx.workspaceId = ws.id
+          ctx.workspaceRootPath = absPath
+          await client.invoke('window:switchWorkspace', ws.id)
+          return `registered: ${absPath}`
+        }
         const r = (await client.invoke('workspaces:get')) as any[]
         if (r?.length > 0) {
           ctx.workspaceId = r[0].id
@@ -970,23 +982,14 @@ export function getValidateSteps(): ValidateStep[] {
           return `${r.length} workspaces`
         }
         // Auto-bootstrap a temp workspace for CI environments
-        const { mkdtemp, cp, stat } = await import('fs/promises')
+        const { mkdtemp } = await import('fs/promises')
         const { tmpdir } = await import('os')
-        const { join } = await import('path')
         const tmpDir = await mkdtemp(`${tmpdir()}/craft-validate-`)
         const ws = (await client.invoke('workspaces:create', tmpDir, 'validate-workspace')) as { id: string }
         ctx.workspaceId = ws.id
         ctx.workspaceRootPath = tmpDir
         ctx.createdWorkspace = true
         await client.invoke('window:switchWorkspace', ws.id)
-        // Copy pre-committed CI sources (e.g. .github/agents/sources/) into the temp workspace
-        const ciSourcesDir = join(process.cwd(), '.github', 'agents', 'sources')
-        try {
-          await stat(ciSourcesDir)
-          await cp(ciSourcesDir, join(tmpDir, 'sources'), { recursive: true })
-        } catch {
-          // No CI sources directory — continue without
-        }
         return `0 found → created temp workspace`
       },
     },
@@ -1451,10 +1454,10 @@ SKILLEOF`, 90_000, true, undefined, ctx.onEvent)
   ]
 }
 
-export async function runValidation(client: CliRpcClient, jsonMode: boolean, noSpinner?: boolean): Promise<number> {
+export async function runValidation(client: CliRpcClient, jsonMode: boolean, noSpinner?: boolean, workspaceDir?: string): Promise<number> {
   const steps = getValidateSteps()
   const total = steps.length
-  const ctx: ValidateContext = {}
+  const ctx: ValidateContext = { workspaceDir }
   let passed = 0
   let failed = 0
   const results: Array<{ step: string; status: string; detail: string; elapsed: number }> = []
