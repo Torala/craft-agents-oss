@@ -51,11 +51,19 @@ apps/electron/resources/**/*
 # Electron ESLint rules
 apps/electron/eslint-rules/**/*
 
+# Electron build artifacts (entitlements for macOS code signing)
+apps/electron/build/entitlements.mac.plist
+
 # Electron build hook (macOS Liquid Glass icon, referenced by electron-builder.yml)
 apps/electron/scripts/afterPack.cjs
 
 # Electron asset copying script (required for build)
 apps/electron/scripts/copy-assets.ts
+
+# Platform packaging scripts (DMG, Linux AppImage, Windows NSIS)
+apps/electron/scripts/build-dmg.sh
+apps/electron/scripts/build-linux.sh
+apps/electron/scripts/build-win.ps1
 
 
 # =============================================================================
