@@ -128,7 +128,8 @@ export function resolveClaudeThinkingOptions(args: {
   const { thinkingLevel, model, providerType, minimizeThinking } = args;
   const isClaude = isClaudeModel(model);
   const effort = THINKING_TO_EFFORT[thinkingLevel];
-  const supportsAdaptiveThinking = isClaude && providerType !== 'anthropic_compat';
+  const isHaiku = model.toLowerCase().includes('haiku');
+  const supportsAdaptiveThinking = isClaude && !isHaiku && providerType !== 'anthropic_compat';
 
   if (minimizeThinking || !isClaude || !effort) {
     return supportsAdaptiveThinking
@@ -2584,6 +2585,7 @@ This is a branched conversation. All prior messages in this conversation are par
       model,
       maxTurns: 1,
       systemPrompt: 'Reply with ONLY the requested text. No explanation.', // Minimal - no Claude Code preset
+      thinking: { type: 'disabled' as const },
     };
 
     let result = '';

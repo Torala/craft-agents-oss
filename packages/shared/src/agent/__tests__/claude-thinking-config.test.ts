@@ -30,6 +30,45 @@ describe('resolveClaudeThinkingOptions', () => {
     })
   })
 
+  it('uses token budgets for Haiku on true Anthropic backends', () => {
+    const result = resolveClaudeThinkingOptions({
+      thinkingLevel: 'high',
+      model: 'claude-haiku-4-5-20251001',
+      providerType: 'anthropic',
+      minimizeThinking: false,
+    })
+
+    expect(result).toEqual({
+      maxThinkingTokens: 6_000,
+    })
+  })
+
+  it('uses correct max budget for Haiku', () => {
+    const result = resolveClaudeThinkingOptions({
+      thinkingLevel: 'max',
+      model: 'claude-haiku-4-5-20251001',
+      providerType: 'anthropic',
+      minimizeThinking: false,
+    })
+
+    expect(result).toEqual({
+      maxThinkingTokens: 8_000,
+    })
+  })
+
+  it('disables thinking for Haiku when level is off', () => {
+    const result = resolveClaudeThinkingOptions({
+      thinkingLevel: 'off',
+      model: 'claude-haiku-4-5-20251001',
+      providerType: 'anthropic',
+      minimizeThinking: false,
+    })
+
+    expect(result).toEqual({
+      maxThinkingTokens: 0,
+    })
+  })
+
   it('disables thinking entirely when level is off on adaptive backends', () => {
     const result = resolveClaudeThinkingOptions({
       thinkingLevel: 'off',
