@@ -92,11 +92,6 @@ export function OnboardingFlowDemo() {
     }, 1200)
   }, [])
 
-  const handleSkip = useCallback(() => {
-    console.log('[Playground] Setup deferred — skipping to complete')
-    setStep('complete')
-  }, [])
-
   const handleRestart = useCallback(() => {
     setStep('welcome')
     setMethod(null)
@@ -105,6 +100,13 @@ export function OnboardingFlowDemo() {
     setLocalStatus('idle')
     setErrorMessage(undefined)
   }, [])
+
+  const handleSkip = useCallback(() => {
+    console.log('[Playground] Setup deferred — dismissing onboarding')
+    // In the real app this calls onComplete() which dismisses onboarding
+    // and shows the main app. In the playground we restart the demo.
+    handleRestart()
+  }, [handleRestart])
 
   // Step labels for the breadcrumb
   const activeStepLabel = step === 'local-model' ? 'Local Model' : 'Credentials'
