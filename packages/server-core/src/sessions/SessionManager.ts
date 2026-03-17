@@ -892,19 +892,31 @@ interface ManagedSession {
  * Spreads all matching fields from the source so new persistent fields automatically propagate.
  * Runtime-only fields get sensible defaults.
  */
-function createManagedSession(
+export function createManagedSession(
   source: { id: string } & Partial<ManagedSession>,
   workspace: Workspace,
   overrides?: Partial<ManagedSession>,
 ): ManagedSession {
   const s = source as Record<string, unknown>
+  const sourceFields = Object.fromEntries(
+    Object.entries(s).filter(([, v]) => v !== undefined)
+  ) as Partial<ManagedSession>
+
+  if ('thinkingLevel' in sourceFields) {
+    // TODO: Remove legacy 'think' normalization after old persisted session
+    // headers have realistically aged out across upgrades.
+    const normalizedThinkingLevel = normalizeThinkingLevel(sourceFields.thinkingLevel)
+    if (normalizedThinkingLevel) {
+      sourceFields.thinkingLevel = normalizedThinkingLevel
+    } else {
+      delete sourceFields.thinkingLevel
+    }
+  }
 
   const managed = {
     // Spread all session-like fields from source (id, name, permissionMode, labels, model, etc.)
     // This ensures new persistent fields automatically flow through without manual copying.
-    ...Object.fromEntries(
-      Object.entries(s).filter(([, v]) => v !== undefined)
-    ) as Partial<ManagedSession>,
+    ...sourceFields,
     // Runtime-only defaults (not persisted)
     workspace,
     agent: null,

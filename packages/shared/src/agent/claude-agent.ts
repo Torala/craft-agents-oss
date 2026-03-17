@@ -61,7 +61,7 @@ import {
   type PreToolUseCheckResult,
   BUILT_IN_TOOLS,
 } from './core/pre-tool-use.ts';
-import { type ThinkingLevel, THINKING_TO_EFFORT, DEFAULT_THINKING_LEVEL } from './thinking-levels.ts';
+import { type ThinkingLevel, THINKING_TO_EFFORT, getThinkingTokens, DEFAULT_THINKING_LEVEL } from './thinking-levels.ts';
 import type { LoadedSource } from '../sources/types.ts';
 import { sourceNeedsAuthentication } from '../sources/credential-manager.ts';
 import type {
@@ -119,12 +119,41 @@ const CONVERTIBLE_FILE_HINTS: Record<string, string> = {
   ics: 'ical-tool read',
 };
 
+export function resolveClaudeThinkingOptions(args: {
+  thinkingLevel: ThinkingLevel;
+  model: string;
+  providerType?: BackendConfig['providerType'];
+  minimizeThinking: boolean;
+}): Partial<Options> {
+  const { thinkingLevel, model, providerType, minimizeThinking } = args;
+  const isClaude = isClaudeModel(model);
+  const effort = THINKING_TO_EFFORT[thinkingLevel];
+  const supportsAdaptiveThinking = isClaude && providerType !== 'anthropic_compat';
+
+  if (minimizeThinking || !isClaude || !effort) {
+    return supportsAdaptiveThinking
+      ? { thinking: { type: 'disabled' as const } }
+      : { maxThinkingTokens: 0 };
+  }
+
+  if (supportsAdaptiveThinking) {
+    return {
+      thinking: { type: 'adaptive' as const },
+      effort,
+    };
+  }
+
+  return {
+    maxThinkingTokens: getThinkingTokens(thinkingLevel, model),
+  };
+}
+
 export interface ClaudeAgentConfig {
   workspace: Workspace;
   session?: Session;           // Current session (primary isolation boundary)
   mcpToken?: string;           // Override token (for testing)
   model?: string;
-  thinkingLevel?: ThinkingLevel; // Initial thinking level (defaults to 'think')
+  thinkingLevel?: ThinkingLevel; // Initial thinking level (defaults to 'medium')
   onSdkSessionIdUpdate?: (sdkSessionId: string) => void;  // Callback when SDK session ID is captured
   onSdkSessionIdCleared?: () => void;  // Callback when SDK session ID is cleared (e.g., after failed resume)
   /**
@@ -812,18 +841,25 @@ export class ClaudeAgent extends BaseAgent {
         debug(`[chat] Custom provider: baseUrl=${activeBaseUrl}, model=${model}, hasApiKey=${!!process.env.ANTHROPIC_API_KEY}`);
       }
 
-      const effort = THINKING_TO_EFFORT[this._thinkingLevel];
-      debug(`[chat] Thinking: level=${this._thinkingLevel}, effort=${effort ?? 'disabled'}`);
+      const thinkingOptions = resolveClaudeThinkingOptions({
+        thinkingLevel: this._thinkingLevel,
+        model,
+        providerType: this.config.providerType,
+        minimizeThinking: miniConfig.minimizeThinking,
+      });
+      if ('effort' in thinkingOptions && thinkingOptions.effort) {
+        debug(`[chat] Thinking: level=${this._thinkingLevel}, effort=${thinkingOptions.effort}`);
+      } else if ('maxThinkingTokens' in thinkingOptions) {
+        debug(`[chat] Thinking: level=${this._thinkingLevel}, tokens=${thinkingOptions.maxThinkingTokens}`);
+      } else {
+        debug(`[chat] Thinking: level=${this._thinkingLevel}, disabled`);
+      }
 
       // NOTE: Parent-child tracking for subagents is documented below (search for
       // "PARENT-CHILD TOOL TRACKING"). The SDK's parent_tool_use_id is authoritative.
 
       // Clear stderr buffer at start of each query
       this.lastStderrOutput = [];
-
-      // Detect if resolved model is Claude — non-Claude models (via OpenRouter/Ollama) don't
-      // support Anthropic-specific betas or extended thinking parameters
-      const isClaude = isClaudeModel(model);
 
       // Log mini agent mode details (using centralized config)
       if (miniConfig.enabled) {
@@ -852,13 +888,11 @@ export class ClaudeAgent extends BaseAgent {
             this.lastStderrOutput.shift();
           }
         },
-        // Adaptive thinking: Claude decides when and how much to think, guided by effort level.
-        // Non-Claude models don't support thinking, so disable entirely.
-        // Mini agents also disable thinking for efficiency (quick config edits don't need deep reasoning).
-        thinking: (miniConfig.minimizeThinking || !isClaude || !effort)
-          ? { type: 'disabled' as const }
-          : { type: 'adaptive' as const },
-        effort: (!miniConfig.minimizeThinking && isClaude && effort) ? effort : undefined,
+        // Thinking config is provider-aware:
+        // - true Anthropic backends use adaptive thinking + effort
+        // - anthropic_compat/custom endpoints fall back to token budgets
+        // - non-Claude models disable thinking entirely
+        ...thinkingOptions,
         // System prompt configuration:
         // - Mini agents: Use custom (lean) system prompt without Claude Code preset
         // - Normal agents: Append to Claude Code's system prompt (recommended by docs)

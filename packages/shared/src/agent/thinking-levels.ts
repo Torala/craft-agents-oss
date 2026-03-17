@@ -113,6 +113,9 @@ export function isValidThinkingLevel(value: unknown): value is ThinkingLevel {
  * Normalize a persisted thinking level value, handling legacy values.
  * Maps the old 'think' value to 'medium' for backward compatibility.
  *
+ * TODO: Remove the legacy 'think' compatibility path after old persisted session
+ * and workspace data has realistically aged out across upgrades.
+ *
  * @returns The normalized ThinkingLevel, or undefined if the value is invalid
  */
 export function normalizeThinkingLevel(value: unknown): ThinkingLevel | undefined {
