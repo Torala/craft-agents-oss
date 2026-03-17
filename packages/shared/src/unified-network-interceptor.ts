@@ -1185,6 +1185,7 @@ async function captureApiError(response: Response, url: string): Promise<void> {
   try {
     const errorText = await errorClone.text();
     let errorMessage = response.statusText;
+    let isHtmlResponse = false;
 
     try {
       const errorJson = JSON.parse(errorText);
@@ -1194,7 +1195,18 @@ async function captureApiError(response: Response, url: string): Promise<void> {
         errorMessage = errorJson.message;
       }
     } catch {
-      if (errorText) errorMessage = errorText;
+      if (errorText) {
+        isHtmlResponse = errorText.trimStart().startsWith('<');
+        errorMessage = errorText;
+      }
+    }
+
+    // When the response is HTML (not a JSON API error) and a proxy is configured,
+    // this is almost certainly a proxy misconfiguration (e.g. Cloudflare 400/502).
+    // Replace the raw HTML with a helpful message pointing to Settings.
+    if (isHtmlResponse && PROXY_URL) {
+      errorMessage = `Proxy error (${response.status}): The configured proxy "${PROXY_URL}" returned an error. Check your proxy settings in Settings > Network.`;
+      debugLog(`[Detected HTML error with proxy configured — rewriting as proxy error]`);
     }
 
     setStoredError({
