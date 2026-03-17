@@ -3156,11 +3156,11 @@ export class SessionManager implements ISessionManager {
             message: planMessage,
           }, managed.workspace.id)
 
-          // Force-abort execution - plan presentation is a stopping point
+          // Interrupt execution - plan presentation is a stopping point
           // The user needs to review and respond before continuing
           if (managed.isProcessing && managed.agent) {
-            sessionLog.info(`Force-aborting after plan submission for session ${managed.id}`)
-            managed.agent.forceAbort(AbortReason.PlanSubmitted)
+            sessionLog.info(`Interrupting for plan submission in session ${managed.id}`)
+            managed.agent.interruptForHandoff(AbortReason.PlanSubmitted)
             managed.isProcessing = false
 
             // Release browser overlay + session binding because the agent is no longer running.
@@ -3213,10 +3213,10 @@ export class SessionManager implements ISessionManager {
         managed.pendingAuthRequestId = request.requestId
         managed.pendingAuthRequest = request
 
-        // Force-abort execution (like SubmitPlan)
+        // Interrupt execution (like SubmitPlan)
         if (managed.isProcessing && managed.agent) {
-          sessionLog.info(`Force-aborting after auth request for session ${managed.id}`)
-          managed.agent.forceAbort(AbortReason.AuthRequest)
+          sessionLog.info(`Interrupting for auth request in session ${managed.id}`)
+          managed.agent.interruptForHandoff(AbortReason.AuthRequest)
           managed.isProcessing = false
 
           // Release browser overlay + session binding because the agent is paused awaiting user auth.
@@ -4835,6 +4835,16 @@ export class SessionManager implements ISessionManager {
             return  // Exit function - retry will handle completion
           }
 
+          // Auth/plan handoff paths already stopped processing and emitted a complete
+          // event to the renderer. Ignore the backend's trailing complete to avoid
+          // double cleanup and duplicate UI completion events.
+          if (!managed.isProcessing) {
+            sessionLog.info('Chat completed after explicit handoff/stop; skipping normal completion handling')
+            sendSpan.mark('chat.complete.already_stopped')
+            sendSpan.end()
+            return
+          }
+
           sessionLog.info('Chat completed via complete event')
 
           // Check if we got an assistant response in this turn
@@ -4903,7 +4913,11 @@ export class SessionManager implements ISessionManager {
       }
 
       // Loop exited - either via complete event (normal) or generator ended after soft interrupt
-      if (managed.stopRequested) {
+      if (!managed.isProcessing) {
+        sessionLog.info('Chat loop exited after explicit handoff/stop')
+        sendSpan.mark('chat.exit.already_stopped')
+        sendSpan.end()
+      } else if (managed.stopRequested) {
         sessionLog.info('Chat loop completed after stop request - events drained successfully')
         this.onProcessingStopped(sessionId, 'interrupted')
       } else {
@@ -4926,8 +4940,9 @@ export class SessionManager implements ISessionManager {
         sendSpan.setMetadata('abort_reason', reason || 'unknown')
         sendSpan.end()
 
-        // Plan submissions handle their own cleanup (they set isProcessing = false directly).
-        // All other abort reasons route through onProcessingStopped for queue draining.
+        // UI handoff paths (plan submission, auth request) handle their own cleanup
+        // by setting isProcessing = false directly. All other abort reasons route
+        // through onProcessingStopped for queue draining.
         if (reason === AbortReason.UserStop || reason === AbortReason.Redirect || reason === undefined) {
           this.onProcessingStopped(sessionId, 'interrupted')
         }

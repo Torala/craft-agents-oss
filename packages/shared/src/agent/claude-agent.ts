@@ -2302,6 +2302,26 @@ This is a branched conversation. All prior messages in this conversation are par
   }
 
   /**
+   * Interrupt the current query because control is being handed to the UI.
+   *
+   * For Claude, handoff boundaries (auth requests, plan submission) should use
+   * the SDK's cooperative interrupt path instead of aborting the underlying
+   * AbortController mid-control-write.
+   */
+  override interruptForHandoff(reason: AbortReason): void {
+    this.lastAbortReason = reason;
+    this.pendingSteerMessage = null; // Clear any undelivered steer
+
+    if (!this.currentQuery) {
+      return;
+    }
+
+    void this.currentQuery.interrupt().catch((error) => {
+      this.debug(`Claude handoff interrupt failed: ${error instanceof Error ? error.message : String(error)}`);
+    });
+  }
+
+  /**
    * Force-abort the current query using the SDK's AbortController.
    * This immediately stops processing (SIGTERM/SIGKILL) without waiting for graceful shutdown.
    * Use this when you need instant termination (e.g., queuing a new message).

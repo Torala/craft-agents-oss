@@ -369,9 +369,9 @@ export abstract class BaseAgent implements AgentBackend {
    *
    * CALLBACKS FIRED:
    * - SubmitPlan → this.onPlanSubmitted(planPath)
-   *   → Electron reads plan file, shows plan card, calls forceAbort(PlanSubmitted)
+   *   → Electron reads plan file, shows plan card, calls interruptForHandoff(PlanSubmitted)
    * - Auth tools → this.onAuthRequest(authRequest)
-   *   → Electron shows auth dialog, calls forceAbort(AuthRequest)
+   *   → Electron shows auth dialog, calls interruptForHandoff(AuthRequest)
    */
   protected handleSessionMcpToolCompletion(
     toolName: string,
@@ -382,7 +382,7 @@ export abstract class BaseAgent implements AgentBackend {
     //   1. Read the plan file content
     //   2. Create a plan message (role: 'plan')
     //   3. Send plan_submitted event to renderer
-    //   4. Call forceAbort(AbortReason.PlanSubmitted) → turn terminates
+    //   4. Call interruptForHandoff(AbortReason.PlanSubmitted) → turn terminates
     if (toolName === 'SubmitPlan' && args.planPath) {
       this.debug(`SubmitPlan completed: ${args.planPath}`);
       this.onPlanSubmitted?.(args.planPath as string);
@@ -1008,9 +1008,19 @@ ${formattedMessages}
 
   /**
    * Force abort with specific reason.
-   * Used for auth requests, plan submissions where we need synchronous abort.
+   * Used for true hard-stop semantics (user stop, redirect fallback, teardown).
    */
   abstract forceAbort(reason: AbortReason): void;
+
+  /**
+   * Interrupt the current turn because control is being handed to the UI.
+   *
+   * Default implementation delegates to forceAbort(); backends can override
+   * when handoff semantics differ from hard abort semantics.
+   */
+  interruptForHandoff(reason: AbortReason): void {
+    this.forceAbort(reason);
+  }
 
   /**
    * Redirect the agent mid-stream. Default: abort and let session layer re-send.
