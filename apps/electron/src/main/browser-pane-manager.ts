@@ -1724,6 +1724,13 @@ export class BrowserPaneManager implements IBrowserPaneManager {
   getBoundForSession(sessionId: string): string | null {
     for (const instance of this.instances.values()) {
       if (instance.ownerType === 'session' && instance.ownerSessionId === sessionId) {
+        if (instance.window.isDestroyed()) {
+          // Stale binding — clean up and continue searching
+          this.instances.delete(instance.id)
+          this.removedCallback?.(instance.id)
+          mainLog.info(`[browser-pane] cleaned up stale binding for session ${sessionId} (instance ${instance.id} was destroyed)`)
+          continue
+        }
         return instance.id
       }
     }
@@ -1778,7 +1785,10 @@ export class BrowserPaneManager implements IBrowserPaneManager {
 
   getBoundInstanceId(sessionId: string): string | null {
     for (const [id, instance] of this.instances) {
-      if (instance.boundSessionId === sessionId) return id
+      if (instance.boundSessionId === sessionId) {
+        if (instance.window.isDestroyed()) continue
+        return id
+      }
     }
     return null
   }
