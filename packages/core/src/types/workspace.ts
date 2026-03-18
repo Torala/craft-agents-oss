@@ -21,7 +21,7 @@ export interface RemoteServerConfig {
 export interface Workspace {
   id: string;
   name: string;            // Read from workspace folder config (not stored in global config)
-  rootPath: string;        // Absolute path to workspace folder (e.g., ~/Projects/my-app/craft-agent)
+  rootPath: string;        // Absolute path to local workspace folder (metadata, config). Auto-created for remote workspaces.
   createdAt: number;
   lastAccessedAt?: number; // For sorting recent workspaces
   iconUrl?: string;
