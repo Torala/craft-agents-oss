@@ -10,6 +10,7 @@ import { AddWorkspaceStep_CreateNew } from "./AddWorkspaceStep_CreateNew"
 import { AddWorkspaceStep_OpenFolder } from "./AddWorkspaceStep_OpenFolder"
 import { AddWorkspaceStep_ConnectRemote } from "./AddWorkspaceStep_ConnectRemote"
 import type { Workspace } from "../../../shared/types"
+import { toast } from "sonner"
 
 type CreationStep = 'choice' | 'create' | 'open' | 'remote'
 
@@ -61,6 +62,11 @@ export function WorkspaceCreationScreen({
     try {
       const workspace = await window.electronAPI.createWorkspace(folderPath, name, remoteServer)
       onWorkspaceCreated(workspace)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error'
+      toast.error('Failed to create workspace', {
+        description: message,
+      })
     } finally {
       setIsCreating(false)
     }

@@ -1,6 +1,7 @@
 import { RPC_CHANNELS, type LlmConnectionSetup } from '@craft-agent/shared/protocol'
 import { getLlmConnections, getLlmConnection, addLlmConnection, updateLlmConnection, deleteLlmConnection, getDefaultLlmConnection, setDefaultLlmConnection, touchLlmConnection, isCompatProvider, isAnthropicProvider, getDefaultModelsForConnection, getDefaultModelForConnection, type LlmConnection, type LlmConnectionWithStatus } from '@craft-agent/shared/config'
 import { getCredentialManager } from '@craft-agent/shared/credentials'
+import { setSetupDeferred } from '@craft-agent/shared/config/storage'
 import {
   resolveSetupTestConnectionHint,
   testBackendConnection,
@@ -235,6 +236,9 @@ export function registerLlmConnectionsHandlers(server: RpcServer, deps: HandlerD
       // not the global default (which may be a different connection).
       await sessionManager.reinitializeAuth(setup.slug)
       deps.platform.logger?.info('Reinitialized auth after LLM connection setup')
+
+      // Clear "Setup later" flag now that user has configured a provider
+      setSetupDeferred(false)
 
       return { success: true }
     } catch (error) {

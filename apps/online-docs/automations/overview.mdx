@@ -302,6 +302,124 @@ For `SchedulerTick` events, use cron expressions instead of regex:
 
 **Timezone:** Uses IANA timezone names (e.g., `Europe/Budapest`, `America/New_York`). Defaults to system timezone if not specified. Verify with [crontab.guru](https://crontab.guru/).
 
+## Conditions
+
+Conditions are optional filters that run **after** the matcher/cron matches but **before** actions fire. All conditions in the array must pass (implicit AND). If the array is empty or omitted, actions fire unconditionally.
+
+<Tip>
+Conditions are composable — you can combine time windows, weekday filters, and state checks to build precise automation triggers without complex cron expressions.
+</Tip>
+
+```json
+{
+  "cron": "0 9 * * *",
+  "timezone": "Europe/Budapest",
+  "conditions": [
+    {
+      "condition": "time",
+      "weekday": ["mon", "tue", "wed", "thu", "fri"]
+    }
+  ],
+  "actions": [
+    { "type": "prompt", "prompt": "Good morning! Here's your daily briefing." }
+  ]
+}
+```
+
+### Time Conditions
+
+Check time-of-day and day-of-week in a given timezone.
+
+```json
+{
+  "condition": "time",
+  "after": "09:00",
+  "before": "17:00",
+  "weekday": ["mon", "tue", "wed", "thu", "fri"],
+  "timezone": "Europe/Budapest"
+}
+```
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `after` | `"HH:MM"` | Start of time window (inclusive) |
+| `before` | `"HH:MM"` | End of time window (exclusive) |
+| `weekday` | `string[]` | Allowed days: `mon`, `tue`, `wed`, `thu`, `fri`, `sat`, `sun` |
+| `timezone` | string | IANA timezone. Falls back to matcher timezone, then system local |
+
+<Info>
+**Overnight ranges:** If `after` is later than `before` (e.g., `"after": "22:00", "before": "06:00"`), the range wraps across midnight.
+</Info>
+
+### State Conditions
+
+Check fields from the event payload. Useful for filtering on specific transitions or values.
+
+```json
+{
+  "condition": "state",
+  "field": "permissionMode",
+  "from": "safe",
+  "to": "allow-all"
+}
+```
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `field` | string | Payload field name (e.g., `permissionMode`, `sessionStatus`, `labels`, `isFlagged`) |
+| `value` | any | Exact match |
+| `from` | any | Previous value (for transition events) |
+| `to` | any | New value (for transition events) |
+| `contains` | string | Array membership check (e.g., check if a label is present) |
+| `not_value` | any | Matches anything except this value |
+
+<Info>
+**Transition fields:** For `permissionMode` and `sessionStatus`, `from`/`to` automatically resolve to the correct payload keys (`oldMode`/`newMode`, `oldState`/`newState`).
+</Info>
+
+### Logical Composition
+
+Combine conditions with `and`, `or`, and `not`:
+
+```json
+{
+  "condition": "and",
+  "conditions": [
+    { "condition": "time", "weekday": ["mon", "tue", "wed", "thu", "fri"] },
+    { "condition": "time", "after": "09:00", "before": "17:00" }
+  ]
+}
+```
+
+```json
+{
+  "condition": "or",
+  "conditions": [
+    { "condition": "state", "field": "permissionMode", "value": "allow-all" },
+    { "condition": "state", "field": "isFlagged", "value": true }
+  ]
+}
+```
+
+```json
+{
+  "condition": "not",
+  "conditions": [
+    { "condition": "time", "weekday": ["sat", "sun"] }
+  ]
+}
+```
+
+| Type | Behaviour |
+|------|-----------|
+| `and` | All sub-conditions must pass |
+| `or` | At least one sub-condition must pass |
+| `not` | None of the sub-conditions may pass |
+
+<Warning>
+Conditions can be nested up to 8 levels deep. A simplification warning is emitted at depth 4. Keep conditions flat when possible. Unknown condition types fail closed (evaluate to false).
+</Warning>
+
 ## Matcher Options
 
 Each matcher entry supports these optional fields:
@@ -311,6 +429,7 @@ Each matcher entry supports these optional fields:
 | `matcher` | string | Match all | Regex pattern for event filtering |
 | `cron` | string | — | Cron expression (SchedulerTick only) |
 | `timezone` | string | System TZ | IANA timezone for cron |
+| `conditions` | array | `[]` | Conditions that must all pass before actions fire (see [Conditions](#conditions)) |
 | `permissionMode` | string | `"safe"` | Security mode for commands |
 | `labels` | string[] | `[]` | Labels applied to prompt-created sessions |
 | `enabled` | boolean | `true` | Set to `false` to disable without deleting |
@@ -435,6 +554,63 @@ Schedule a prompt every weekday at 9 AM:
         "labels": ["Scheduled", "briefing"],
         "actions": [
           { "type": "prompt", "prompt": "Run the @daily-standup skill" }
+        ]
+      }
+    ]
+  }
+}
+```
+
+### Weekday-Only AI News (with Conditions)
+
+Use a `time` condition to restrict a daily schedule to weekdays:
+
+```json
+{
+  "version": 2,
+  "automations": {
+    "SchedulerTick": [
+      {
+        "name": "Morning AI news",
+        "cron": "0 9 * * *",
+        "timezone": "Europe/Budapest",
+        "conditions": [
+          {
+            "condition": "time",
+            "weekday": ["mon", "tue", "wed", "thu", "fri"],
+            "timezone": "Europe/Budapest"
+          }
+        ],
+        "labels": ["Scheduled", "ai-news"],
+        "actions": [
+          { "type": "prompt", "prompt": "Run the @ai-news skill and summarize today's AI developments" }
+        ]
+      }
+    ]
+  }
+}
+```
+
+### Permission Mode Gate (with Conditions)
+
+Only notify when permission mode changes specifically from `safe` to `allow-all`:
+
+```json
+{
+  "version": 2,
+  "automations": {
+    "PermissionModeChange": [
+      {
+        "conditions": [
+          {
+            "condition": "state",
+            "field": "permissionMode",
+            "from": "safe",
+            "to": "allow-all"
+          }
+        ],
+        "actions": [
+          { "type": "command", "command": "osascript -e 'display notification \"Permission escalated to allow-all\" with title \"Craft Agent\"'" }
         ]
       }
     ]
@@ -590,6 +766,8 @@ The validator checks for:
 - Invalid cron expressions or timezones
 - Invalid or unsafe regex patterns (ReDoS prevention)
 - References to non-existent labels
+- Invalid condition types, field names, or weekday values
+- Condition nesting depth exceeding limits
 - Missing `llmConnection` slugs (error — will fail at runtime)
 - Model/provider mismatches when both `llmConnection` and `model` are specified (warning)
 
@@ -629,5 +807,13 @@ Automations include several built-in safety measures:
     1. Ensure the event is an **App event** (prompt actions don't work with Agent events)
     2. Check that the prompt text is not empty
     3. Verify `@mentions` reference valid sources or skills
+  </Accordion>
+  <Accordion title="Troubleshooting: Condition not matching">
+    1. **Check weekday spelling** — Must be 3-letter lowercase: `mon`, `tue`, `wed`, `thu`, `fri`, `sat`, `sun`
+    2. **Check timezone** — Use IANA names (e.g., `Europe/Budapest`). Invalid timezones silently fall back to system local
+    3. **Check time format** — Must be `HH:MM` in 24-hour format (e.g., `09:00`, not `9:00 AM`)
+    4. **Check state field names** — Use `permissionMode`, `sessionStatus`, `labels`, `isFlagged`
+    5. **Check nesting depth** — Conditions nested deeper than 8 levels always evaluate to false
+    6. **Check logs** — Look for `[automations]` entries that mention condition evaluation
   </Accordion>
 </AccordionGroup>

@@ -202,6 +202,7 @@ import type {
   TestAutomationPayload,
   TestAutomationResult,
   WindowCloseRequest,
+  DirectoryListingResult,
 } from '@craft-agent/shared/protocol'
 
 export interface ElectronAPI {
@@ -272,6 +273,9 @@ export interface ElectronAPI {
 
   // Filesystem search (for @ mention file selection)
   searchFiles(basePath: string, query: string): Promise<FileSearchResult[]>
+
+  // Server filesystem browsing (remote mode)
+  listServerDirectory(dirPath: string): Promise<DirectoryListingResult>
   // Debug: send renderer logs to main process log file
   debugLog(...args: unknown[]): void
 
@@ -337,6 +341,8 @@ export interface ElectronAPI {
   exchangeClaudeCode(code: string, connectionSlug: string): Promise<ClaudeOAuthResult>
   hasClaudeOAuthState(): Promise<boolean>
   clearClaudeOAuthState(): Promise<{ success: boolean }>
+  /** Defer onboarding setup — user chose "Setup later" */
+  deferSetup(): Promise<{ success: boolean }>
 
   // ChatGPT OAuth (for Codex chatgptAuthTokens mode)
   startChatGptOAuth(connectionSlug: string): Promise<{ success: boolean; error?: string }>

@@ -98,7 +98,11 @@ export function registerAutomationsHandlers(server: RpcServer, deps: HandlerDeps
             error: result.error,
             responseBody: result.responseBody,
           })
-          appendFile(join(workspace.rootPath, HISTORY_FILE), JSON.stringify(entry) + '\n', 'utf-8').catch(e => log.warn('[Automations] Failed to write history:', e))
+          try {
+            await appendFile(join(workspace.rootPath, HISTORY_FILE), JSON.stringify(entry) + '\n', 'utf-8')
+          } catch (e) {
+            log.warn('[Automations] Failed to write history:', e)
+          }
         }
         continue
       }
@@ -129,7 +133,11 @@ export function registerAutomationsHandlers(server: RpcServer, deps: HandlerDeps
         // Write history entry for test runs
         if (payload.automationId) {
           const entry = createPromptHistoryEntry({ matcherId: payload.automationId, ok: true, sessionId, prompt: action.prompt })
-          appendFile(join(workspace.rootPath, HISTORY_FILE), JSON.stringify(entry) + '\n', 'utf-8').catch(e => log.warn('[Automations] Failed to write history:', e))
+          try {
+            await appendFile(join(workspace.rootPath, HISTORY_FILE), JSON.stringify(entry) + '\n', 'utf-8')
+          } catch (e) {
+            log.warn('[Automations] Failed to write history:', e)
+          }
         }
       } catch (err: unknown) {
         results.push({
@@ -142,7 +150,11 @@ export function registerAutomationsHandlers(server: RpcServer, deps: HandlerDeps
         // Write failed history entry
         if (payload.automationId) {
           const entry = createPromptHistoryEntry({ matcherId: payload.automationId, ok: false, error: (err as Error).message, prompt: action.prompt })
-          appendFile(join(workspace.rootPath, HISTORY_FILE), JSON.stringify(entry) + '\n', 'utf-8').catch(e => log.warn('[Automations] Failed to write history:', e))
+          try {
+            await appendFile(join(workspace.rootPath, HISTORY_FILE), JSON.stringify(entry) + '\n', 'utf-8')
+          } catch (e) {
+            log.warn('[Automations] Failed to write history:', e)
+          }
         }
       }
     }
@@ -237,8 +249,11 @@ export function registerAutomationsHandlers(server: RpcServer, deps: HandlerDeps
         durationMs: result.durationMs ?? 0,
         error: result.error,
       })
-      appendFile(join(workspace.rootPath, HISTORY_FILE), JSON.stringify(entry) + '\n', 'utf-8')
-        .catch(e => log.warn('[Automations] Failed to write replay history:', e))
+      try {
+        await appendFile(join(workspace.rootPath, HISTORY_FILE), JSON.stringify(entry) + '\n', 'utf-8')
+      } catch (e) {
+        log.warn('[Automations] Failed to write replay history:', e)
+      }
     }
 
     return { results: results.map(r => ({ ...r, duration: r.durationMs ?? 0 })) }

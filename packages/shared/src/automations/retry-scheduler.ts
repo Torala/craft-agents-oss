@@ -192,8 +192,11 @@ export class RetryScheduler {
             durationMs: result.durationMs ?? 0,
             attempts: entry.deferredAttempt + 1,
           });
-          appendFile(historyPath, JSON.stringify(historyEntry) + '\n', 'utf-8')
-            .catch(e => log.debug(`[RetryScheduler] Failed to write history: ${e}`));
+          try {
+            await appendFile(historyPath, JSON.stringify(historyEntry) + '\n', 'utf-8');
+          } catch (e) {
+            log.debug(`[RetryScheduler] Failed to write history: ${e}`);
+          }
           // Don't add to remaining — drop from queue
         } else if (entry.deferredAttempt + 1 >= MAX_DEFERRED_ATTEMPTS) {
           // Final attempt failed — write permanent failure to history
@@ -208,8 +211,11 @@ export class RetryScheduler {
             attempts: entry.deferredAttempt + 1,
             error: result.error ?? 'Unknown error',
           });
-          appendFile(historyPath, JSON.stringify(historyEntry) + '\n', 'utf-8')
-            .catch(e => log.debug(`[RetryScheduler] Failed to write history: ${e}`));
+          try {
+            await appendFile(historyPath, JSON.stringify(historyEntry) + '\n', 'utf-8');
+          } catch (e) {
+            log.debug(`[RetryScheduler] Failed to write history: ${e}`);
+          }
           // Don't add to remaining — drop from queue
         } else {
           // Still retryable — schedule next deferred attempt

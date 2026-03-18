@@ -223,7 +223,8 @@ export class WebhookHandler implements AutomationHandler {
         log.debug(`[WebhookHandler] ${result.url} → ${result.error}`);
       }
 
-      // Write history entry for each webhook execution
+      // Write history entry for each webhook execution.
+      // Await for durability, but keep failures non-fatal.
       const entry = createWebhookHistoryEntry({
         matcherId: task.matcherId,
         ok: result.success,
@@ -235,8 +236,11 @@ export class WebhookHandler implements AutomationHandler {
         error: result.error,
         responseBody: result.responseBody,
       });
-      appendFile(historyPath, JSON.stringify(entry) + '\n', 'utf-8')
-        .catch(e => log.debug(`[WebhookHandler] Failed to write history: ${e}`));
+      try {
+        await appendFile(historyPath, JSON.stringify(entry) + '\n', 'utf-8');
+      } catch (e) {
+        log.debug(`[WebhookHandler] Failed to write history: ${e}`);
+      }
 
       // Enqueue for deferred retry if it's a transient failure (5xx / timeout)
       // and immediate retries were exhausted (attempts > 1 means retries ran).
