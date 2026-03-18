@@ -46,6 +46,24 @@ export ANTHROPIC_BASE_URL="http://localhost:11434"
 This variable is typically managed by Craft Agents based on your [API Provider configuration](/reference/config/custom-endpoint). You only need to set it manually for automation or CI scenarios.
 </Note>
 
+### AWS Credentials (Bedrock)
+
+When using AWS Bedrock with `authType: "environment"`, the subprocess inherits standard AWS environment variables from your shell:
+
+```bash
+export AWS_ACCESS_KEY_ID="AKIA..."
+export AWS_SECRET_ACCESS_KEY="..."
+export AWS_SESSION_TOKEN="..."     # optional, for STS temporary credentials
+export AWS_REGION="us-east-1"      # or set awsRegion in the connection config
+export AWS_PROFILE="my-profile"    # use a named profile from ~/.aws/credentials
+```
+
+These follow the standard [AWS SDK credential chain](https://docs.aws.amazon.com/sdkref/latest/guide/standardized-credentials.html) — `~/.aws/credentials`, SSO sessions, IAM roles, and instance profiles all work.
+
+<Note>
+With `authType: "iam_credentials"`, credentials are entered in the UI and injected into the subprocess automatically. You do **not** need to set these env vars in that case.
+</Note>
+
 ### CRAFT_CONFIG_DIR
 
 Override the default configuration directory. By default, Craft Agents stores configuration in `~/.craft-agent/`.

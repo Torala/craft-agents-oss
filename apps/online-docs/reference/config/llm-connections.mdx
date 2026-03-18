@@ -1,6 +1,6 @@
 ---
 title: "LLM Connections"
-description: "Configure multiple AI provider connections (Anthropic, Codex/OpenAI, OpenRouter, and more)"
+description: "Configure multiple AI provider connections (Anthropic, AWS Bedrock, Codex/OpenAI, OpenRouter, and more)"
 ---
 
 LLM Connections let you add **multiple AI provider configurations** and switch between them. Each session locks to a specific connection after the first message, and workspaces can define their own default connection.
@@ -144,6 +144,44 @@ Each session locks to a connection after the first message. To change connection
   "createdAt": 1737451800000
 }
 ```
+
+### AWS Bedrock (IAM Credentials)
+
+```json
+{
+  "slug": "bedrock",
+  "name": "AWS Bedrock",
+  "providerType": "bedrock",
+  "authType": "iam_credentials",
+  "awsRegion": "us-east-1",
+  "defaultModel": "claude-sonnet-4-6",
+  "createdAt": 1737451800000
+}
+```
+
+With `iam_credentials`, your AWS Access Key ID, Secret Access Key, and optional Session Token are stored securely and injected into the subprocess environment at runtime. Use this when you want to configure credentials directly in the UI.
+
+### AWS Bedrock (Environment)
+
+```json
+{
+  "slug": "bedrock",
+  "name": "AWS Bedrock",
+  "providerType": "bedrock",
+  "authType": "environment",
+  "awsRegion": "us-east-1",
+  "defaultModel": "claude-sonnet-4-6",
+  "createdAt": 1737451800000
+}
+```
+
+With `environment`, the subprocess inherits your shell's AWS credential chain — `~/.aws/credentials`, `AWS_PROFILE`, IAM roles, SSO sessions, and environment variables all work. No credentials are stored in Craft Agents.
+
+<Tip>
+To set up Bedrock in the UI: **Settings → AI → Add Connection → I use other provider → Amazon Bedrock**. You can choose between IAM Credentials and Environment (AWS CLI) authentication.
+</Tip>
+
+Set `awsRegion` to the region where you have Bedrock model access enabled (e.g., `us-east-1`, `us-west-2`, `eu-west-1`).
 
 ### Codex / OpenAI (OAuth)
 
