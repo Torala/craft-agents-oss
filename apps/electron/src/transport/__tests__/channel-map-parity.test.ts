@@ -12,7 +12,7 @@ type BrowserPaneKeys = `browserPane.${FunctionKeys<ElectronAPI['browserPane']>}`
 
 type ApiToChannelMapKeys = Exclude<
   FunctionKeys<ElectronAPI>,
-  'performOAuth' | 'getTransportConnectionState' | 'onTransportConnectionStateChanged' | 'reconnectTransport' | 'isChannelAvailable'
+  'performOAuth' | 'getTransportConnectionState' | 'onTransportConnectionStateChanged' | 'reconnectTransport' | 'isChannelAvailable' | 'getSystemWarnings'
 > | BrowserPaneKeys
 type ChannelMapKeys = keyof typeof CHANNEL_MAP & string
 
