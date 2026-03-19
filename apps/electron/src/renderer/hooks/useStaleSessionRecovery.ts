@@ -40,6 +40,7 @@ export function useStaleSessionRecovery({
   trackSessionActivity: (sessionId: string) => void
 } {
   const lastEventTimestamps = useRef<Map<string, number>>(new Map())
+  const refreshingSessionIds = useRef<Set<string>>(new Set())
 
   const trackSessionActivity = useCallback((sessionId: string) => {
     lastEventTimestamps.current.set(sessionId, Date.now())
@@ -68,9 +69,14 @@ export function useStaleSessionRecovery({
           continue // Still within threshold
         }
 
+        if (refreshingSessionIds.current.has(sessionId)) {
+          continue
+        }
+
         // Stale — refresh from server
         console.warn(`[StaleRecovery] Session ${sessionId} stuck in processing for ${Math.round((now - lastEvent) / 1000)}s — refreshing`)
 
+        refreshingSessionIds.current.add(sessionId)
         try {
           const refreshed = await refreshSessionFromServer(sessionId)
           if (refreshed) {
@@ -79,6 +85,8 @@ export function useStaleSessionRecovery({
           }
         } catch (err) {
           console.error(`[StaleRecovery] Failed to refresh session ${sessionId}:`, err)
+        } finally {
+          refreshingSessionIds.current.delete(sessionId)
         }
       }
     }, CHECK_INTERVAL_MS)

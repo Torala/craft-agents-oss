@@ -184,7 +184,11 @@ export class WsRpcClient implements RpcClient {
         args,
       }
 
-      this.ws.send(serializeEnvelope(envelope))
+      if (!this.trySendEnvelope(this.ws, envelope)) {
+        this.pending.delete(id)
+        clearTimeout(timeout)
+        reject(new Error(`Not connected (channel: ${channel})`))
+      }
     })
   }
 
@@ -348,7 +352,7 @@ export class WsRpcClient implements RpcClient {
         reconnectClientId: reconnectSnapshot?.clientId,
         lastSeq: reconnectSnapshot?.lastSeq,
       }
-      ws.send(serializeEnvelope(handshake))
+      this.trySendEnvelope(ws, handshake)
     }
 
     ws.onmessage = (event) => {
@@ -564,7 +568,7 @@ export class WsRpcClient implements RpcClient {
         channel: envelope.channel,
         error: { code: 'CHANNEL_NOT_FOUND', message: `No handler for: ${envelope.channel}` },
       }
-      this.ws?.send(serializeEnvelope(response))
+      this.trySendEnvelope(this.ws, response)
       return
     }
 
@@ -576,7 +580,7 @@ export class WsRpcClient implements RpcClient {
         channel: envelope.channel,
         result,
       }
-      this.ws?.send(serializeEnvelope(response))
+      this.trySendEnvelope(this.ws, response)
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       const response: MessageEnvelope = {
@@ -585,7 +589,7 @@ export class WsRpcClient implements RpcClient {
         channel: envelope.channel,
         error: { code: 'HANDLER_ERROR', message },
       }
-      this.ws?.send(serializeEnvelope(response))
+      this.trySendEnvelope(this.ws, response)
     }
   }
 
@@ -694,17 +698,29 @@ export class WsRpcClient implements RpcClient {
     }, delay)
   }
 
+  /** Best-effort send that skips closing/closed sockets and swallows send races. */
+  private trySendEnvelope(ws: WebSocket | null, envelope: MessageEnvelope): boolean {
+    if (!ws || ws.readyState !== ws.OPEN) return false
+
+    try {
+      ws.send(serializeEnvelope(envelope))
+      return true
+    } catch {
+      return false
+    }
+  }
+
   /** Periodically send sequence_ack so server can evict acknowledged events. */
   private startAckTimer(): void {
     if (this.ackTimer) clearInterval(this.ackTimer)
     this.ackTimer = setInterval(() => {
-      if (this.connected && this.ws && this.lastSeenSeq > 0) {
+      if (this.connected && this.lastSeenSeq > 0) {
         const ack: MessageEnvelope = {
           id: crypto.randomUUID(),
           type: 'sequence_ack',
           lastSeq: this.lastSeenSeq,
         }
-        this.ws.send(serializeEnvelope(ack))
+        this.trySendEnvelope(this.ws, ack)
       }
     }, SEQUENCE_ACK_INTERVAL_MS)
   }

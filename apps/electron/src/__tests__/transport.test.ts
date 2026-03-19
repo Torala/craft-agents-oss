@@ -507,6 +507,28 @@ describe('reliable delivery', () => {
 
     expect((server as any).clients.get(clientId)?.lastAckedSeq).toBe(2)
   })
+
+  test('safe send skips non-open sockets', () => {
+    const client = trackClient(new WsRpcClient('ws://127.0.0.1:1', {
+      autoReconnect: false,
+    }))
+
+    let sendCalls = 0
+    const fakeWs = {
+      OPEN: 1,
+      readyState: 2,
+      send: () => { sendCalls += 1 },
+    }
+
+    const sent = (client as any).trySendEnvelope(fakeWs, {
+      id: randomUUID(),
+      type: 'sequence_ack',
+      lastSeq: 1,
+    } satisfies MessageEnvelope)
+
+    expect(sent).toBe(false)
+    expect(sendCalls).toBe(0)
+  })
 })
 
 // ---------------------------------------------------------------------------

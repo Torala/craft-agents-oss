@@ -25,6 +25,7 @@ import { useUpdateChecker } from '@/hooks/useUpdateChecker'
 import { NavigationProvider } from '@/contexts/NavigationContext'
 import { navigate, routes } from './lib/navigate'
 import { stripMarkdown } from './utils/text'
+import { getSessionsToRefreshAfterStaleReconnect } from './lib/reconnect-recovery'
 import { extractWorkspaceSlugFromPath } from '@craft-agent/shared/utils/workspace-slug'
 import { DEFAULT_THINKING_LEVEL } from '@craft-agent/shared/agent/thinking-levels'
 import { initRendererPerf } from './lib/perf'
@@ -36,6 +37,7 @@ import {
   sessionAtomFamily,
   sessionMetaMapAtom,
   sessionIdsAtom,
+  loadedSessionsAtom,
   backgroundTasksAtomFamily,
   extractSessionMeta,
   windowWorkspaceIdAtom,
@@ -366,6 +368,54 @@ export default function App() {
       return false
     }
   }, [clearStreamingState, updateSessionDirect, syncSessionOptionsFromSession, reconcilePermissionModeState])
+
+  const refreshSessionListMetadataFromServer = useCallback(async (): Promise<Map<string, SessionMeta> | null> => {
+    try {
+      const sessions = await window.electronAPI.getSessions()
+      const loadedSessionIds = store.get(loadedSessionsAtom)
+      const currentIds = store.get(sessionIdsAtom)
+      const latestIds = new Set(sessions.map(session => session.id))
+
+      for (const staleSessionId of currentIds) {
+        if (!latestIds.has(staleSessionId)) {
+          removeSession(staleSessionId)
+        }
+      }
+
+      for (const session of sessions) {
+        const currentSession = store.get(sessionAtomFamily(session.id))
+        const shouldPreserveMessages = !!currentSession && loadedSessionIds.has(session.id)
+        const nextSession = shouldPreserveMessages && currentSession
+          ? {
+              ...session,
+              messages: currentSession.messages,
+            }
+          : session
+
+        store.set(sessionAtomFamily(session.id), nextSession)
+
+        syncSessionOptionsFromSession(session)
+        void reconcilePermissionModeState(session.id)
+      }
+
+      const nextMetaMap = new Map<string, SessionMeta>()
+      for (const session of sessions) {
+        nextMetaMap.set(session.id, extractSessionMeta(session))
+      }
+      store.set(sessionMetaMapAtom, nextMetaMap)
+
+      const nextIds = sessions
+        .slice()
+        .sort((a, b) => (b.lastMessageAt || 0) - (a.lastMessageAt || 0))
+        .map(session => session.id)
+      store.set(sessionIdsAtom, nextIds)
+
+      return nextMetaMap
+    } catch (err) {
+      console.error('[App] Failed to refresh session list metadata after reconnect:', err)
+      return null
+    }
+  }, [store, removeSession, syncSessionOptionsFromSession, reconcilePermissionModeState])
 
   // Stale session watchdog — catches stuck sessions that the reconnect protocol misses
   const { trackSessionActivity } = useStaleSessionRecovery({
@@ -832,7 +882,8 @@ export default function App() {
     reconcilePermissionModeState,
   ])
 
-  // Transport reconnect recovery — refresh stale sessions after WS reconnection
+  // Transport reconnect recovery — refresh session metadata plus active/processing
+  // session content after stale reconnects.
   useEffect(() => {
     const cleanup = window.electronAPI.onReconnected(async (isStale: boolean) => {
       if (!isStale) {
@@ -841,22 +892,21 @@ export default function App() {
         return
       }
 
-      // Stale: buffer evicted or old server — full state refresh needed
-      console.warn('[App] Stale reconnect — refreshing active sessions')
+      console.warn('[App] Stale reconnect — refreshing session metadata and active/processing sessions')
 
-      const refreshIds = [...store.get(sessionMetaMapAtom).entries()]
-        .filter(([, meta]) => meta.isProcessing)
-        .map(([id]) => id)
+      const refreshedMetaMap = await refreshSessionListMetadataFromServer()
+      const metaMap = refreshedMetaMap ?? store.get(sessionMetaMapAtom)
+      const refreshIds = getSessionsToRefreshAfterStaleReconnect(metaMap, sessionSelection.selected)
 
-      // Refresh each stale session from server-persisted state.
-      // Keep the old local state intact if a refresh fails.
+      // Refresh full message content only for the active session plus any
+      // session still marked processing after the metadata refresh.
       for (const sessionId of refreshIds) {
         await refreshSessionFromServer(sessionId)
       }
     })
 
     return cleanup
-  }, [store, refreshSessionFromServer])
+  }, [store, sessionSelection.selected, refreshSessionFromServer, refreshSessionListMetadataFromServer])
 
   // Listen for menu bar events
   useEffect(() => {
