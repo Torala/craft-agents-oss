@@ -13,12 +13,9 @@
  * executions (some tools legitimately run for 60+ seconds).
  */
 
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { getDefaultStore } from 'jotai'
-import {
-  sessionMetaMapAtom,
-  extractSessionMeta,
-} from '@/atoms/sessions'
+import { sessionMetaMapAtom } from '@/atoms/sessions'
 
 type JotaiStore = ReturnType<typeof getDefaultStore>
 
@@ -27,8 +24,7 @@ const CHECK_INTERVAL_MS = 30_000   // Check every 30s
 
 interface UseStaleSessionRecoveryOptions {
   store: JotaiStore
-  updateSessionDirect: (sessionId: string, updater: () => any) => void
-  clearStreamingState: (sessionId: string) => void
+  refreshSessionFromServer: (sessionId: string) => Promise<boolean>
 }
 
 /**
@@ -38,17 +34,16 @@ interface UseStaleSessionRecoveryOptions {
  */
 export function useStaleSessionRecovery({
   store,
-  updateSessionDirect,
-  clearStreamingState,
+  refreshSessionFromServer,
 }: UseStaleSessionRecoveryOptions): {
   /** Call this on every received session event to reset the watchdog timer. */
   trackSessionActivity: (sessionId: string) => void
 } {
   const lastEventTimestamps = useRef<Map<string, number>>(new Map())
 
-  const trackSessionActivity = (sessionId: string) => {
+  const trackSessionActivity = useCallback((sessionId: string) => {
     lastEventTimestamps.current.set(sessionId, Date.now())
-  }
+  }, [])
 
   useEffect(() => {
     const timer = setInterval(async () => {
@@ -77,17 +72,11 @@ export function useStaleSessionRecovery({
         console.warn(`[StaleRecovery] Session ${sessionId} stuck in processing for ${Math.round((now - lastEvent) / 1000)}s — refreshing`)
 
         try {
-          clearStreamingState(sessionId)
-          const fresh = await window.electronAPI.getSessionMessages(sessionId)
-          if (fresh) {
-            updateSessionDirect(sessionId, () => fresh)
-            const metaMap = store.get(sessionMetaMapAtom)
-            const newMetaMap = new Map(metaMap)
-            newMetaMap.set(sessionId, extractSessionMeta(fresh))
-            store.set(sessionMetaMapAtom, newMetaMap)
+          const refreshed = await refreshSessionFromServer(sessionId)
+          if (refreshed) {
+            // Remove from tracking after successful refresh
+            lastEventTimestamps.current.delete(sessionId)
           }
-          // Remove from tracking after successful refresh
-          lastEventTimestamps.current.delete(sessionId)
         } catch (err) {
           console.error(`[StaleRecovery] Failed to refresh session ${sessionId}:`, err)
         }
@@ -95,7 +84,7 @@ export function useStaleSessionRecovery({
     }, CHECK_INTERVAL_MS)
 
     return () => clearInterval(timer)
-  }, [store, updateSessionDirect, clearStreamingState])
+  }, [store, refreshSessionFromServer])
 
   return { trackSessionActivity }
 }

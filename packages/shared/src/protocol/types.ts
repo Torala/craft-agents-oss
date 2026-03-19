@@ -48,9 +48,9 @@ export interface MessageEnvelope {
 
   // -- Reliable delivery fields --
 
-  /** Global monotonic sequence number, assigned by server on push events. */
+  /** Per-client monotonic delivery sequence number, assigned when an event is targeted to that client. */
   seq?: number
-  /** Client's last processed seq — sent in sequence_ack and reconnect handshake. */
+  /** Client's last processed per-client seq — sent in sequence_ack and reconnect handshake. */
   lastSeq?: number
   /** Previous clientId — sent by client on reconnect handshake. */
   reconnectClientId?: string

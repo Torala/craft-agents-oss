@@ -110,7 +110,9 @@ export class WsRpcClient implements RpcClient {
   private reconnectAttempt = 0
   private lastSeenSeq = 0
   private ackTimer: ReturnType<typeof setInterval> | null = null
-  private previousClientId: string | null = null
+  private pendingReconnect: { clientId: string; lastSeq: number } | null = null
+  private currentHandshakeWasReconnect = false
+  private manualReconnectRequested = false
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
   private connectTimer: ReturnType<typeof setTimeout> | null = null
   private destroyed = false
@@ -235,29 +237,44 @@ export class WsRpcClient implements RpcClient {
   reconnectNow(): void {
     if (this.destroyed) return
 
+    if (this.clientId) {
+      this.pendingReconnect = {
+        clientId: this.clientId,
+        lastSeq: this.lastSeenSeq,
+      }
+    }
+
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer)
       this.reconnectTimer = null
     }
 
-    try {
-      this.ws?.close()
-    } catch {
-      // best effort
-    }
-
-    this.connected = false
-    this.clientId = null
     this.connectStarted = false
     this.connectError = null
 
-    this.setConnectionState({
-      status: 'connecting',
-      attempt: this.reconnectAttempt,
-      nextRetryInMs: undefined,
-    })
+    if (!this.ws) {
+      this.setConnectionState({
+        status: 'reconnecting',
+        attempt: this.reconnectAttempt,
+        nextRetryInMs: undefined,
+      })
+      this.connect()
+      return
+    }
 
-    this.connect()
+    this.manualReconnectRequested = true
+
+    try {
+      this.ws.close()
+    } catch {
+      this.manualReconnectRequested = false
+      this.setConnectionState({
+        status: 'reconnecting',
+        attempt: this.reconnectAttempt,
+        nextRetryInMs: undefined,
+      })
+      this.connect()
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -271,7 +288,8 @@ export class WsRpcClient implements RpcClient {
     this.connectError = null
     this.createReadyPromise()
 
-    const status: TransportConnectionStatus = this.reconnectAttempt > 0 ? 'reconnecting' : 'connecting'
+    const isReconnectAttempt = this.reconnectAttempt > 0 || this.pendingReconnect !== null
+    const status: TransportConnectionStatus = isReconnectAttempt ? 'reconnecting' : 'connecting'
     this.setConnectionState({
       status,
       attempt: this.reconnectAttempt,
@@ -315,6 +333,9 @@ export class WsRpcClient implements RpcClient {
 
     ws.onopen = () => {
       if (this.ws !== ws) return // stale socket — ignore
+      const reconnectSnapshot = this.pendingReconnect
+      this.currentHandshakeWasReconnect = reconnectSnapshot !== null
+
       // Send handshake (includes reconnection info if available)
       const handshake: MessageEnvelope = {
         id: crypto.randomUUID(),
@@ -324,8 +345,8 @@ export class WsRpcClient implements RpcClient {
         webContentsId: this.webContentsId,
         token: this.token,
         clientCapabilities: this.clientCapabilities.length > 0 ? this.clientCapabilities : undefined,
-        reconnectClientId: this.previousClientId ?? undefined,
-        lastSeq: this.previousClientId ? this.lastSeenSeq : undefined,
+        reconnectClientId: reconnectSnapshot?.clientId,
+        lastSeq: reconnectSnapshot?.lastSeq,
       }
       ws.send(serializeEnvelope(handshake))
     }
@@ -371,6 +392,9 @@ export class WsRpcClient implements RpcClient {
       this.ackTimer = null
     }
 
+    this.manualReconnectRequested = false
+    this.currentHandshakeWasReconnect = false
+    this.pendingReconnect = null
     this.failReady(new Error('Client destroyed'))
 
     // Reject all pending requests
@@ -413,7 +437,11 @@ export class WsRpcClient implements RpcClient {
 
     switch (envelope.type) {
       case 'handshake_ack': {
-        const wasReconnectAttempt = this.reconnectAttempt > 0
+        const wasReconnectAttempt = this.currentHandshakeWasReconnect
+        const serverRecognizedReconnect = envelope.reconnected === true
+
+        this.currentHandshakeWasReconnect = false
+        this.pendingReconnect = null
         this.clientId = envelope.clientId ?? null
         this.serverChannels = envelope.registeredChannels
           ? new Set(envelope.registeredChannels)
@@ -421,6 +449,11 @@ export class WsRpcClient implements RpcClient {
         this.connected = true
         this.reconnectAttempt = 0
         this.connectError = null
+
+        if (!serverRecognizedReconnect) {
+          this.lastSeenSeq = 0
+        }
+
         if (this.connectTimer) {
           clearTimeout(this.connectTimer)
           this.connectTimer = null
@@ -440,10 +473,9 @@ export class WsRpcClient implements RpcClient {
 
         // Notify listeners about reconnection AFTER resolveReady
         if (wasReconnectAttempt) {
-          // envelope.reconnected === true means server supports replay protocol.
-          // If absent, server is old — treat as stale (safe fallback for backward compat).
-          const serverSupportsReplay = envelope.reconnected === true
-          const isStale = !serverSupportsReplay || !!envelope.stale
+          // envelope.reconnected === true means server recognized the previous client.
+          // If absent, the reconnect fell back to a fresh connection — treat as stale.
+          const isStale = !serverRecognizedReconnect || !!envelope.stale
 
           const set = this.listeners.get('__transport:reconnected')
           if (set) {
@@ -562,10 +594,15 @@ export class WsRpcClient implements RpcClient {
   // -------------------------------------------------------------------------
 
   private onDisconnect(closeEvent?: { code?: number; reason?: string; wasClean?: boolean }): void {
-    // Preserve clientId for reconnect handshake
     if (this.clientId) {
-      this.previousClientId = this.clientId
+      this.pendingReconnect = {
+        clientId: this.clientId,
+        lastSeq: this.lastSeenSeq,
+      }
     }
+
+    const manualReconnect = this.manualReconnectRequested
+    this.manualReconnectRequested = false
 
     const wasConnected = this.connected
     this.connected = false
@@ -625,6 +662,11 @@ export class WsRpcClient implements RpcClient {
         lastClose: closeInfo,
         attempt: this.reconnectAttempt,
       })
+    }
+
+    if (manualReconnect && !this.destroyed) {
+      this.connect()
+      return
     }
 
     if (!this.destroyed && this.autoReconnect) {

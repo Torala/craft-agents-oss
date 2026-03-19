@@ -327,11 +327,50 @@ export default function App() {
   // Event processor hook - handles all agent events through pure functions
   const { processAgentEvent, clearStreamingState } = useEventProcessor()
 
+  const syncSessionOptionsFromSession = useCallback((session: Session) => {
+    setSessionOptions(prev => {
+      const next = new Map(prev)
+      const current = next.get(session.id)
+      const merged = {
+        ...defaultSessionOptions,
+        ...current,
+        permissionMode: session.permissionMode ?? defaultSessionOptions.permissionMode,
+        thinkingLevel: session.thinkingLevel ?? DEFAULT_THINKING_LEVEL,
+      }
+
+      const hasNonDefaultMode = merged.permissionMode !== defaultSessionOptions.permissionMode
+      const hasNonDefaultThinking = merged.thinkingLevel !== DEFAULT_THINKING_LEVEL
+
+      if (!hasNonDefaultMode && !hasNonDefaultThinking && merged.permissionModeVersion == null) {
+        next.delete(session.id)
+      } else {
+        next.set(session.id, merged)
+      }
+
+      return next
+    })
+  }, [])
+
+  const refreshSessionFromServer = useCallback(async (sessionId: string): Promise<boolean> => {
+    try {
+      const fresh = await window.electronAPI.getSessionMessages(sessionId)
+      if (!fresh) return false
+
+      clearStreamingState(sessionId)
+      updateSessionDirect(sessionId, () => fresh)
+      syncSessionOptionsFromSession(fresh)
+      void reconcilePermissionModeState(sessionId)
+      return true
+    } catch (err) {
+      console.error(`[App] Failed to refresh session ${sessionId}:`, err)
+      return false
+    }
+  }, [clearStreamingState, updateSessionDirect, syncSessionOptionsFromSession, reconcilePermissionModeState])
+
   // Stale session watchdog — catches stuck sessions that the reconnect protocol misses
   const { trackSessionActivity } = useStaleSessionRecovery({
     store,
-    updateSessionDirect,
-    clearStreamingState,
+    refreshSessionFromServer,
   })
 
   const DRAFT_SAVE_DEBOUNCE_MS = 500
@@ -671,7 +710,7 @@ export default function App() {
               } else {
                 addSession(createdSession)
               }
-              populateSessionOptions(createdSession)
+              syncSessionOptionsFromSession(createdSession)
               return
             }
             return window.electronAPI.getSessions().then(initializeSessions)
@@ -788,6 +827,7 @@ export default function App() {
     initializeSessions,
     addSession,
     removeSession,
+    syncSessionOptionsFromSession,
     applyPermissionModeState,
     reconcilePermissionModeState,
   ])
@@ -804,37 +844,19 @@ export default function App() {
       // Stale: buffer evicted or old server — full state refresh needed
       console.warn('[App] Stale reconnect — refreshing active sessions')
 
-      // Collect sessions that need refresh (processing or currently active)
-      const allMeta = store.get(sessionMetaMapAtom)
-      const refreshIds: string[] = []
+      const refreshIds = [...store.get(sessionMetaMapAtom).entries()]
+        .filter(([, meta]) => meta.isProcessing)
+        .map(([id]) => id)
 
-      for (const [id, meta] of allMeta) {
-        if (meta.isProcessing) {
-          // Clear stale streaming state before refresh to avoid conflicts
-          clearStreamingState(id)
-          refreshIds.push(id)
-        }
-      }
-
-      // Refresh each stale session from server-persisted state
+      // Refresh each stale session from server-persisted state.
+      // Keep the old local state intact if a refresh fails.
       for (const sessionId of refreshIds) {
-        try {
-          const fresh = await window.electronAPI.getSessionMessages(sessionId)
-          if (fresh) {
-            updateSessionDirect(sessionId, () => fresh)
-            const metaMap = store.get(sessionMetaMapAtom)
-            const newMetaMap = new Map(metaMap)
-            newMetaMap.set(sessionId, extractSessionMeta(fresh))
-            store.set(sessionMetaMapAtom, newMetaMap)
-          }
-        } catch (err) {
-          console.error(`[App] Failed to refresh session ${sessionId}:`, err)
-        }
+        await refreshSessionFromServer(sessionId)
       }
     })
 
     return cleanup
-  }, [store, updateSessionDirect, clearStreamingState])
+  }, [store, refreshSessionFromServer])
 
   // Listen for menu bar events
   useEffect(() => {
@@ -854,31 +876,14 @@ export default function App() {
     }
   }, [])
 
-  // Populate sessionOptions for a session with non-default permission mode or thinking level.
-  // Centralised helper used by all session creation paths (create, branch, event handler).
-  const populateSessionOptions = useCallback((session: Session) => {
-    const hasNonDefaultMode = session.permissionMode && session.permissionMode !== 'ask'
-    const hasNonDefaultThinking = session.thinkingLevel && session.thinkingLevel !== DEFAULT_THINKING_LEVEL
-    if (hasNonDefaultMode || hasNonDefaultThinking) {
-      setSessionOptions(prev => {
-        const next = new Map(prev)
-        next.set(session.id, {
-          permissionMode: session.permissionMode ?? 'ask',
-          thinkingLevel: session.thinkingLevel ?? DEFAULT_THINKING_LEVEL,
-        })
-        return next
-      })
-    }
-  }, [])
-
   const handleCreateSession = useCallback(async (workspaceId: string, options?: import('../shared/types').CreateSessionOptions): Promise<Session> => {
     const session = await window.electronAPI.createSession(workspaceId, options)
     // Add to per-session atom and metadata map (no sessionsAtom)
     addSession(session)
-    populateSessionOptions(session)
+    syncSessionOptionsFromSession(session)
 
     return session
-  }, [addSession, populateSessionOptions])
+  }, [addSession, syncSessionOptionsFromSession])
 
   // Deep link navigation is initialized later after handleInputChange is defined
 
