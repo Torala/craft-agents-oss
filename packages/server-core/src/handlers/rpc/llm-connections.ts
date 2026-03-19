@@ -136,6 +136,13 @@ export function registerLlmConnectionsHandlers(server: RpcServer, deps: HandlerD
         }
       }
 
+      // Bedrock auth method override — set providerType and authType
+      if (setup.bedrockAuthMethod) {
+        updates.authType = setup.bedrockAuthMethod
+        updates.providerType = 'bedrock'
+        if (setup.awsRegion) updates.awsRegion = setup.awsRegion
+      }
+
       const effectiveProviderType = updates.providerType ?? connection.providerType
       if (effectiveProviderType === 'pi') {
         const toPiModelId = (id: string) => id.startsWith('pi/') ? id : `pi/${id}`
@@ -218,15 +225,29 @@ export function registerLlmConnectionsHandlers(server: RpcServer, deps: HandlerD
         }
       }
 
+      // Bedrock IAM credentials — stored separately from API keys
+      if (setup.iamCredentials) {
+        await manager.setLlmIamCredentials(setup.slug, {
+          ...setup.iamCredentials,
+          region: setup.awsRegion,
+        })
+        deps.platform.logger?.info('Saved IAM credentials to LLM connection')
+      }
+
       // Set as default only if no default exists yet (first connection)
       if (!getDefaultLlmConnection()) {
         setDefaultLlmConnection(setup.slug)
         deps.platform.logger?.info(`Set default LLM connection: ${setup.slug}`)
       }
 
-      // Fetch available models (non-blocking — validation will also trigger refresh)
-      // Skip when user explicitly provided models (tier selection) to avoid overwriting their choices
-      if (!setup.models?.length) {
+      // Fetch available models (non-blocking).
+      // Always refresh for auto-synced connections (e.g. Copilot) — the static
+      // catalog from setup is just a seed that needs replacing with live API data
+      // filtered by the user's policy. For user-defined connections, only refresh
+      // when no models were populated during setup.
+      const pendingModels = Array.isArray(pendingConnection.models) ? pendingConnection.models : []
+      const isAutoSynced = pendingConnection.modelSelectionMode === 'automaticallySyncedFromProvider'
+      if (!pendingModels.length || isAutoSynced) {
         getModelRefreshService().refreshNow(setup.slug).catch(err => {
           deps.platform.logger?.warn(`Model refresh after setup failed for ${setup.slug}: ${err instanceof Error ? err.message : err}`)
         })
