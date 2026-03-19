@@ -240,13 +240,14 @@ export function registerLlmConnectionsHandlers(server: RpcServer, deps: HandlerD
         deps.platform.logger?.info(`Set default LLM connection: ${setup.slug}`)
       }
 
-      // Fetch available models (non-blocking — validation will also trigger refresh).
-      // Skip when models were already populated — either explicitly by the user
-      // (tier selection), auto-filled from the provider SDK during setup, or
-      // inherited from createBuiltInConnection (e.g. Copilot's Pi SDK catalog).
-      // Check pendingConnection (the final merged object) to catch ALL sources.
+      // Fetch available models (non-blocking).
+      // Always refresh for auto-synced connections (e.g. Copilot) — the static
+      // catalog from setup is just a seed that needs replacing with live API data
+      // filtered by the user's policy. For user-defined connections, only refresh
+      // when no models were populated during setup.
       const pendingModels = Array.isArray(pendingConnection.models) ? pendingConnection.models : []
-      if (!pendingModels.length) {
+      const isAutoSynced = pendingConnection.modelSelectionMode === 'automaticallySyncedFromProvider'
+      if (!pendingModels.length || isAutoSynced) {
         getModelRefreshService().refreshNow(setup.slug).catch(err => {
           deps.platform.logger?.warn(`Model refresh after setup failed for ${setup.slug}: ${err instanceof Error ? err.message : err}`)
         })
