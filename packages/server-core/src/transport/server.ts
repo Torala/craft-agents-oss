@@ -46,8 +46,10 @@ interface ClientConnection {
   alive: boolean
   /** Ring buffer of recent events for replay on reconnect. */
   eventBuffer: BufferedEvent[]
-  /** Highest seq the client has acknowledged. */
+  /** Highest per-client seq the client has acknowledged. */
   lastAckedSeq: number
+  /** Highest per-client seq assigned to this client. */
+  lastSentSeq: number
 }
 
 interface PendingInvoke {
@@ -107,8 +109,6 @@ export class WsRpcServer implements RpcServer {
   private _port = 0
   private _protocol: 'ws' | 'wss' = 'ws'
 
-  /** Global monotonic event sequence counter — shared across all clients. */
-  private globalEventSeq = 0
   /** Recently disconnected clients retained for reconnect replay. */
   private disconnectedClients = new Map<string, { client: ClientConnection; timer: ReturnType<typeof setTimeout> }>()
 
@@ -154,31 +154,16 @@ export class WsRpcServer implements RpcServer {
   }
 
   push(channel: string, target: PushTarget, ...args: any[]): void {
-    // Assign global seq — monotonically increasing across all events
-    this.globalEventSeq++
-    const seq = this.globalEventSeq
-
-    const envelope: MessageEnvelope = {
-      id: randomUUID(),
-      type: 'event',
-      channel,
-      args,
-      serverId: this.serverId,
-      seq,
-    }
-
-    // Serialize ONCE — shared across all client buffers by reference
-    const data = serializeEnvelope(envelope)
     const timestamp = Date.now()
 
     for (const client of this.clients.values()) {
       if (!this.matchesTarget(client, target)) continue
+      this.bufferAndMaybeSendEvent(client, channel, args, timestamp, true)
+    }
 
-      // Buffer by reference (no per-client serialization cost)
-      client.eventBuffer.push({ seq, data, timestamp })
-      this.evictBuffer(client)
-
-      this.safeSend(client.ws, data)
+    for (const { client } of this.disconnectedClients.values()) {
+      if (!this.matchesTarget(client, target)) continue
+      this.bufferAndMaybeSendEvent(client, channel, args, timestamp, false)
     }
   }
 
@@ -388,24 +373,30 @@ export class WsRpcServer implements RpcServer {
               prevClient.webContentsId === (envelope.webContentsId ?? null)
 
             if (identityMatch) {
-              // Valid reconnect — restore client state
+              // Valid reconnect — prepare client state but do NOT add to
+              // this.clients yet. The client stays in disconnectedClients
+              // during replay so that push() can't interleave new events
+              // between replayed ones. (Currently safe due to Node.js
+              // single-threading, but this ordering makes the invariant
+              // explicit and future-proof.)
               clearTimeout(entry.timer)
-              this.disconnectedClients.delete(envelope.reconnectClientId)
 
               prevClient.ws = ws
               prevClient.alive = true
               prevClient.missedPongs = 0
-              this.clients.set(prevClient.id, prevClient)
               handshakeCompleted = true
 
-              // Determine replay vs stale
-              const lastSeq = envelope.lastSeq as number
-              const bufferStartSeq = prevClient.eventBuffer.length > 0
-                ? prevClient.eventBuffer[0].seq
-                : prevClient.lastAckedSeq
+              // Determine replay vs stale using the per-client delivery sequence.
+              // Retained buffers continue collecting events while the client is disconnected,
+              // but TTL eviction still applies during the reconnect window.
+              this.evictBuffer(prevClient)
 
-              // lastSeq >= bufferStartSeq - 1 means client needs everything in buffer (or a subset)
-              const canReplay = lastSeq >= bufferStartSeq - 1
+              const lastSeq = envelope.lastSeq as number
+              const hasMissedEvents = lastSeq < prevClient.lastSentSeq
+              const firstBufferedSeq = prevClient.eventBuffer[0]?.seq
+              const canReplay = !hasMissedEvents
+                ? true
+                : firstBufferedSeq != null && lastSeq >= firstBufferedSeq - 1
 
               if (canReplay) {
                 const replayEvents = prevClient.eventBuffer.filter(e => e.seq > lastSeq)
@@ -446,9 +437,15 @@ export class WsRpcServer implements RpcServer {
                 transportLog.info('Client reconnected as stale', {
                   clientId: prevClient.id,
                   lastSeq,
-                  bufferStartSeq,
+                  firstBufferedSeq,
+                  lastSentSeq: prevClient.lastSentSeq,
                 })
               }
+
+              // Atomic state transition: move from disconnected → active
+              // AFTER replay is complete so push() can't target this client mid-replay.
+              this.disconnectedClients.delete(envelope.reconnectClientId)
+              this.clients.set(prevClient.id, prevClient)
 
               this.setupClientHandlers(ws, prevClient)
               this.onClientConnected?.({
@@ -479,6 +476,7 @@ export class WsRpcServer implements RpcServer {
           alive: true,
           eventBuffer: [],
           lastAckedSeq: 0,
+          lastSentSeq: 0,
         }
         this.clients.set(clientId, client)
         handshakeCompleted = true
@@ -588,13 +586,16 @@ export class WsRpcServer implements RpcServer {
 
   private startHeartbeat(): void {
     this.heartbeatTimer = setInterval(() => {
-      for (const [id, client] of this.clients) {
+      for (const [, client] of this.clients) {
+        // Skip sockets that are already closing/closed (e.g. terminated on a previous tick)
+        if (client.ws.readyState !== client.ws.OPEN) continue
+
         if (!client.alive) {
           client.missedPongs++
           if (client.missedPongs >= HEARTBEAT_MAX_MISSED) {
+            // Let the close handler (setupClientHandlers) handle all cleanup:
+            // clients.delete, buffer retention for reconnect, onClientDisconnected.
             client.ws.terminate()
-            this.clients.delete(id)
-            this.onClientDisconnected?.(id)
             continue
           }
         }
@@ -638,6 +639,35 @@ export class WsRpcServer implements RpcServer {
       client.alive = true
       client.missedPongs = 0
     })
+  }
+
+  /** Assign a per-client seq, retain the event for replay, and optionally send it immediately. */
+  private bufferAndMaybeSendEvent(
+    client: ClientConnection,
+    channel: string,
+    args: any[],
+    timestamp: number,
+    shouldSend: boolean,
+  ): void {
+    client.lastSentSeq += 1
+    const seq = client.lastSentSeq
+
+    const envelope: MessageEnvelope = {
+      id: randomUUID(),
+      type: 'event',
+      channel,
+      args,
+      serverId: this.serverId,
+      seq,
+    }
+
+    const data = serializeEnvelope(envelope)
+    client.eventBuffer.push({ seq, data, timestamp })
+    this.evictBuffer(client)
+
+    if (shouldSend) {
+      this.safeSend(client.ws, data)
+    }
   }
 
   /** Evict stale/oversized entries from a client's event buffer via batch splice. */
