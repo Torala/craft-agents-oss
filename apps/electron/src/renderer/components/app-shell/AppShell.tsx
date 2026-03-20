@@ -1299,12 +1299,16 @@ function AppShellContent({
 
   // Filter session metadata by active workspace
   // Also exclude hidden sessions (mini-agent sessions) from all counts and lists
+  // For remote workspaces, sessions have the remote workspace ID (not the local one),
+  // so we match against both the local and remote workspace IDs.
+  const remoteWorkspaceId = activeWorkspace?.remoteServer?.remoteWorkspaceId
   const workspaceSessionMetas = useMemo(() => {
     const metas = Array.from(sessionMetaMap.values())
-    return activeWorkspaceId
-      ? metas.filter(s => s.workspaceId === activeWorkspaceId && !s.hidden)
-      : metas.filter(s => !s.hidden)
-  }, [sessionMetaMap, activeWorkspaceId])
+    if (!activeWorkspaceId) return metas.filter(s => !s.hidden)
+    return metas.filter(s =>
+      !s.hidden && (s.workspaceId === activeWorkspaceId || (remoteWorkspaceId && s.workspaceId === remoteWorkspaceId))
+    )
+  }, [sessionMetaMap, activeWorkspaceId, remoteWorkspaceId])
 
   // Active sessions exclude archived - use this for all counts and filters except archived view
   const activeSessionMetas = useMemo(() => {
