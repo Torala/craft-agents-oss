@@ -43,6 +43,7 @@ import {
   readFileSync,
   writeFileSync,
   chmodSync,
+  symlinkSync,
 } from 'fs';
 import { $ } from 'bun';
 import {
@@ -538,6 +539,35 @@ function createRootConfig(config: ServerBuildConfig): void {
     },
   };
   writeFileSync(join(outputDir, 'tsconfig.json'), JSON.stringify(rootTsconfig, null, 2) + '\n');
+
+  // Create workspace symlinks in node_modules/@craft-agent/
+  // Bun needs these to resolve workspace package imports at runtime
+  const scopeDir = join(outputDir, 'node_modules', '@craft-agent');
+  mkdirSync(scopeDir, { recursive: true });
+
+  const packagesDir = join(outputDir, 'packages');
+  if (existsSync(packagesDir)) {
+    for (const pkg of readdirSync(packagesDir)) {
+      const pkgJsonPath = join(packagesDir, pkg, 'package.json');
+      if (!existsSync(pkgJsonPath)) continue;
+
+      try {
+        const pkgJson = JSON.parse(readFileSync(pkgJsonPath, 'utf-8'));
+        const name: string = pkgJson.name || '';
+        if (name.startsWith('@craft-agent/')) {
+          const shortName = name.replace('@craft-agent/', '');
+          const linkPath = join(scopeDir, shortName);
+          const target = join('..', '..', 'packages', pkg);
+          if (!existsSync(linkPath)) {
+            symlinkSync(target, linkPath, 'dir');
+            console.log(`  Symlink: ${name} -> packages/${pkg}`);
+          }
+        }
+      } catch {
+        // Skip if package.json is malformed
+      }
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
