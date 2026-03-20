@@ -21,7 +21,7 @@ import {
   SettingsCardFooter,
   SettingsRow,
   SettingsToggle,
-  SettingsInput,
+  SettingsInputRow,
 } from '@/components/settings'
 
 export const meta: DetailsPageMeta = {
@@ -200,7 +200,7 @@ export default function ServerSettingsPage() {
           {showServerDetails && (
             <SettingsSection title="Connection">
               <SettingsCard>
-                <SettingsInput
+                <SettingsInputRow
                   label="Port"
                   value={form.port}
                   onChange={(port) => setForm(f => ({ ...f, port }))}
