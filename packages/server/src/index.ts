@@ -21,6 +21,7 @@
 
 import { join } from 'node:path'
 import { readFileSync } from 'node:fs'
+import { version as packageVersion } from '../package.json'
 import { enableDebug } from '@craft-agent/shared/utils/debug'
 import { bootstrapServer, startHealthHttpServer, generateServerToken } from '@craft-agent/server-core/bootstrap'
 
@@ -67,7 +68,7 @@ const instance = await (async () => {
   try {
     return await bootstrapServer<SessionManager, HandlerDeps>({
       bundledAssetsRoot,
-      serverVersion: process.env.CRAFT_VERSION ?? '0.0.0-dev',
+      serverVersion: process.env.CRAFT_VERSION ?? packageVersion,
       tls,
       applyPlatformToSubsystems: (platform) => {
         setFetcherPlatform(platform)

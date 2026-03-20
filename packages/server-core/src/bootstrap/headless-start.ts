@@ -187,7 +187,7 @@ export async function bootstrapServer<TSessionManager, THandlerDeps>(
     throw new Error(`Weak server token: ${entropy.error}`)
   }
 
-  const platform = options.platformFactory?.() ?? createHeadlessPlatform()
+  const platform = options.platformFactory?.() ?? createHeadlessPlatform({ appVersion: options.serverVersion })
 
   const bundledAssetsRoot = options.bundledAssetsRoot
     ?? process.env.CRAFT_BUNDLED_ASSETS_ROOT
