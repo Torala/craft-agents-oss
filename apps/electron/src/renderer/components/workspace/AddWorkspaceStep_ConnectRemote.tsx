@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback } from "react"
-import { ArrowLeft, CheckCircle, XCircle } from "lucide-react"
+import { ArrowLeft, CheckCircle, XCircle, Plus } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { slugify } from "@/lib/slugify"
 import { Input } from "../ui/input"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectSeparator } from "../ui/select"
 import { AddWorkspaceContainer, AddWorkspaceStepHeader, AddWorkspacePrimaryButton, AddWorkspaceSecondaryButton } from "./primitives"
+
+const CREATE_NEW_VALUE = '__create_new__'
 
 interface AddWorkspaceStep_ConnectRemoteProps {
   onBack: () => void
@@ -13,70 +15,68 @@ interface AddWorkspaceStep_ConnectRemoteProps {
 }
 
 /**
+ * Resolve a unique local workspace slug by appending suffixes if needed.
+ * Tries: baseName → baseName-remote → baseName-2 → baseName-3 → ...
+ */
+async function resolveUniqueSlug(baseName: string): Promise<{ slug: string; path: string }> {
+  const baseSlug = slugify(baseName)
+  if (!baseSlug) return { slug: 'remote', path: '' }
+
+  let slug = baseSlug
+  let attempt = 0
+
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const result = await window.electronAPI.checkWorkspaceSlug(slug)
+    if (!result.exists) {
+      return { slug, path: result.path }
+    }
+    attempt++
+    slug = attempt === 1 ? `${baseSlug}-remote` : `${baseSlug}-${attempt}`
+    if (attempt > 20) {
+      // Safety valve — shouldn't happen in practice
+      return { slug: `${baseSlug}-${Date.now()}`, path: result.path.replace(baseSlug, `${baseSlug}-${Date.now()}`) }
+    }
+  }
+}
+
+/**
  * AddWorkspaceStep_ConnectRemote - Connect to a remote Craft Agent Server
  *
- * Flow: URL + Token → Test Connection → Name (required for fresh servers, optional override otherwise) → Create
- * If the remote server has no workspace, one is created with the user's chosen name.
+ * Two paths:
+ * 1. Connect to existing workspace — select from dropdown, no name needed, auto-resolve local slug
+ * 2. Create new workspace — type a name, creates on server, then connects
  */
 export function AddWorkspaceStep_ConnectRemote({
   onBack,
   onCreate,
   isCreating,
 }: AddWorkspaceStep_ConnectRemoteProps) {
-  const [name, setName] = useState('')
   const [serverUrl, setServerUrl] = useState('')
   const [token, setToken] = useState('')
   const [homeDir, setHomeDir] = useState('')
   const [testState, setTestState] = useState<'idle' | 'testing' | 'ok' | 'error'>('idle')
   const [testError, setTestError] = useState<string | null>(null)
   const [remoteWorkspaces, setRemoteWorkspaces] = useState<Array<{ id: string; name: string }>>([])
-  const [remoteWorkspaceId, setRemoteWorkspaceId] = useState<string | null>(null)
-  const [remoteWorkspaceName, setRemoteWorkspaceName] = useState<string | null>(null)
-  const [needsWorkspace, setNeedsWorkspace] = useState(false)
-  const [slugError, setSlugError] = useState<string | null>(null)
+  const [selectedValue, setSelectedValue] = useState<string | null>(null) // workspace ID or CREATE_NEW_VALUE
+  const [newWorkspaceName, setNewWorkspaceName] = useState('')
 
   useEffect(() => {
     window.electronAPI.getHomeDir().then(setHomeDir)
   }, [])
 
-  // Effective name: user input, or remote workspace name as fallback (only when workspace exists)
-  const effectiveName = name.trim() || (!needsWorkspace ? remoteWorkspaceName : null) || ''
-  const slug = slugify(effectiveName)
-  const defaultBasePath = homeDir ? `${homeDir}/.craft-agent/workspaces` : '~/.craft-agent/workspaces'
-  const finalPath = slug ? `${defaultBasePath}/${slug}` : null
-
-  // Validate slug uniqueness
-  useEffect(() => {
-    if (!slug) {
-      setSlugError(null)
-      return
-    }
-
-    const validateSlug = async () => {
-      try {
-        const result = await window.electronAPI.checkWorkspaceSlug(slug)
-        if (result.exists) {
-          setSlugError(`A workspace named "${slug}" already exists`)
-        } else {
-          setSlugError(null)
-        }
-      } catch {
-        // ignore
-      }
-    }
-
-    const timeout = setTimeout(validateSlug, 300)
-    return () => clearTimeout(timeout)
-  }, [slug])
+  const isCreateNew = selectedValue === CREATE_NEW_VALUE
+  const selectedWorkspace = !isCreateNew ? remoteWorkspaces.find(w => w.id === selectedValue) : null
+  // Fresh server (no workspaces at all) — always in create mode
+  const isFreshServer = testState === 'ok' && remoteWorkspaces.length === 0
 
   // Reset test state when URL or token changes
   useEffect(() => {
     setTestState('idle')
     setTestError(null)
     setRemoteWorkspaces([])
-    setRemoteWorkspaceId(null)
-    setRemoteWorkspaceName(null)
-    setNeedsWorkspace(false)
+    setSelectedValue(null)
+    setNewWorkspaceName('')
   }, [serverUrl, token])
 
   const handleTestConnection = useCallback(async () => {
@@ -88,22 +88,14 @@ export function AddWorkspaceStep_ConnectRemote({
       if (result.ok) {
         setTestState('ok')
         if (result.needsWorkspace) {
-          setNeedsWorkspace(true)
+          // Fresh server — no workspaces, go straight to create mode
           setRemoteWorkspaces([])
-          setRemoteWorkspaceId(null)
-          setRemoteWorkspaceName(null)
+          setSelectedValue(null)
         } else {
-          setNeedsWorkspace(false)
           const workspaces = result.remoteWorkspaces ?? []
           setRemoteWorkspaces(workspaces)
           if (workspaces.length === 1) {
-            // Auto-select single workspace
-            setRemoteWorkspaceId(workspaces[0].id)
-            setRemoteWorkspaceName(workspaces[0].name)
-          } else {
-            // Multiple workspaces — user must pick
-            setRemoteWorkspaceId(null)
-            setRemoteWorkspaceName(null)
+            setSelectedValue(workspaces[0]!.id)
           }
         }
       } else {
@@ -116,32 +108,41 @@ export function AddWorkspaceStep_ConnectRemote({
     }
   }, [serverUrl, token])
 
-  const handleCreate = useCallback(async () => {
-    if (!effectiveName || !finalPath || !serverUrl || !token || slugError) return
+  const handleConnect = useCallback(async () => {
+    if (!serverUrl || !token || !homeDir) return
 
-    let wsId = remoteWorkspaceId
+    const defaultBasePath = `${homeDir}/.craft-agent/workspaces`
 
-    // If the remote server needs a workspace, call testRemoteConnection again with the name
-    // to create one on the remote server
-    if (needsWorkspace && !wsId) {
-      const result = await window.electronAPI.testRemoteConnection(serverUrl, token, effectiveName)
+    if (isCreateNew || isFreshServer) {
+      // Create new workspace on server, then connect
+      const name = newWorkspaceName.trim()
+      if (!name) return
+
+      const result = await window.electronAPI.testRemoteConnection(serverUrl, token, name)
       if (!result.ok || !result.remoteWorkspaceId) {
         setTestState('error')
         setTestError(result.error || 'Failed to create workspace on remote server')
         return
       }
-      wsId = result.remoteWorkspaceId
+
+      const { slug, path } = await resolveUniqueSlug(name)
+      const finalPath = path || `${defaultBasePath}/${slug}`
+      await onCreate(finalPath, name, { url: serverUrl, token, remoteWorkspaceId: result.remoteWorkspaceId })
+    } else if (selectedWorkspace) {
+      // Connect to existing workspace — auto-resolve local slug
+      const { slug, path } = await resolveUniqueSlug(selectedWorkspace.name)
+      const finalPath = path || `${defaultBasePath}/${slug}`
+      await onCreate(finalPath, selectedWorkspace.name, { url: serverUrl, token, remoteWorkspaceId: selectedWorkspace.id })
     }
+  }, [serverUrl, token, homeDir, isCreateNew, isFreshServer, newWorkspaceName, selectedWorkspace, onCreate])
 
-    if (!wsId) return
-    await onCreate(finalPath, effectiveName, { url: serverUrl, token, remoteWorkspaceId: wsId })
-  }, [effectiveName, finalPath, serverUrl, token, remoteWorkspaceId, needsWorkspace, slugError, onCreate])
+  const canConnect = testState === 'ok' && !isCreating && (
+    (isFreshServer || isCreateNew) ? !!newWorkspaceName.trim() : !!selectedWorkspace
+  )
 
-  // For fresh servers: name is required. For existing: name is optional (defaults to remote name).
-  // For multiple workspaces: user must pick one before proceeding.
-  const hasValidName = needsWorkspace ? !!name.trim() : !!effectiveName
-  const hasWorkspaceSelection = needsWorkspace || !!remoteWorkspaceId
-  const canCreate = hasValidName && hasWorkspaceSelection && finalPath && serverUrl && token && testState === 'ok' && !slugError && !isCreating
+  const showCreateMode = isCreateNew || isFreshServer
+  const buttonLabel = showCreateMode ? 'Create and Connect' : 'Connect'
+  const buttonLoadingLabel = showCreateMode ? 'Creating...' : 'Connecting...'
 
   return (
     <AddWorkspaceContainer>
@@ -174,7 +175,7 @@ export function AddWorkspaceStep_ConnectRemote({
             <Input
               value={serverUrl}
               onChange={(e) => setServerUrl(e.target.value)}
-              placeholder="ws://192.168.1.100:3001"
+              placeholder="ws://192.168.1.100:9100"
               disabled={isCreating}
               autoFocus
               className="border-0 bg-transparent shadow-none font-mono text-sm"
@@ -207,18 +208,16 @@ export function AddWorkspaceStep_ConnectRemote({
           >
             {testState === 'testing' ? 'Testing...' : 'Test Connection'}
           </AddWorkspaceSecondaryButton>
-          {testState === 'ok' && !needsWorkspace && (
+          {testState === 'ok' && !isFreshServer && (
             <span className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
               <CheckCircle className="h-3.5 w-3.5" />
-              Connected{remoteWorkspaces.length > 1
-                ? ` — ${remoteWorkspaces.length} workspaces`
-                : remoteWorkspaceName ? ` — ${remoteWorkspaceName}` : ''}
+              Connected
             </span>
           )}
-          {testState === 'ok' && needsWorkspace && (
+          {testState === 'ok' && isFreshServer && (
             <span className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
               <CheckCircle className="h-3.5 w-3.5" />
-              Connected — new server
+              Connected — no workspaces yet
             </span>
           )}
           {testState === 'error' && (
@@ -229,24 +228,16 @@ export function AddWorkspaceStep_ConnectRemote({
           )}
         </div>
 
-        {/* Workspace selector — shown when remote server has workspaces */}
-        {testState === 'ok' && remoteWorkspaces.length >= 1 && (
+        {/* Workspace selector — pick existing or create new */}
+        {testState === 'ok' && remoteWorkspaces.length > 0 && (
           <div className="space-y-2">
             <label className="block text-sm font-medium text-foreground">
-              Remote workspace
+              Workspace
             </label>
             <div className="bg-background shadow-minimal rounded-lg">
               <Select
-                value={remoteWorkspaceId ?? ''}
-                onValueChange={(id) => {
-                  const ws = remoteWorkspaces.find(w => w.id === id)
-                  setRemoteWorkspaceId(id)
-                  setRemoteWorkspaceName(ws?.name ?? null)
-                  // Pre-fill local name from selected remote workspace
-                  if (ws && !name.trim()) {
-                    setName(ws.name)
-                  }
-                }}
+                value={selectedValue ?? ''}
+                onValueChange={setSelectedValue}
                 disabled={isCreating}
               >
                 <SelectTrigger className="border-0 bg-transparent shadow-none">
@@ -258,47 +249,48 @@ export function AddWorkspaceStep_ConnectRemote({
                       {ws.name}
                     </SelectItem>
                   ))}
+                  <SelectSeparator />
+                  <SelectItem value={CREATE_NEW_VALUE}>
+                    <span className="flex items-center gap-1.5">
+                      <Plus className="h-3.5 w-3.5" />
+                      Create new workspace
+                    </span>
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>
           </div>
         )}
 
-        {/* Workspace name — shown after successful test */}
-        {testState === 'ok' && (
+        {/* New workspace name — shown for fresh servers or "Create new" selection */}
+        {testState === 'ok' && showCreateMode && (
           <div className="space-y-2">
             <label className="block text-sm font-medium text-foreground">
               Workspace name
-              {!needsWorkspace && (
-                <span className="ml-1 text-xs font-normal text-muted-foreground">(optional)</span>
-              )}
             </label>
             <div className="bg-background shadow-minimal rounded-lg">
               <Input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder={needsWorkspace ? 'My Remote Workspace' : (remoteWorkspaceName || 'Remote Workspace')}
+                value={newWorkspaceName}
+                onChange={(e) => setNewWorkspaceName(e.target.value)}
+                placeholder="My Remote Workspace"
                 disabled={isCreating}
                 className="border-0 bg-transparent shadow-none"
               />
             </div>
-            {needsWorkspace && !name.trim() && (
-              <p className="text-xs text-muted-foreground">A workspace will be created on the remote server with this name.</p>
-            )}
-            {slugError && (
-              <p className="text-xs text-destructive">{slugError}</p>
-            )}
+            <p className="text-xs text-muted-foreground">
+              A workspace will be created on the remote server with this name.
+            </p>
           </div>
         )}
 
         {/* Connect / Create and Connect */}
         <AddWorkspacePrimaryButton
-          onClick={handleCreate}
-          disabled={!canCreate}
+          onClick={handleConnect}
+          disabled={!canConnect}
           loading={isCreating}
-          loadingText={needsWorkspace ? 'Creating...' : 'Connecting...'}
+          loadingText={buttonLoadingLabel}
         >
-          {needsWorkspace ? 'Create and Connect' : 'Connect'}
+          {buttonLabel}
         </AddWorkspacePrimaryButton>
       </div>
     </AddWorkspaceContainer>
