@@ -265,6 +265,46 @@ async function downloadBunForServer(config: ServerBuildConfig): Promise<void> {
 // Production node_modules
 // ---------------------------------------------------------------------------
 
+/**
+ * Recursively resolve and copy a package and its entire dependency tree.
+ * Reads each package's package.json to discover transitive deps.
+ */
+function copyDependencyTree(
+  dep: string,
+  srcModules: string,
+  destModules: string,
+  visited: Set<string>,
+): void {
+  if (visited.has(dep)) return;
+  visited.add(dep);
+
+  const src = join(srcModules, dep);
+  if (!existsSync(src)) return;
+
+  // Ensure scope directory exists
+  if (dep.startsWith('@')) {
+    const scope = dep.split('/')[0]!;
+    mkdirSync(join(destModules, scope), { recursive: true });
+  }
+
+  const dest = join(destModules, dep);
+  mkdirSync(dirname(dest), { recursive: true });
+  cpSync(src, dest, { recursive: true, dereference: true });
+
+  // Recurse into dependencies
+  const pkgPath = join(src, 'package.json');
+  if (existsSync(pkgPath)) {
+    try {
+      const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
+      for (const childDep of Object.keys(pkg.dependencies || {})) {
+        copyDependencyTree(childDep, srcModules, destModules, visited);
+      }
+    } catch {
+      // Skip if package.json is malformed
+    }
+  }
+}
+
 function copyProductionDeps(config: ServerBuildConfig): void {
   const { rootDir, outputDir, platform, arch } = config;
   const srcModules = join(rootDir, 'node_modules');
@@ -330,6 +370,15 @@ function copyProductionDeps(config: ServerBuildConfig): void {
     'kind-of',
   ];
 
+  // Packages with deep dependency trees — copied recursively (package + all transitive deps)
+  const PRODUCTION_DEPS_RECURSIVE = [
+    // Document conversion (has ~18 direct deps: mammoth, turndown, xlsx, pdf-parse, etc.)
+    'markitdown-js',
+  ];
+
+  // Track all copied packages to avoid duplicates
+  const copied = new Set<string>();
+
   // For deps like @anthropic-ai/claude-agent-sdk, copy the whole scope if needed
   const copiedScopes = new Set<string>();
 
@@ -358,6 +407,17 @@ function copyProductionDeps(config: ServerBuildConfig): void {
 
     mkdirSync(dirname(dest), { recursive: true });
     cpSync(src, dest, { recursive: true, dereference: true });
+    copied.add(dep);
+  }
+
+  // Recursively copy packages with deep dependency trees
+  for (const dep of PRODUCTION_DEPS_RECURSIVE) {
+    const before = copied.size;
+    copyDependencyTree(dep, srcModules, destModules, copied);
+    const added = copied.size - before;
+    if (added > 0) {
+      console.log(`  ${dep}: copied ${added} packages (recursive)`);
+    }
   }
 
   // Filter ripgrep to target platform only
