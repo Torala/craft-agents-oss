@@ -85,30 +85,40 @@ export function ServerDirectoryBrowser({
 
     const init = async () => {
       if (mode === 'browse') {
-        // Start from initialPath or ~ (server resolves ~ to its own home directory).
-        // This ensures the directory browser starts from the REMOTE server's home,
-        // not the client's local home directory.
-        const startPath = initialPath || '~'
         setLoading(true)
-        try {
-          const result = await window.electronAPI.listServerDirectory(startPath)
+
+        // Resolve the start path with cascading fallback for backward compat:
+        // 1. initialPath (if provided and valid)
+        // 2. getServerHomeDir() — REMOTE_ELIGIBLE, returns server's home (new servers)
+        // 3. listServerDirectory('~') — server-side ~ resolution (medium-age servers)
+        // 4. listServerDirectory('/') — root directory (old servers)
+        const tryNavigate = async (path: string) => {
+          const result = await window.electronAPI.listServerDirectory(path)
           setListing(result)
           setPathInput(result.currentPath)
           setServerHomePath(result.currentPath)
-        } catch (err) {
-          // If initialPath failed, try ~ as fallback
+        }
+
+        try {
           if (initialPath) {
-            try {
-              const result = await window.electronAPI.listServerDirectory('~')
-              setListing(result)
-              setPathInput(result.currentPath)
-              setServerHomePath(result.currentPath)
-            } catch (fallbackErr) {
-              setError(fallbackErr instanceof Error ? fallbackErr.message : 'Failed to list directory')
-            }
+            await tryNavigate(initialPath)
           } else {
-            setError(err instanceof Error ? err.message : 'Failed to list directory')
+            // Try server home dir API first (REMOTE_ELIGIBLE — correct for remote workspaces)
+            try {
+              const serverHome = await window.electronAPI.getServerHomeDir()
+              await tryNavigate(serverHome)
+            } catch {
+              // Fallback: ~ resolution (server-side)
+              try {
+                await tryNavigate('~')
+              } catch {
+                // Final fallback: root directory
+                await tryNavigate('/')
+              }
+            }
           }
+        } catch (err) {
+          setError(err instanceof Error ? err.message : 'Failed to list directory')
         } finally {
           setLoading(false)
         }

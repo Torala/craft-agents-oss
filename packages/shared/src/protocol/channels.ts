@@ -15,6 +15,7 @@ export const RPC_CHANNELS = {
     GET_ACTIVE_SESSIONS: 'server:getActiveSessions',
     SHUTTING_DOWN: 'server:shuttingDown',
     STATUS_CHANGED: 'server:statusChanged',
+    HOME_DIR: 'server:homeDir',
   },
   sessions: {
     GET: 'sessions:get',

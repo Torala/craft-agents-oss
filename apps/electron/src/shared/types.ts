@@ -225,6 +225,9 @@ export interface ElectronAPI {
   // Consolidated session command handler
   sessionCommand(sessionId: string, command: SessionCommand): Promise<void | ShareResult | RefreshTitleResult | { count: number }>
 
+  // Server info (REMOTE_ELIGIBLE — returns data from whichever server owns the workspace)
+  getServerHomeDir(): Promise<string>
+
   // Server mode configuration
   getServerConfig(): Promise<import('@craft-agent/shared/config/server-config').ServerConfig>
   setServerConfig(config: import('@craft-agent/shared/config/server-config').ServerConfig): Promise<void>

@@ -208,6 +208,7 @@ export const REMOTE_ELIGIBLE_CHANNELS = new Set<string>([
   RPC_CHANNELS.server.GET_ACTIVE_SESSIONS,
   RPC_CHANNELS.server.SHUTTING_DOWN,
   RPC_CHANNELS.server.STATUS_CHANGED,
+  RPC_CHANNELS.server.HOME_DIR,
 
   // sessions — core session runtime
   RPC_CHANNELS.sessions.GET,

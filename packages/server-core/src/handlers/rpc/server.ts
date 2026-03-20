@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs'
 import { join } from 'path'
+import { homedir } from 'os'
 import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
 import { addWorkspace, setActiveWorkspace } from '@craft-agent/shared/config'
 import { getDefaultWorkspacesDir, ensureDefaultWorkspacesDir } from '@craft-agent/shared/workspaces'
@@ -14,6 +15,7 @@ export const HANDLED_CHANNELS = [
   RPC_CHANNELS.server.GET_STATUS,
   RPC_CHANNELS.server.GET_HEALTH,
   RPC_CHANNELS.server.GET_ACTIVE_SESSIONS,
+  RPC_CHANNELS.server.HOME_DIR,
 ] as const
 
 export function registerServerHandlers(
@@ -108,6 +110,14 @@ export function registerServerHandlers(
 
   server.handle(RPC_CHANNELS.server.GET_ACTIVE_SESSIONS, async () => {
     return sessionManager.getActiveSessionsInfo()
+  })
+
+  // -----------------------------------------------------------------------
+  // Server Home Directory (REMOTE_ELIGIBLE — returns this server's home)
+  // -----------------------------------------------------------------------
+
+  server.handle(RPC_CHANNELS.server.HOME_DIR, async () => {
+    return homedir()
   })
 }
 

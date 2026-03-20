@@ -140,6 +140,9 @@ export const CHANNEL_MAP = {
   copilotLogout: invoke(RPC_CHANNELS.copilot.LOGOUT),
   onCopilotDeviceCode: listener(RPC_CHANNELS.copilot.DEVICE_CODE),
 
+  // Server info (REMOTE_ELIGIBLE)
+  getServerHomeDir: invoke(RPC_CHANNELS.server.HOME_DIR),
+
   // Server mode configuration
   getServerConfig: invoke(RPC_CHANNELS.settings.GET_SERVER_CONFIG),
   setServerConfig: invoke(RPC_CHANNELS.settings.SET_SERVER_CONFIG),
