@@ -6697,10 +6697,19 @@ export class SessionManager implements ISessionManager {
       storedSession.branchFromSdkCwd = bundle.branchInfo.sdkCwd
     }
 
-    // Fork-specific: clear sharing state (fork is a new session)
+    // Fork-specific: clear sharing state and connection lock (fork is a new session)
     if (mode === 'fork') {
       storedSession.sharedUrl = undefined
       storedSession.sharedId = undefined
+      // Clear LLM connection — forked session should use target workspace's default,
+      // not the source server's connection (even if same slug exists, auth may differ)
+      if (storedSession.llmConnection) {
+        sessionLog.info(`[import] Fork: clearing source LLM connection "${storedSession.llmConnection}" — will use workspace default`)
+      }
+      storedSession.llmConnection = undefined
+      storedSession.connectionLocked = false
+      // Clear thinking level so the session inherits the workspace default
+      storedSession.thinkingLevel = undefined
     }
 
     // Check source compatibility (before writing JSONL so fixes are persisted)
@@ -6714,8 +6723,8 @@ export class SessionManager implements ISessionManager {
       }
     }
 
-    // Check LLM connection compatibility (before writing JSONL so the fix is persisted)
-    if (storedSession.llmConnection) {
+    // Check LLM connection compatibility for move mode (fork already cleared above)
+    if (mode === 'move' && storedSession.llmConnection) {
       sessionLog.info(`[import] Checking LLM connection: "${storedSession.llmConnection}"`)
       const conn = resolveSessionConnection(storedSession.llmConnection, undefined)
       if (!conn) {
@@ -6726,7 +6735,7 @@ export class SessionManager implements ISessionManager {
       } else {
         sessionLog.info(`[import] LLM connection "${storedSession.llmConnection}" resolved OK`)
       }
-    } else {
+    } else if (mode === 'move' && !storedSession.llmConnection) {
       sessionLog.info('[import] No LLM connection in bundle — will use default')
     }
 

@@ -259,6 +259,16 @@ export class WsRpcClient implements RpcClient {
     }
   }
 
+  /** Emit a synthetic __transport:reconnected event. Used by RoutedClient after workspace swap to trigger stale recovery. */
+  emitReconnected(isStale: boolean): void {
+    const set = this.listeners.get('__transport:reconnected')
+    if (set) {
+      for (const cb of set) {
+        try { cb(isStale) } catch { /* listener errors must not break transport */ }
+      }
+    }
+  }
+
   reconnectNow(): void {
     if (this.destroyed) return
 

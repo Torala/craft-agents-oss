@@ -109,6 +109,7 @@ const FALLBACK_CONFIG_DEFAULTS: ConfigDefaults = {
     spellCheck: false,
     keepAwakeWhileRunning: false,
     richToolDescriptions: true,
+    extendedPromptCache: false,
   },
   workspaceDefaults: {
     thinkingLevel: 'medium',

@@ -215,6 +215,20 @@ export class RoutedClient implements RpcClient {
     if (old !== this.localClient && old !== newClient) {
       old.destroy()
     }
+
+    // Emit synthetic stale reconnect once the new client connects.
+    // Workspace switches create a brand-new client (not a reconnect), so
+    // __transport:reconnected never fires naturally. This triggers the App's
+    // stale recovery logic to refresh sessions that changed while no client
+    // was watching this workspace.
+    if (newClient !== this.localClient) {
+      const unsub = newClient.onConnectionStateChanged((state) => {
+        if (state.status === 'connected') {
+          unsub()
+          newClient.emitReconnected(true)
+        }
+      })
+    }
   }
 
   private bindConnectionState(): void {
