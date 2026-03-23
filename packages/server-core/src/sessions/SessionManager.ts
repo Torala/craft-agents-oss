@@ -6669,7 +6669,10 @@ export class SessionManager implements ISessionManager {
       id: sessionId,
       workspaceRootPath,
       sdkSessionId: mode === 'move' ? header.sdkSessionId : undefined,
-      sdkCwd: header.sdkCwd,
+      // Always regenerate sdkCwd for the target workspace.
+      // The source sdkCwd points to a path on the originating server
+      // which doesn't exist here (cross-server transfer).
+      sdkCwd: getSessionStoragePath(workspaceRootPath, sessionId),
       name: header.name,
       createdAt: header.createdAt,
       lastUsedAt: Date.now(),

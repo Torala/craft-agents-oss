@@ -167,7 +167,7 @@ export default function ServerSettingsPage() {
     <div className="flex flex-col h-full">
       <PanelHeader title="Server" />
       <ScrollArea className="flex-1">
-        <div className="px-6 py-4 space-y-5 max-w-[560px]">
+        <div className="px-5 py-7 max-w-3xl mx-auto space-y-5">
 
           {/* Enable toggle + restart banner */}
           <SettingsSection title="Remote Access">
