@@ -4,14 +4,12 @@
  * 2. Creates the web API adapter + sets window.electronAPI
  * 3. Delegates to the Electron renderer's App component
  *
- * The Electron App and all its components read from window.electronAPI,
- * so once we've set that up, everything works identically.
+ * Mobile responsiveness is handled by container queries and isAutoCompact
+ * in the shared renderer components — no webui-specific layout hacks needed.
  */
 
 import React, { useState, useEffect, useRef, lazy, Suspense } from 'react'
-import { ChevronLeft } from 'lucide-react'
 import { createWebApi } from './adapter/web-api'
-import { useResponsiveShellState, useMobileBackToList } from './responsive'
 import type { WsRpcClient } from '../../electron/src/transport/client'
 
 // Lazy-load the Electron App after window.electronAPI is set up.
@@ -54,25 +52,6 @@ function ErrorScreen({ message, onRetry }: { message: string; onRetry: () => voi
         </button>
       </div>
     </div>
-  )
-}
-
-function MobileResponsiveChrome() {
-  const { isMobile, view, backRoute } = useResponsiveShellState()
-  const goBackToList = useMobileBackToList()
-
-  if (!isMobile || view !== 'content' || !backRoute || !goBackToList) return null
-
-  return (
-    <button
-      type="button"
-      onClick={goBackToList}
-      className="webui-mobile-nav-button"
-      aria-label="Back to list"
-    >
-      <ChevronLeft className="h-4 w-4" />
-      <span>Back</span>
-    </button>
   )
 }
 
@@ -144,11 +123,8 @@ export default function App() {
   if (phase === 'error') return <ErrorScreen message={error} onRetry={initialize} />
 
   return (
-    <>
-      <Suspense fallback={<LoadingScreen />}>
-        <ElectronApp />
-      </Suspense>
-      <MobileResponsiveChrome />
-    </>
+    <Suspense fallback={<LoadingScreen />}>
+      <ElectronApp />
+    </Suspense>
   )
 }

@@ -41,6 +41,8 @@ interface PanelStackContainerProps {
   navigatorWidth: number
   isSidebarAndNavigatorHidden: boolean
   isRightSidebarVisible?: boolean
+  /** Compact mode: single-panel, list/content toggle (mobile or narrow window) */
+  isCompact?: boolean
   isResizing?: boolean
 }
 
@@ -51,6 +53,7 @@ export function PanelStackContainer({
   navigatorWidth,
   isSidebarAndNavigatorHidden,
   isRightSidebarVisible,
+  isCompact = false,
   isResizing,
 }: PanelStackContainerProps) {
   const panelStack = useAtomValue(panelStackAtom)
@@ -58,12 +61,21 @@ export function PanelStackContainer({
 
   const contentPanels = panelStack
 
+  // Compact mode: only show the focused content panel (single-panel mode).
+  // Also controls navigator visibility — when a session is selected, show content;
+  // when no session is selected, show navigator (list).
+  const hasSelectedContent = isCompact && contentPanels.some(e => e.id === focusedPanelId)
+  const visiblePanels = isCompact
+    ? contentPanels.filter(e => e.id === focusedPanelId).slice(0, 1)
+    : contentPanels
+
   const scrollRef = useRef<HTMLDivElement>(null)
   const prevCountRef = useRef(contentPanels.length)
 
   const hasSidebar = sidebarWidth > 0
-  const hasNavigator = navigatorWidth > 0
-  const isMultiPanel = contentPanels.length > 1
+  // In compact mode, hide navigator when content is selected (show list OR content, not both)
+  const hasNavigator = isCompact ? (navigatorWidth > 0 && !hasSelectedContent) : navigatorWidth > 0
+  const isMultiPanel = visiblePanels.length > 1
   const isLeftEdge = !hasSidebar && !hasNavigator
 
   // Auto-scroll to newly pushed content panel
@@ -84,7 +96,7 @@ export function PanelStackContainer({
   return (
     <div
       ref={scrollRef}
-      className="flex-1 min-w-0 flex relative z-panel panel-scroll"
+      className="flex-1 min-w-0 flex relative z-panel panel-scroll @container/shell"
       style={{
         overflowX: 'auto',
         overflowY: 'hidden',
@@ -111,6 +123,7 @@ export function PanelStackContainer({
       >
         {/* === SIDEBAR SLOT === */}
         <motion.div
+          data-panel-role="sidebar"
           initial={false}
           animate={{
             width: hasSidebar ? sidebarWidth : 0,
@@ -128,6 +141,7 @@ export function PanelStackContainer({
 
         {/* === NAVIGATOR SLOT === */}
         <motion.div
+          data-panel-role="navigator"
           initial={false}
           animate={{
             width: hasNavigator ? navigatorWidth : 0,
@@ -140,30 +154,33 @@ export function PanelStackContainer({
             'bg-background shadow-middle',
           )}
           style={{
+            // In compact mode (no content selected), navigator fills available space
+            ...(isCompact && hasNavigator && !hasSelectedContent ? { flex: '1 1 auto' } : {}),
             borderTopLeftRadius: RADIUS_INNER,
             borderBottomLeftRadius: !hasSidebar ? RADIUS_EDGE : RADIUS_INNER,
             borderTopRightRadius: RADIUS_INNER,
             borderBottomRightRadius: RADIUS_INNER,
           }}
         >
-          <div className="h-full" style={{ width: navigatorWidth }}>
+          <div className="h-full" style={{ width: isCompact && hasNavigator && !hasSelectedContent ? '100%' : navigatorWidth }}>
             {navigatorSlot}
           </div>
         </motion.div>
 
         {/* === CONTENT PANELS WITH SASHES === */}
-        {contentPanels.length === 0 ? (
-          <div className="flex-1 flex items-center justify-center" />
+        {visiblePanels.length === 0 ? (
+          // Only show empty placeholder when not in compact mode (compact shows navigator instead)
+          isCompact ? null : <div className="flex-1 flex items-center justify-center" />
         ) : (
-          contentPanels.map((entry, index) => (
+          visiblePanels.map((entry, index) => (
             <PanelSlot
               key={entry.id}
               entry={entry}
-              isOnly={contentPanels.length === 1}
+              isOnly={visiblePanels.length === 1}
               isFocusedPanel={isMultiPanel ? entry.id === focusedPanelId : true}
               isSidebarAndNavigatorHidden={isSidebarAndNavigatorHidden}
               isAtLeftEdge={index === 0 && isLeftEdge}
-              isAtRightEdge={index === contentPanels.length - 1 && !isRightSidebarVisible}
+              isAtRightEdge={index === visiblePanels.length - 1 && !isRightSidebarVisible}
               proportion={entry.proportion}
               sash={index > 0 ? (
                 <PanelResizeSash

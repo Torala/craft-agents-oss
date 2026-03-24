@@ -89,8 +89,9 @@ export function PanelSlot({
       {sash}
       <div
         onPointerDown={handlePointerDown}
+        data-panel-role="content"
         className={cn(
-          'h-full overflow-hidden relative',
+          'h-full overflow-hidden relative @container/panel',
           !isOnly && isFocusedPanel ? 'shadow-panel-focused z-[1]' : 'shadow-middle z-0',
           'bg-foreground-2',
         )}

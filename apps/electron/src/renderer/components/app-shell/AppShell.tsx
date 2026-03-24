@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "motion/react"
 import {
   Archive,
   Settings,
+  ChevronLeft,
   ChevronRight,
   ChevronDown,
   MoreHorizontal,
@@ -92,6 +93,7 @@ import { type SessionStatusId, type SessionStatus, statusConfigsToSessionStatuse
 import { useStatuses } from "@/hooks/useStatuses"
 import { useLabels } from "@/hooks/useLabels"
 import { useViews } from "@/hooks/useViews"
+import { useContainerWidth } from "@/hooks/useContainerWidth"
 import { LabelIcon, LabelValueTypeIcon } from "@/components/ui/label-icon"
 import { filterItems as filterLabelMenuItems, filterSessionStatuses as filterLabelMenuStates, type LabelMenuItem } from "@/components/ui/label-menu"
 import { buildLabelTree, getDescendantIds, getLabelDisplayName, flattenLabels, extractLabelId, findLabelById } from "@craft-agent/shared/labels"
@@ -538,7 +540,16 @@ function AppShellContent({
   const [isSidebarAndNavigatorHidden, setIsSidebarAndNavigatorHidden] = React.useState(() => {
     return isFocusedMode || storage.get(storage.KEYS.focusModeEnabled, false)
   })
-  const effectiveSidebarAndNavigatorHidden = isSidebarAndNavigatorHidden
+
+  // Auto-compact mode: shell width below mobile threshold hides sidebar/navigator
+  // and switches to single-panel mode. Works in both webui (narrow viewport) and
+  // desktop (narrow window or small screen).
+  const shellRef = useRef<HTMLDivElement>(null)
+  const shellWidth = useContainerWidth(shellRef)
+  const MOBILE_THRESHOLD = 768
+  const isAutoCompact = shellWidth > 0 && shellWidth < MOBILE_THRESHOLD
+
+  const effectiveSidebarAndNavigatorHidden = isSidebarAndNavigatorHidden || isAutoCompact
 
   // What's New overlay
   const [showWhatsNew, setShowWhatsNew] = React.useState(false)
@@ -2195,8 +2206,25 @@ function AppShellContent({
           onAddBrowserPanel={() => { void handleNewBrowserWindow() }}
         />
 
+      {/* Mobile back button — shown in compact mode when viewing content */}
+      {isAutoCompact && canGoBack && (
+        <button
+          type="button"
+          onClick={goBack}
+          className="fixed z-panel inline-flex items-center gap-1 h-[30px] px-2.5 rounded-full
+            border border-foreground/10 bg-background/95 shadow-minimal
+            text-foreground/75 text-xs font-medium backdrop-blur-sm"
+          style={{ top: 'calc(env(safe-area-inset-top, 0px) + 62px)', left: 14 }}
+          aria-label="Back to list"
+        >
+          <ChevronLeft className="h-4 w-4" />
+          <span>Back</span>
+        </button>
+      )}
+
       {/* === OUTER LAYOUT: Unified Panel Stack | Right Sidebar === */}
       <div
+        ref={shellRef}
         className="flex items-stretch relative"
         style={{ height: '100%', paddingRight: PANEL_EDGE_INSET, paddingBottom: PANEL_EDGE_INSET, paddingLeft: 0, gap: PANEL_GAP }}
       >
@@ -3223,6 +3251,7 @@ function AppShellContent({
           navigatorWidth={effectiveSidebarAndNavigatorHidden ? 0 : sessionListWidth}
           isSidebarAndNavigatorHidden={effectiveSidebarAndNavigatorHidden}
           isRightSidebarVisible={false}
+          isCompact={isAutoCompact}
           isResizing={!!isResizing}
         />
 

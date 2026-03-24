@@ -27,173 +27,19 @@
  */
 @import "../../electron/src/renderer/index.css";
 
-@media (max-width: 768px) {
-  html[data-webui-mobile="true"],
-  html[data-webui-mobile="true"] body,
-  html[data-webui-mobile="true"] #root {
-    overflow: hidden;
-    max-width: 100%;
-    overscroll-behavior-x: none;
-  }
+/*
+ * Web UI responsive layout is handled by container queries and isAutoCompact
+ * in the shared renderer components. No webui-specific CSS overrides needed.
+ *
+ * The only webui-specific styles are safe-area insets for mobile browsers.
+ */
 
-  html[data-webui-mobile="true"] body {
-    padding-bottom: env(safe-area-inset-bottom, 0px);
-  }
+/* Safe area insets for mobile browsers (notch, home indicator) */
+html, body, #root {
+  overflow: hidden;
+  max-width: 100%;
+}
 
-  html[data-webui-mobile="true"] .panel-scroll {
-    overflow-x: hidden !important;
-    padding-right: 0 !important;
-    margin-right: 0 !important;
-  }
-
-  html[data-webui-mobile="true"] .panel-scroll > div {
-    width: 100% !important;
-    min-width: 0 !important;
-    gap: 0 !important;
-    padding-left: 0 !important;
-  }
-
-  html[data-webui-mobile="true"] .panel-scroll > div > :nth-child(1) {
-    width: 0 !important;
-    min-width: 0 !important;
-    max-width: 0 !important;
-    margin-right: 0 !important;
-    opacity: 0 !important;
-    pointer-events: none !important;
-    overflow: hidden !important;
-  }
-
-  html[data-webui-mobile="true"][data-webui-mobile-view="list"] .panel-scroll > div > :nth-child(2),
-  html[data-webui-mobile="true"][data-webui-mobile-view="list"] .panel-scroll > div > :nth-child(2) > div {
-    width: 100% !important;
-    min-width: 0 !important;
-    max-width: none !important;
-    margin-right: 0 !important;
-    opacity: 1 !important;
-  }
-
-  html[data-webui-mobile="true"][data-webui-mobile-view="list"] .panel-scroll > div > :nth-child(n + 3) {
-    display: none !important;
-  }
-
-  html[data-webui-mobile="true"][data-webui-mobile-view="content"] .panel-scroll > div > :nth-child(2) {
-    width: 0 !important;
-    min-width: 0 !important;
-    max-width: 0 !important;
-    margin-right: 0 !important;
-    opacity: 0 !important;
-    pointer-events: none !important;
-    overflow: hidden !important;
-  }
-
-  html[data-webui-mobile="true"][data-webui-mobile-view="content"] .panel-scroll > div > :nth-child(3) {
-    width: 100% !important;
-    min-width: 0 !important;
-    max-width: 100% !important;
-    flex: 1 1 auto !important;
-    padding-top: 40px;
-    box-sizing: border-box;
-  }
-
-  html[data-webui-mobile="true"][data-webui-mobile-view="content"] .panel-scroll > div > :nth-child(3) > div {
-    min-width: 0 !important;
-  }
-
-  html[data-webui-mobile="true"][data-webui-mobile-view="content"] .panel-scroll > div > :nth-child(n + 4) {
-    display: none !important;
-  }
-
-  html[data-webui-mobile="true"] .webui-mobile-nav-button {
-    position: fixed;
-    top: calc(env(safe-area-inset-top, 0px) + 62px);
-    left: 14px;
-    z-index: 120;
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    height: 30px;
-    padding: 0 10px;
-    border-radius: 999px;
-    border: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
-    background: color-mix(in srgb, var(--background) 96%, transparent);
-    box-shadow: var(--shadow-minimal);
-    color: color-mix(in srgb, var(--foreground) 76%, transparent);
-    font-size: 12px;
-    font-weight: 500;
-    line-height: 1;
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-  }
-
-  /* Mobile settings/detail rows: stack desktop two-column rows vertically and allow controls to shrink. */
-  html[data-webui-mobile="true"][data-webui-mobile-view="content"] .panel-scroll .rounded-xl.bg-background.shadow-minimal.overflow-hidden > .flex.items-center.justify-between,
-  html[data-webui-mobile="true"][data-webui-mobile-view="content"] .panel-scroll .rounded-xl.bg-background.shadow-minimal.overflow-hidden > button.flex.items-center.justify-between,
-  html[data-webui-mobile="true"][data-webui-mobile-view="content"] .panel-scroll .rounded-xl.bg-background.shadow-minimal.overflow-hidden > .w-full.flex.items-center.justify-between,
-  html[data-webui-mobile="true"][data-webui-mobile-view="content"] .panel-scroll .rounded-xl.bg-background.shadow-minimal.overflow-hidden > button.w-full.flex.items-center.justify-between {
-    flex-direction: column !important;
-    align-items: stretch !important;
-    gap: 10px !important;
-  }
-
-  html[data-webui-mobile="true"][data-webui-mobile-view="content"] .panel-scroll .rounded-xl.bg-background.shadow-minimal.overflow-hidden > .flex.items-center.justify-between > .ml-4.shrink-0,
-  html[data-webui-mobile="true"][data-webui-mobile-view="content"] .panel-scroll .rounded-xl.bg-background.shadow-minimal.overflow-hidden > button.flex.items-center.justify-between > .ml-4.shrink-0,
-  html[data-webui-mobile="true"][data-webui-mobile-view="content"] .panel-scroll .rounded-xl.bg-background.shadow-minimal.overflow-hidden > .w-full.flex.items-center.justify-between > .ml-4.shrink-0,
-  html[data-webui-mobile="true"][data-webui-mobile-view="content"] .panel-scroll .rounded-xl.bg-background.shadow-minimal.overflow-hidden > button.w-full.flex.items-center.justify-between > .ml-4.shrink-0,
-  html[data-webui-mobile="true"][data-webui-mobile-view="content"] .panel-scroll .rounded-xl.bg-background.shadow-minimal.overflow-hidden > .flex.items-center.justify-between > .flex.items-center.gap-3.ml-4.shrink-0,
-  html[data-webui-mobile="true"][data-webui-mobile-view="content"] .panel-scroll .rounded-xl.bg-background.shadow-minimal.overflow-hidden > button.flex.items-center.justify-between > .flex.items-center.gap-3.ml-4.shrink-0,
-  html[data-webui-mobile="true"][data-webui-mobile-view="content"] .panel-scroll .rounded-xl.bg-background.shadow-minimal.overflow-hidden > .w-full.flex.items-center.justify-between > .flex.items-center.gap-3.ml-4.shrink-0,
-  html[data-webui-mobile="true"][data-webui-mobile-view="content"] .panel-scroll .rounded-xl.bg-background.shadow-minimal.overflow-hidden > button.w-full.flex.items-center.justify-between > .flex.items-center.gap-3.ml-4.shrink-0 {
-    width: 100% !important;
-    min-width: 0 !important;
-    margin-left: 0 !important;
-    flex-wrap: wrap !important;
-    justify-content: flex-start !important;
-  }
-
-  html[data-webui-mobile="true"][data-webui-mobile-view="content"] .panel-scroll [data-slot="select-trigger"],
-  html[data-webui-mobile="true"][data-webui-mobile-view="content"] .panel-scroll .w-\[180px\].bg-muted\/50,
-  html[data-webui-mobile="true"][data-webui-mobile-view="content"] .panel-scroll .w-\[200px\].bg-muted\/50 {
-    width: 100% !important;
-    max-width: 100% !important;
-    min-width: 0 !important;
-  }
-
-  html[data-webui-mobile="true"][data-webui-mobile-view="content"] .panel-scroll [data-slot="select-trigger"] > span,
-  html[data-webui-mobile="true"][data-webui-mobile-view="content"] .panel-scroll [data-slot="dropdown-menu-trigger"] > span,
-  html[data-webui-mobile="true"][data-webui-mobile-view="content"] .panel-scroll .truncate {
-    min-width: 0 !important;
-    max-width: 100% !important;
-    overflow: hidden !important;
-    text-overflow: ellipsis !important;
-    white-space: nowrap !important;
-  }
-
-  html[data-webui-mobile="true"] [data-slot="dropdown-menu-content"],
-  html[data-webui-mobile="true"] [data-slot="dropdown-menu-sub-content"],
-  html[data-webui-mobile="true"] [data-slot="select-content"] {
-    width: min(320px, calc(100vw - 24px)) !important;
-    max-width: calc(100vw - 24px) !important;
-    min-width: 0 !important;
-    overflow-x: hidden !important;
-  }
-
-  html[data-webui-mobile="true"] [data-slot="dropdown-menu-sub-content"] {
-    left: auto !important;
-    right: 12px !important;
-  }
-
-  html[data-webui-mobile="true"] [data-slot="dropdown-menu-item"],
-  html[data-webui-mobile="true"] [data-slot="dropdown-menu-sub-trigger"],
-  html[data-webui-mobile="true"] [data-slot="select-item"] {
-    min-width: 0 !important;
-  }
-
-  html[data-webui-mobile="true"] [data-slot="dropdown-menu-item"] > span,
-  html[data-webui-mobile="true"] [data-slot="dropdown-menu-sub-trigger"] > span,
-  html[data-webui-mobile="true"] [data-slot="dropdown-menu-shortcut"],
-  html[data-webui-mobile="true"] [data-slot="select-item"] {
-    overflow: hidden !important;
-    text-overflow: ellipsis !important;
-    white-space: nowrap !important;
-  }
+body {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }

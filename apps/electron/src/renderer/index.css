@@ -452,6 +452,14 @@ html[data-font="inter"] {
   --shadow-lg: var(--shadow-lg);
   --shadow-xl: var(--shadow-xl);
   --shadow-2xl: var(--shadow-2xl);
+
+  /* === CONTAINER QUERY BREAKPOINTS === */
+  /* Custom breakpoints for responsive panel layouts.
+   * Generates @panel-compact:, @panel-medium:, @mobile: Tailwind utility prefixes. */
+  --container-3xs: 16rem;           /* 256px */
+  --container-panel-compact: 28rem; /* 448px — PANEL_MIN_WIDTH */
+  --container-panel-medium: 40rem;  /* 640px */
+  --container-mobile: 48rem;        /* 768px — mobile breakpoint */
 }
 
 /* Global styles - MUST be in @layer base so utilities can override */
@@ -1249,4 +1257,62 @@ html.dark[data-scenic] .fullscreen-overlay-background {
 /* PDF annotation layer (for links and form fields) */
 .react-pdf__Page__annotations {
   border: none !important;
+}
+
+/* ============================================================================
+ * CONTAINER QUERY RESPONSIVE RULES
+ *
+ * These rules adapt component layout based on container width, replacing
+ * the fragile !important overrides previously in webui/src/index.css.
+ * Works in both webui (narrow viewport) and desktop (narrow panels).
+ * ============================================================================ */
+
+/* Constrain floating elements (dropdowns, selects) in narrow panel containers */
+@container panel (max-width: 448px) {
+  [data-slot="dropdown-menu-content"],
+  [data-slot="dropdown-menu-sub-content"],
+  [data-slot="select-content"] {
+    max-width: calc(100cqw - 24px);
+  }
+
+  [data-slot="dropdown-menu-item"],
+  [data-slot="dropdown-menu-sub-trigger"],
+  [data-slot="select-item"] {
+    min-width: 0;
+  }
+
+  [data-slot="dropdown-menu-item"] > span,
+  [data-slot="dropdown-menu-sub-trigger"] > span,
+  [data-slot="dropdown-menu-shortcut"],
+  [data-slot="select-item"] {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+/* Settings rows: stack vertically in narrow panels */
+@container panel (max-width: 448px) {
+  [data-layout="settings-row"] {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  [data-layout="settings-row"] > [data-layout="settings-control"] {
+    width: 100%;
+    min-width: 0;
+    margin-left: 0;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+
+  /* Full-width form controls (selects, inputs) in stacked layout */
+  [data-layout="settings-row"] [data-slot="select-trigger"],
+  [data-layout="settings-control"] > .w-\[180px\],
+  [data-layout="settings-control"] > .w-\[200px\] {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
 }
