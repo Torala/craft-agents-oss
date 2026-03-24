@@ -30,7 +30,9 @@ export function registerServerHandlers(
   // -----------------------------------------------------------------------
 
   server.handle(RPC_CHANNELS.server.GET_WORKSPACES, async () => {
-    return sessionManager.getWorkspacesInfo()
+    const workspaces = sessionManager.getWorkspacesInfo()
+    deps.platform.logger.info(`[server:getWorkspaces] returning ${workspaces.length} workspaces: ${JSON.stringify(workspaces.map(w => ({ id: w.id, name: w.name })))}`)
+    return workspaces
   })
 
   server.handle(RPC_CHANNELS.server.CREATE_WORKSPACE, async (_ctx, name: string) => {

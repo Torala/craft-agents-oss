@@ -59,13 +59,16 @@ export function registerWorkspaceGuiHandlers(server: RpcServer, deps: HandlerDep
     const serverVersion = client.getServerVersion() ?? undefined
 
     try {
-      const workspaces = await client.invoke('workspaces:get') as Array<{ id: string; name: string }>
+      console.log(`[TEST_CONNECTION] invoking ${RPC_CHANNELS.server.GET_WORKSPACES} on remote server...`)
+      const workspaces = await client.invoke(RPC_CHANNELS.server.GET_WORKSPACES) as Array<{ id: string; name: string }>
+      console.log(`[TEST_CONNECTION] remote returned ${workspaces?.length ?? 'null'} workspaces:`, JSON.stringify(workspaces?.map(w => ({ id: w.id, name: w.name }))))
 
       if (workspaces.length === 0) {
+        console.log('[TEST_CONNECTION] → returning needsWorkspace=true')
         return { ok: true, needsWorkspace: true, serverVersion }
       }
 
-      return {
+      const result = {
         ok: true,
         serverVersion,
         remoteWorkspaces: workspaces,
@@ -73,7 +76,10 @@ export function registerWorkspaceGuiHandlers(server: RpcServer, deps: HandlerDep
         remoteWorkspaceId: workspaces.length === 1 ? workspaces[0].id : undefined,
         remoteWorkspaceName: workspaces.length === 1 ? workspaces[0].name : undefined,
       }
+      console.log(`[TEST_CONNECTION] → returning ${workspaces.length} workspaces`)
+      return result
     } catch (err) {
+      console.error('[TEST_CONNECTION] error:', err)
       return { ok: false, error: err instanceof Error ? err.message : 'Unknown error' }
     } finally {
       client.destroy()
