@@ -17,11 +17,10 @@ import { useCallback, useMemo } from 'react'
 import { useSetAtom } from 'jotai'
 import { cn } from '@/lib/utils'
 import { X, ChevronLeft } from 'lucide-react'
-import { parseRouteToNavigationState, buildRouteFromNavigationState } from '../../../shared/route-parser'
+import { parseRouteToNavigationState } from '../../../shared/route-parser'
 import { closePanelAtom, focusedPanelIdAtom, type PanelStackEntry } from '@/atoms/panel-stack'
 import { useAppShellContext, AppShellProvider } from '@/context/AppShellContext'
 import { PanelHeaderCenterButton } from '@/components/ui/PanelHeaderCenterButton'
-import { navigate, type Route } from '@/lib/navigate'
 import { MainContentPanel } from './MainContentPanel'
 import { PANEL_MIN_WIDTH, RADIUS_EDGE, RADIUS_INNER } from './panel-constants'
 
@@ -63,13 +62,6 @@ export function PanelSlot({
     closePanel(entry.id)
   }, [closePanel, entry.id])
 
-  // Navigate back to the list view (same filter, no session selected)
-  const handleBack = useCallback(() => {
-    if (!navState) return
-    const listState = { ...navState, details: null }
-    navigate(buildRouteFromNavigationState(listState) as unknown as Route, { skipAutoSelect: true })
-  }, [navState])
-
   // Build close button for PanelHeader (via context override)
   const closeButton = useMemo(() => {
     return (
@@ -81,17 +73,21 @@ export function PanelSlot({
     )
   }, [handleClose])
 
-  // Build back button for compact mode (rendered as leadingAction in PanelHeader)
+  // Build back button for compact mode — closes the panel to reveal the session list.
+  // Uses a flat chevron (no shadow/border) for a native mobile feel.
   const backButton = useMemo(() => {
     if (!isCompact) return undefined
     return (
-      <PanelHeaderCenterButton
-        icon={<ChevronLeft className="h-4 w-4" />}
-        onClick={handleBack}
-        tooltip="Back to list"
-      />
+      <button
+        type="button"
+        onClick={handleClose}
+        className="panel-header-btn inline-flex items-center justify-center p-1.5 shrink-0 rounded-[6px] titlebar-no-drag text-foreground/60 hover:text-foreground hover:bg-foreground/5 transition-colors"
+        aria-label="Back to list"
+      >
+        <ChevronLeft className="h-5 w-5" />
+      </button>
     )
-  }, [isCompact, handleBack])
+  }, [isCompact, handleClose])
 
   // Override AppShellContext so ChatPage/PanelHeader gets our per-panel close button,
   // back button (compact mode), and isFocusedPanel for input field appearance
