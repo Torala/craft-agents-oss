@@ -115,11 +115,23 @@ export function SendToWorkspaceDialog({
       const newSessionIds: string[] = []
 
       for (const sessionId of sessionIds) {
-        // 1. Export full session bundle (messages + metadata)
-        const bundle = await window.electronAPI.exportSession(sessionId)
+        // 1. Export full session bundle (messages + metadata for UI)
+        const bundle = await window.electronAPI.exportSession(sessionId) as any
         if (!bundle) throw new Error(`Failed to export session ${sessionId}`)
 
-        // 2. Import full bundle on remote server via cross-server RPC (fork mode)
+        // 2. Generate conversation summary so the AI has context after fork
+        //    (forked sessions lose SDK context — the AI starts fresh without this)
+        try {
+          const transferPayload = await window.electronAPI.exportRemoteSessionTransfer(sessionId)
+          if (transferPayload?.summary && bundle.session?.header) {
+            bundle.session.header.transferredSessionSummary = transferPayload.summary
+            bundle.session.header.transferredSessionSummaryApplied = false
+          }
+        } catch {
+          // Summary generation failed — transfer without AI context (messages still visible)
+        }
+
+        // 3. Import full bundle on remote server via cross-server RPC (fork mode)
         const result = await window.electronAPI.invokeOnServer(
           url, token,
           'sessions:import',
