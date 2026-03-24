@@ -87,9 +87,11 @@ export function PanelHeader({
   className,
   isRegeneratingTitle,
 }: PanelHeaderProps) {
-  // Use context as fallback when prop is not explicitly set
+  // Use context as fallback when prop is not explicitly set.
+  // Skip stoplight compensation when leadingAction is present — the back button
+  // occupies the space where traffic lights would be.
   const contextCompensate = useCompensateForStoplight()
-  const shouldCompensate = compensateForStoplight ?? contextCompensate
+  const shouldCompensate = leadingAction ? false : (compensateForStoplight ?? contextCompensate)
 
   // Controlled dropdown state for anchoring to chevron while keeping full title clickable
   const [dropdownOpen, setDropdownOpen] = useState(false)
