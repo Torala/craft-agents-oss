@@ -1324,3 +1324,11 @@ html.dark[data-scenic] .fullscreen-overlay-background {
     border-radius: 8px;
   }
 }
+
+/* Taller session/entity list rows for easier tapping on mobile */
+@container shell (max-width: 768px) {
+  .entity-row-btn {
+    padding-top: 14px;
+    padding-bottom: 14px;
+  }
+}
