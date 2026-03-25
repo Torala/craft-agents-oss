@@ -1,69 +1,13 @@
 ---
 title: Remote Server
-description: Run Craft Agents as a remote server — from the desktop app or standalone
+description: Run Craft Agents as a remote server with browser, desktop, and CLI access
 ---
 
 # Remote Server
 
 Craft Agents can run as a remote server, letting you keep long-running sessions alive on a remote machine, access them from multiple clients (desktop app, browser, or CLI), and run compute-heavy tasks on a powerful server.
 
-There are two ways to run the server:
-
-| Method | Best for |
-|--------|----------|
-| **Embedded** (from desktop app) | Quick setup on your own machine — one toggle in Settings |
-| **Standalone** (from source) | Dedicated servers, Linux VMs, Docker, CI/CD |
-
-## Embedded Server Mode
-
-The simplest way to run a server. No terminal, no config files — just a toggle in Settings.
-
-### Enable the server
-
-1. Open **Settings** → **Server**
-2. Toggle **Enable Server Mode**
-3. The app generates a token and displays your connection URL
-
-The server binds to port **9100** by default. You can change the port in the settings.
-
-### TLS (recommended)
-
-Without TLS, the token and all session data are sent in cleartext. The settings page shows a warning when TLS is not configured.
-
-To enable TLS, provide paths to your certificate and key files in the Server settings. For development, self-signed certificates work — the desktop app accepts self-signed certs when connecting to remote servers.
-
-<Warning>
-**Never run without TLS on a network.** The server token and all session data are transmitted over the WebSocket connection. Without TLS, anyone on the network can intercept them.
-</Warning>
-
-### Restart behavior
-
-Changing server settings (port, TLS, enable/disable) requires a restart. The app shows a banner prompting you to relaunch when settings have changed.
-
-## Web UI
-
-When the server is running (embedded or standalone), it serves a browser-accessible web UI on the same port.
-
-### Accessing the Web UI
-
-Open `https://your-server:9100` (or `http://` without TLS) in any browser. You'll see a login page.
-
-### Authentication
-
-Enter the server token as the password. The server issues a session cookie on successful login.
-
-- Login attempts are rate-limited to **5 per 60 seconds** per IP
-- The session persists until you log out or the cookie expires
-
-### What you can do
-
-The web UI provides the same session interface as the desktop app — create sessions, send messages, manage workspaces. OAuth flows for Claude and Copilot work directly in the browser.
-
-## Standalone Server (from Source)
-
-For dedicated servers, Linux VMs, or Docker deployments.
-
-### Prerequisites
+## Prerequisites
 
 Install [Bun](https://bun.sh) (v1.0+):
 
@@ -119,6 +63,46 @@ The server prints connection details on startup:
 CRAFT_SERVER_URL=wss://0.0.0.0:9100
 CRAFT_SERVER_TOKEN=<your-token>
 ```
+
+## Web UI
+
+The server can serve a browser-accessible web UI on the same port. Build and enable it with:
+
+```bash
+# Build the web UI assets
+bun run webui:build
+
+# Start the server with Web UI enabled
+CRAFT_SERVER_TOKEN=$CRAFT_SERVER_TOKEN \
+CRAFT_WEBUI_DIR=apps/webui/dist \
+CRAFT_RPC_HOST=0.0.0.0 \
+bun run packages/server/src/index.ts
+```
+
+Or use the convenience script that builds everything:
+
+```bash
+bun run server:prod
+```
+
+### Accessing the Web UI
+
+Open `https://your-server:9100` (or `http://` without TLS) in any browser. You'll see a login page.
+
+### Authentication
+
+Enter the server token as the password. The server issues a session cookie on successful login.
+
+- Login attempts are rate-limited to **5 per 60 seconds** per IP
+- The session persists until you log out or the cookie expires
+
+### What you can do
+
+The web UI provides the same session interface as the desktop app — create sessions, send messages, manage workspaces. OAuth flows for Claude and Copilot work directly in the browser.
+
+<Warning>
+**Never run without TLS on a network.** The server token and all session data are transmitted over the WebSocket connection. Without TLS, anyone on the network can intercept them.
+</Warning>
 
 ## Connecting Clients
 
