@@ -557,7 +557,7 @@ export default function App() {
     if (appState !== 'ready') return
 
     window.electronAPI.getWorkspaces().then(setWorkspaces)
-    window.electronAPI.getNotificationsEnabled().then(setNotificationsEnabled)
+    window.electronAPI.getNotificationsEnabled().then(setNotificationsEnabled).catch(() => {})
 
     // Show actionable toast for missing system dependencies (Windows only)
     window.electronAPI.getSystemWarnings().then((warnings) => {
