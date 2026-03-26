@@ -25,9 +25,10 @@ import type { LoadedSkill } from '../../shared/types'
 interface SkillInfoPageProps {
   skillSlug: string
   workspaceId: string
+  workingDirectory?: string
 }
 
-export default function SkillInfoPage({ skillSlug, workspaceId }: SkillInfoPageProps) {
+export default function SkillInfoPage({ skillSlug, workspaceId, workingDirectory }: SkillInfoPageProps) {
   const [skill, setSkill] = useState<LoadedSkill | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -40,7 +41,7 @@ export default function SkillInfoPage({ skillSlug, workspaceId }: SkillInfoPageP
 
     const loadSkill = async () => {
       try {
-        const skills = await window.electronAPI.getSkills(workspaceId)
+        const skills = await window.electronAPI.getSkills(workspaceId, workingDirectory)
 
         if (!isMounted) return
 
@@ -74,7 +75,7 @@ export default function SkillInfoPage({ skillSlug, workspaceId }: SkillInfoPageP
       isMounted = false
       unsubscribe?.()
     }
-  }, [workspaceId, skillSlug])
+  }, [workspaceId, skillSlug, workingDirectory])
 
   // Handle open in finder
   const handleOpenInFinder = useCallback(async () => {
@@ -174,6 +175,11 @@ export default function SkillInfoPage({ skillSlug, workspaceId }: SkillInfoPageP
               <Info_Table.Row label="Name">{skill.metadata.name}</Info_Table.Row>
               <Info_Table.Row label="Description">
                 {skill.metadata.description}
+              </Info_Table.Row>
+              <Info_Table.Row label="Source">
+                {skill.source === 'project' ? 'Project (.agents/skills/)' :
+                 skill.source === 'global' ? 'Global (~/.agents/skills/)' :
+                 'Workspace'}
               </Info_Table.Row>
               <Info_Table.Row label="Location">
                 <button

@@ -58,7 +58,16 @@ export function SkillsListPanel({
       mapItem={(skill) => ({
         icon: <SkillAvatar skill={skill} size="sm" workspaceId={workspaceId} />,
         title: skill.metadata.name,
-        badges: <span className="truncate">{skill.metadata.description}</span>,
+        badges: (
+          <span className="flex items-center gap-1.5 min-w-0">
+            {skill.source === 'project' && (
+              <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-foreground/5 text-muted-foreground">
+                project
+              </span>
+            )}
+            <span className="truncate">{skill.metadata.description}</span>
+          </span>
+        ),
         menu: (
           <SkillMenu
             skillSlug={skill.slug}
