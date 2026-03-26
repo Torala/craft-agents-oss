@@ -9,13 +9,18 @@ Craft Agents can run as a remote server, letting you keep long-running sessions 
 
 ## Prerequisites
 
-Install [Bun](https://bun.sh) (v1.0+):
+Choose the setup path that fits your deployment:
+
+- **Run from source** — install [Bun](https://bun.sh) (v1.0+)
+- **Run the published container** — install [Docker](https://docs.docker.com/get-docker/)
+
+If you're running from source, install Bun with:
 
 ```bash
 curl -fsSL https://bun.sh/install | bash
 ```
 
-### Quick setup
+### Quick setup from source
 
 Clone and run the install script:
 
@@ -27,7 +32,50 @@ cd craft-agents-oss
 
 The script installs dependencies, generates a token, and prints the run command. **Save your token — it cannot be recovered.**
 
-### Manual setup
+### Docker container
+
+If you just want a deployable server, use the public GitHub Container Registry package:
+
+- [craft-agents-server package](https://github.com/orgs/lukilabs/packages/container/package/craft-agents-server)
+
+The latest published image tag is currently `0.8.0`.
+
+```bash
+export CRAFT_SERVER_TOKEN=$(openssl rand -hex 32)
+echo $CRAFT_SERVER_TOKEN  # Save this
+
+docker run -d \
+  --name craft-agents-server \
+  --restart unless-stopped \
+  -p 9100:9100 \
+  -e CRAFT_SERVER_TOKEN=$CRAFT_SERVER_TOKEN \
+  -e CRAFT_RPC_HOST=0.0.0.0 \
+  -v craft-agents-data:/home/craftagents/.craft-agent \
+  ghcr.io/lukilabs/craft-agents-server:0.8.0
+```
+
+This image already includes the browser-accessible Web UI, so you can open `http://your-server:9100` immediately after the container starts. For any networked deployment, terminate TLS at a reverse proxy or mount certificates and set `CRAFT_RPC_TLS_CERT` / `CRAFT_RPC_TLS_KEY`.
+
+If you prefer Docker Compose:
+
+```yaml
+services:
+  craft-agents:
+    image: ghcr.io/lukilabs/craft-agents-server:0.8.0
+    restart: unless-stopped
+    ports:
+      - "9100:9100"
+    environment:
+      CRAFT_SERVER_TOKEN: ${CRAFT_SERVER_TOKEN}
+      CRAFT_RPC_HOST: 0.0.0.0
+    volumes:
+      - craft-agents-data:/home/craftagents/.craft-agent
+
+volumes:
+  craft-agents-data:
+```
+
+### Manual setup from source
 
 ```bash
 git clone https://github.com/lukilabs/craft-agents-oss.git
@@ -66,7 +114,10 @@ CRAFT_SERVER_TOKEN=<your-token>
 
 ## Web UI
 
-The server can serve a browser-accessible web UI on the same port. Build and enable it with:
+The server can serve a browser-accessible web UI on the same port.
+
+- **Docker image:** already includes the Web UI
+- **Run from source:** build and enable it with:
 
 ```bash
 # Build the web UI assets
