@@ -144,6 +144,12 @@ export const LOCAL_ONLY_CHANNELS = new Set<string>([
   RPC_CHANNELS.appearance.GET_RICH_TOOL_DESCRIPTIONS,
   RPC_CHANNELS.appearance.SET_RICH_TOOL_DESCRIPTIONS,
 
+  // caching — local caching preferences
+  RPC_CHANNELS.caching.GET_EXTENDED_PROMPT_CACHE,
+  RPC_CHANNELS.caching.SET_EXTENDED_PROMPT_CACHE,
+  RPC_CHANNELS.caching.GET_ENABLE_1M_CONTEXT,
+  RPC_CHANNELS.caching.SET_ENABLE_1M_CONTEXT,
+
   // browserPane — Electron BrowserView
   RPC_CHANNELS.browserPane.CREATE,
   RPC_CHANNELS.browserPane.DESTROY,
@@ -372,6 +378,10 @@ export const REMOTE_ELIGIBLE_CHANNELS = new Set<string>([
 
   // git — workspace filesystem
   RPC_CHANNELS.git.GET_BRANCH,
+
+  // resources — workspace resource export/import
+  RPC_CHANNELS.resources.EXPORT,
+  RPC_CHANNELS.resources.IMPORT,
 ])
 
 // ---------------------------------------------------------------------------

@@ -354,6 +354,10 @@ export const RPC_CHANNELS = {
     REPLAY: 'automations:replay',
     CHANGED: 'automations:changed',
   },
+  resources: {
+    EXPORT: 'resources:export',
+    IMPORT: 'resources:import',
+  },
 } as const
 
 // IPC_CHANNELS compat alias removed — all consumers now use RPC_CHANNELS
