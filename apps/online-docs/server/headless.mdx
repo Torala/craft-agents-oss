@@ -38,7 +38,7 @@ If you just want a deployable server, use the public GitHub Container Registry p
 
 - [craft-agents-server package](https://github.com/orgs/lukilabs/packages/container/package/craft-agents-server)
 
-The latest published image tag is currently `0.8.0`.
+Use the `latest` container tag:
 
 ```bash
 export CRAFT_SERVER_TOKEN=$(openssl rand -hex 32)
@@ -51,7 +51,7 @@ docker run -d \
   -e CRAFT_SERVER_TOKEN=$CRAFT_SERVER_TOKEN \
   -e CRAFT_RPC_HOST=0.0.0.0 \
   -v craft-agents-data:/home/craftagents/.craft-agent \
-  ghcr.io/lukilabs/craft-agents-server:0.8.0
+  ghcr.io/lukilabs/craft-agents-server:latest
 ```
 
 This image already includes the browser-accessible Web UI, so you can open `http://your-server:9100` immediately after the container starts. For any networked deployment, terminate TLS at a reverse proxy or mount certificates and set `CRAFT_RPC_TLS_CERT` / `CRAFT_RPC_TLS_KEY`.
@@ -61,7 +61,7 @@ If you prefer Docker Compose:
 ```yaml
 services:
   craft-agents:
-    image: ghcr.io/lukilabs/craft-agents-server:0.8.0
+    image: ghcr.io/lukilabs/craft-agents-server:latest
     restart: unless-stopped
     ports:
       - "9100:9100"
