@@ -45,8 +45,13 @@ export function SessionItem({
   const { hotkey: nextHotkey } = useActionLabel('chat.nextSearchMatch')
   const { hotkey: prevHotkey } = useActionLabel('chat.prevSearchMatch')
   const title = getSessionTitle(item)
-  const chatMatchCount = ctx.contentSearchResults.get(item.id)?.matchCount
-  const hasMatch = chatMatchCount != null && chatMatchCount > 0
+  // For the active session, prefer DOM-verified count over ripgrep count
+  const activeMatch = ctx.activeChatMatchInfo
+  const isActiveSession = isSelected && activeMatch?.sessionId === item.id
+  const ripgrepMatchCount = ctx.contentSearchResults.get(item.id)?.matchCount
+  const chatMatchCount = isActiveSession ? activeMatch!.count : ripgrepMatchCount
+  const isHighlightingActive = isActiveSession && activeMatch!.isHighlighting
+  const hasMatch = isHighlightingActive || (chatMatchCount != null && chatMatchCount > 0)
   const hasLabels = !!(item.labels && item.labels.length > 0 && ctx.flatLabels.length > 0 && item.labels.some(entry => {
     const labelId = extractLabelId(entry)
     return ctx.flatLabels.some(l => l.id === labelId)
@@ -158,7 +163,7 @@ export function SessionItem({
           } as React.CSSProperties}
           title={`Matches found (${nextHotkey} next, ${prevHotkey} prev)`}
         >
-          {chatMatchCount}
+          {isHighlightingActive ? <Spinner className="text-[8px]" /> : chatMatchCount}
         </span>
       ) : item.isFlagged ? (
         <div className="p-1 flex items-center justify-center">

@@ -195,10 +195,8 @@ interface ChatDisplayProps {
   searchQuery?: string
   /** Whether search mode is active (prevents focus stealing to chat input) */
   isSearchModeActive?: boolean
-  /** Callback when match count changes - used by session list for navigation */
-  onMatchCountChange?: (count: number) => void
-  /** Callback when match info (count and index) changes - for immediate UI updates */
-  onMatchInfoChange?: (info: { count: number; index: number }) => void
+  /** Callback when match info changes - for immediate UI updates */
+  onMatchInfoChange?: (info: { count: number; index: number; isHighlighting: boolean; sessionId: string | null }) => void
   // Compact mode (for EditPopover embedding)
   /** Enable compact mode - hides non-essential UI elements for popover embedding */
   compactMode?: boolean
@@ -296,6 +294,7 @@ export interface ChatDisplayHandle {
   goToPrevMatch: () => void
   matchCount: number
   currentMatchIndex: number
+  isHighlighting: boolean
 }
 
 /**
@@ -520,7 +519,6 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   // Search highlighting
   searchQuery: externalSearchQuery,
   isSearchModeActive = false,
-  onMatchCountChange,
   onMatchInfoChange,
   // Compact mode (for EditPopover embedding)
   compactMode = false,
@@ -608,6 +606,8 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   const turnRefs = React.useRef<Map<string, HTMLDivElement>>(new Map())
   // Track actual match IDs created in DOM (state so it triggers re-renders)
   const [actualMatchIds, setActualMatchIds] = useState<Set<string>>(new Set())
+  // Track how many matching turns have been highlighted (state for re-render on progress)
+  const [highlightedTurnCount, setHighlightedTurnCount] = useState(0)
   // Track which turn IDs have been highlighted (to avoid re-highlighting on pagination)
   const highlightedTurnIdsRef = React.useRef<Set<string>>(new Set())
   // Track previous search/session to detect when to clear vs accumulate highlights
@@ -667,6 +667,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
 
     setCurrentMatchIndex(0)
     setActualMatchIds(new Set()) // Clear stale match IDs to prevent incorrect counts
+    setHighlightedTurnCount(0)
   }, [session?.id, searchQuery, isSearchActive])
 
   // Helper to count occurrences of a substring
@@ -760,9 +761,9 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
 
   // Filter to only valid matches that exist in DOM (actualMatchIds is updated after highlighting)
   const validMatches = useMemo(() => {
-    // Before highlighting runs, show all potential matches
-    // After highlighting, filter to only matches that exist in DOM
-    if (actualMatchIds.size === 0) return matchingOccurrences
+    // Before highlighting runs, return empty — never show an inflated count.
+    // After highlighting, filter to only matches that exist in DOM.
+    if (actualMatchIds.size === 0) return []
     return matchingOccurrences.filter(m => actualMatchIds.has(m.matchId))
   }, [matchingOccurrences, actualMatchIds])
 
@@ -865,6 +866,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
     if (contextChanged) {
       clearHighlights()
       setActualMatchIds(new Set())
+      setHighlightedTurnCount(0)
       highlightedTurnIdsRef.current = new Set()
     }
 
@@ -874,49 +876,32 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
     const createdMatchIds: string[] = [] // Collect IDs as we create marks
 
     // Highlighting function - applies highlights only to MATCHING turn refs
-    // Assigns unique IDs to each mark for navigation
+    // Uses cross-node matching: concatenates text across node boundaries to find
+    // matches that span multiple DOM nodes (e.g. Shiki-split tokens)
     const applyHighlights = () => {
-      // Only highlight in turns that actually match, not all visible turns
       const matchingTurnIdSet = new Set(matchingTurnIds)
-      // Track match counter per turn for unique IDs
-      const turnMatchCounters = new Map<string, number>()
 
       turnRefs.current.forEach((container, turnId) => {
-        // Skip turns that don't contain matches
         if (!matchingTurnIdSet.has(turnId)) return
-
-        // Skip turns that have already been highlighted (pagination case)
         if (highlightedTurnIdsRef.current.has(turnId)) return
-
-        // Mark this turn as highlighted
         highlightedTurnIdsRef.current.add(turnId)
 
-        // Initialize counter for this turn
-        turnMatchCounters.set(turnId, 0)
-
-        // Find all text nodes within the container
+        // Step 1: Collect ALL eligible text nodes (no query filter — needed for cross-node matching)
         const walker = document.createTreeWalker(
           container,
           NodeFilter.SHOW_TEXT,
           {
             acceptNode: (node) => {
-              // Skip nodes in script, style, or already marked
               const parent = node.parentElement
               if (!parent) return NodeFilter.FILTER_REJECT
               const tagName = parent.tagName.toLowerCase()
               if (tagName === 'script' || tagName === 'style' || tagName === 'mark') {
                 return NodeFilter.FILTER_REJECT
               }
-              // Skip nodes within elements marked as search-excluded (e.g., tool activities)
-              // This matches ripgrep behavior which only searches user/assistant text
               if (parent.closest('[data-search-exclude="true"]')) {
                 return NodeFilter.FILTER_REJECT
               }
-              // Only process nodes that contain the search text
-              if (node.textContent?.toLowerCase().includes(query)) {
-                return NodeFilter.FILTER_ACCEPT
-              }
-              return NodeFilter.FILTER_REJECT
+              return NodeFilter.FILTER_ACCEPT
             }
           }
         )
@@ -926,91 +911,91 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
         while ((currentNode = walker.nextNode())) {
           textNodes.push(currentNode as Text)
         }
+        if (textNodes.length === 0) return
 
-        // Process text nodes in FORWARD order to assign IDs correctly
-        // (but we need to be careful about DOM manipulation)
-        // Actually, let's collect all matches first, then apply
-        const allMatches: { textNode: Text; start: number; end: number }[] = []
-        for (const textNode of textNodes) {
-          const text = textNode.textContent || ''
-          const lowerText = text.toLowerCase()
-          let pos = 0
-          let matchPos = lowerText.indexOf(query, pos)
-          while (matchPos !== -1) {
-            allMatches.push({ textNode, start: matchPos, end: matchPos + query.length })
-            pos = matchPos + query.length
-            matchPos = lowerText.indexOf(query, pos)
+        // Step 2: Build concatenated string with node offset mapping
+        const nodeOffsets: { node: Text; start: number; end: number }[] = []
+        let totalLength = 0
+        for (const node of textNodes) {
+          const text = node.textContent || ''
+          nodeOffsets.push({ node, start: totalLength, end: totalLength + text.length })
+          totalLength += text.length
+        }
+        const concatenated = textNodes.map(n => n.textContent || '').join('')
+        const lowerConcatenated = concatenated.toLowerCase()
+
+        // Step 3: Find all matches in the concatenated string
+        interface ConcatMatch { start: number; end: number }
+        const matches: ConcatMatch[] = []
+        let searchPos = 0
+        while (searchPos < lowerConcatenated.length) {
+          const idx = lowerConcatenated.indexOf(query, searchPos)
+          if (idx === -1) break
+          matches.push({ start: idx, end: idx + query.length })
+          searchPos = idx + query.length
+        }
+        if (matches.length === 0) return
+
+        // Step 4: Map each match back to source nodes and determine which nodes are affected
+        // A match can span multiple nodes (cross-node match)
+        interface NodeSlice { nodeIndex: number; node: Text; sliceStart: number; sliceEnd: number }
+        interface ResolvedMatch { matchIndex: number; slices: NodeSlice[] }
+        const resolvedMatches: ResolvedMatch[] = []
+
+        for (let mi = 0; mi < matches.length; mi++) {
+          const match = matches[mi]
+          const slices: NodeSlice[] = []
+
+          for (let ni = 0; ni < nodeOffsets.length; ni++) {
+            const offset = nodeOffsets[ni]
+            // Does this node overlap with the match?
+            if (offset.end <= match.start) continue
+            if (offset.start >= match.end) break
+
+            const sliceStart = Math.max(0, match.start - offset.start)
+            const sliceEnd = Math.min(offset.end - offset.start, match.end - offset.start)
+            slices.push({ nodeIndex: ni, node: offset.node, sliceStart, sliceEnd })
+          }
+
+          if (slices.length > 0) {
+            resolvedMatches.push({ matchIndex: mi, slices })
           }
         }
 
-        // Process text nodes in reverse order to avoid invalidating positions
-        // But we need to assign IDs in forward order, so use a reverse counter
-        const totalMatchesInTurn = allMatches.length
-        let reverseCounter = totalMatchesInTurn - 1
+        // Step 5: Apply highlights in reverse order to avoid invalidating positions
+        // Group modifications by node to handle multiple matches in the same node
+        for (let ri = resolvedMatches.length - 1; ri >= 0; ri--) {
+          const { matchIndex, slices } = resolvedMatches[ri]
+          const markId = `${turnId}-match-${matchIndex}`
 
-        for (let i = textNodes.length - 1; i >= 0; i--) {
-          const textNode = textNodes[i]
-          const text = textNode.textContent || ''
-          const lowerText = text.toLowerCase()
+          for (let si = slices.length - 1; si >= 0; si--) {
+            const { node, sliceStart, sliceEnd } = slices[si]
+            const text = node.textContent || ''
+            if (!node.parentNode) continue
 
-          // Find matches in this node (in reverse order for DOM manipulation)
-          const nodeMatches: number[] = []
-          let pos = 0
-          let matchPos = lowerText.indexOf(query, pos)
-          while (matchPos !== -1) {
-            nodeMatches.push(matchPos)
-            pos = matchPos + query.length
-            matchPos = lowerText.indexOf(query, pos)
-          }
-
-          if (nodeMatches.length === 0) continue
-
-          // Process in reverse to maintain positions
-          let lastIndex = text.length
-          const fragments: (string | HTMLElement)[] = []
-
-          for (let j = nodeMatches.length - 1; j >= 0; j--) {
-            const matchStart = nodeMatches[j]
-            const matchEnd = matchStart + query.length
-
-            // Text after match
-            if (matchEnd < lastIndex) {
-              fragments.unshift(text.slice(matchEnd, lastIndex))
-            }
-
-            // Highlighted match with unique ID
             const mark = document.createElement('mark')
-            const matchIdIndex = reverseCounter - (nodeMatches.length - 1 - j)
-            const markId = `${turnId}-match-${matchIdIndex}`
-            mark.id = markId
-            // All highlights start as passive (subtle 30% opacity yellow)
+            // Only the first slice of a match gets the navigable ID
+            if (si === 0) {
+              mark.id = markId
+              createdMatchIds.push(markId)
+            }
             mark.className = 'search-highlight bg-yellow-300/30 rounded-[2px]'
-            mark.textContent = text.slice(matchStart, matchEnd)
-            fragments.unshift(mark)
-            createdMatchIds.push(markId)
+            mark.textContent = text.slice(sliceStart, sliceEnd)
 
-            lastIndex = matchStart
-          }
+            const parent = node.parentNode
+            // Split: [before][mark][after]
+            const before = text.slice(0, sliceStart)
+            const after = text.slice(sliceEnd)
 
-          // Update reverse counter
-          reverseCounter -= nodeMatches.length
+            const afterNode = after ? document.createTextNode(after) : null
+            if (afterNode) parent.insertBefore(afterNode, node.nextSibling)
+            parent.insertBefore(mark, node.nextSibling)
 
-          // Text before first match
-          if (lastIndex > 0) {
-            fragments.unshift(text.slice(0, lastIndex))
-          }
-
-          // Replace text node with fragments
-          if (fragments.length > 0 && textNode.parentNode) {
-            const parent = textNode.parentNode
-            fragments.forEach(frag => {
-              if (typeof frag === 'string') {
-                parent.insertBefore(document.createTextNode(frag), textNode)
-              } else {
-                parent.insertBefore(frag, textNode)
-              }
-            })
-            parent.removeChild(textNode)
+            if (before) {
+              node.textContent = before
+            } else {
+              parent.removeChild(node)
+            }
           }
         }
       })
@@ -1039,6 +1024,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
           createdMatchIds.forEach(id => merged.add(id))
           return merged
         })
+        setHighlightedTurnCount(highlightedTurnIdsRef.current.size)
       } else if (attempts < maxAttempts) {
         // Refs not ready yet - retry with increasing delay
         attempts++
@@ -1079,23 +1065,27 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
     })
   }, [validMatches])
 
+  // Highlighting is in progress when we have matching turns but haven't processed them all yet
+  const isHighlighting = isSearchActive && matchingTurnIds.length > 0 && highlightedTurnCount < matchingTurnIds.length
+
   // Expose navigation via imperative handle (for session list navigation controls)
   React.useImperativeHandle(ref, () => ({
     goToNextMatch,
     goToPrevMatch,
     matchCount: validMatches.length,
     currentMatchIndex,
-  }), [goToNextMatch, goToPrevMatch, validMatches.length, currentMatchIndex])
+    isHighlighting,
+  }), [goToNextMatch, goToPrevMatch, validMatches.length, currentMatchIndex, isHighlighting])
 
-  // Notify parent when match count changes
+  // Notify parent when match info (count, index, highlighting state) changes
   useEffect(() => {
-    onMatchCountChange?.(validMatches.length)
-  }, [validMatches.length, onMatchCountChange])
-
-  // Notify parent when match info (count and index) changes
-  useEffect(() => {
-    onMatchInfoChange?.({ count: validMatches.length, index: currentMatchIndex })
-  }, [validMatches.length, currentMatchIndex, session?.id, onMatchInfoChange])
+    onMatchInfoChange?.({
+      count: validMatches.length,
+      index: currentMatchIndex,
+      isHighlighting,
+      sessionId: session?.id ?? null,
+    })
+  }, [validMatches.length, currentMatchIndex, isHighlighting, session?.id, onMatchInfoChange])
 
   // ============================================================================
   // Overlay State Management

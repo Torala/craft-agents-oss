@@ -736,17 +736,17 @@ function AppShellContent({
   // Ref for ChatDisplay navigation (exposed via forwardRef)
   const chatDisplayRef = React.useRef<ChatDisplayHandle>(null)
   // Track match count and index from ChatDisplay (for SessionList navigation UI)
-  const [chatMatchInfo, setChatMatchInfo] = React.useState<{ count: number; index: number }>({ count: 0, index: 0 })
+  const [chatMatchInfo, setChatMatchInfo] = React.useState<{ sessionId: string | null; count: number; index: number; isHighlighting?: boolean }>({ sessionId: null, count: 0, index: 0 })
 
   // Callback for immediate match info updates from ChatDisplay
-  const handleChatMatchInfoChange = React.useCallback((info: { count: number; index: number }) => {
+  const handleChatMatchInfoChange = React.useCallback((info: { sessionId: string | null; count: number; index: number; isHighlighting: boolean }) => {
     setChatMatchInfo(info)
   }, [])
 
   // Reset match info when search is deactivated
   React.useEffect(() => {
     if (!searchActive || !searchQuery) {
-      setChatMatchInfo({ count: 0, index: 0 })
+      setChatMatchInfo({ sessionId: null, count: 0, index: 0 })
     }
   }, [searchActive, searchQuery])
 
@@ -3206,6 +3206,7 @@ function AppShellContent({
                   focusedSessionId={panelCount === 0 ? null : panelCount > 1 ? focusedSessionId : undefined}
                   onNavigateToSession={panelCount > 1 ? navigateToSessionInPanel : undefined}
                   hasPendingPrompt={hasPendingPrompt}
+                  activeChatMatchInfo={chatMatchInfo}
                 />
               </>
             )}

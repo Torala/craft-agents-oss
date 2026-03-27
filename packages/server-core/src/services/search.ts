@@ -10,6 +10,17 @@ import { existsSync } from 'fs';
 import { resolveBackendHostTooling } from '@craft-agent/shared/agent/backend';
 import { createScopedLogger, CONSOLE_LOGGER, type PlatformServices, type Logger } from '../runtime/platform';
 
+/**
+ * Thrown when the search service cannot run (e.g. ripgrep binary not found).
+ * Clients should catch this and show an "unavailable" state instead of "0 results".
+ */
+export class SearchUnavailableError extends Error {
+  constructor(reason: string) {
+    super(reason);
+    this.name = 'SearchUnavailableError';
+  }
+}
+
 // Track current search process to cancel on new search
 let currentSearchProcess: ChildProcess | null = null;
 
@@ -197,7 +208,7 @@ export async function searchSessions(
   handlerLog.debug('[search] Ripgrep path:', rgPath);
   if (!rgPath || !existsSync(rgPath)) {
     handlerLog.error('[search] ripgrep binary not found:', rgPath);
-    return [];
+    throw new SearchUnavailableError(`ripgrep binary not found: ${rgPath ?? 'undefined'}`);
   }
 
   handlerLog.debug('[search] Sessions directory:', sessionsDir);
