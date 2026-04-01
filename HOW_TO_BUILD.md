@@ -63,7 +63,7 @@ cd apps/electron
 bash scripts/build-dmg.sh x64
 ```
 
-**Output:** `apps/electron/release/Craft-Agent-arm64.dmg` or `Craft-Agent-x64.dmg`
+**Output:** `apps/electron/release/Craft-Agents-arm64.dmg` or `Craft-Agents-x64.dmg`
 
 ### Build with Code Signing & Notarization (Optional)
 
@@ -106,7 +106,7 @@ powershell -ExecutionPolicy Bypass -File scripts/build-win.ps1
 bun run electron:dist:win
 ```
 
-**Output:** `apps/electron/release/Craft-Agent-x64.exe`
+**Output:** `apps/electron/release/Craft-Agents-x64.exe`
 
 ### Development Mode
 
@@ -131,9 +131,9 @@ bun run electron:dist:linux
 ```
 
 **Output:**
-- `apps/electron/release/Craft-Agent-x64.AppImage`
-- `apps/electron/release/Craft-Agent-arm64.AppImage`
-- `apps/electron/release/Craft-Agent-x64.deb`
+- `apps/electron/release/Craft-Agents-x64.AppImage`
+- `apps/electron/release/Craft-Agents-arm64.AppImage`
+- `apps/electron/release/Craft-Agents-x64.deb`
 
 ### Development Mode
 
@@ -178,11 +178,11 @@ All build artifacts are placed in `apps/electron/release/`:
 
 | Platform | File |
 |----------|------|
-| macOS arm64 | `Craft-Agent-arm64.dmg` |
-| macOS x64 | `Craft-Agent-x64.dmg` |
-| Windows x64 | `Craft-Agent-x64.exe` |
-| Linux x64 | `Craft-Agent-x64.AppImage`, `Craft-Agent-x64.deb` |
-| Linux arm64 | `Craft-Agent-arm64.AppImage` |
+| macOS arm64 | `Craft-Agents-arm64.dmg` |
+| macOS x64 | `Craft-Agents-x64.dmg` |
+| Windows x64 | `Craft-Agents-x64.exe` |
+| Linux x64 | `Craft-Agents-x64.AppImage`, `Craft-Agents-x64.deb` |
+| Linux arm64 | `Craft-Agents-arm64.AppImage` |
 
 ---
 
@@ -209,5 +209,5 @@ The app isn't signed/notarized. Either:
 
 Make it executable:
 ```bash
-chmod +x Craft-Agent-x64.AppImage
+chmod +x Craft-Agents-x64.AppImage
 ```

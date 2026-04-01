@@ -243,6 +243,18 @@ When creating dropdowns or popovers that need consistent styling regardless of t
 </StyledDropdownMenuItem>
 ```
 
+### Label Display Ordering
+
+For user-facing label pickers and label navigation, keep **raw label config order** separate from **display order**.
+
+- Keep `useLabels()` / `listLabels()` returning the tree as stored.
+- Use shared display helpers from `@craft-agent/shared/labels` for UI ordering:
+  - `sortLabelsForDisplay(...)` for nested label trees (sidebar, context menus, filter trees)
+  - `flattenLabelsWithParentPath(...)` when building flat searchable label menus
+- Do not reimplement local `findParentPath` or ad-hoc alphabetical sorting in each menu.
+
+This keeps the sidebar, right-click menus, and `#` label autocomplete aligned.
+
 ### SimpleDropdown Keyboard Navigation (Technical Guideline)
 
 `SimpleDropdown` now has centralized keyboard navigation by default:
@@ -1452,7 +1464,7 @@ bash scripts/build-dmg.sh arm64
 bash scripts/build-dmg.sh x64
 ```
 
-**Output:** `apps/electron/release/Craft-Agent-{arch}.dmg`
+**Output:** `apps/electron/release/Craft-Agents-{arch}.dmg`
 
 ### Windows
 
@@ -1461,7 +1473,7 @@ bash scripts/build-dmg.sh x64
 powershell -ExecutionPolicy Bypass -File scripts/build-win.ps1
 ```
 
-**Output:** `apps/electron/release/Craft-Agent-x64.exe`
+**Output:** `apps/electron/release/Craft-Agents-x64.exe`
 
 ### Linux
 
@@ -1470,7 +1482,7 @@ bash scripts/build-linux.sh x64
 bash scripts/build-linux.sh arm64
 ```
 
-**Output:** `apps/electron/release/Craft-Agent-{arch}.AppImage`
+**Output:** `apps/electron/release/Craft-Agents-{arch}.AppImage`
 
 ### What the build scripts do
 

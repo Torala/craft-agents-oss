@@ -71,6 +71,8 @@ export interface StoredConfig {
   keepAwakeWhileRunning?: boolean;  // Prevent screen sleep while sessions are running (default: false)
   // Tool metadata
   richToolDescriptions?: boolean;  // Add intent/action metadata to all tool calls (default: true)
+  // Tools
+  browserToolEnabled?: boolean;  // Enable built-in browser tool (default: true). Disable for Playwright/Puppeteer.
   // Prompt caching & context
   extendedPromptCache?: boolean;  // Use 1h prompt cache TTL instead of 5m (default: false)
   enable1MContext?: boolean;  // Enable 1M context window for supported models (default: true)
@@ -110,6 +112,7 @@ const FALLBACK_CONFIG_DEFAULTS: ConfigDefaults = {
     keepAwakeWhileRunning: false,
     richToolDescriptions: true,
     extendedPromptCache: false,
+    browserToolEnabled: true,
   },
   workspaceDefaults: {
     thinkingLevel: 'medium',
@@ -193,7 +196,11 @@ export function ensureConfigDefaults(): void {
   syncConfigDefaults();
 }
 
+let configDirInitialized = false;
+
 export function ensureConfigDir(): void {
+  if (configDirInitialized) return;
+
   if (!existsSync(CONFIG_DIR)) {
     mkdirSync(CONFIG_DIR, { recursive: true });
   }
@@ -205,6 +212,8 @@ export function ensureConfigDir(): void {
 
   // Initialize tool icons (CLI tool icons for turn card display)
   ensureToolIcons();
+
+  configDirInitialized = true;
 }
 
 export function loadStoredConfig(): StoredConfig | null {
@@ -435,6 +444,34 @@ export function setExtendedPromptCache(enabled: boolean): void {
 }
 
 /**
+ * Get whether the built-in browser tool is enabled.
+ * When disabled, browser_tool is not included in session tools.
+ * Defaults to true if not set.
+ */
+export function getBrowserToolEnabled(): boolean {
+  const config = loadStoredConfig();
+  if (config?.browserToolEnabled !== undefined) {
+    return config.browserToolEnabled;
+  }
+  const defaults = loadConfigDefaults();
+  return defaults.defaults.browserToolEnabled;
+}
+
+/**
+ * Set whether the built-in browser tool is enabled.
+ */
+export function setBrowserToolEnabled(enabled: boolean): void {
+  const config = loadStoredConfig();
+  if (!config) return;
+  config.browserToolEnabled = enabled;
+  saveConfig(config);
+
+  // Clear session tool caches so all sessions pick up the change immediately.
+  // Lazy import to avoid circular dependency (storage ← session-scoped-tools ← storage).
+  import('../agent/session-scoped-tools.ts').then(m => m.invalidateAllSessionToolsCaches()).catch(() => {});
+}
+
+/**
  * Get whether 1M context window is enabled.
  * When disabled, models use 200K context and the interceptor strips the context-1m beta header.
  * Defaults to true if not set.
@@ -596,6 +633,18 @@ export function getWorkspaceByNameOrId(nameOrId: string): Workspace | null {
     w.id === nameOrId ||
     w.name.toLowerCase() === nameOrId.toLowerCase()
   ) || null;
+}
+
+export function updateWorkspaceRemoteServer(
+  workspaceId: string,
+  remoteServer: { url: string; token: string; remoteWorkspaceId: string },
+): void {
+  const config = loadStoredConfig();
+  if (!config) return;
+  const ws = config.workspaces.find(w => w.id === workspaceId);
+  if (!ws) throw new Error('Workspace not found');
+  ws.remoteServer = remoteServer;
+  saveConfig(config);
 }
 
 export function setActiveWorkspace(workspaceId: string): void {

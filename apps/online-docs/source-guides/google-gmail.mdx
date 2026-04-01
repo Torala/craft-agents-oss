@@ -79,6 +79,10 @@ Combine operators: `from:john@example.com after:2024/01/01 has:attachment`
 
 See [Google OAuth Setup](/source-guides/google-oauth-setup) for instructions on creating OAuth credentials, then use `source_google_oauth_trigger` to start the OAuth flow.
 
+If you authenticate through **WebUI / headless browser access**, use a **Web application** Google OAuth client and register this exact redirect URI:
+
+- `https://agents.craft.do/auth/callback`
+
 ### Troubleshooting
 
 #### "Gmail API has not been used in project" error

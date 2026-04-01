@@ -37,13 +37,13 @@ This will:
 - Notarize with Apple (using credentials from 1Password)
 - Create a DMG with Applications symlink
 
-Output: `apps/electron/release/Craft-Agent-arm64.dmg`
+Output: `apps/electron/release/Craft-Agents-arm64.dmg`
 
 ### 3. Upload to R2
 
 ```bash
 npx wrangler r2 object put agents-craft-do/codex-beta/Craft\ Agents.dmg \
-  --file="apps/electron/release/Craft-Agent-arm64.dmg" \
+  --file="apps/electron/release/Craft-Agents-arm64.dmg" \
   --remote
 ```
 

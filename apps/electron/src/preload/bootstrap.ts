@@ -182,6 +182,8 @@ client.handleCapability(CLIENT_OPEN_FILE_DIALOG, async (spec: FileDialogSpec) =>
 
 const api = buildClientApi(client, CHANNEL_MAP, (ch) => client.isChannelAvailable(ch))
 
+;(api as any).getRuntimeEnvironment = (): 'electron' | 'web' => 'electron'
+
 // ---------------------------------------------------------------------------
 // Transport connection state logging (for remote connections)
 // ---------------------------------------------------------------------------
@@ -269,12 +271,12 @@ client.onConnectionStateChanged((state) => {
   try {
     // 1. Start local callback server to receive OAuth redirect
     callbackServer = await createCallbackServer({ appType: 'electron' })
-    const port = parseInt(new URL(callbackServer.url).port, 10)
+    const callbackUrl = `${callbackServer.url}/callback`
 
     // 2. Ask server to prepare the flow (PKCE, auth URL, store in flow store)
     const startResult = await client.invoke('oauth:start', {
       sourceSlug: args.sourceSlug,
-      callbackPort: port,
+      callbackUrl,
       sessionId: args.sessionId,
       authRequestId: args.authRequestId,
     })

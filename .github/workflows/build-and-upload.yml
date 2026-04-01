@@ -200,8 +200,8 @@ jobs:
         with:
           name: build-${{ matrix.platform }}-${{ matrix.arch }}
           path: |
-            apps/electron/release/Craft-Agent-${{ matrix.arch }}.${{ matrix.ext }}
-            apps/electron/release/Craft-Agent-${{ matrix.arch }}.zip
+            apps/electron/release/Craft-Agents-${{ matrix.arch }}.${{ matrix.ext }}
+            apps/electron/release/Craft-Agents-${{ matrix.arch }}.zip
           retention-days: 7
 
   # Verify SDK is bundled in all artifacts
@@ -221,7 +221,7 @@ jobs:
         if: contains(inputs.targets, 'macos-arm64') || inputs.targets == 'all' || inputs.targets == ''
         run: |
           cd artifacts/build-darwin-arm64
-          unzip -q Craft-Agent-arm64.zip -d verify
+          unzip -q Craft-Agents-arm64.zip -d verify
           APP="verify/Craft Agents.app/Contents/Resources/app"
           SDK="$APP/node_modules/@anthropic-ai/claude-agent-sdk/cli.js"
           if [ ! -f "$SDK" ]; then
@@ -237,7 +237,7 @@ jobs:
         if: contains(inputs.targets, 'macos-x64') || inputs.targets == 'all' || inputs.targets == ''
         run: |
           cd artifacts/build-darwin-x64
-          unzip -q Craft-Agent-x64.zip -d verify
+          unzip -q Craft-Agents-x64.zip -d verify
           APP="verify/Craft Agents.app/Contents/Resources/app"
           SDK="$APP/node_modules/@anthropic-ai/claude-agent-sdk/cli.js"
           if [ ! -f "$SDK" ]; then
@@ -251,8 +251,8 @@ jobs:
         if: contains(inputs.targets, 'linux') || inputs.targets == 'all' || inputs.targets == ''
         run: |
           cd artifacts/build-linux-x64
-          chmod +x Craft-Agent-x64.AppImage
-          ./Craft-Agent-x64.AppImage --appimage-extract >/dev/null 2>&1
+          chmod +x Craft-Agents-x64.AppImage
+          ./Craft-Agents-x64.AppImage --appimage-extract >/dev/null 2>&1
           APP="squashfs-root/resources/app"
           SDK="$APP/node_modules/@anthropic-ai/claude-agent-sdk/cli.js"
           if [ ! -f "$SDK" ]; then
@@ -267,7 +267,7 @@ jobs:
         run: |
           cd artifacts/build-win32-x64
           sudo apt-get install -qq p7zip-full
-          7z x -y Craft-Agent-x64.exe -oextracted >/dev/null
+          7z x -y Craft-Agents-x64.exe -oextracted >/dev/null
           NSIS="extracted/\$PLUGINSDIR/app-64.7z"
           if [ -f "$NSIS" ]; then
             7z x -y "$NSIS" -oapp >/dev/null

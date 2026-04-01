@@ -80,9 +80,23 @@ export default function App() {
       const { wsUrl } = await configRes.json() as { wsUrl: string }
       if (!wsUrl) throw new Error('Server did not return a WebSocket URL')
 
-      // 2. Determine workspace — check URL params first, then pick first available
+      // 2. Determine workspace — check URL params first
       const params = new URLSearchParams(window.location.search)
       let workspaceId = params.get('workspace') ?? undefined
+
+      // If no workspace in URL, fetch the default from the server
+      // so we can include it in the WebSocket handshake
+      if (!workspaceId) {
+        try {
+          const wsRes = await fetch('/api/config/workspaces', { credentials: 'same-origin' })
+          if (wsRes.ok) {
+            const { defaultWorkspaceId } = await wsRes.json() as { defaultWorkspaceId?: string }
+            if (defaultWorkspaceId) workspaceId = defaultWorkspaceId
+          }
+        } catch {
+          // Non-fatal — workspace will be set via switchWorkspace later
+        }
+      }
 
       // 3. Create web API adapter
       // Destroy previous client on retry

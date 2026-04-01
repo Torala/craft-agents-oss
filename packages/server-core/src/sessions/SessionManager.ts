@@ -80,7 +80,8 @@ import { CraftMcpClient, McpClientPool, McpPoolServer } from '@craft-agent/share
 import { type Session, type SessionEvent, type FileAttachment, type SendMessageOptions, type UnreadSummary, type RemoteSessionTransferPayload, type ImportRemoteSessionTransferResult, RPC_CHANNELS, generateMessageId } from '@craft-agent/shared/protocol'
 import { messageToStored, storedToMessage, type Message, type StoredAttachment, type ToolDisplayMeta } from '@craft-agent/core/types'
 import { formatPathsToRelative, formatToolInputPaths, perf, encodeIconToDataUrlAsync, getEmojiIcon, resetSummarizationClient, resolveToolIcon, readFileAttachment, selectSpreadMessages, normalizePath } from '@craft-agent/shared/utils'
-import { loadAllSkills, loadSkillBySlug, type LoadedSkill } from '@craft-agent/shared/skills'
+import { loadAllSkills, loadSkillBySlug, invalidateSkillsCache, type LoadedSkill } from '@craft-agent/shared/skills'
+import { invalidateContextFileCache } from '@craft-agent/shared/prompts/system'
 import { getToolIconsDir, getMiniModel } from '@craft-agent/shared/config'
 import { getDefaultSummarizationModel } from '@craft-agent/shared/config/models'
 import type { SummarizeCallback } from '@craft-agent/shared/sources'
@@ -4227,6 +4228,10 @@ export class SessionManager implements ISessionManager {
 
       managed.workingDirectory = path
 
+      // Invalidate filesystem caches that depend on working directory
+      invalidateContextFileCache(path)
+      invalidateSkillsCache()
+
       // Check if we can also update sdkCwd (safe if no SDK interaction yet)
       // Conditions: no messages sent AND no agent created yet (no SDK session)
       const shouldUpdateSdkCwd =
@@ -6884,6 +6889,9 @@ export class SessionManager implements ISessionManager {
       }
       // Clear thinking level so the session inherits the workspace default
       storedSession.thinkingLevel = undefined
+      // Clear working directory — the source path won't exist on a different server.
+      // The user can set a new cwd after the session is transferred.
+      storedSession.workingDirectory = undefined
     }
 
     // Check source compatibility (before writing JSONL so fixes are persisted)

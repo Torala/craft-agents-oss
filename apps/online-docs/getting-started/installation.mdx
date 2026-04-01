@@ -19,12 +19,12 @@ Craft Agents is a native desktop application. It runs locally on your machine, s
   <Tab title="macOS">
     **Apple Silicon (M1/M2/M3/M4):**
     ```
-    https://agents.craft.do/electron/latest/Craft-Agent-arm64.dmg
+    https://agents.craft.do/electron/latest/Craft-Agents-arm64.dmg
     ```
 
     **Intel:**
     ```
-    https://agents.craft.do/electron/latest/Craft-Agent-x64.dmg
+    https://agents.craft.do/electron/latest/Craft-Agents-x64.dmg
     ```
 
     1. Download the `.dmg` for your architecture
@@ -35,7 +35,7 @@ Craft Agents is a native desktop application. It runs locally on your machine, s
   <Tab title="Windows">
     **Download:**
     ```
-    https://agents.craft.do/electron/latest/Craft-Agent-x64.exe
+    https://agents.craft.do/electron/latest/Craft-Agents-x64.exe
     ```
 
     1. Download and run the installer
@@ -46,12 +46,12 @@ Craft Agents is a native desktop application. It runs locally on your machine, s
   <Tab title="Linux">
     **Download:**
     ```
-    https://agents.craft.do/electron/latest/Craft-Agent-x64.AppImage
+    https://agents.craft.do/electron/latest/Craft-Agents-x64.AppImage
     ```
 
     1. Download the AppImage
-    2. Make it executable: `chmod +x Craft-Agent-x64.AppImage`
-    3. Run: `./Craft-Agent-x64.AppImage`
+    2. Make it executable: `chmod +x Craft-Agents-x64.AppImage`
+    3. Run: `./Craft-Agents-x64.AppImage`
 
     <Note>
     **FUSE required.** Install with:
@@ -122,7 +122,7 @@ bun run electron:start
     bash apps/electron/scripts/build-dmg.sh x64
     ```
 
-    Output: `apps/electron/release/Craft-Agent-{arch}.dmg`
+    Output: `apps/electron/release/Craft-Agents-{arch}.dmg`
 
     <Note>
     Code signing and notarization require Apple Developer credentials. Set `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_TEAM_ID`, and `APPLE_APP_SPECIFIC_PASSWORD` environment variables. Without these, the build will be unsigned.
@@ -134,7 +134,7 @@ bun run electron:start
     powershell -ExecutionPolicy Bypass -File apps/electron/scripts/build-win.ps1
     ```
 
-    Output: `apps/electron/release/Craft-Agent-x64.exe`
+    Output: `apps/electron/release/Craft-Agents-x64.exe`
   </Tab>
 
   <Tab title="Linux">
@@ -142,7 +142,7 @@ bun run electron:start
     bash apps/electron/scripts/build-linux.sh x64
     ```
 
-    Output: `apps/electron/release/Craft-Agent-x64.AppImage`
+    Output: `apps/electron/release/Craft-Agents-x64.AppImage`
   </Tab>
 </Tabs>
 

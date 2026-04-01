@@ -137,7 +137,7 @@ function renderMenuSection(
 interface TopBarProps {
   workspaces: Workspace[]
   activeWorkspaceId: string | null
-  onSelectWorkspace: (workspaceId: string, openInNewWindow?: boolean) => void
+  onSelectWorkspace: (workspaceId: string, openInNewWindow?: boolean) => void | Promise<void>
   workspaceUnreadMap?: Record<string, boolean>
   onWorkspaceCreated?: (workspace: Workspace) => void
   onWorkspaceRemoved?: () => void

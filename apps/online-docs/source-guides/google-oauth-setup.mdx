@@ -52,12 +52,31 @@ External apps in "Testing" mode are limited to 100 users. For personal use, this
 
 ## Step 4: Create OAuth Credentials
 
+Choose the OAuth client type based on **how you will authenticate**:
+
+### Electron / Desktop app
+
 1. Go to **APIs & Services → Credentials**
 2. Click **Create Credentials → OAuth Client ID**
 3. Application type: **Desktop app**
 4. Name: e.g., "Craft Agent Desktop"
 5. Click **Create**
 6. **Copy the Client ID and Client Secret** - you'll need these next
+
+### WebUI / Headless server
+
+1. Go to **APIs & Services → Credentials**
+2. Click **Create Credentials → OAuth Client ID**
+3. Application type: **Web application**
+4. Name: e.g., "Craft Agent WebUI"
+5. Under **Authorized redirect URIs**, add this exact URI:
+   - `https://agents.craft.do/auth/callback`
+6. Click **Create**
+7. **Copy the Client ID and Client Secret** - you'll need these next
+
+<Tip>
+Use the **Desktop app** client when authenticating from the desktop app, and the **Web application** client when authenticating through WebUI / headless browser access.
+</Tip>
 
 ## Step 5: Add Credentials to Your Source
 
@@ -78,7 +97,7 @@ Then use `source_google_oauth_trigger` to start the OAuth flow.
 
 - Your OAuth credentials are stored encrypted alongside other source credentials
 - Never commit credentials to version control
-- The Client Secret is required by Google for Desktop apps (even with PKCE)
+- The Client Secret is required by Craft Agents for Google OAuth flows
 - For production use, consider getting your OAuth consent screen verified
 
 ## Alternatives

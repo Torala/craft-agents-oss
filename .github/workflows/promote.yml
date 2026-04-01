@@ -148,10 +148,10 @@ jobs:
           BASE_URL="https://agents.craft.do/electron/$VERSION"
           mkdir -p /tmp/binaries
 
-          curl -fsSL -o "/tmp/binaries/Craft-Agents-$VERSION-mac-arm64.dmg" "$BASE_URL/Craft-Agent-arm64.dmg" || true
-          curl -fsSL -o "/tmp/binaries/Craft-Agents-$VERSION-mac-x64.dmg" "$BASE_URL/Craft-Agent-x64.dmg" || true
-          curl -fsSL -o "/tmp/binaries/Craft-Agents-$VERSION-win-x64.exe" "$BASE_URL/Craft-Agent-x64.exe" || true
-          curl -fsSL -o "/tmp/binaries/Craft-Agents-$VERSION-linux-x64.AppImage" "$BASE_URL/Craft-Agent-x64.AppImage" || true
+          curl -fsSL -o "/tmp/binaries/Craft-Agents-$VERSION-mac-arm64.dmg" "$BASE_URL/Craft-Agents-arm64.dmg" || true
+          curl -fsSL -o "/tmp/binaries/Craft-Agents-$VERSION-mac-x64.dmg" "$BASE_URL/Craft-Agents-x64.dmg" || true
+          curl -fsSL -o "/tmp/binaries/Craft-Agents-$VERSION-win-x64.exe" "$BASE_URL/Craft-Agents-x64.exe" || true
+          curl -fsSL -o "/tmp/binaries/Craft-Agents-$VERSION-linux-x64.AppImage" "$BASE_URL/Craft-Agents-x64.AppImage" || true
 
       - name: Create OSS Release
         env:

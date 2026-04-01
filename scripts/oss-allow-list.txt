@@ -153,6 +153,7 @@ packages/mermaid/**/*
 scripts/sync-version.ts
 scripts/install-app.sh
 scripts/install-app.ps1
+scripts/install-server.sh
 
 # Electron build scripts (required for electron:start, electron:dev, electron:build)
 scripts/electron-build-main.ts

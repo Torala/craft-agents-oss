@@ -150,10 +150,10 @@ jobs:
           echo "Downloading binaries for v$VERSION..."
 
           # Download all platform binaries (continue on failure for missing platforms)
-          curl -fsSL -o "Craft-Agents-$VERSION-mac-arm64.dmg" "$BASE_URL/Craft-Agent-arm64.dmg" || echo "Warning: arm64 DMG not found"
-          curl -fsSL -o "Craft-Agents-$VERSION-mac-x64.dmg" "$BASE_URL/Craft-Agent-x64.dmg" || echo "Warning: x64 DMG not found"
-          curl -fsSL -o "Craft-Agents-$VERSION-win-x64.exe" "$BASE_URL/Craft-Agent-x64.exe" || echo "Warning: Windows EXE not found"
-          curl -fsSL -o "Craft-Agents-$VERSION-linux-x64.AppImage" "$BASE_URL/Craft-Agent-x64.AppImage" || echo "Warning: x64 AppImage not found"
+          curl -fsSL -o "Craft-Agents-$VERSION-mac-arm64.dmg" "$BASE_URL/Craft-Agents-arm64.dmg" || echo "Warning: arm64 DMG not found"
+          curl -fsSL -o "Craft-Agents-$VERSION-mac-x64.dmg" "$BASE_URL/Craft-Agents-x64.dmg" || echo "Warning: x64 DMG not found"
+          curl -fsSL -o "Craft-Agents-$VERSION-win-x64.exe" "$BASE_URL/Craft-Agents-x64.exe" || echo "Warning: Windows EXE not found"
+          curl -fsSL -o "Craft-Agents-$VERSION-linux-x64.AppImage" "$BASE_URL/Craft-Agents-x64.AppImage" || echo "Warning: x64 AppImage not found"
 
           echo "Downloaded files:"
           ls -la

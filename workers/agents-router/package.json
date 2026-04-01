@@ -1,5 +1,6 @@
 {
   "name": "agents-router",
+  "license": "Apache-2.0",
   "private": true,
   "scripts": {
     "dev": "wrangler dev",

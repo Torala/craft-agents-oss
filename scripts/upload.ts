@@ -63,7 +63,7 @@ function getContentType(filename: string): string {
 }
 
 /**
- * Detect architecture from filename (e.g., "Craft-Agent-arm64.zip" → "arm64")
+ * Detect architecture from filename (e.g., "Craft-Agents-arm64.zip" → "arm64")
  * Used for electron-updater yml manifests so it can match the correct binary for the running arch.
  */
 function detectArchFromFilename(filename: string): string {
@@ -122,9 +122,9 @@ function generateUpdateManifests(releaseDir: string, version: string): void {
 
   // Collect available update payloads per platform
   // macOS: electron-updater downloads .zip (not .dmg) for updates
-  const macZips = files.filter(f => f.endsWith('.zip') && f.startsWith('Craft-Agent-'));
-  const winExes = files.filter(f => f.endsWith('.exe') && f.startsWith('Craft-Agent-'));
-  const linuxAppImages = files.filter(f => f.endsWith('.AppImage') && f.startsWith('Craft-Agent-'));
+  const macZips = files.filter(f => f.endsWith('.zip') && f.startsWith('Craft-Agents-'));
+  const winExes = files.filter(f => f.endsWith('.exe') && f.startsWith('Craft-Agents-'));
+  const linuxAppImages = files.filter(f => f.endsWith('.AppImage') && f.startsWith('Craft-Agents-'));
 
   // Generate latest-mac.yml (contains entries for all available architectures)
   if (macZips.length > 0) {

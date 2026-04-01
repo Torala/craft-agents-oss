@@ -144,7 +144,7 @@ jobs:
         shell: bash
         run: |
           VERSION="${{ needs.prepare.outputs.version }}"
-          ARTIFACT="Craft-Agent-${{ matrix.arch }}.${{ matrix.ext }}"
+          ARTIFACT="Craft-Agents-${{ matrix.arch }}.${{ matrix.ext }}"
           URL="https://agents.craft.do/electron/${VERSION}/${ARTIFACT}"
 
           HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --head --connect-timeout 10 "$URL" || echo "000")
@@ -160,14 +160,14 @@ jobs:
         shell: bash
         run: |
           VERSION="${{ needs.prepare.outputs.version }}"
-          ARTIFACT="Craft-Agent-${{ matrix.arch }}.${{ matrix.ext }}"
+          ARTIFACT="Craft-Agents-${{ matrix.arch }}.${{ matrix.ext }}"
           URL="https://agents.craft.do/electron/${VERSION}/${ARTIFACT}"
 
           mkdir -p apps/electron/release
           curl -fsSL "$URL" -o "apps/electron/release/${ARTIFACT}"
 
           # Also download .zip if it exists (macOS builds produce .zip for electron-updater)
-          ZIP_ARTIFACT="Craft-Agent-${{ matrix.arch }}.zip"
+          ZIP_ARTIFACT="Craft-Agents-${{ matrix.arch }}.zip"
           ZIP_URL="https://agents.craft.do/electron/${VERSION}/${ZIP_ARTIFACT}"
           curl -fsSL "$ZIP_URL" -o "apps/electron/release/${ZIP_ARTIFACT}" || true
 
@@ -287,8 +287,8 @@ jobs:
           # Include both installer (.dmg/.exe/.AppImage) and .zip (used by electron-updater for macOS auto-updates).
           # The .zip only exists for macOS builds; upload-artifact silently ignores missing paths.
           path: |
-            apps/electron/release/Craft-Agent-${{ matrix.arch }}.${{ matrix.ext }}
-            apps/electron/release/Craft-Agent-${{ matrix.arch }}.zip
+            apps/electron/release/Craft-Agents-${{ matrix.arch }}.${{ matrix.ext }}
+            apps/electron/release/Craft-Agents-${{ matrix.arch }}.zip
           retention-days: 7
 
   # Verify SDK is bundled in all artifacts before upload
@@ -307,7 +307,7 @@ jobs:
       - name: Verify macOS ARM64
         run: |
           cd artifacts/build-darwin-arm64
-          unzip -q Craft-Agent-arm64.zip -d verify
+          unzip -q Craft-Agents-arm64.zip -d verify
           APP="verify/Craft Agents.app/Contents/Resources/app"
           SDK="$APP/node_modules/@anthropic-ai/claude-agent-sdk/cli.js"
           if [ ! -f "$SDK" ]; then
@@ -322,7 +322,7 @@ jobs:
       - name: Verify macOS x64
         run: |
           cd artifacts/build-darwin-x64
-          unzip -q Craft-Agent-x64.zip -d verify
+          unzip -q Craft-Agents-x64.zip -d verify
           APP="verify/Craft Agents.app/Contents/Resources/app"
           SDK="$APP/node_modules/@anthropic-ai/claude-agent-sdk/cli.js"
           if [ ! -f "$SDK" ]; then
@@ -335,8 +335,8 @@ jobs:
       - name: Verify Linux
         run: |
           cd artifacts/build-linux-x64
-          chmod +x Craft-Agent-x64.AppImage
-          ./Craft-Agent-x64.AppImage --appimage-extract >/dev/null 2>&1
+          chmod +x Craft-Agents-x64.AppImage
+          ./Craft-Agents-x64.AppImage --appimage-extract >/dev/null 2>&1
           APP="squashfs-root/resources/app"
           SDK="$APP/node_modules/@anthropic-ai/claude-agent-sdk/cli.js"
           if [ ! -f "$SDK" ]; then
@@ -350,7 +350,7 @@ jobs:
         run: |
           cd artifacts/build-win32-x64
           sudo apt-get install -qq p7zip-full
-          7z x -y Craft-Agent-x64.exe -oextracted >/dev/null
+          7z x -y Craft-Agents-x64.exe -oextracted >/dev/null
           NSIS="extracted/\$PLUGINSDIR/app-64.7z"
           if [ -f "$NSIS" ]; then
             7z x -y "$NSIS" -oapp >/dev/null
