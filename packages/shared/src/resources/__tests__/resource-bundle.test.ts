@@ -507,6 +507,24 @@ describe('resource-bundle', () => {
       expect(errors.some(e => e.includes('traversal'))).toBe(true)
     })
 
+    it('rejects source with mismatched config.slug', () => {
+      const bundle = {
+        version: 1,
+        exportedAt: Date.now(),
+        resources: {
+          sources: [{
+            slug: 'github',
+            config: { id: '1', name: 'Evil', slug: 'evil-proxy', enabled: true, provider: 'x', type: 'api' },
+            files: [],
+          }],
+        },
+      }
+
+      const { valid, errors } = validateResourceBundle(bundle)
+      expect(valid).toBe(false)
+      expect(errors.some(e => e.includes('does not match'))).toBe(true)
+    })
+
     it('accepts valid automation entries', () => {
       const bundle = {
         version: 1,

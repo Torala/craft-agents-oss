@@ -6,7 +6,7 @@
 
 import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
 import { getWorkspaceByNameOrId } from '@craft-agent/shared/config'
-import { getCredentialManager } from '@craft-agent/shared/credentials'
+import { getCredentialManager, SOURCE_CREDENTIAL_TYPES } from '@craft-agent/shared/credentials'
 import type { RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
 import type {
@@ -14,14 +14,6 @@ import type {
   ResourceImportMode,
   ExportResourcesOptions,
 } from '@craft-agent/shared/resources'
-
-/** All credential types that can be stored for a source */
-const SOURCE_CREDENTIAL_TYPES = [
-  'source_oauth',
-  'source_bearer',
-  'source_apikey',
-  'source_basic',
-] as const
 
 export const HANDLED_CHANNELS = [
   RPC_CHANNELS.resources.EXPORT,

@@ -185,8 +185,7 @@ export function restoreFiles(targetDir: string, files: BundleFile[]): void {
     const fullPath = join(targetDir, nativePath)
 
     // Safety: ensure resolved path is inside target dir
-    const resolved = join(targetDir, nativePath)
-    if (!resolved.startsWith(targetDir + sep) && resolved !== targetDir) {
+    if (!fullPath.startsWith(targetDir + sep) && fullPath !== targetDir) {
       throw new Error(`Path escapes target directory: ${file.relativePath}`)
     }
 

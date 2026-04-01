@@ -24,9 +24,8 @@ import {
   validateBundleFile,
 } from '../utils/bundle-files.ts'
 import { getWorkspaceSourcesPath, getWorkspaceSkillsPath } from '../workspaces/storage.ts'
-import { loadSourceConfig, getSourcePath, sourceExists } from '../sources/storage.ts'
+import { loadSourceConfig, getSourcePath } from '../sources/storage.ts'
 import { isBuiltinSource } from '../sources/builtin-sources.ts'
-import { skillExists } from '../skills/storage.ts'
 import { validateSourceConfig } from '../config/validators.ts'
 import { AUTOMATIONS_CONFIG_FILE, AUTOMATIONS_HISTORY_FILE, AUTOMATIONS_RETRY_QUEUE_FILE } from '../automations/constants.ts'
 import { validateAutomationsConfig } from '../automations/validation.ts'
@@ -277,9 +276,9 @@ function isSecretHeader(key: string): boolean {
   return SECRET_HEADER_PATTERNS.some(p => p.test(key))
 }
 
-/** Returns true if the value references an env var template (safe to keep) */
+/** Returns true if the value references an env var template like $VAR_NAME or ${VAR} (safe to keep) */
 function isTemplatedValue(value: string): boolean {
-  return value.includes('$')
+  return /\$[A-Z_]|\$\{/.test(value)
 }
 
 /**
@@ -470,6 +469,11 @@ export function validateResourceBundle(bundle: unknown): { valid: boolean; error
 
         if (!e.config || typeof e.config !== 'object') {
           errors.push(`${prefix}: missing or invalid config`)
+        } else {
+          const cfg = e.config as Record<string, unknown>
+          if (typeof cfg.slug === 'string' && cfg.slug !== e.slug) {
+            errors.push(`${prefix}: config.slug '${cfg.slug}' does not match entry slug '${e.slug}'`)
+          }
         }
 
         if (!Array.isArray(e.files)) {
@@ -630,10 +634,11 @@ export async function importResources(
   const validation = validateResourceBundle(bundle)
   if (!validation.valid) {
     const errorMsg = `Invalid bundle: ${validation.errors.join('; ')}`
+    const failedBucket = { imported: [], skipped: [], failed: [{ id: '*', error: errorMsg }], warnings: [] }
     return {
-      sources: { imported: [], skipped: [], failed: [{ id: '*', error: errorMsg }], warnings: [] },
-      skills: emptyBucketResult(),
-      automations: { imported: [], skipped: [], failed: [{ id: '*', error: errorMsg }], warnings: [] },
+      sources: { ...failedBucket },
+      skills: { ...failedBucket },
+      automations: { ...failedBucket },
     }
   }
 
