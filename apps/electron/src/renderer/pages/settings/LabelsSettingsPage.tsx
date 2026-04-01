@@ -12,6 +12,7 @@
  */
 
 import * as React from 'react'
+import { useTranslation } from 'react-i18next'
 import { PanelHeader } from '@/components/app-shell/PanelHeader'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { HeaderMenu } from '@/components/ui/HeaderMenu'
@@ -37,6 +38,7 @@ export const meta: DetailsPageMeta = {
 }
 
 export default function LabelsSettingsPage() {
+  const { t } = useTranslation()
   const { activeWorkspaceId } = useAppShellContext()
   const activeWorkspace = useActiveWorkspace()
   const { labels, isLoading } = useLabels(activeWorkspaceId)
@@ -54,7 +56,7 @@ export default function LabelsSettingsPage() {
 
   return (
     <div className="h-full flex flex-col">
-      <PanelHeader title="Labels" actions={<HeaderMenu route={routes.view.settings('labels')} />} />
+      <PanelHeader title={t("settings.labels.title")} actions={<HeaderMenu route={routes.view.settings('labels')} />} />
       <div className="flex-1 min-h-0 mask-fade-y">
         <ScrollArea className="h-full">
           <div className="px-5 py-7 max-w-3xl mx-auto">
@@ -66,7 +68,7 @@ export default function LabelsSettingsPage() {
               ) : (
                 <>
                   {/* About Section */}
-                  <SettingsSection title="About Labels">
+                  <SettingsSection title={t("settings.labels.aboutLabels")}>
                     <SettingsCard className="px-4 py-3.5">
                       <div className="text-sm text-muted-foreground leading-relaxed space-y-1.5">
                         <p>
@@ -84,7 +86,7 @@ export default function LabelsSettingsPage() {
                             onClick={() => window.electronAPI?.openUrl(getDocUrl('labels'))}
                             className="text-foreground/70 hover:text-foreground underline underline-offset-2"
                           >
-                            Learn more
+                            {t("chat.learnMore")}
                           </button>
                         </p>
                       </div>
@@ -93,8 +95,8 @@ export default function LabelsSettingsPage() {
 
                   {/* Label Hierarchy Section */}
                   <SettingsSection
-                    title="Label Hierarchy"
-                    description="All labels configured for this workspace. Labels can be nested to form groups."
+                    title={t("settings.labels.labelHierarchy")}
+                    description={t("settings.labels.labelHierarchyDesc")}
                     action={
                       <EditPopover
                         trigger={<EditButton />}

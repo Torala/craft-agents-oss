@@ -11,6 +11,7 @@
 
 import * as React from 'react'
 import { useState, useEffect, useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import { PanelHeader } from '@/components/app-shell/PanelHeader'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { HeaderMenu } from '@/components/ui/HeaderMenu'
@@ -88,40 +89,40 @@ function buildDefaultPermissionsData(config: PermissionsConfigFile | null): Perm
  * Build custom permissions data from workspace permissions.json.
  * These are user-added patterns that extend the defaults.
  */
-function buildCustomPermissionsData(config: PermissionsConfigFile): PermissionRow[] {
+function buildCustomPermissionsData(config: PermissionsConfigFile, fallbackLabels: { blockedTool: string; bashPattern: string; mcpPattern: string; apiEndpoint: string; writePath: string }): PermissionRow[] {
   const rows: PermissionRow[] = []
 
   // Additional blocked tools
   config.blockedTools?.forEach((item) => {
     const pattern = typeof item === 'string' ? item : item.pattern
-    const comment = typeof item === 'string' ? 'Custom blocked tool' : (item.comment || 'Custom blocked tool')
+    const comment = typeof item === 'string' ? fallbackLabels.blockedTool : (item.comment || fallbackLabels.blockedTool)
     rows.push({ access: 'blocked', type: 'tool', pattern, comment })
   })
 
   // Additional bash patterns
   config.allowedBashPatterns?.forEach((item) => {
     const pattern = typeof item === 'string' ? item : item.pattern
-    const comment = typeof item === 'string' ? 'Custom bash pattern' : (item.comment || 'Custom bash pattern')
+    const comment = typeof item === 'string' ? fallbackLabels.bashPattern : (item.comment || fallbackLabels.bashPattern)
     rows.push({ access: 'allowed', type: 'bash', pattern, comment })
   })
 
   // Additional MCP patterns
   config.allowedMcpPatterns?.forEach((item) => {
     const pattern = typeof item === 'string' ? item : item.pattern
-    const comment = typeof item === 'string' ? 'Custom MCP pattern' : (item.comment || 'Custom MCP pattern')
+    const comment = typeof item === 'string' ? fallbackLabels.mcpPattern : (item.comment || fallbackLabels.mcpPattern)
     rows.push({ access: 'allowed', type: 'mcp', pattern, comment })
   })
 
   // API endpoints
   config.allowedApiEndpoints?.forEach((item) => {
     const pattern = `${item.method} ${item.path}`
-    rows.push({ access: 'allowed', type: 'api', pattern, comment: item.comment || 'Custom API endpoint' })
+    rows.push({ access: 'allowed', type: 'api', pattern, comment: item.comment || fallbackLabels.apiEndpoint })
   })
 
   // Write paths are shown as allowed paths
   config.allowedWritePaths?.forEach((item) => {
     const pattern = typeof item === 'string' ? item : item.pattern
-    const comment = typeof item === 'string' ? 'Allowed write path' : (item.comment || 'Allowed write path')
+    const comment = typeof item === 'string' ? fallbackLabels.writePath : (item.comment || fallbackLabels.writePath)
     // Show as a special "tool" type since it's about Write/Edit operations
     rows.push({ access: 'allowed', type: 'tool', pattern: `Write to: ${pattern}`, comment })
   })
@@ -130,6 +131,7 @@ function buildCustomPermissionsData(config: PermissionsConfigFile): PermissionRo
 }
 
 export default function PermissionsSettingsPage() {
+  const { t } = useTranslation()
   const { activeWorkspaceId } = useAppShellContext()
   const activeWorkspace = useActiveWorkspace()
 
@@ -142,11 +144,20 @@ export default function PermissionsSettingsPage() {
   // Build default permissions data from ~/.craft-agent/permissions/default.json
   const defaultPermissionsData = useMemo(() => buildDefaultPermissionsData(defaultConfig), [defaultConfig])
 
+  // Fallback labels for custom permissions (translated)
+  const permissionFallbackLabels = useMemo(() => ({
+    blockedTool: t("settings.permissions.customBlockedTool"),
+    bashPattern: t("settings.permissions.customBashPattern"),
+    mcpPattern: t("settings.permissions.customMcpPattern"),
+    apiEndpoint: t("settings.permissions.customApiEndpoint"),
+    writePath: t("settings.permissions.allowedWritePath"),
+  }), [t])
+
   // Build custom permissions data from workspace permissions.json
   const customPermissionsData = useMemo(() => {
     if (!customConfig) return []
-    return buildCustomPermissionsData(customConfig)
-  }, [customConfig])
+    return buildCustomPermissionsData(customConfig, permissionFallbackLabels)
+  }, [customConfig, permissionFallbackLabels])
 
   // Load both default and workspace permissions configs
   useEffect(() => {

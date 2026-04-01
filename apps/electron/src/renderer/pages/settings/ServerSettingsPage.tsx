@@ -6,6 +6,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Copy, Eye, EyeOff, AlertTriangle, RotateCw } from 'lucide-react'
 import { toast } from 'sonner'
 import { PanelHeader } from '@/components/app-shell/PanelHeader'
@@ -58,6 +59,8 @@ function formToConfig(form: ServerFormState): ServerConfig {
 }
 
 export default function ServerSettingsPage() {
+  const { t } = useTranslation()
+
   const [form, setForm] = useState<ServerFormState>({
     enabled: false,
     port: '9100',
@@ -99,15 +102,15 @@ export default function ServerSettingsPage() {
     setError(undefined)
     const port = parseInt(form.port, 10)
     if (isNaN(port) || port < 1024 || port > 65535) {
-      setError('Port must be between 1024 and 65535')
+      setError(t('settings.server.portValidation'))
       return
     }
     if (form.tlsCertPath && !form.tlsKeyPath) {
-      setError('Private key is required when a certificate is provided')
+      setError(t('settings.server.privateKeyRequired'))
       return
     }
     if (form.tlsKeyPath && !form.tlsCertPath) {
-      setError('Certificate is required when a private key is provided')
+      setError(t('settings.server.certificateRequired'))
       return
     }
 
@@ -117,11 +120,11 @@ export default function ServerSettingsPage() {
       setSavedForm(form)
       const newStatus = await window.electronAPI.getServerStatus()
       setStatus(newStatus)
-      toast.success('Server settings saved')
+      toast.success(t('settings.server.saved'))
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       setError(msg)
-      toast.error(`Failed to save: ${msg}`)
+      toast.error(t('settings.server.failedToSave', { message: msg }))
     } finally {
       setIsSaving(false)
     }
@@ -134,7 +137,7 @@ export default function ServerSettingsPage() {
 
   const handleCopy = (text: string, label: string) => {
     navigator.clipboard.writeText(text)
-    toast.success(`${label} copied to clipboard`)
+    toast.success(t('settings.server.copiedToClipboard', { label }))
   }
 
   const handleBrowseCert = async () => {
