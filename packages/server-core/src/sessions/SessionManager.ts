@@ -829,6 +829,9 @@ interface ManagedSession {
   turnStartFinalMessageId?: string
   // External session metadata updates seen while processing (applied after turn stop)
   pendingExternalMetadata?: SessionHeader
+  // Guard: suppress external metadata revert after programmatic writes (setSessionStatus/setSessionLabels).
+  // fs.watch fires during atomic write (unlink+rename) and can read stale data, reverting in-memory state.
+  _metadataWriteGuardUntil?: number
   // Whether an async operation is ongoing (sharing, updating share, revoking, title regeneration)
   // Used for shimmer effect on session title
   isAsyncOperationOngoing?: boolean
@@ -1311,9 +1314,18 @@ export class SessionManager implements ISessionManager {
         // Skip for self-writes to avoid feedback loops (especially on Windows
         // where fs.watch fires aggressively: unlink + rename = 2+ events).
         if (!isSelfWrite) {
-          if (managed.isProcessing) {
+          // Defer external metadata application when:
+          // 1. Session is actively processing (agent running), OR
+          // 2. Session was just written programmatically (set_session_status/labels tool)
+          //    — fs.watch fires during atomic write (unlink+rename) and can read stale data
+          const hasWriteGuard = managed._metadataWriteGuardUntil && Date.now() < managed._metadataWriteGuardUntil
+          if (managed.isProcessing || hasWriteGuard) {
             managed.pendingExternalMetadata = header
-            sessionLog.info(`Deferred external metadata update for session ${sessionId} (processing active)`)
+            if (hasWriteGuard) {
+              sessionLog.info(`Deferred external metadata update for session ${sessionId} (recent programmatic write)`)
+            } else {
+              sessionLog.info(`Deferred external metadata update for session ${sessionId} (processing active)`)
+            }
           } else {
             this.applyExternalSessionMetadata(managed, header)
           }
@@ -3710,6 +3722,8 @@ export class SessionManager implements ISessionManager {
     const managed = this.sessions.get(sessionId)
     if (managed) {
       managed.sessionStatus = sessionStatus
+      // Guard: suppress external metadata revert from fs.watch during atomic write
+      managed._metadataWriteGuardUntil = Date.now() + 5000
       // Persist in-memory state directly to avoid race with pending queue writes
       this.persistSession(managed)
       await this.flushSession(managed.id)
@@ -5847,6 +5861,8 @@ export class SessionManager implements ISessionManager {
     const managed = this.sessions.get(sessionId)
     if (managed) {
       managed.labels = labels
+      // Guard: suppress external metadata revert from fs.watch during atomic write
+      managed._metadataWriteGuardUntil = Date.now() + 5000
 
       this.sendEvent({
         type: 'labels_changed',
