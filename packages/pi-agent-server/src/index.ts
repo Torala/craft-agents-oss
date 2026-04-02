@@ -613,8 +613,31 @@ async function ensureSession(): Promise<AgentSession> {
   const { session } = await createAgentSession(sessionOptions);
   piSession = session;
 
+  // Pi SDK's createAgentSession ignores custom AgentTool objects passed via
+  // `tools` — it only accepts its own internal Tool type and creates instances
+  // internally. Inject our wrapped tools (with permission hooks) and proxy
+  // tools via _baseToolsOverride, then rebuild the runtime so the session
+  // actually uses them.
+  const sessionInternal = piSession as any;
+  if (typeof sessionInternal._buildRuntime !== 'function') {
+    throw new Error(
+      'Pi SDK internal API changed: _buildRuntime not found. ' +
+      'Update ensureSession() for the new SDK version.',
+    );
+  }
+
+  const baseToolsOverride: Record<string, AgentTool<any>> = {};
+  for (const tool of allTools) {
+    baseToolsOverride[tool.name] = tool;
+  }
+  sessionInternal._baseToolsOverride = baseToolsOverride;
+  sessionInternal._buildRuntime({
+    activeToolNames: Object.keys(baseToolsOverride),
+    includeAllExtensionTools: true,
+  });
+
   toolsChanged = false;
-  debugLog(`Created Pi session: ${session.sessionId} (${allTools.length} tools)`);
+  debugLog(`Created Pi session: ${session.sessionId} (${Object.keys(baseToolsOverride).length} tools)`);
 
   // Notify main process of session ID
   send({ type: 'session_id_update', sessionId: session.sessionId });
@@ -763,6 +786,12 @@ function buildProxyTools(): AgentTool<any>[] {
       .replace(/_/g, ' ')
       .replace(/([a-z])([A-Z])/g, '$1 $2'),
     description: def.description,
+    // Pi SDK omits tools without promptSnippet from the system prompt's
+    // "Available tools" section, making them invisible to the LLM.
+    // Derive a snippet from the description so proxy tools are listed.
+    promptSnippet: def.description.length > 200
+      ? def.description.slice(0, 197) + '...'
+      : def.description,
     parameters: def.inputSchema,
     execute: async (
       toolCallId: string,
