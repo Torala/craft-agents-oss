@@ -47,16 +47,11 @@ import type { TextContent as PiTextContent } from '@mariozechner/pi-ai';
 // Pre-register the Bedrock provider module so the Pi SDK doesn't attempt a
 // dynamic import of "./amazon-bedrock.js" — which fails in the bundled output
 // because bun collapses everything into a single file.
-// Both @mariozechner/pi-ai AND the nested copy inside @mariozechner/pi-agent-core
-// have separate module-scoped state, so we must register with both.
+// With Pi SDK 0.64.0, pi-ai is deduped (single hoisted copy), so one
+// registration covers both pi-ai and pi-agent-core module scopes.
 import { setBedrockProviderModule } from '@mariozechner/pi-ai';
 import { bedrockProviderModule } from '@mariozechner/pi-ai/bedrock-provider';
 setBedrockProviderModule(bedrockProviderModule);
-
-// Register for the pi-agent-core's nested pi-ai copy (separate module scope in bundle)
-import { setBedrockProviderModule as setBedrockProviderModule2 } from '@mariozechner/pi-agent-core/node_modules/@mariozechner/pi-ai/dist/providers/register-builtins.js';
-import { bedrockProviderModule as bedrockProviderModule2 } from '@mariozechner/pi-agent-core/node_modules/@mariozechner/pi-ai/bedrock-provider';
-setBedrockProviderModule2(bedrockProviderModule2);
 
 // Model resolution (extracted for testability + custom-endpoint precedence)
 import { resolvePiModel } from './model-resolution.ts';
@@ -465,7 +460,7 @@ function createAuthenticatedRegistry(): {
     debugLog('Injected API key into auth storage (legacy fallback)');
   }
 
-  const modelRegistry = new PiModelRegistry(authStorage);
+  const modelRegistry = PiModelRegistry.inMemory(authStorage);
 
   // Register custom endpoint models dynamically via Pi SDK's registerProvider API.
   // This makes arbitrary OpenAI/Anthropic-compatible endpoints work through the Pi SDK
@@ -606,34 +601,8 @@ async function ensureSession(): Promise<AgentSession> {
   const { session } = await createAgentSession(sessionOptions);
   piSession = session;
 
-  // HACK: Pi SDK's createAgentSession ignores our wrapped tool objects — it
-  // extracts only tool names and creates its own internal instances via
-  // createAllTools(). Our wrapSingleTool permission/summarization hooks are
-  // silently discarded. Inject our wrapped tools via the internal
-  // _baseToolsOverride property and rebuild the runtime.
-  //
-  // Pinned to @mariozechner/pi-coding-agent@0.53.x — will break on SDK updates.
-  // TODO: Upstream a public API for custom tool injection.
-  const sessionInternal = piSession as any;
-  if (typeof sessionInternal._buildRuntime !== 'function') {
-    throw new Error(
-      'Pi SDK internal API changed: _buildRuntime not found. ' +
-      'Update ensureSession() for the new SDK version.',
-    );
-  }
-
-  const baseToolsOverride: Record<string, AgentTool<any>> = {};
-  for (const tool of allTools) {
-    baseToolsOverride[tool.name] = tool;
-  }
-  sessionInternal._baseToolsOverride = baseToolsOverride;
-  sessionInternal._buildRuntime({
-    activeToolNames: Object.keys(baseToolsOverride),
-    includeAllExtensionTools: true,
-  });
-
   toolsChanged = false;
-  debugLog(`Created Pi session: ${session.sessionId} (${Object.keys(baseToolsOverride).length} tools)`);
+  debugLog(`Created Pi session: ${session.sessionId} (${allTools.length} tools)`);
 
   // Notify main process of session ID
   send({ type: 'session_id_update', sessionId: session.sessionId });

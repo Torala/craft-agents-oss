@@ -71,7 +71,7 @@
     "filtrex": "^3.1.0",
     "incr-regex-package": "^1.0.4",
     "shell-quote": "^1.8.3",
-    "@mariozechner/pi-ai": "0.56.2",
+    "@mariozechner/pi-ai": "0.64.0",
     "glob": "^13.0.0"
   },
   "peerDependencies": {

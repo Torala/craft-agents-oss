@@ -24,7 +24,7 @@ import { parseError } from '../../errors.ts';
 
 /**
  * Combined event type the adapter can handle.
- * AgentSessionEvent is a superset of PiAgentEvent (adds auto_compaction_*, auto_retry_*).
+ * AgentSessionEvent is a superset of PiAgentEvent (adds compaction_*, auto_retry_*, queue_update).
  */
 type PiEvent = PiAgentEvent | AgentSessionEvent;
 
@@ -37,8 +37,8 @@ type PiEvent = PiAgentEvent | AgentSessionEvent;
  * - tool_execution_start → tool_start
  * - tool_execution_end → tool_result
  * - agent_end → complete
- * - auto_compaction_start → status (with "Compacting" keyword)
- * - auto_compaction_end → info/error
+ * - compaction_start → status (with "Compacting" keyword)
+ * - compaction_end → info/error
  * - auto_retry_start → status
  * - auto_retry_end → status
  */
@@ -374,13 +374,13 @@ export class PiEventAdapter extends BaseEventAdapter {
       // Session-level events (AgentSessionEvent extensions)
       // ============================================================
 
-      case 'auto_compaction_start':
+      case 'compaction_start':
         // Use "Compacting" keyword so session handler detects statusType: 'compacting'
         yield { type: 'status', message: 'Compacting context...' };
         break;
 
-      case 'auto_compaction_end': {
-        const compactionEvent = event as Extract<AgentSessionEvent, { type: 'auto_compaction_end' }>;
+      case 'compaction_end': {
+        const compactionEvent = event as Extract<AgentSessionEvent, { type: 'compaction_end' }>;
         if (compactionEvent.result && !compactionEvent.aborted) {
           // Use "Compacted" keyword so session handler detects statusType: 'compaction_complete'
           yield { type: 'info', message: 'Compacted context to fit within limits' };
@@ -471,6 +471,24 @@ export class PiEventAdapter extends BaseEventAdapter {
         normalized.file_path = normalized.path;
         delete normalized.path;
       }
+
+      // Pi SDK >= 0.63.2 uses edits[] array instead of top-level oldText/newText.
+      // Extract the first edit for UI diff rendering (Claude Code format expects
+      // flat old_string/new_string). Multiple edits are supported but the UI
+      // only renders the first diff; the full operation still applies all edits.
+      const edits = normalized.edits as Array<{ oldText?: string; newText?: string }> | undefined;
+      if (Array.isArray(edits) && edits.length > 0 && edits[0]) {
+        const first = edits[0];
+        if (first.oldText != null && !('old_string' in normalized)) {
+          normalized.old_string = first.oldText;
+        }
+        if (first.newText != null && !('new_string' in normalized)) {
+          normalized.new_string = first.newText;
+        }
+        delete normalized.edits;
+      }
+
+      // Legacy path: top-level oldText/newText (Pi SDK < 0.63.2 or resumed sessions)
       if ('oldText' in normalized && !('old_string' in normalized)) {
         normalized.old_string = normalized.oldText;
         delete normalized.oldText;
