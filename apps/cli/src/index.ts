@@ -1198,7 +1198,7 @@ export function getValidateSteps(): ValidateStep[] {
         })
         return await waitForSendEvents(client, ctx.createdSessionId,
           `[source:craft-public] List the documents under the "CraftAgents E2E Test" folder inside the "CraftAgents" folder. Just list their names.`,
-          90_000, false, undefined, ctx.onEvent)
+          180_000, false, undefined, ctx.onEvent)
       },
     },
     {
