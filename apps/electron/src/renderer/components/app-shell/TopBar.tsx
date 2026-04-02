@@ -453,7 +453,7 @@ export function TopBar({
             </StyledDropdownMenuItem>
             <StyledDropdownMenuItem onClick={() => window.electronAPI.openUrl(getDocUrl('statuses'))}>
               <Icons.CheckCircle2 className="h-3.5 w-3.5" />
-              <span className="flex-1">Statuses</span>
+              <span className="flex-1">{t("sidebar.statuses")}</span>
               <Icons.ExternalLink className="h-3 w-3 text-muted-foreground" />
             </StyledDropdownMenuItem>
             <StyledDropdownMenuItem onClick={() => window.electronAPI.openUrl(getDocUrl('permissions'))}>
