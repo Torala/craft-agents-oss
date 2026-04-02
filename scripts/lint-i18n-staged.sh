@@ -76,3 +76,40 @@ if [ "$found" -eq 1 ]; then
   echo ""
   exit 1
 fi
+
+# ─── Locale parity check ───────────────────────────────────────────────────
+# If en.json is staged, verify all other locale files have the same keys.
+# This catches forgotten translations before they reach the repo.
+
+staged_en="$(git diff --cached --name-only --diff-filter=ACMR | grep 'i18n/locales/en.json' || true)"
+if [ -n "$staged_en" ]; then
+  parity_result="$(python3 -c "
+import json, glob, os, sys
+ROOT = 'packages/shared/src/i18n/locales'
+en = json.load(open(f'{ROOT}/en.json'))
+errors = []
+for f in sorted(glob.glob(f'{ROOT}/*.json')):
+    lang = os.path.basename(f).replace('.json', '')
+    if lang == 'en': continue
+    other = json.load(open(f))
+    missing = sorted(set(en.keys()) - set(other.keys()))
+    extra = sorted(set(other.keys()) - set(en.keys()))
+    if missing:
+        errors.append(f'{lang}.json: {len(missing)} keys missing (e.g. {missing[0]})')
+    if extra:
+        errors.append(f'{lang}.json: {len(extra)} extra keys (e.g. {extra[0]})')
+if errors:
+    for e in errors: print(e)
+    sys.exit(1)
+" 2>&1)" || {
+    echo ""
+    echo "🌐 i18n: Locale parity check failed"
+    echo "   en.json has keys that are missing from other locale files:"
+    echo "$parity_result" | sed 's/^/   /'
+    echo ""
+    echo "   Fix: Invoke [skill:localize-agents] to translate missing keys."
+    echo "   Skip: git commit --no-verify (not recommended)"
+    echo ""
+    exit 1
+  }
+fi
