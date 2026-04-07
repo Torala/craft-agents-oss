@@ -49,6 +49,13 @@ export async function handleSourceOAuthTrigger(
   const isGenericApiOAuth = source.type === 'api' && source.api?.authType === 'oauth' && !!source.api?.oauth;
 
   if (!isMcpOAuth && !isGenericApiOAuth) {
+    // Provide a helpful error when authType is 'oauth' but the oauth config block is missing
+    if (source.type === 'api' && source.api?.authType === 'oauth' && !source.api?.oauth) {
+      return errorResponse(
+        `Source '${sourceSlug}' has authType 'oauth' but is missing the api.oauth config block. ` +
+        `Add an oauth block with authorizationUrl, tokenUrl, and clientId to config.json.`
+      );
+    }
     return errorResponse(
       `Source '${sourceSlug}' is not configured for OAuth authentication.`
     );
