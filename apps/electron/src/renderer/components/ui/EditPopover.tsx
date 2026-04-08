@@ -97,8 +97,8 @@ export interface EditConfig {
   example: string
   /** Optional custom placeholder text - overrides the default "Describe what you'd like to change" */
   overridePlaceholder?: string
-  /** Optional model for mini agent (e.g., 'haiku', 'sonnet') */
-  model?: string
+  /** Model tier hint: 'fast' uses the connection's mini model, 'default' uses the primary model */
+  model?: 'fast' | 'default'
   /** Optional system prompt preset for mini agent (e.g., 'mini' for focused edits) */
   systemPromptPreset?: 'default' | 'mini'
   /** When true, executes inline within the popover instead of opening a new window */
@@ -123,7 +123,7 @@ const EDIT_CONFIGS: Record<EditContextKey, (location: string) => EditConfig> = {
         'Confirm clearly when done.',
     },
     example: "Allow running 'make build' in Explore mode",
-    model: 'sonnet',
+    model: 'default',
     systemPromptPreset: 'mini',
     inlineExecution: true,
   }),
@@ -142,7 +142,7 @@ const EDIT_CONFIGS: Record<EditContextKey, (location: string) => EditConfig> = {
         'Confirm clearly when done.',
     },
     example: 'Allow git fetch command',
-    model: 'sonnet',
+    model: 'default',
     systemPromptPreset: 'mini',
     inlineExecution: true,
   }),
@@ -161,7 +161,7 @@ const EDIT_CONFIGS: Record<EditContextKey, (location: string) => EditConfig> = {
         'Confirm clearly when done.',
     },
     example: 'Add error handling guidelines',
-    model: 'haiku',
+    model: 'fast',
     systemPromptPreset: 'mini',
     inlineExecution: true,
   }),
@@ -178,7 +178,7 @@ const EDIT_CONFIGS: Record<EditContextKey, (location: string) => EditConfig> = {
         'Confirm clearly when done.',
     },
     example: 'Update the skill description',
-    model: 'haiku',
+    model: 'fast',
     systemPromptPreset: 'mini',
     inlineExecution: true,
   }),
@@ -195,7 +195,7 @@ const EDIT_CONFIGS: Record<EditContextKey, (location: string) => EditConfig> = {
         'Confirm clearly when done.',
     },
     example: 'Add rate limit documentation',
-    model: 'haiku',
+    model: 'fast',
     systemPromptPreset: 'mini',
     inlineExecution: true,
   }),
@@ -212,7 +212,7 @@ const EDIT_CONFIGS: Record<EditContextKey, (location: string) => EditConfig> = {
         'Confirm clearly when done.',
     },
     example: 'Update the display name',
-    model: 'sonnet',
+    model: 'default',
     systemPromptPreset: 'mini',
     inlineExecution: true,
   }),
@@ -229,7 +229,7 @@ const EDIT_CONFIGS: Record<EditContextKey, (location: string) => EditConfig> = {
         'Confirm clearly when done.',
     },
     example: 'Allow list operations in Explore mode',
-    model: 'sonnet',
+    model: 'default',
     systemPromptPreset: 'mini',
     inlineExecution: true,
   }),
@@ -248,7 +248,7 @@ const EDIT_CONFIGS: Record<EditContextKey, (location: string) => EditConfig> = {
         'Confirm clearly when done.',
     },
     example: 'Only allow read operations (list, get, search)',
-    model: 'sonnet',
+    model: 'default',
     systemPromptPreset: 'mini',
     inlineExecution: true,
   }),
@@ -266,7 +266,7 @@ const EDIT_CONFIGS: Record<EditContextKey, (location: string) => EditConfig> = {
         'Confirm clearly when done.',
     },
     example: 'Add coding style preferences',
-    model: 'haiku',
+    model: 'fast',
     systemPromptPreset: 'mini',
     inlineExecution: true,
   }),
@@ -372,7 +372,7 @@ const EDIT_CONFIGS: Record<EditContextKey, (location: string) => EditConfig> = {
         'Confirm clearly when done.',
     },
     example: 'Add a "Blocked" status',
-    model: 'haiku',               // Use fast model for quick config edits
+    model: 'fast',               // Use fast model for quick config edits
     systemPromptPreset: 'mini',   // Use focused mini prompt
     inlineExecution: true,        // Execute inline in popover
   }),
@@ -393,7 +393,7 @@ const EDIT_CONFIGS: Record<EditContextKey, (location: string) => EditConfig> = {
         'Confirm clearly when done.',
     },
     example: 'Add a "Bug" label with red color',
-    model: 'haiku',               // Use fast model for quick config edits
+    model: 'fast',               // Use fast model for quick config edits
     systemPromptPreset: 'mini',   // Use focused mini prompt
     inlineExecution: true,        // Execute inline in popover
   }),
@@ -413,7 +413,7 @@ const EDIT_CONFIGS: Record<EditContextKey, (location: string) => EditConfig> = {
         'Confirm clearly when done.',
     },
     example: 'Add a rule to detect GitHub issue URLs',
-    model: 'haiku',               // Use fast model for quick config edits
+    model: 'fast',               // Use fast model for quick config edits
     systemPromptPreset: 'mini',   // Use focused mini prompt
     inlineExecution: true,        // Execute inline in popover
   }),
@@ -434,7 +434,7 @@ const EDIT_CONFIGS: Record<EditContextKey, (location: string) => EditConfig> = {
     },
     example: 'A red "Bug" label',
     overridePlaceholder: 'What label would you like to create?',
-    model: 'haiku',               // Use fast model for quick config edits
+    model: 'fast',               // Use fast model for quick config edits
     systemPromptPreset: 'mini',   // Use focused mini prompt
     inlineExecution: true,        // Execute inline in popover
   }),
@@ -455,7 +455,7 @@ const EDIT_CONFIGS: Record<EditContextKey, (location: string) => EditConfig> = {
         'Confirm clearly when done.',
     },
     example: 'Add a "Stale" view for sessions inactive > 7 days',
-    model: 'haiku',               // Use fast model for quick config edits
+    model: 'fast',               // Use fast model for quick config edits
     systemPromptPreset: 'mini',   // Use focused mini prompt
     inlineExecution: true,        // Execute inline in popover
   }),
@@ -476,7 +476,7 @@ const EDIT_CONFIGS: Record<EditContextKey, (location: string) => EditConfig> = {
         'Confirm clearly when done.',
     },
     example: 'Add an icon for my custom CLI tool "deploy"',
-    model: 'haiku',               // Use fast model for quick config edits
+    model: 'fast',               // Use fast model for quick config edits
     systemPromptPreset: 'mini',   // Use focused mini prompt
     inlineExecution: true,        // Execute inline in popover
   }),
@@ -493,7 +493,7 @@ const EDIT_CONFIGS: Record<EditContextKey, (location: string) => EditConfig> = {
         'After editing, confirm clearly what changed.',
     },
     example: 'Change the cron schedule to every 30 minutes',
-    model: 'sonnet',
+    model: 'default',
     systemPromptPreset: 'mini',
     inlineExecution: true,
   }),
@@ -543,8 +543,8 @@ export interface EditPopoverProps {
    * - Absolute path string: Use this specific path
    */
   workingDirectory?: string | 'user_default' | 'none'
-  /** Model override for mini agent (e.g., 'haiku', 'sonnet') */
-  model?: string
+  /** Model tier hint: 'fast' uses the connection's mini model, 'default' uses the primary model */
+  model?: 'fast' | 'default'
   /** System prompt preset for mini agent (e.g., 'mini' for focused edits) */
   systemPromptPreset?: 'default' | 'mini'
   /** Width of the popover (default: 320) */
@@ -887,7 +887,7 @@ export function EditPopover({
     let sessionId = inlineSessionId
     if (!sessionId && workspace?.id) {
       const createOptions: CreateSessionOptions = {
-        model: model || 'haiku',
+        model: model || 'fast',
         systemPromptPreset: systemPromptPreset || 'mini',
         permissionMode,
         workingDirectory,
