@@ -927,9 +927,9 @@ async function queryLlm(request: LLMQueryRequest): Promise<LLMQueryResult> {
 
     // Set system prompt
     if (request.systemPrompt) {
-      ephemeralSession.agent.setSystemPrompt(request.systemPrompt);
+      ephemeralSession.agent.state.systemPrompt = request.systemPrompt;
     } else {
-      ephemeralSession.agent.setSystemPrompt('Reply with ONLY the requested text. No explanation.');
+      ephemeralSession.agent.state.systemPrompt = 'Reply with ONLY the requested text. No explanation.';
     }
 
     // Collect response text and errors from events
@@ -1254,7 +1254,7 @@ async function handlePrompt(msg: Extract<InboundMessage, { type: 'prompt' }>): P
 
     // Set system prompt
     if (msg.systemPrompt) {
-      session.agent.setSystemPrompt(msg.systemPrompt);
+      session.agent.state.systemPrompt = msg.systemPrompt;
     }
 
     // Wire up event handler

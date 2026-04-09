@@ -923,9 +923,9 @@ describe('PiEventAdapter', () => {
   // ============================================================
 
   describe('session events', () => {
-    it('should emit status for auto_compaction_start', () => {
+    it('should emit status for compaction_start', () => {
       const events = collect(adapter.adaptEvent({
-        type: 'auto_compaction_start',
+        type: 'compaction_start',
       } as any));
 
       expect(events).toHaveLength(1);
@@ -935,9 +935,9 @@ describe('PiEventAdapter', () => {
       });
     });
 
-    it('should emit info for successful auto_compaction_end', () => {
+    it('should emit info for successful compaction_end', () => {
       const events = collect(adapter.adaptEvent({
-        type: 'auto_compaction_end',
+        type: 'compaction_end',
         result: { /* compaction result */ },
         aborted: false,
       } as any));
@@ -949,9 +949,9 @@ describe('PiEventAdapter', () => {
       });
     });
 
-    it('should emit error for failed auto_compaction_end', () => {
+    it('should emit error for failed compaction_end', () => {
       const events = collect(adapter.adaptEvent({
-        type: 'auto_compaction_end',
+        type: 'compaction_end',
         result: null,
         aborted: false,
         errorMessage: 'Out of memory',
@@ -966,7 +966,7 @@ describe('PiEventAdapter', () => {
 
     it('should emit nothing for aborted compaction', () => {
       const events = collect(adapter.adaptEvent({
-        type: 'auto_compaction_end',
+        type: 'compaction_end',
         result: null,
         aborted: true,
       } as any));
