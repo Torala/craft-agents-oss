@@ -1,13 +1,21 @@
-export const SUPPORTED_LANGUAGE_CODES = ["en", "es", "zh-Hans"] as const;
+import { LOCALE_REGISTRY, type LanguageCode } from "./registry";
 
-export type LanguageCode = (typeof SUPPORTED_LANGUAGE_CODES)[number];
+export type { LanguageCode } from "./registry";
 
 export interface LanguageConfig {
   nativeName: string;
 }
 
-export const LANGUAGES: Record<LanguageCode, LanguageConfig> = {
-  en: { nativeName: "English" },
-  es: { nativeName: "Español" },
-  "zh-Hans": { nativeName: "简体中文" },
-};
+/** All supported language codes, derived from the locale registry. */
+export const SUPPORTED_LANGUAGE_CODES: readonly LanguageCode[] = Object.keys(
+  LOCALE_REGISTRY,
+) as LanguageCode[];
+
+/** Language display metadata, derived from the locale registry. */
+export const LANGUAGES: Record<LanguageCode, LanguageConfig> =
+  Object.fromEntries(
+    Object.entries(LOCALE_REGISTRY).map(([code, entry]) => [
+      code,
+      { nativeName: entry.nativeName },
+    ]),
+  ) as Record<LanguageCode, LanguageConfig>;

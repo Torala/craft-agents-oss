@@ -1,10 +1,8 @@
 import { enUS } from "date-fns/locale/en-US";
-import { es } from "date-fns/locale/es";
-import type { Locale } from "date-fns";
-
-const DATE_LOCALES: Record<string, Locale> = { en: enUS, es };
+import { LOCALE_REGISTRY, type LanguageCode } from "./registry";
 
 /** Get the date-fns Locale matching the current i18n language code. */
-export function getDateLocale(lang: string): Locale {
-  return DATE_LOCALES[lang] || enUS;
+export function getDateLocale(lang: string): import("date-fns").Locale {
+  const entry = LOCALE_REGISTRY[lang as LanguageCode];
+  return entry?.dateLocale ?? enUS;
 }

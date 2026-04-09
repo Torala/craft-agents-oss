@@ -1,8 +1,14 @@
 import i18n, { type i18n as I18nInstance, type InitOptions } from "i18next";
-import en from "./locales/en.json";
-import es from "./locales/es.json";
-import zhHans from "./locales/zh-Hans.json";
+import { LOCALE_REGISTRY } from "./registry";
 import { SUPPORTED_LANGUAGE_CODES } from "./languages";
+
+// Build i18next resources from the locale registry.
+const resources = Object.fromEntries(
+  Object.entries(LOCALE_REGISTRY).map(([code, entry]) => [
+    code,
+    { translation: entry.messages },
+  ]),
+);
 
 // Safe as a boolean guard because init is synchronous (initImmediate: false).
 // If async init is ever needed, replace with a promise-based singleton.
@@ -25,11 +31,7 @@ export function setupI18n(
   }
 
   instance.init({
-    resources: {
-      en: { translation: en },
-      es: { translation: es },
-      "zh-Hans": { translation: zhHans },
-    },
+    resources,
     fallbackLng: "en",
     supportedLngs: [...SUPPORTED_LANGUAGE_CODES],
     interpolation: { escapeValue: false },

@@ -40,6 +40,16 @@ cd packages/shared && bun run tsc --noEmit
 
 Translations live in `src/i18n/locales/{lang}.json`. All user-facing strings must use `t()` (React) or `i18n.t()` (non-React).
 
+### Locale registry (single source of truth)
+
+All locale metadata lives in **`src/i18n/registry.ts`**. To add a new locale:
+
+1. Create `src/i18n/locales/{code}.json` with all keys (copy from `en.json`)
+2. Import the messages and `date-fns` locale in `registry.ts`
+3. Add one entry to `LOCALE_REGISTRY`
+
+**That's it.** `SUPPORTED_LANGUAGE_CODES`, `LANGUAGES`, i18n resources, and `getDateLocale()` are all derived automatically. No other file needs to change.
+
 ### Key naming convention
 
 Keys use **flat dot-notation** with a category prefix:
@@ -85,7 +95,7 @@ Keys use **flat dot-notation** with a category prefix:
 4. **Include `...` in the translation value** if the UI needs an ellipsis — don't append it in JSX.
 5. **Use `<Trans>` component** for translations containing HTML tags (e.g. `<strong>`).
 6. **Use `i18n.resolvedLanguage`** (not `i18n.language`) when comparing against supported language codes.
-7. **Keys must exist in both `en.json` and `es.json`** (and all future locale files). Keep alphabetically sorted.
+7. **Keys must exist in all locale files** (`en.json`, `es.json`, `zh-Hans.json`, and any future locales). Keep alphabetically sorted.
 8. **Watch translation length for constrained UI elements.** Translations can be 20-100%+ longer than English. For buttons, badges, tab labels, and dropdown items, keep translations concise — use shorter synonyms if needed. High-risk areas:
    - Permission mode badges (3-5 characters max)
    - Settings tab labels (≤10 characters ideal)
@@ -95,9 +105,15 @@ Keys use **flat dot-notation** with a category prefix:
 ### Adding a new translated string
 
 1. Add the key + English value to `en.json` (alphabetical order)
-2. Add the key + translated value to `es.json` (and all other locale files)
+2. Add the key + translated value to all other locale files (`es.json`, `zh-Hans.json`)
 3. Use `t("your.key")` in the component (add `useTranslation()` hook if not present)
 4. For non-React code, use `i18n.t("your.key")` — but only inside functions, never at module level
+
+### Adding a new locale
+
+1. Create `src/i18n/locales/{code}.json` with all keys from `en.json`
+2. Add the entry to `LOCALE_REGISTRY` in `src/i18n/registry.ts` (messages + date-fns locale + native name)
+3. Run tests — the registry tests will catch any missing wiring
 
 ## Source of truth
 - Package exports: `packages/shared/src/index.ts` and subpath export entries.
