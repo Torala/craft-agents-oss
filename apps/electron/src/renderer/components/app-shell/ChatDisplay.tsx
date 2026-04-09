@@ -70,6 +70,7 @@ import { useNavigation } from "@/contexts/NavigationContext"
 import { useAppShellContext } from "@/context/AppShellContext"
 import { navigate, routes } from "@/lib/navigate"
 import { CHAT_LAYOUT } from "@/config/layout"
+import { collectFileChangesFromActivities, getFirstFileChangeIdForActivity } from "@/lib/file-changes"
 import { resolveBranchNewPanelOption } from "./branching"
 
 // ============================================================================
@@ -1085,56 +1086,6 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
     })
   }, [session])
 
-  // Helper to collect Edit/Write activities into FileChange array
-  // Used by both onOpenActivityDetails and onOpenMultiFileDiff
-  // Supports:
-  // - Claude Code format: { file_path, old_string, new_string }
-  // - PI format: { path, oldText, newText }
-  // - Codex format: { changes: Array<{ path, kind, diff }> }
-  const collectFileChanges = useCallback((activities: ActivityItem[]): FileChange[] => {
-    const changes: FileChange[] = []
-    for (const a of activities) {
-      const input = a.toolInput as Record<string, unknown> | undefined
-      if (a.toolName === 'Edit' && input) {
-        // Check for Codex format: { changes: Array<{ path, kind, diff }> }
-        if (input.changes && Array.isArray(input.changes)) {
-          // Codex fileChange format - extract each change
-          for (const codexChange of input.changes as Array<{ path?: string; kind?: unknown; diff?: string }>) {
-            changes.push({
-              id: `${a.id}-${codexChange.path || 'unknown'}`,
-              filePath: codexChange.path || 'unknown',
-              toolType: 'Edit',
-              original: '',
-              modified: '',
-              unifiedDiff: codexChange.diff,
-              error: a.error || undefined,
-            })
-          }
-        } else {
-          // Claude fields take precedence; PI fields are additive fallbacks
-          changes.push({
-            id: a.id,
-            filePath: (input.file_path as string) || (input.path as string) || 'unknown',
-            toolType: 'Edit',
-            original: (input.old_string as string) || (input.oldText as string) || '',
-            modified: (input.new_string as string) || (input.newText as string) || '',
-            error: a.error || undefined,
-          })
-        }
-      } else if (a.toolName === 'Write' && input) {
-        changes.push({
-          id: a.id,
-          filePath: (input.file_path as string) || (input.path as string) || 'unknown',
-          toolType: 'Write',
-          original: '',
-          modified: (input.content as string) || '',
-          error: a.error || undefined,
-        })
-      }
-    }
-    return changes
-  }, [])
-
   // Ref to track total turn count for scroll handler
   const totalTurnCountRef = React.useRef(0)
 
@@ -1883,13 +1834,13 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                           // Edit/Write tool → Multi-file diff overlay (ungrouped, focused on this change)
                           // Exception: Write to .md/.txt files goes to document overlay instead
                           if ((activity.toolName === 'Edit' || activity.toolName === 'Write') && !isDocumentWrite) {
-                            const changes = collectFileChanges(turn.activities)
+                            const changes = collectFileChangesFromActivities(turn.activities)
                             if (changes.length > 0) {
                               setOverlayState({
                                 type: 'multi-diff',
                                 changes,
                                 consolidated: false, // Ungrouped mode - show individual changes
-                                focusedChangeId: activity.id, // Focus on clicked activity
+                                focusedChangeId: getFirstFileChangeIdForActivity(activity.id, changes),
                               })
                             }
                           } else {
@@ -1901,7 +1852,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                           a.toolName === 'Edit' || a.toolName === 'Write'
                         )}
                         onOpenMultiFileDiff={() => {
-                          const changes = collectFileChanges(turn.activities)
+                          const changes = collectFileChangesFromActivities(turn.activities)
                           if (changes.length > 0) {
                             setOverlayState({
                               type: 'multi-diff',

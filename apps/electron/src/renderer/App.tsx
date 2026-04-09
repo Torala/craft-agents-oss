@@ -40,6 +40,7 @@ import {
   sessionMetaMapAtom,
   sessionIdsAtom,
   loadedSessionsAtom,
+  forceSessionMessagesReloadAtom,
   backgroundTasksAtomFamily,
   extractSessionMeta,
   windowWorkspaceIdAtom,
@@ -481,6 +482,7 @@ export default function App() {
         }
       }
 
+      const unloadedIds: string[] = []
       for (const session of sessions) {
         const currentSession = store.get(sessionAtomFamily(session.id))
         const shouldPreserveMessages = !!currentSession && loadedSessionIds.has(session.id)
@@ -493,8 +495,20 @@ export default function App() {
 
         store.set(sessionAtomFamily(session.id), nextSession)
 
+        // Track sessions written without messages so lazy-loading re-fetches them
+        if (!shouldPreserveMessages && loadedSessionIds.has(session.id)) {
+          unloadedIds.push(session.id)
+        }
+
         syncSessionOptionsFromSession(session)
         void reconcilePermissionModeState(session.id)
+      }
+
+      // Remove from loadedSessionsAtom so ensureSessionMessagesLoaded will re-fetch
+      if (unloadedIds.length > 0) {
+        const nextLoaded = new Set(store.get(loadedSessionsAtom))
+        for (const id of unloadedIds) nextLoaded.delete(id)
+        store.set(loadedSessionsAtom, nextLoaded)
       }
 
       const nextMetaMap = new Map<string, SessionMeta>()
@@ -980,7 +994,22 @@ export default function App() {
       // Refresh full message content only for the active session plus any
       // session still marked processing after the metadata refresh.
       for (const sessionId of refreshIds) {
-        await refreshSessionFromServer(sessionId)
+        const ok = await refreshSessionFromServer(sessionId)
+        if (!ok) {
+          // Server may need time to restart session subprocess after reconnect — retry once
+          await new Promise(r => setTimeout(r, 2000))
+          await refreshSessionFromServer(sessionId)
+        }
+      }
+
+      // Final fallback: if the active session is still empty, force a reload
+      // even when the session is already marked loaded.
+      if (sessionSelection.selected) {
+        const session = store.get(sessionAtomFamily(sessionSelection.selected))
+        if (session && (!session.messages || session.messages.length === 0)) {
+          console.warn('[App] Active session still has no messages after stale reconnect refresh — forcing message reload')
+          await store.set(forceSessionMessagesReloadAtom, sessionSelection.selected)
+        }
       }
     })
 
