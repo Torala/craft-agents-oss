@@ -707,37 +707,47 @@ app.whenReady().then(async () => {
         const sourceWorkspaceId = session.workspaceId
 
         // 1. Export full session bundle (stays in main process memory)
+        console.log(`[Transfer] Exporting session ${sessionId} from workspace ${sourceWorkspaceId}...`)
         const bundle = await sessionManager.exportSession(sessionId, sourceWorkspaceId)
         if (!bundle) throw new Error(`Failed to export session ${sessionId}`)
+        console.log(`[Transfer] Export complete: ${bundle.session.messages.length} messages, ${bundle.files.length} files`)
 
         // 2. Generate summary and inject into bundle header
         try {
+          console.log('[Transfer] Generating conversation summary...')
           const transferPayload = await sessionManager.exportRemoteSessionTransfer(sessionId, sourceWorkspaceId)
           if (transferPayload?.summary && bundle.session?.header) {
             ;(bundle.session.header as any).transferredSessionSummary = transferPayload.summary
             ;(bundle.session.header as any).transferredSessionSummaryApplied = false
+            console.log(`[Transfer] Summary generated: ${transferPayload.summary.length} chars`)
           }
-        } catch {
-          // Summary generation failed — transfer without AI context
+        } catch (err) {
+          console.warn('[Transfer] Summary generation failed:', err)
         }
 
-        // 3. Connect to remote server
+        // 3. Connect to remote server (AFTER export to minimize idle time)
+        console.log(`[Transfer] Connecting to remote server: ${url}`)
         const { connectToRemote } = await import('./handlers/workspace')
         const { client, error } = await connectToRemote(url, token)
         if (!client) throw new Error(error ?? 'Connection failed to remote server')
+        console.log('[Transfer] Connected to remote server')
 
         try {
           // 4. Choose transport based on payload size
           const json = JSON.stringify(bundle)
           const payloadSize = Buffer.byteLength(json, 'utf-8')
+          const payloadMB = (payloadSize / (1024 * 1024)).toFixed(1)
 
           const { CHUNKED_TRANSFER_THRESHOLD, invokeChunked } = await import('./chunked-rpc')
 
           if (payloadSize < CHUNKED_TRANSFER_THRESHOLD) {
             // Small bundle → direct RPC
+            console.log(`[Transfer] Bundle size: ${payloadMB}MB (< 5MB threshold) → using direct RPC`)
             return await client.invoke('sessions:import', remoteWorkspaceId, bundle, 'fork')
           } else {
             // Large bundle → chunked transfer
+            const chunkCount = Math.ceil(payloadSize / (384 * 1024))
+            console.log(`[Transfer] Bundle size: ${payloadMB}MB (>= 5MB threshold) → using chunked transfer (${chunkCount} chunks)`)
             return await invokeChunked(
               client,
               'sessions:import',

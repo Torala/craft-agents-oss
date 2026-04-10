@@ -44,6 +44,7 @@ export async function invokeChunked(
   deferredArgs[largeArgIndex] = null
 
   // 4. Start transfer
+  console.log(`[ChunkedRPC] Starting transfer: ${chunks.length} chunks, ${bytes.length} bytes, channel: ${channel}`)
   const { transferId } = await client.invoke('transfer:start', {
     totalBytes: bytes.length,
     chunkCount: chunks.length,
@@ -51,6 +52,7 @@ export async function invokeChunked(
     args: deferredArgs,
     largeArgIndex,
   }) as { transferId: string }
+  console.log(`[ChunkedRPC] Transfer started: ${transferId}`)
 
   // 5. Send chunks sequentially
   for (let i = 0; i < chunks.length; i++) {
@@ -59,8 +61,14 @@ export async function invokeChunked(
       index: i,
       data: chunks[i],
     })
+    if ((i + 1) % 10 === 0 || i === chunks.length - 1) {
+      console.log(`[ChunkedRPC] Sent chunk ${i + 1}/${chunks.length}`)
+    }
   }
 
   // 6. Commit — returns the result of the original RPC call
-  return client.invoke('transfer:commit', { transferId })
+  console.log(`[ChunkedRPC] All chunks sent, committing...`)
+  const result = await client.invoke('transfer:commit', { transferId })
+  console.log(`[ChunkedRPC] Transfer committed successfully`)
+  return result
 }
