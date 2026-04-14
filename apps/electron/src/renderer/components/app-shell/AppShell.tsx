@@ -2835,7 +2835,7 @@ function AppShellContent({
                               <StyledDropdownMenuSubContent minWidth="min-w-[180px]">
                                 {labelConfigs.length === 0 ? (
                                   <StyledDropdownMenuItem disabled>
-                                    <span className="text-muted-foreground">{t("sidebar.noLabelsConfigured")}</span>
+                                    <span className="text-muted-foreground">{t("table.noLabelsConfigured")}</span>
                                   </StyledDropdownMenuItem>
                                 ) : (
                                   <FilterLabelItems

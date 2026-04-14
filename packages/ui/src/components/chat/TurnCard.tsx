@@ -1037,7 +1037,7 @@ function ActivityRow({ activity, onOpenDetails, isLastChild, sessionFolderPath, 
                     className="px-1.5 py-0.5 bg-[color-mix(in_oklab,var(--destructive)_4%,var(--background))] shadow-tinted rounded-[4px] text-[10px] text-destructive font-medium cursor-default shrink-0"
                     style={{ '--shadow-color': 'var(--destructive-rgb)' } as React.CSSProperties}
                   >
-                    {i18n.t('turnCard.errorBadge')}
+                    {i18n.t('common.error')}
                   </span>
                 </TooltipTrigger>
                 <TooltipContent side="top" className="max-w-[400px]">
