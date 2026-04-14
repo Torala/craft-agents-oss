@@ -1122,40 +1122,34 @@ import { Markdown } from '@/components/markdown'
 
 ## Session State Architecture
 
-The app uses a **hybrid React/Jotai state management** approach for session data:
+Jotai atoms are the **sole source of truth** for session state. There is no React `sessions` array.
 
-**Why hybrid?**
-- React state (`sessions` array in `App.tsx`) is the source of truth
-- Jotai atoms provide per-session isolation for performance
-- Without isolation, streaming in Session A would cause re-renders in Session B
+**Why atom-only?**
+- `sessionAtomFamily(id)` provides per-session isolation — streaming in Session A doesn't re-render Session B
+- `sessionMetaMapAtom` provides lightweight metadata for the session list (no messages)
+- Messages are lazy-loaded via `ensureSessionMessagesLoadedAtom` to keep memory low (~50MB vs ~500MB for 300+ sessions)
 
 **Key files:**
-- `App.tsx` - React state + auto-sync effect
-- `atoms/sessions.ts` - Per-session Jotai atoms
-- `context/ChatContext.tsx` - `useSession(id)` hook for isolated access
+- `atoms/sessions.ts` — atom definitions, action atoms (`initializeSessionsAtom`, `refreshSessionsMetadataAtom`, `addSessionAtom`, `removeSessionAtom`)
+- `App.tsx` — IPC handlers that dispatch atom actions
 
-**How it works:**
+**Key atoms:**
+- `sessionAtomFamily(id)` — full session data per session (messages included when loaded)
+- `sessionMetaMapAtom` — `Map<string, SessionMeta>` for list display (lightweight, no messages)
+- `sessionIdsAtom` — ordered session IDs
+- `loadedSessionsAtom` — tracks which sessions have messages loaded
+
+**Session list rendering flow:**
 ```
-setSessions() called (React state update)
+getSessions() IPC → atom action (initializeSessionsAtom or refreshSessionsMetadataAtom)
        ↓
-useEffect triggers syncSessionsToAtoms()
+sessionMetaMapAtom updated (single Jotai write transaction)
        ↓
-Per-session atoms updated (only changed sessions)
-       ↓
-Components using useSession(id) re-render
-```
-
-**Component subscription patterns:**
-```typescript
-// For session lists - reads from context (React state)
-const { sessions } = useChatContext()
-
-// For chat panels - reads from atom (isolated updates)
-const session = useSession(sessionId)
+AppShell reads useAtomValue(sessionMetaMapAtom) → re-renders SessionList
 ```
 
 **Adding new session updates:**
-Just use `setSessions()` - the sync effect handles atom updates automatically. No need to manually update atoms.
+Use atom actions (`addSessionAtom`, `updateSessionAtom`, `removeSessionAtom`). Multi-atom updates must go through a write atom to ensure transactional consistency.
 
 ## Session Management
 
