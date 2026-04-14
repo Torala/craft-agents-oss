@@ -629,6 +629,61 @@ The `testEndpoint` specifies which endpoint to call when validating credentials:
 
 **Public APIs (authType: 'none')** don't require testEndpoint - we test by hitting the base URL.
 
+### renewEndpoint Configuration (Optional)
+
+The optional `renewEndpoint` enables automatic token renewal for non-OAuth bearer-token APIs. When the token expires, the system calls this endpoint to get a fresh token — no manual re-authentication needed.
+
+```json
+{
+  "api": {
+    "baseUrl": "https://api.example.com/",
+    "authType": "bearer",
+    "renewEndpoint": {
+      "path": "auth/refresh",
+      "method": "POST",
+      "tokenField": "access_token",
+      "expiresInField": "expires_in"
+    }
+  }
+}
+```
+
+**Fields:**
+
+| Field | Required | Default | Description |
+|-------|----------|---------|-------------|
+| `path` | Yes | — | Renew URL — relative path (resolved against `baseUrl`) or absolute URL |
+| `method` | No | `"POST"` | HTTP method: `"GET"` or `"POST"` |
+| `body` | No | — | Request body (JSON). Use `{{token}}` as placeholder for the current access token |
+| `headers` | No | — | Extra headers. Use `{{token}}` as placeholder. Merged on top of `defaultHeaders` |
+| `tokenField` | No | `"access_token"` | JSON field name for the new token in the response |
+| `expiresInField` | No | `"expires_in"` | JSON field name for expiry in seconds in the response |
+| `fallbackTtlSecs` | No | — | Fallback TTL in seconds when the response doesn't include expiry info |
+
+**How it works:**
+1. Before each API request, the system checks if the token is expired or expiring soon (within 5 minutes)
+2. If so, it calls the `renewEndpoint` with the current token in the Authorization header
+3. The new token and expiry are extracted from the response and stored
+4. The refreshed token is used for the API request
+
+**Token substitution:** Use `{{token}}` in `body` or `headers` to insert the current access token. This supports nested objects — all string values are scanned recursively.
+
+**Example with token in request body:**
+```json
+{
+  "renewEndpoint": {
+    "path": "auth/refresh",
+    "body": { "current_token": "{{token}}" },
+    "tokenField": "new_token",
+    "expiresInField": "ttl"
+  }
+}
+```
+
+**When `body` is omitted**, the current token is sent via the standard Authorization header (using the source's `authScheme`).
+
+**Note:** This is for APIs with their own token renewal mechanism, not OAuth. For OAuth-based APIs, use `authType: "oauth"` instead.
+
 ### Local Sources
 
 Filesystem access for local folders.
