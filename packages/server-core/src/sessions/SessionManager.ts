@@ -3548,6 +3548,30 @@ export class SessionManager implements ISessionManager {
 
           return { resolved: null, available }
         },
+        sendAgentMessageFn: async (sessionId: string, message: string, attachments?: Array<{ path: string; name?: string }>) => {
+          // Build FileAttachment[] from paths (same pattern as spawn_session)
+          let fileAttachments: FileAttachment[] | undefined
+          if (attachments?.length) {
+            const builtAttachments: FileAttachment[] = []
+            for (const a of attachments) {
+              try {
+                const extraDirs = getWorkspaceAllowedDirs(managed.workspace.id)
+                const safePath = await validateFilePath(a.path, extraDirs)
+                const attachment = readFileAttachment(safePath)
+                if (attachment) {
+                  if (a.name) attachment.name = a.name
+                  builtAttachments.push(attachment)
+                }
+              } catch (error) {
+                const msg = error instanceof Error ? error.message : String(error)
+                sessionLog.warn(`send_agent_message: blocked attachment path ${a.path}: ${msg}`)
+              }
+            }
+            if (builtAttachments.length > 0) fileAttachments = builtAttachments
+          }
+
+          await this.sendMessage(sessionId, message, fileAttachments)
+        },
       })
 
       // Wire up onSourceActivationRequest to auto-enable sources when agent tries to use them
