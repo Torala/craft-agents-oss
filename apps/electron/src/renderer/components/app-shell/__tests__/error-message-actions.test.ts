@@ -34,6 +34,25 @@ describe('handleErrorMessageAction', () => {
     expect(onOpenUrl).toHaveBeenCalledWith('https://example.com/status')
   })
 
+  it('calls onRetry instead of onRetryFocus when provided', () => {
+    const onRetry = mock(() => {})
+    const onRetryFocus = mock(() => {})
+    const action: ErrorMessageAction = {
+      key: 'r',
+      label: 'Retry',
+      action: 'retry',
+    }
+
+    handleErrorMessageAction(action, {
+      sessionId: 'session-123',
+      onRetry,
+      onRetryFocus,
+    })
+
+    expect(onRetry).toHaveBeenCalledTimes(1)
+    expect(onRetryFocus).not.toHaveBeenCalled()
+  })
+
   it('runs the settings handler for settings actions', () => {
     const onOpenSettings = mock(() => {})
     const action: ErrorMessageAction = {

@@ -1644,6 +1644,15 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
                             onOpenFile={onOpenFile}
                             onOpenUrl={onOpenUrl}
                             sessionId={session?.id}
+                            onRetry={turn.message.role === 'error' ? () => {
+                              const msgs = session?.messages
+                              if (!msgs) return
+                              const errorIdx = msgs.findIndex(m => m.id === turn.message.id)
+                              const lastUserMsg = msgs.slice(0, errorIdx).findLast(m => m.role === 'user')
+                              if (lastUserMsg) {
+                                onSendMessage(lastUserMsg.content)
+                              }
+                            } : undefined}
                           />
                         </div>
                       )
@@ -2118,12 +2127,14 @@ interface MessageBubbleProps {
   onPopOut?: (message: Message) => void
   /** Compact mode - reduces padding for popover embedding */
   compactMode?: boolean
+  /** Callback to resend the user message that preceded an error */
+  onRetry?: () => void
 }
 
 /**
  * ErrorMessage - Separate component for error messages to allow useState hook
  */
-function ErrorMessage({ message, onOpenUrl, sessionId }: { message: Message; onOpenUrl?: (url: string) => void; sessionId?: string }) {
+function ErrorMessage({ message, onOpenUrl, sessionId, onRetry }: { message: Message; onOpenUrl?: (url: string) => void; sessionId?: string; onRetry?: () => void }) {
   const { t } = useTranslation()
   const hasDetails = (message.errorDetails && message.errorDetails.length > 0) || message.errorOriginal
   const [detailsOpen, setDetailsOpen] = React.useState(false)
@@ -2157,6 +2168,7 @@ function ErrorMessage({ message, onOpenUrl, sessionId }: { message: Message; onO
                   handleErrorMessageAction(action, {
                     sessionId,
                     onOpenUrl,
+                    onRetry,
                   })
                 }}
                 className="text-xs px-2 py-0.5 rounded border border-destructive/20 text-destructive/70 hover:text-destructive hover:border-destructive/40 transition-colors"
@@ -2203,6 +2215,7 @@ function MessageBubble({
   renderMode = 'minimal',
   onPopOut,
   compactMode,
+  onRetry,
 }: MessageBubbleProps) {
   const { t } = useTranslation()
 
@@ -2267,7 +2280,7 @@ function MessageBubble({
 
   // === ERROR MESSAGE: Red bordered bubble with warning icon and collapsible details ===
   if (message.role === 'error') {
-    return <ErrorMessage message={message} onOpenUrl={onOpenUrl} sessionId={sessionId} />
+    return <ErrorMessage message={message} onOpenUrl={onOpenUrl} sessionId={sessionId} onRetry={onRetry} />
   }
 
   // === STATUS MESSAGE: Matches ProcessingIndicator layout for visual consistency ===
