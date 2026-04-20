@@ -42,6 +42,22 @@ const NOOP_LOGGER: MessagingLogger = {
   child: () => NOOP_LOGGER,
 }
 
+/**
+ * Hard ceiling for `sendText`/`sendFile` awaits. If the worker wedges
+ * between command dispatch and `send_result` (Baileys deadlock, infinite
+ * retry, stalled socket) we surface a real error to the caller instead
+ * of letting the renderer's `text_complete` path hang indefinitely and
+ * freeze the chat. Chosen to comfortably exceed the worst-case Baileys
+ * round-trip on a slow network; shorter would starve legitimate sends.
+ * Tests pass a much smaller value via `WhatsAppConfig.sendTimeoutMs`.
+ */
+const DEFAULT_SEND_TIMEOUT_MS = 30_000
+
+type PendingEntry = {
+  resolve: (r: { ok: boolean; messageId?: string; error?: string }) => void
+  timer: ReturnType<typeof setTimeout>
+}
+
 // ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
@@ -64,6 +80,13 @@ export interface WhatsAppConfig extends PlatformConfig {
   selfChatMode?: boolean
   /** Prefix tagged onto outbound self-chat messages. Defaults to 🤖. */
   responsePrefix?: string
+  /**
+   * Override the default per-send timeout (30s). Used by tests; not
+   * exposed through the registry or UI. Shorter values help surface
+   * worker deadlocks faster but risk rejecting legitimate sends on
+   * slow networks.
+   */
+  sendTimeoutMs?: number
 }
 
 // ---------------------------------------------------------------------------
@@ -103,8 +126,9 @@ export class WhatsAppAdapter implements PlatformAdapter {
   private messageHandler: ((msg: IncomingMessage) => Promise<void>) | null = null
   private buttonHandler: ((press: ButtonPress) => Promise<void>) | null = null
   private eventHandlers = new Set<EventHandler>()
-  private pending = new Map<string, (r: { ok: boolean; messageId?: string; error?: string }) => void>()
+  private pending = new Map<string, PendingEntry>()
   private nextCmdId = 1
+  private sendTimeoutMs = DEFAULT_SEND_TIMEOUT_MS
 
   async initialize(config: PlatformConfig): Promise<void> {
     const cfg = config as WhatsAppConfig
@@ -119,6 +143,10 @@ export class WhatsAppAdapter implements PlatformAdapter {
       component: 'whatsapp-adapter',
       platform: 'whatsapp',
     })
+
+    if (cfg.sendTimeoutMs !== undefined && cfg.sendTimeoutMs > 0) {
+      this.sendTimeoutMs = cfg.sendTimeoutMs
+    }
 
     const nodeBin = cfg.nodeBin ?? process.execPath
     this.log.info('starting WhatsApp worker', {
@@ -156,6 +184,9 @@ export class WhatsAppAdapter implements PlatformAdapter {
       this.connected = false
       this.started = false
       this.proc = null
+      this.drainPending(
+        `worker exited with code ${code ?? 'null'}${signal ? ` (signal ${signal})` : ''}`,
+      )
       this.log.warn('WhatsApp worker exited', {
         event: 'whatsapp_worker_exited',
         code,
@@ -206,6 +237,11 @@ export class WhatsAppAdapter implements PlatformAdapter {
         resolve()
       })
     })
+    // Defensive: `proc.on('exit')` normally drains first, but if the exit
+    // event is delayed or was set up after a race, the promise above can
+    // resolve via the SIGKILL timer before `exit` fires. Drain again here
+    // so no caller is left hanging.
+    this.drainPending('adapter destroyed')
     this.proc = null
     this.started = false
     this.connected = false
@@ -308,10 +344,25 @@ export class WhatsAppAdapter implements PlatformAdapter {
     cmd: Extract<WorkerCommand, { id: string }>,
   ): Promise<{ ok: boolean; messageId?: string; error?: string }> {
     return new Promise((resolve) => {
-      this.pending.set(cmd.id, resolve)
+      const timer = setTimeout(() => {
+        // `delete` returns false if `send_result` already arrived and cleared
+        // the entry; in that race we've already resolved and must not do it
+        // again.
+        if (this.pending.delete(cmd.id)) {
+          this.log.warn('WhatsApp send timed out', {
+            event: 'whatsapp_send_timeout',
+            commandId: cmd.id,
+            commandType: cmd.type,
+            timeoutMs: this.sendTimeoutMs,
+          })
+          resolve({ ok: false, error: `send timed out after ${this.sendTimeoutMs}ms` })
+        }
+      }, this.sendTimeoutMs)
+      this.pending.set(cmd.id, { resolve, timer })
       try {
         this.sendCommand(cmd)
       } catch (err) {
+        clearTimeout(timer)
         this.pending.delete(cmd.id)
         this.log.error('failed to send command to WhatsApp worker', {
           event: 'whatsapp_worker_command_failed',
@@ -321,6 +372,25 @@ export class WhatsAppAdapter implements PlatformAdapter {
         resolve({ ok: false, error: err instanceof Error ? err.message : String(err) })
       }
     })
+  }
+
+  /**
+   * Resolve all pending sends with a failure. Called from `proc.on('exit')`
+   * (worker crashed/quit) and from `destroy()` (orderly shutdown) so callers
+   * never hang waiting for a worker that will never respond.
+   */
+  private drainPending(reason: string): void {
+    if (this.pending.size === 0) return
+    this.log.warn('draining pending WhatsApp sends', {
+      event: 'whatsapp_pending_drain',
+      count: this.pending.size,
+      reason,
+    })
+    for (const entry of this.pending.values()) {
+      clearTimeout(entry.timer)
+      entry.resolve({ ok: false, error: reason })
+    }
+    this.pending.clear()
   }
 
   private fireEvent(event: WhatsAppEvent): void {
@@ -385,10 +455,11 @@ export class WhatsAppAdapter implements PlatformAdapter {
         }
         return
       case 'send_result': {
-        const resolver = this.pending.get(ev.id)
-        if (resolver) {
+        const entry = this.pending.get(ev.id)
+        if (entry) {
+          clearTimeout(entry.timer)
           this.pending.delete(ev.id)
-          resolver({ ok: ev.ok, messageId: ev.messageId, error: ev.error })
+          entry.resolve({ ok: ev.ok, messageId: ev.messageId, error: ev.error })
         }
         if (!ev.ok) {
           this.log.error('WhatsApp send failed', {
