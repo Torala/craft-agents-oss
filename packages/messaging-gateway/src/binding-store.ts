@@ -221,6 +221,10 @@ export class BindingStore {
         mkdirSync(this.dirPath, { recursive: true })
       }
       writeFileSync(this.filePath, JSON.stringify(this.bindings, null, 2), 'utf-8')
+      // Fire the listener only after the write succeeds — otherwise the UI
+      // shows a "binding added" event for state that will disappear on
+      // restart.
+      this.changeListener?.()
     } catch (err) {
       this.log.error('failed to save bindings store', {
         event: 'bindings_save_failed',
@@ -228,7 +232,6 @@ export class BindingStore {
         error: err,
       })
     }
-    this.changeListener?.()
   }
 }
 
