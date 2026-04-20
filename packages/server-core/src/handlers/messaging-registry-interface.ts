@@ -62,4 +62,16 @@ export interface IMessagingGatewayRegistry {
 
   /** Disable a platform and forget its local auth/device state when supported. */
   forgetPlatform(workspaceId: string, platform: string): Promise<void>
+
+  /**
+   * Start the WhatsApp connect flow (spawns the worker, emits QR or pairing-code
+   * prompts via WA_UI_EVENT). Throws if WhatsApp support is not configured.
+   */
+  startWhatsAppConnect(workspaceId: string): Promise<void>
+
+  /**
+   * Submit a phone number to the running WhatsApp worker to request a pairing
+   * code. Must be called after startWhatsAppConnect.
+   */
+  submitWhatsAppPhone(workspaceId: string, phoneNumber: string): Promise<void>
 }

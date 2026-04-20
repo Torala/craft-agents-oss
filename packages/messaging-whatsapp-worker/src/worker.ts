@@ -25,7 +25,7 @@ import {
 import { bareJid, classifyInbound, rememberSentId } from './filter'
 
 /**
- * Build-time constants injected by `scripts/electron-build-wa-worker.ts`
+ * Build-time constants injected by `scripts/build-wa-worker.ts`
  * via esbuild `--define`. At dev-time (no bundle) they fall back to the
  * `dev-*` values so typechecking and ad-hoc runs still work.
  */

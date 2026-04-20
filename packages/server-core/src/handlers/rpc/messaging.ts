@@ -66,21 +66,13 @@ export function registerMessagingHandlers(server: RpcServer, deps: HandlerDeps):
 
   server.handle(RPC_CHANNELS.messaging.WA_START_CONNECT, async (ctx) => {
     if (!ctx.workspaceId) throw new Error('Missing workspaceId')
-    const waRegistry = registry as { startWhatsAppConnect?: (wsId: string) => Promise<void> }
-    if (!waRegistry.startWhatsAppConnect) {
-      throw new Error('WhatsApp support is not available')
-    }
-    await waRegistry.startWhatsAppConnect(ctx.workspaceId)
+    await registry.startWhatsAppConnect(ctx.workspaceId)
     return { success: true }
   })
 
   server.handle(RPC_CHANNELS.messaging.WA_SUBMIT_PHONE, async (ctx, phoneNumber: string) => {
     if (!ctx.workspaceId) throw new Error('Missing workspaceId')
-    const waRegistry = registry as { submitWhatsAppPhone?: (wsId: string, phone: string) => Promise<void> }
-    if (!waRegistry.submitWhatsAppPhone) {
-      throw new Error('WhatsApp support is not available')
-    }
-    await waRegistry.submitWhatsAppPhone(ctx.workspaceId, phoneNumber)
+    await registry.submitWhatsAppPhone(ctx.workspaceId, phoneNumber)
     return { success: true }
   })
 }

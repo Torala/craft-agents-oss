@@ -9,8 +9,11 @@
  * The dynamic import at runtime still works because esbuild resolves literal
  * dynamic-import strings at bundle time.
  *
- * The worker is spawned under Electron's embedded Node (ELECTRON_RUN_AS_NODE=1)
- * by the WhatsAppAdapter, which is why we emit CJS + platform=node.
+ * The worker is spawned as a Node subprocess by the WhatsAppAdapter:
+ *   - Electron: re-enters its embedded Node via ELECTRON_RUN_AS_NODE=1.
+ *   - Headless/Bun server: spawns a system `node` binary (Bun cannot run the
+ *     CJS worker because Baileys' crypto deps depend on Node's runtime).
+ * That's why we emit CJS + platform=node — it must stay Node-compatible.
  */
 
 import { spawn } from "bun";
@@ -86,7 +89,7 @@ async function main(): Promise<void> {
       `--outfile=${OUTPUT}`,
       // Inject build provenance. The worker logs these on startup so an
       // operator can confirm a rebuild actually propagated to the running
-      // subprocess after `bun run electron:build:wa-worker`.
+      // subprocess after `bun run build:wa-worker`.
       `--define:__WA_WORKER_BUILD_ID__=${JSON.stringify(buildId)}`,
       `--define:__WA_WORKER_GIT_SHA__=${JSON.stringify(gitSha)}`,
       // Mark only Electron + Baileys' runtime-optional peers external.

@@ -50,3 +50,9 @@ export {
   MessagingGatewayRegistry,
   type MessagingGatewayRegistryOptions,
 } from './registry'
+export {
+  createMessagingBootstrap,
+  type MessagingBootstrapOptions,
+  type MessagingBootstrapHandle,
+  type PublishEventFn,
+} from './bootstrap'

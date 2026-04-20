@@ -174,8 +174,8 @@ scripts/electron-build-assets.ts
 scripts/electron-clean.ts
 scripts/electron-dev.ts
 
-# WhatsApp worker bundling (referenced by the Electron build pipeline)
-scripts/electron-build-wa-worker.ts
+# WhatsApp worker bundling (used by both Electron and headless server builds)
+scripts/build-wa-worker.ts
 
 # i18n locale parity check (referenced by CI)
 scripts/check-i18n-parity.ts
