@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { isMac } from "@/lib/platform"
 import { useActionLabel } from "@/actions"
+import { useIsMobile } from "@/hooks/useIsMobile"
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -177,6 +178,7 @@ export function AppMenu({
   onToggleFocusMode,
 }: AppMenuProps) {
   const { t } = useTranslation()
+  const isMobile = useIsMobile()
   const [isDebugMode, setIsDebugMode] = useState(false)
 
   // Get hotkey labels from centralized action registry
@@ -204,7 +206,7 @@ export function AppMenu({
       <div className="pointer-events-auto titlebar-no-drag">
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <TopBarButton aria-label="Craft menu">
+          <TopBarButton aria-label={t("menu.craftMenu")}>
             <CraftAgentsSymbol className="h-4 text-accent" />
           </TopBarButton>
         </DropdownMenuTrigger>
@@ -213,40 +215,35 @@ export function AppMenu({
           <StyledDropdownMenuItem onClick={onNewChat}>
             <SquarePenRounded className="h-3.5 w-3.5" />
             New Chat
-            {newChatHotkey && <DropdownMenuShortcut className="pl-6">{newChatHotkey}</DropdownMenuShortcut>}
+            {!isMobile && newChatHotkey && <DropdownMenuShortcut className="pl-6">{newChatHotkey}</DropdownMenuShortcut>}
           </StyledDropdownMenuItem>
           {onNewWindow && (
             <StyledDropdownMenuItem onClick={onNewWindow}>
               <Icons.AppWindow className="h-3.5 w-3.5" />
               New Window
-              {newWindowHotkey && <DropdownMenuShortcut className="pl-6">{newWindowHotkey}</DropdownMenuShortcut>}
+              {!isMobile && newWindowHotkey && <DropdownMenuShortcut className="pl-6">{newWindowHotkey}</DropdownMenuShortcut>}
             </StyledDropdownMenuItem>
+          )}
+
+          {/* Desktop-only: Edit/View/Window submenus (rely on host-process role handlers) */}
+          {!isMobile && (
+            <>
+              <StyledDropdownMenuSeparator />
+              {renderMenuSection(EDIT_MENU, actionHandlers, t)}
+              {renderMenuSection(VIEW_MENU, actionHandlers, t)}
+              {renderMenuSection(WINDOW_MENU, actionHandlers, t)}
+            </>
           )}
 
           <StyledDropdownMenuSeparator />
 
-          {/* Edit, View, Window submenus from shared schema */}
-          {renderMenuSection(EDIT_MENU, actionHandlers, t)}
-          {renderMenuSection(VIEW_MENU, actionHandlers, t)}
-          {renderMenuSection(WINDOW_MENU, actionHandlers, t)}
-
-          <StyledDropdownMenuSeparator />
-
-          {/* Settings submenu - items from shared schema */}
-          <DropdownMenuSub>
-            <StyledDropdownMenuSubTrigger>
-              <Icons.Settings className="h-3.5 w-3.5" />
-              Settings
-            </StyledDropdownMenuSubTrigger>
-            <StyledDropdownMenuSubContent>
-              {/* Main settings entry with keyboard shortcut */}
+          {/* Settings — flat on mobile (no sideways submenu), nested on desktop */}
+          {isMobile ? (
+            <>
               <StyledDropdownMenuItem onClick={onOpenSettings}>
                 <Icons.Settings className="h-3.5 w-3.5" />
                 Settings...
-                {settingsHotkey && <DropdownMenuShortcut className="pl-6">{settingsHotkey}</DropdownMenuShortcut>}
               </StyledDropdownMenuItem>
-              <StyledDropdownMenuSeparator />
-              {/* All settings subpages from shared schema */}
               {SETTINGS_ITEMS.map((item) => {
                 const Icon = SETTINGS_ICONS[item.id]
                 return (
@@ -259,16 +256,40 @@ export function AppMenu({
                   </StyledDropdownMenuItem>
                 )
               })}
-            </StyledDropdownMenuSubContent>
-          </DropdownMenuSub>
+            </>
+          ) : (
+            <DropdownMenuSub>
+              <StyledDropdownMenuSubTrigger>
+                <Icons.Settings className="h-3.5 w-3.5" />
+                Settings
+              </StyledDropdownMenuSubTrigger>
+              <StyledDropdownMenuSubContent>
+                <StyledDropdownMenuItem onClick={onOpenSettings}>
+                  <Icons.Settings className="h-3.5 w-3.5" />
+                  Settings...
+                  {settingsHotkey && <DropdownMenuShortcut className="pl-6">{settingsHotkey}</DropdownMenuShortcut>}
+                </StyledDropdownMenuItem>
+                <StyledDropdownMenuSeparator />
+                {SETTINGS_ITEMS.map((item) => {
+                  const Icon = SETTINGS_ICONS[item.id]
+                  return (
+                    <StyledDropdownMenuItem
+                      key={item.id}
+                      onClick={() => onOpenSettingsSubpage(item.id)}
+                    >
+                      <Icon className="h-3.5 w-3.5" />
+                      {t(item.labelKey)}
+                    </StyledDropdownMenuItem>
+                  )
+                })}
+              </StyledDropdownMenuSubContent>
+            </DropdownMenuSub>
+          )}
 
-          {/* Help submenu */}
-          <DropdownMenuSub>
-            <StyledDropdownMenuSubTrigger>
-              <Icons.HelpCircle className="h-3.5 w-3.5" />
-              Help
-            </StyledDropdownMenuSubTrigger>
-            <StyledDropdownMenuSubContent>
+          {/* Help — flat on mobile, nested on desktop */}
+          {isMobile ? (
+            <>
+              <StyledDropdownMenuSeparator />
               <StyledDropdownMenuItem onClick={() => window.electronAPI.openUrl('https://agents.craft.do/docs')}>
                 <Icons.HelpCircle className="h-3.5 w-3.5" />
                 Help & Documentation
@@ -279,14 +300,37 @@ export function AppMenu({
                 Automations
                 <Icons.ExternalLink className="h-3 w-3 ml-auto text-muted-foreground" />
               </StyledDropdownMenuItem>
-              <StyledDropdownMenuSeparator />
               <StyledDropdownMenuItem onClick={onOpenKeyboardShortcuts}>
                 <Icons.Keyboard className="h-3.5 w-3.5" />
                 Keyboard Shortcuts
-                {keyboardShortcutsHotkey && <DropdownMenuShortcut className="pl-6">{keyboardShortcutsHotkey}</DropdownMenuShortcut>}
               </StyledDropdownMenuItem>
-            </StyledDropdownMenuSubContent>
-          </DropdownMenuSub>
+            </>
+          ) : (
+            <DropdownMenuSub>
+              <StyledDropdownMenuSubTrigger>
+                <Icons.HelpCircle className="h-3.5 w-3.5" />
+                Help
+              </StyledDropdownMenuSubTrigger>
+              <StyledDropdownMenuSubContent>
+                <StyledDropdownMenuItem onClick={() => window.electronAPI.openUrl('https://agents.craft.do/docs')}>
+                  <Icons.HelpCircle className="h-3.5 w-3.5" />
+                  Help & Documentation
+                  <Icons.ExternalLink className="h-3 w-3 ml-auto text-muted-foreground" />
+                </StyledDropdownMenuItem>
+                <StyledDropdownMenuItem onClick={() => window.electronAPI.openUrl(getDocUrl('automations'))}>
+                  <Icons.Webhook className="h-3.5 w-3.5" />
+                  Automations
+                  <Icons.ExternalLink className="h-3 w-3 ml-auto text-muted-foreground" />
+                </StyledDropdownMenuItem>
+                <StyledDropdownMenuSeparator />
+                <StyledDropdownMenuItem onClick={onOpenKeyboardShortcuts}>
+                  <Icons.Keyboard className="h-3.5 w-3.5" />
+                  Keyboard Shortcuts
+                  {keyboardShortcutsHotkey && <DropdownMenuShortcut className="pl-6">{keyboardShortcutsHotkey}</DropdownMenuShortcut>}
+                </StyledDropdownMenuItem>
+              </StyledDropdownMenuSubContent>
+            </DropdownMenuSub>
+          )}
 
           {/* Debug submenu (dev only) */}
           {isDebugMode && (
@@ -316,14 +360,17 @@ export function AppMenu({
             </>
           )}
 
-          <StyledDropdownMenuSeparator />
-
-          {/* Quit */}
-          <StyledDropdownMenuItem onClick={() => window.electronAPI.menuQuit()}>
-            <Icons.LogOut className="h-3.5 w-3.5" />
-            {t("menu.quitCraftAgents")}
-            {quitHotkey && <DropdownMenuShortcut className="pl-6">{quitHotkey}</DropdownMenuShortcut>}
-          </StyledDropdownMenuItem>
+          {!isMobile && (
+            <>
+              <StyledDropdownMenuSeparator />
+              {/* Quit (desktop only — meaningless in a browser tab) */}
+              <StyledDropdownMenuItem onClick={() => window.electronAPI.menuQuit()}>
+                <Icons.LogOut className="h-3.5 w-3.5" />
+                {t("menu.quitCraftAgents")}
+                {quitHotkey && <DropdownMenuShortcut className="pl-6">{quitHotkey}</DropdownMenuShortcut>}
+              </StyledDropdownMenuItem>
+            </>
+          )}
         </StyledDropdownMenuContent>
       </DropdownMenu>
       </div>
@@ -339,7 +386,7 @@ export function AppMenu({
             <TopBarButton
               onClick={onBack}
               disabled={!canGoBack}
-              aria-label="Go back"
+              aria-label={t("shortcuts.action.goBack")}
             >
               <Icons.ChevronLeft className="h-[22px] w-[22px] text-foreground/70" strokeWidth={1.5} />
             </TopBarButton>
@@ -353,7 +400,7 @@ export function AppMenu({
             <TopBarButton
               onClick={onForward}
               disabled={!canGoForward}
-              aria-label="Go forward"
+              aria-label={t("shortcuts.action.goForward")}
             >
               <Icons.ChevronRight className="h-[22px] w-[22px] text-foreground/70" strokeWidth={1.5} />
             </TopBarButton>

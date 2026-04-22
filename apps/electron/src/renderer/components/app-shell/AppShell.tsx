@@ -121,6 +121,7 @@ import { APP_EVENTS, AGENT_EVENTS, type AutomationFilterKind, AUTOMATION_TYPE_TO
 import { useAutomations } from "@/hooks/useAutomations"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import { PanelHeader } from "./PanelHeader"
+import { FabNewChat } from "./FabNewChat"
 import { SendToWorkspaceDialog } from "./SendToWorkspaceDialog"
 import { MessagingDialogHost } from "@/components/messaging/MessagingDialogHost"
 import { EditPopover, getEditConfig, type EditContextKey } from "@/components/ui/EditPopover"
@@ -3221,6 +3222,10 @@ function AppShellContent({
                   activeChatMatchInfo={chatMatchInfo}
                 />
               </>
+            )}
+            {/* Mobile/compact-only FAB for starting a new chat (only on sessions view) */}
+            {isAutoCompact && isSessionsNavigation(navState) && (
+              <FabNewChat onClick={() => handleNewChat()} />
             )}
             </div>
           }
