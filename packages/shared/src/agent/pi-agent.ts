@@ -1638,7 +1638,10 @@ export class PiAgent extends BaseAgent {
     await this.ensureSubprocess();
 
     const id = `compact-${++this.rpcIdCounter}`;
-    const timeoutMs = 60_000;
+    // GPT-backed Pi compactions on large conversations can legitimately take 60-120s
+    // (single blocking OpenAI summary call, no progress stream). 5 min covers realistic
+    // cases; truly hung subprocesses are caught by the stdio death watchdog.
+    const timeoutMs = 300_000;
 
     return new Promise<{ summary: string; firstKeptEntryId: string; tokensBefore: number } | null>((resolve, reject) => {
       const timer = setTimeout(() => {
