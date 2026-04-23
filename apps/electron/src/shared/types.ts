@@ -429,11 +429,11 @@ export interface ElectronAPI {
   readPreferences(): Promise<{ content: string; exists: boolean; path: string }>
   writePreferences(content: string): Promise<{ success: boolean; error?: string }>
 
-  // Session Drafts (persisted input text)
-  getDraft(sessionId: string): Promise<string | null>
-  setDraft(sessionId: string, text: string): Promise<void>
+  // Session Drafts (persisted composer state — text + attachment refs)
+  getDraft(sessionId: string): Promise<import('@craft-agent/shared/config').SessionDraft | null>
+  setDraft(sessionId: string, draft: import('@craft-agent/shared/config').SessionDraft): Promise<void>
   deleteDraft(sessionId: string): Promise<void>
-  getAllDrafts(): Promise<Record<string, string>>
+  getAllDrafts(): Promise<Record<string, import('@craft-agent/shared/config').SessionDraft>>
 
   // Session Info Panel
   getSessionFiles(sessionId: string): Promise<SessionFile[]>

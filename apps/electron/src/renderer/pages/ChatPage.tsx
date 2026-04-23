@@ -51,7 +51,9 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     onMarkSessionUnread,
     onSetActiveViewingSession,
     getDraft,
+    hydrateDraftAttachments,
     onInputChange,
+    onAttachmentsChange,
     enabledSources,
     skills,
     labels,
@@ -184,6 +186,25 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     inputValueRef.current = value
     onInputChange(sessionId, value)
   }, [sessionId, onInputChange])
+
+  // Attachments draft state — hydrated async from persisted refs on session switch.
+  // `[]` is the safe default while hydration is in flight; FreeFormInput seeds its
+  // local state from this prop and swaps in the restored list when ready.
+  const [attachmentsValue, setAttachmentsValue] = React.useState<import('../../shared/types').FileAttachment[]>([])
+
+  React.useEffect(() => {
+    let cancelled = false
+    setAttachmentsValue([])
+    hydrateDraftAttachments(sessionId).then((atts) => {
+      if (!cancelled) setAttachmentsValue(atts)
+    })
+    return () => { cancelled = true }
+  }, [sessionId, hydrateDraftAttachments])
+
+  const handleAttachmentsChange = React.useCallback((attachments: import('../../shared/types').FileAttachment[]) => {
+    setAttachmentsValue(attachments)
+    onAttachmentsChange(sessionId, attachments)
+  }, [sessionId, onAttachmentsChange])
 
   // Session model change handler - persists per-session model and connection
   const handleModelChange = React.useCallback((model: string, connection?: string) => {
@@ -583,6 +604,8 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
                 enabledModes={enabledModes}
                 inputValue={inputValue}
                 onInputChange={handleInputChange}
+                attachmentsValue={attachmentsValue}
+                onAttachmentsChange={handleAttachmentsChange}
                 sources={enabledSources}
                 skills={skills}
                 sessionStatuses={sessionStatuses}
@@ -654,6 +677,8 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
             enabledModes={enabledModes}
             inputValue={inputValue}
             onInputChange={handleInputChange}
+            attachmentsValue={attachmentsValue}
+            onAttachmentsChange={handleAttachmentsChange}
             sources={enabledSources}
             skills={skills}
             labels={labels}

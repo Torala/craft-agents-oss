@@ -164,6 +164,10 @@ export interface FreeFormInputProps {
   inputValue?: string
   /** Callback when input value changes */
   onInputChange?: (value: string) => void
+  /** Persisted attachment draft for this session (seeds local state on session switch) */
+  attachmentsValue?: FileAttachment[]
+  /** Callback when attachment list changes (add, remove, clear on send) */
+  onAttachmentsChange?: (attachments: FileAttachment[]) => void
   /** When true, removes container styling (shadow, bg, rounded) - used when wrapped by InputContainer */
   unstyled?: boolean
   /** Callback when component height changes (for external animation sync) */
@@ -255,6 +259,8 @@ export function FreeFormInput({
   enabledModes = ['safe', 'ask', 'allow-all'],
   inputValue,
   onInputChange,
+  attachmentsValue,
+  onAttachmentsChange,
   unstyled = false,
   onHeightChange,
   onFocusChange,
@@ -443,12 +449,43 @@ export function FreeFormInput({
   // Sync FROM parent on mount/change (for restoring drafts)
   // Sync TO parent on blur/submit (debounced persistence)
   const [input, setInput] = React.useState(inputValue ?? '')
-  const [attachments, setAttachments] = React.useState<FileAttachment[]>([])
+  const [attachments, setAttachments] = React.useState<FileAttachment[]>(attachmentsValue ?? [])
 
   // Ref to track current attachments for use in event handlers (avoids stale closure issues)
   const attachmentsRef = React.useRef<FileAttachment[]>([])
   React.useEffect(() => {
     attachmentsRef.current = attachments
+  }, [attachments])
+
+  // Seed from parent when `attachmentsValue` changes (e.g., switching sessions).
+  // `skipPersistRef` tells the save effect below that the next `attachments` change
+  // is a prop-driven seed, not user intent — otherwise we'd echo the seed back to
+  // the parent and risk persisting A's attachments under B's sessionId.
+  const attachmentsRefsKey = React.useMemo(() => {
+    if (!attachmentsValue) return ''
+    return attachmentsValue.map(a => a.path).join('|')
+  }, [attachmentsValue])
+  const prevAttachmentsRefsKey = React.useRef(attachmentsRefsKey)
+  const skipPersistRef = React.useRef(true) // treat initial mount as a prop-seed
+  React.useEffect(() => {
+    if (attachmentsValue === undefined) return
+    if (attachmentsRefsKey === prevAttachmentsRefsKey.current) return
+    prevAttachmentsRefsKey.current = attachmentsRefsKey
+    skipPersistRef.current = true
+    setAttachments(attachmentsValue)
+  }, [attachmentsValue, attachmentsRefsKey])
+
+  // Persist user-initiated attachment changes back to the parent. The parent stores
+  // refs (path + name) and debounces the disk write, so we fire eagerly on every
+  // change — add/remove/send-clear.
+  const onAttachmentsChangeRef = React.useRef(onAttachmentsChange)
+  onAttachmentsChangeRef.current = onAttachmentsChange
+  React.useEffect(() => {
+    if (skipPersistRef.current) {
+      skipPersistRef.current = false
+      return
+    }
+    onAttachmentsChangeRef.current?.(attachments)
   }, [attachments])
 
   // Optimistic state for source selection - updates UI immediately before IPC round-trip completes

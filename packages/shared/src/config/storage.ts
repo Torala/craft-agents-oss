@@ -975,33 +975,72 @@ export function clearWorkspacePlan(workspaceId: string): void {
 
 // ============================================
 // Session Input Drafts
-// Persists input text per session across app restarts
+// Persists composer state (text + attachments) per session across app restarts.
+// Attachments are stored as lightweight refs (path + name) — the file on disk
+// is the source of truth, re-read via readFileAttachment() on restore.
 // ============================================
 
 const DRAFTS_FILE = join(CONFIG_DIR, 'drafts.json');
 
+export interface DraftAttachmentRef {
+  path: string;
+  name: string;
+}
+
+export interface SessionDraft {
+  text: string;
+  attachments?: DraftAttachmentRef[];
+}
+
 interface DraftsData {
-  drafts: Record<string, string>;
+  drafts: Record<string, SessionDraft>;
   updatedAt: number;
 }
 
+function isDraftAttachmentRef(value: unknown): value is DraftAttachmentRef {
+  return !!value
+    && typeof value === 'object'
+    && typeof (value as DraftAttachmentRef).path === 'string'
+    && typeof (value as DraftAttachmentRef).name === 'string';
+}
+
+function isSessionDraft(value: unknown): value is SessionDraft {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as SessionDraft;
+  if (typeof candidate.text !== 'string') return false;
+  if (candidate.attachments !== undefined) {
+    if (!Array.isArray(candidate.attachments)) return false;
+    if (!candidate.attachments.every(isDraftAttachmentRef)) return false;
+  }
+  return true;
+}
+
+function isEmptyDraft(draft: SessionDraft): boolean {
+  return !draft.text && (!draft.attachments || draft.attachments.length === 0);
+}
+
 /**
- * Load all drafts from disk
+ * Load all drafts from disk. Entries that don't parse as SessionDraft
+ * (e.g. pre-upgrade string drafts) are discarded silently.
  */
 function loadDraftsData(): DraftsData {
   try {
     if (!existsSync(DRAFTS_FILE)) {
       return { drafts: {}, updatedAt: 0 };
     }
-    return readJsonFileSync<DraftsData>(DRAFTS_FILE);
+    const raw = readJsonFileSync<{ drafts?: Record<string, unknown>; updatedAt?: number }>(DRAFTS_FILE);
+    const drafts: Record<string, SessionDraft> = {};
+    for (const [sessionId, value] of Object.entries(raw.drafts ?? {})) {
+      if (isSessionDraft(value)) {
+        drafts[sessionId] = value;
+      }
+    }
+    return { drafts, updatedAt: raw.updatedAt ?? 0 };
   } catch {
     return { drafts: {}, updatedAt: 0 };
   }
 }
 
-/**
- * Save drafts to disk
- */
 function saveDraftsData(data: DraftsData): void {
   ensureConfigDir();
   data.updatedAt = Date.now();
@@ -1009,30 +1048,32 @@ function saveDraftsData(data: DraftsData): void {
 }
 
 /**
- * Get draft text for a session
+ * Get the persisted draft for a session (text + attachment refs).
  */
-export function getSessionDraft(sessionId: string): string | null {
+export function getSessionDraft(sessionId: string): SessionDraft | null {
   const data = loadDraftsData();
   return data.drafts[sessionId] ?? null;
 }
 
 /**
- * Set draft text for a session
- * Pass empty string to clear the draft
+ * Set the draft for a session. Empty drafts (no text and no attachments)
+ * are removed from disk.
  */
-export function setSessionDraft(sessionId: string, text: string): void {
+export function setSessionDraft(sessionId: string, draft: SessionDraft): void {
   const data = loadDraftsData();
-  if (text) {
-    data.drafts[sessionId] = text;
-  } else {
+  if (isEmptyDraft(draft)) {
     delete data.drafts[sessionId];
+  } else {
+    data.drafts[sessionId] = {
+      text: draft.text,
+      ...(draft.attachments && draft.attachments.length > 0
+        ? { attachments: draft.attachments.map(ref => ({ path: ref.path, name: ref.name })) }
+        : {}),
+    };
   }
   saveDraftsData(data);
 }
 
-/**
- * Delete draft for a session
- */
 export function deleteSessionDraft(sessionId: string): void {
   const data = loadDraftsData();
   delete data.drafts[sessionId];
@@ -1040,9 +1081,9 @@ export function deleteSessionDraft(sessionId: string): void {
 }
 
 /**
- * Get all drafts as a record
+ * Get all drafts as a record keyed by sessionId.
  */
-export function getAllSessionDrafts(): Record<string, string> {
+export function getAllSessionDrafts(): Record<string, SessionDraft> {
   const data = loadDraftsData();
   return data.drafts;
 }

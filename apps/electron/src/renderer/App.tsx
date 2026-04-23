@@ -4,6 +4,7 @@ import { useTheme } from '@/hooks/useTheme'
 import type { ThemeOverrides } from '@config/theme'
 import { useSetAtom, useStore, useAtomValue, useAtom } from 'jotai'
 import type { Session, Workspace, SessionEvent, Message, FileAttachment, StoredAttachment, PermissionRequest, CredentialRequest, CredentialResponse, SetupNeeds, SessionStatus, NewChatActionParams, ContentBadge, LlmConnectionWithStatus, PermissionModeState } from '../shared/types'
+import type { SessionDraft, DraftAttachmentRef } from '@craft-agent/shared/config'
 import type { SessionOptions, SessionOptionUpdates } from './hooks/useSessionOptions'
 import { defaultSessionOptions, mergeSessionOptions } from './hooks/useSessionOptions'
 import { generateMessageId } from '../shared/types'
@@ -273,10 +274,11 @@ export default function App() {
   const [pendingPermissions, setPendingPermissions] = useState<Map<string, PermissionRequest[]>>(new Map())
   // Credential requests per session (queue to handle multiple concurrent requests)
   const [pendingCredentials, setPendingCredentials] = useState<Map<string, CredentialRequest[]>>(new Map())
-  // Draft input text per session (preserved across mode switches and conversation changes)
-  // Using ref instead of state to avoid re-renders during typing - drafts are only
-  // needed for initial value restoration and disk persistence, not reactive updates
-  const sessionDraftsRef = useRef<Map<string, string>>(new Map())
+  // Draft composer state per session (text + attachment refs), preserved across mode
+  // switches, conversation changes, and app restarts. Using a ref avoids re-renders
+  // during typing; attachments are stored as lightweight refs (path + name) and
+  // hydrated via readFileAttachment() on session switch.
+  const sessionDraftsRef = useRef<Map<string, SessionDraft>>(new Map())
   // Unified session options for all session-scoped settings
   const [sessionOptions, setSessionOptions] = useState<Map<string, SessionOptions>>(new Map())
 
@@ -650,7 +652,9 @@ export default function App() {
       setLlmConnections(connections)
       setDefaultLlmConnectionSlug(resolveDefaultConnectionSlug(connections))
     })
-    // Load persisted input drafts into ref (no re-render needed)
+    // Load persisted input drafts into ref (no re-render needed).
+    // Attachment files are not read here — hydration happens lazily when the session
+    // is opened so app startup isn't delayed by reading potentially large files.
     window.electronAPI.getAllDrafts().then((drafts) => {
       if (Object.keys(drafts).length > 0) {
         sessionDraftsRef.current = new Map(Object.entries(drafts))
@@ -767,9 +771,10 @@ export default function App() {
           case 'restore_input': {
             // Queued messages were removed from chat on abort — restore their text to the input field.
             // Append to existing draft (user may have started typing) rather than overwrite.
-            const existingDraft = sessionDraftsRef.current.get(sessionId) ?? ''
-            const restored = existingDraft
-              ? `${existingDraft}\n\n${effect.text}`
+            const existingDraft = sessionDraftsRef.current.get(sessionId)
+            const existingText = existingDraft?.text ?? ''
+            const restored = existingText
+              ? `${existingText}\n\n${effect.text}`
               : effect.text
             handleInputChange(sessionId, restored)
             // handleInputChange updates the ref but ChatPage has local state.
@@ -1310,31 +1315,86 @@ export default function App() {
     }
   }, [])
 
-  // Getter for draft values - reads from ref without triggering re-renders
+  // Getter for draft text - reads from ref without triggering re-renders
   const getDraft = useCallback((sessionId: string): string => {
-    return sessionDraftsRef.current.get(sessionId) ?? ''
+    return sessionDraftsRef.current.get(sessionId)?.text ?? ''
   }, [])
 
-  const handleInputChange = useCallback((sessionId: string, value: string) => {
-    // Update ref immediately (no re-render triggered)
-    if (value) {
-      sessionDraftsRef.current.set(sessionId, value)
-    } else {
-      sessionDraftsRef.current.delete(sessionId) // Clean up empty drafts
-    }
+  // Getter for persisted attachment refs (path + name only — not hydrated files).
+  // Consumers that need FileAttachment objects should call hydrateDraftAttachments.
+  const getDraftAttachmentRefs = useCallback((sessionId: string): DraftAttachmentRef[] => {
+    return sessionDraftsRef.current.get(sessionId)?.attachments ?? []
+  }, [])
 
-    // Debounced persistence to disk (500ms delay)
+  // Hydrate persisted attachment refs into full FileAttachment objects. Missing or
+  // moved files are skipped silently with a console warning for diagnostics.
+  const hydrateDraftAttachments = useCallback(async (sessionId: string): Promise<FileAttachment[]> => {
+    const refs = sessionDraftsRef.current.get(sessionId)?.attachments ?? []
+    if (refs.length === 0) return []
+    const results = await Promise.all(
+      refs.map(async (ref) => {
+        try {
+          const attachment = await window.electronAPI.readFileAttachment(ref.path)
+          if (!attachment) {
+            console.warn('[drafts] Attachment missing on restore, dropping:', ref.path)
+            return null
+          }
+          return attachment
+        } catch (err) {
+          console.warn('[drafts] Failed to restore attachment, dropping:', ref.path, err)
+          return null
+        }
+      })
+    )
+    return results.filter((a): a is FileAttachment => a !== null)
+  }, [])
+
+  // Write a debounced snapshot of the current ref entry to disk.
+  const schedulePersistDraft = useCallback((sessionId: string) => {
     const existingTimeout = draftSaveTimeoutRef.current.get(sessionId)
     if (existingTimeout) {
       clearTimeout(existingTimeout)
     }
-
     const timeout = setTimeout(() => {
-      window.electronAPI.setDraft(sessionId, value)
+      const draft = sessionDraftsRef.current.get(sessionId) ?? { text: '' }
+      window.electronAPI.setDraft(sessionId, draft)
       draftSaveTimeoutRef.current.delete(sessionId)
     }, DRAFT_SAVE_DEBOUNCE_MS)
     draftSaveTimeoutRef.current.set(sessionId, timeout)
   }, [])
+
+  const handleInputChange = useCallback((sessionId: string, value: string) => {
+    const existing = sessionDraftsRef.current.get(sessionId)
+    const nextDraft: SessionDraft = {
+      text: value,
+      ...(existing?.attachments && existing.attachments.length > 0
+        ? { attachments: existing.attachments }
+        : {}),
+    }
+    const isEmpty = !nextDraft.text && (!nextDraft.attachments || nextDraft.attachments.length === 0)
+    if (isEmpty) {
+      sessionDraftsRef.current.delete(sessionId)
+    } else {
+      sessionDraftsRef.current.set(sessionId, nextDraft)
+    }
+    schedulePersistDraft(sessionId)
+  }, [schedulePersistDraft])
+
+  const handleAttachmentsChange = useCallback((sessionId: string, attachments: FileAttachment[]) => {
+    const existing = sessionDraftsRef.current.get(sessionId)
+    const refs: DraftAttachmentRef[] = attachments.map(a => ({ path: a.path, name: a.name }))
+    const nextDraft: SessionDraft = {
+      text: existing?.text ?? '',
+      ...(refs.length > 0 ? { attachments: refs } : {}),
+    }
+    const isEmpty = !nextDraft.text && (!nextDraft.attachments || nextDraft.attachments.length === 0)
+    if (isEmpty) {
+      sessionDraftsRef.current.delete(sessionId)
+    } else {
+      sessionDraftsRef.current.set(sessionId, nextDraft)
+    }
+    schedulePersistDraft(sessionId)
+  }, [schedulePersistDraft])
 
   // Open new chat - creates session and selects it
   // Used by components via AppShellContext and for programmatic navigation
@@ -1617,6 +1677,8 @@ export default function App() {
     pendingPermissions,
     pendingCredentials,
     getDraft,
+    getDraftAttachmentRefs,
+    hydrateDraftAttachments,
     sessionOptions,
     // Session callbacks
     onCreateSession: handleCreateSession,
@@ -1647,6 +1709,7 @@ export default function App() {
     // Session options
     onSessionOptionsChange: handleSessionOptionsChange,
     onInputChange: handleInputChange,
+    onAttachmentsChange: handleAttachmentsChange,
     // New chat (via deep link navigation)
     openNewChat,
   }), [
@@ -1660,6 +1723,8 @@ export default function App() {
     pendingPermissions,
     pendingCredentials,
     getDraft,
+    getDraftAttachmentRefs,
+    hydrateDraftAttachments,
     sessionOptions,
     handleCreateSession,
     handleSendMessage,
@@ -1685,6 +1750,7 @@ export default function App() {
     handleReset,
     handleSessionOptionsChange,
     handleInputChange,
+    handleAttachmentsChange,
     openNewChat,
   ])
 
