@@ -53,6 +53,7 @@ import {
 } from '@/components/ui/styled-dropdown'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
+import { coerceInputText } from '@/lib/input-text'
 import { isMac, PATH_SEP, getPathBasename } from '@/lib/platform'
 import { applySmartTypography } from '@/lib/smart-typography'
 import { AttachmentPreview } from '../AttachmentPreview'
@@ -448,7 +449,7 @@ export function FreeFormInput({
   // Performance optimization: Always use internal state for typing to avoid parent re-renders
   // Sync FROM parent on mount/change (for restoring drafts)
   // Sync TO parent on blur/submit (debounced persistence)
-  const [input, setInput] = React.useState(inputValue ?? '')
+  const [input, setInput] = React.useState(() => coerceInputText(inputValue))
   const [attachments, setAttachments] = React.useState<FileAttachment[]>(attachmentsValue ?? [])
 
   // Ref to track current attachments for use in event handlers (avoids stale closure issues)
@@ -506,11 +507,13 @@ export function FreeFormInput({
   }, [enabledSourceSlugs])
 
   // Sync from parent when inputValue changes externally (e.g., switching sessions)
-  const prevInputValueRef = React.useRef(inputValue)
+  const prevInputValueRef = React.useRef(coerceInputText(inputValue))
   React.useEffect(() => {
-    if (inputValue !== undefined && inputValue !== prevInputValueRef.current) {
-      setInput(inputValue)
-      prevInputValueRef.current = inputValue
+    if (inputValue === undefined) return
+    const nextInputValue = coerceInputText(inputValue)
+    if (nextInputValue !== prevInputValueRef.current) {
+      setInput(nextInputValue)
+      prevInputValueRef.current = nextInputValue
     }
   }, [inputValue])
 
@@ -607,7 +610,7 @@ export function FreeFormInput({
       const targetSessionId = e.detail?.sessionId
       if (!shouldHandleScopedInputEvent({ sessionId, isFocusedPanel, targetSessionId })) return
 
-      const { text } = e.detail
+      const text = coerceInputText(e.detail?.text)
       setInput(text)
       syncToParent(text)
       // Focus the input after inserting
@@ -1369,11 +1372,12 @@ export function FreeFormInput({
 
   // Handle input changes from RichTextInput
   const handleInputChange = React.useCallback((value: string) => {
+    const nextValue = coerceInputText(value)
     // Get previous input value before updating state
     const prevValue = inputRef.current
 
-    setInput(value)
-    syncToParent(value) // Debounced sync to parent for draft persistence
+    setInput(nextValue)
+    syncToParent(nextValue) // Debounced sync to parent for draft persistence
 
     // Sync source selection when mentions are removed from input
     if (onSourcesChange) {
@@ -1381,7 +1385,7 @@ export function FreeFormInput({
 
       // Parse mentions from previous and current input
       const prevMentions = parseMentions(prevValue, [], sourceSlugs)
-      const currMentions = parseMentions(value, [], sourceSlugs)
+      const currMentions = parseMentions(nextValue, [], sourceSlugs)
 
       // Remove sources that were mentioned before but not anymore
       const removedSources = prevMentions.sources.filter(slug => !currMentions.sources.includes(slug))
@@ -1395,22 +1399,24 @@ export function FreeFormInput({
 
   // Handle input with cursor position (for menu detection)
   const handleRichInput = React.useCallback((value: string, cursorPosition: number) => {
+    const nextValue = coerceInputText(value)
+
     // Update inline slash command state
-    inlineSlash.handleInputChange(value, cursorPosition)
+    inlineSlash.handleInputChange(nextValue, cursorPosition)
 
     // Update inline mention state (for @mentions - skills, sources, folders)
-    inlineMention.handleInputChange(value, cursorPosition)
+    inlineMention.handleInputChange(nextValue, cursorPosition)
 
     // Update inline label state (for #labels)
-    inlineLabel.handleInputChange(value, cursorPosition)
+    inlineLabel.handleInputChange(nextValue, cursorPosition)
 
     // Auto-capitalize first letter (but not for slash commands, @mentions, or #labels)
     // Only if autoCapitalisation setting is enabled
-    let newValue = value
-    if (autoCapitalisation && value.length > 0 && value.charAt(0) !== '/' && value.charAt(0) !== '@' && value.charAt(0) !== '#') {
-      const capitalizedFirst = value.charAt(0).toUpperCase()
-      if (capitalizedFirst !== value.charAt(0)) {
-        newValue = capitalizedFirst + value.slice(1)
+    let newValue = nextValue
+    if (autoCapitalisation && nextValue.length > 0 && nextValue.charAt(0) !== '/' && nextValue.charAt(0) !== '@' && nextValue.charAt(0) !== '#') {
+      const capitalizedFirst = nextValue.charAt(0).toUpperCase()
+      if (capitalizedFirst !== nextValue.charAt(0)) {
+        newValue = capitalizedFirst + nextValue.slice(1)
         // Set cursor position BEFORE state update so it's used when useEffect syncs the value
         richInputRef.current?.setSelectionRange(cursorPosition, cursorPosition)
         setInput(newValue)
@@ -1420,7 +1426,7 @@ export function FreeFormInput({
     }
 
     // Apply smart typography (-> to →, etc.)
-    const typography = applySmartTypography(value, cursorPosition)
+    const typography = applySmartTypography(nextValue, cursorPosition)
     if (typography.replaced) {
       newValue = typography.text
       // Set cursor position BEFORE state update so it's used when useEffect syncs the value

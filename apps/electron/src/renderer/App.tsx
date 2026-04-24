@@ -29,6 +29,7 @@ import { NavigationProvider } from '@/contexts/NavigationContext'
 import { navigate, routes } from './lib/navigate'
 import { attachmentFromContentRef, toDraftRef } from './lib/drafts'
 import { stripMarkdown } from './utils/text'
+import { coerceInputText } from './lib/input-text'
 import { getSessionsToRefreshAfterStaleReconnect } from './lib/reconnect-recovery'
 import { formatSessionLoadFailure, shouldTreatSessionLoadFailureAsTransportFallback } from './lib/session-load'
 import { extractWorkspaceSlugFromPath } from '@craft-agent/shared/utils/workspace-slug'
@@ -773,10 +774,11 @@ export default function App() {
             // Queued messages were removed from chat on abort — restore their text to the input field.
             // Append to existing draft (user may have started typing) rather than overwrite.
             const existingDraft = sessionDraftsRef.current.get(sessionId)
-            const existingText = existingDraft?.text ?? ''
+            const existingText = coerceInputText(existingDraft?.text)
+            const restoredText = coerceInputText(effect.text)
             const restored = existingText
-              ? `${existingText}\n\n${effect.text}`
-              : effect.text
+              ? `${existingText}\n\n${restoredText}`
+              : restoredText
             handleInputChange(sessionId, restored)
             // handleInputChange updates the ref but ChatPage has local state.
             // Dispatch a custom event so ChatPage re-reads the draft.
@@ -1318,13 +1320,18 @@ export default function App() {
 
   // Getter for draft text - reads from ref without triggering re-renders
   const getDraft = useCallback((sessionId: string): string => {
-    return sessionDraftsRef.current.get(sessionId)?.text ?? ''
+    const draft = sessionDraftsRef.current.get(sessionId) as unknown
+    const text = draft && typeof draft === 'object'
+      ? (draft as { text?: unknown }).text
+      : draft
+    return coerceInputText(text)
   }, [])
 
   // Getter for persisted attachment refs (path + name only — not hydrated files).
   // Consumers that need FileAttachment objects should call hydrateDraftAttachments.
   const getDraftAttachmentRefs = useCallback((sessionId: string): DraftAttachmentRef[] => {
-    return sessionDraftsRef.current.get(sessionId)?.attachments ?? []
+    const attachments = sessionDraftsRef.current.get(sessionId)?.attachments
+    return Array.isArray(attachments) ? attachments : []
   }, [])
 
   // Hydrate persisted attachment refs into full FileAttachment objects.
@@ -1333,7 +1340,8 @@ export default function App() {
   // Missing/moved files on Track P are silently dropped with a console warn — same
   // UX as any other editor draft restore when the backing file is gone.
   const hydrateDraftAttachments = useCallback(async (sessionId: string): Promise<FileAttachment[]> => {
-    const refs = sessionDraftsRef.current.get(sessionId)?.attachments ?? []
+    const attachments = sessionDraftsRef.current.get(sessionId)?.attachments
+    const refs = Array.isArray(attachments) ? attachments : []
     if (refs.length === 0) return []
     const results = await Promise.all(
       refs.map(async (ref) => {
@@ -1371,11 +1379,13 @@ export default function App() {
   }, [])
 
   const handleInputChange = useCallback((sessionId: string, value: string) => {
+    const text = coerceInputText(value)
     const existing = sessionDraftsRef.current.get(sessionId)
+    const existingAttachments = Array.isArray(existing?.attachments) ? existing.attachments : []
     const nextDraft: SessionDraft = {
-      text: value,
-      ...(existing?.attachments && existing.attachments.length > 0
-        ? { attachments: existing.attachments }
+      text,
+      ...(existingAttachments.length > 0
+        ? { attachments: existingAttachments }
         : {}),
     }
     const isEmpty = !nextDraft.text && (!nextDraft.attachments || nextDraft.attachments.length === 0)
@@ -1399,7 +1409,7 @@ export default function App() {
       }
     }
     const nextDraft: SessionDraft = {
-      text: existing?.text ?? '',
+      text: coerceInputText(existing?.text),
       ...(refs.length > 0 ? { attachments: refs } : {}),
     }
     const isEmpty = !nextDraft.text && (!nextDraft.attachments || nextDraft.attachments.length === 0)

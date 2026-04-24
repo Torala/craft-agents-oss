@@ -21,6 +21,7 @@ import { StyledDropdownMenuContent, StyledDropdownMenuItem, StyledDropdownMenuSe
 import { useAppShellContext, usePendingPermission, usePendingCredential, useSessionOptionsFor, useSession as useSessionData } from '@/context/AppShellContext'
 import { rendererPerf } from '@/lib/perf'
 import { routes } from '@/lib/navigate'
+import { coerceInputText } from '@/lib/input-text'
 import { ensureSessionMessagesLoadedAtom, loadedSessionsAtom, sessionMetaMapAtom } from '@/atoms/sessions'
 import { getSessionTitle } from '@/utils/session'
 // Model resolution: connection.defaultModel (no hardcoded defaults)
@@ -136,13 +137,13 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
   const pendingCredential = usePendingCredential(sessionId)
 
   // Track draft value for this session
-  const [inputValue, setInputValue] = React.useState(() => getDraft(sessionId))
+  const [inputValue, setInputValue] = React.useState(() => coerceInputText(getDraft(sessionId)))
   const inputValueRef = React.useRef(inputValue)
   inputValueRef.current = inputValue
 
   // Re-sync from parent when session changes
   React.useEffect(() => {
-    setInputValue(getDraft(sessionId))
+    setInputValue(coerceInputText(getDraft(sessionId)))
   }, [getDraft, sessionId])
 
   // Sync when draft is set externally (e.g., from notifications or shortcuts)
@@ -154,7 +155,7 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
     let attempts = 0
     const maxAttempts = 10
     const interval = setInterval(() => {
-      const currentDraft = getDraft(sessionId)
+      const currentDraft = coerceInputText(getDraft(sessionId))
       if (currentDraft !== inputValueRef.current && currentDraft !== '') {
         setInputValue(currentDraft)
         clearInterval(interval)
@@ -171,10 +172,11 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
   // Listen for restore-input events (queued messages restored to input on abort)
   React.useEffect(() => {
     const handler = (e: Event) => {
-      const { sessionId: targetId, text } = (e as CustomEvent).detail
+      const { sessionId: targetId, text } = (e as CustomEvent).detail ?? {}
       if (targetId === sessionId) {
-        setInputValue(text)
-        inputValueRef.current = text
+        const nextText = coerceInputText(text)
+        setInputValue(nextText)
+        inputValueRef.current = nextText
       }
     }
     window.addEventListener('craft:restore-input', handler)
@@ -182,9 +184,10 @@ const ChatPage = React.memo(function ChatPage({ sessionId }: ChatPageProps) {
   }, [sessionId])
 
   const handleInputChange = React.useCallback((value: string) => {
-    setInputValue(value)
-    inputValueRef.current = value
-    onInputChange(sessionId, value)
+    const nextText = coerceInputText(value)
+    setInputValue(nextText)
+    inputValueRef.current = nextText
+    onInputChange(sessionId, nextText)
   }, [sessionId, onInputChange])
 
   // Attachments draft state — hydrated async from persisted refs on session switch.
