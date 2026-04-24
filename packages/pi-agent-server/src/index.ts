@@ -55,6 +55,7 @@ setBedrockProviderModule(bedrockProviderModule);
 
 // Model resolution (extracted for testability + custom-endpoint precedence)
 import { resolvePiModel, isDeniedMiniModelId, isModelNotFoundError } from './model-resolution.ts';
+import { pickProviderAppropriateMiniModel } from './pick-mini-model.ts';
 import { buildCustomEndpointModelDef, type CustomEndpointModelOverrides } from './custom-endpoint-models.ts';
 
 // Direct source imports from shared (bundled by bun build)
@@ -877,7 +878,13 @@ async function queryLlm(request: LLMQueryRequest): Promise<LLMQueryResult> {
     const resolvedProvider = (resolved as any)?.provider;
     const isCompatible = resolvedProvider === authProvider || resolvedProvider === 'custom-endpoint';
     if (!resolved || !isCompatible || isDeniedMiniModelId(model, piAuthProvider)) {
-      const fallback = getDefaultSummarizationModel();
+      // Anthropic: keep Haiku (the cheap/fast mini). For every other provider
+      // Haiku is unresolvable, so walk PI_PREFERRED_DEFAULTS for a model that
+      // actually works under the user's auth.
+      const providerDefault = authProvider === 'anthropic'
+        ? undefined
+        : pickProviderAppropriateMiniModel(authProvider, modelRegistry, shouldPreferCustomEndpoint());
+      const fallback = providerDefault ?? getDefaultSummarizationModel();
       debugLog(`[queryLlm] Model ${bareModel} incompatible with ${authProvider} (resolved: ${resolvedProvider}), falling back to ${fallback}`);
       model = fallback;
     }
@@ -886,6 +893,17 @@ async function queryLlm(request: LLMQueryRequest): Promise<LLMQueryResult> {
   const runQueryWithModel = async (modelId: string): Promise<string> => {
     debugLog(`[queryLlm] Using model: ${modelId}`);
 
+    // Resolve model — fail fast if unresolvable so we don't let the Pi SDK
+    // fall back to its own internal default (which may require a provider
+    // the user hasn't authenticated with, surfacing as a misleading
+    // "No API key found for <provider>" error).
+    const piModel = resolvePiModel(modelRegistry, modelId, initConfig.piAuth?.provider, shouldPreferCustomEndpoint());
+    if (!piModel) {
+      throw new Error(
+        `Could not resolve mini model "${modelId}" for provider "${initConfig.piAuth?.provider ?? '(unknown)'}"`,
+      );
+    }
+
     // Create minimal ephemeral session
     const ephemeralOptions: CreateAgentSessionOptions = {
       cwd: resolvedCwd(),
@@ -893,29 +911,17 @@ async function queryLlm(request: LLMQueryRequest): Promise<LLMQueryResult> {
       modelRegistry,
       tools: [],
       sessionManager: PiSessionManager.inMemory(),
+      model: piModel,
     };
-
-    // Resolve model
-    let piModel: ReturnType<typeof resolvePiModel>;
-    try {
-      piModel = resolvePiModel(modelRegistry, modelId, initConfig.piAuth?.provider, shouldPreferCustomEndpoint());
-      if (piModel) {
-        ephemeralOptions.model = piModel;
-      }
-    } catch {
-      debugLog(`[queryLlm] Could not resolve model: ${modelId}`);
-    }
 
     const { session: ephemeralSession } = await createAgentSession(ephemeralOptions);
 
     // Pi SDK ignores options.model for ephemeral sessions (same issue as options.tools).
     // Explicitly set the model after creation to ensure the mini model is used.
-    if (piModel) {
-      try {
-        await ephemeralSession.setModel(piModel);
-      } catch {
-        debugLog(`[queryLlm] Failed to set model on ephemeral session, proceeding with default`);
-      }
+    try {
+      await ephemeralSession.setModel(piModel);
+    } catch {
+      debugLog(`[queryLlm] Failed to set model on ephemeral session, proceeding with default`);
     }
 
     debugLog(`[queryLlm] Created ephemeral session: ${ephemeralSession.sessionId}`);
