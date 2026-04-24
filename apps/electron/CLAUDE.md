@@ -56,6 +56,16 @@ The spinner is based on [SpinKit Grid](https://github.com/tobiasahlin/SpinKit):
 - Pure CSS animation (no JS state needed)
 - CSS defined in `index.css` (`.spinner` class)
 
+### Pi-backed AI providers
+
+For API-key providers that ride the Pi backend (for example Mistral, OpenRouter, DeepSeek):
+- setup UI presets currently live in `src/renderer/components/apisetup/ApiKeyInput.tsx`
+- settings display labels live in `src/renderer/pages/settings/AiSettingsPage.tsx`
+- connection icon/domain polish lives in `src/renderer/lib/provider-icons.ts`
+- playground mocks should stay in sync via `src/renderer/playground/mock-utils.ts`
+
+Prefer extending these existing Pi-backed surfaces instead of inventing a native renderer/provider flow unless the backend/runtime is genuinely different.
+
 ### Source Avatars
 
 **Always use `SourceAvatar`** for displaying source icons (MCP servers, APIs, Gmail, local sources). Never use `ServiceLogo` directly or create custom avatar implementations.
