@@ -204,6 +204,14 @@ export class PiAgent extends BaseAgent {
     reject: (error: Error) => void;
   }> = new Map();
 
+  // Pending llm_query calls (correlation map for subprocess llm_query_result).
+  // Separate from pendingMiniCompletions because the payload shape differs:
+  // queryLlm returns a full LLMQueryResult, not just text.
+  private pendingLlmQueries: Map<string, {
+    resolve: (result: LLMQueryResult) => void;
+    reject: (error: Error) => void;
+  }> = new Map();
+
   // Pending ensure_session_ready requests (branch preflight handshake)
   private pendingEnsureSessionReady: Map<string, {
     resolve: (sessionId: string | null) => void;
@@ -847,6 +855,23 @@ export class PiAgent extends BaseAgent {
         this.handleMiniCompletionResult(msg);
         break;
 
+      case 'llm_query_result': {
+        // Response to an llm_query request
+        const id = msg.id as string;
+        const pending = this.pendingLlmQueries.get(id);
+        if (pending) {
+          this.pendingLlmQueries.delete(id);
+          const result = msg.result as LLMQueryResult | null;
+          if (result) {
+            pending.resolve(result);
+          } else {
+            const errorMessage = typeof msg.errorMessage === 'string' ? msg.errorMessage : 'llm_query failed';
+            pending.reject(new Error(errorMessage));
+          }
+        }
+        break;
+      }
+
       case 'ensure_session_ready_result':
         // Response to an ensure_session_ready request
         this.handleEnsureSessionReadyResult(msg);
@@ -900,8 +925,18 @@ export class PiAgent extends BaseAgent {
           this.pendingMiniCompletions.delete(id);
         }
 
-        if (errorCode === 'mini_completion_error') {
-          this.debug('Ignoring mini completion subprocess error in chat stream');
+        // Same treatment for pending llm_query calls. llm_query_error is also an
+        // internal utility-path code (call_llm): the dual-emit from the subprocess
+        // means a targeted `llm_query_result` is sent alongside this generic `error`
+        // to reject the specific pending promise — this loop is the defensive cleanup
+        // for queries that never got a targeted result (subprocess crash, etc.).
+        for (const [id, pending] of this.pendingLlmQueries) {
+          pending.reject(new Error(rawMessage));
+          this.pendingLlmQueries.delete(id);
+        }
+
+        if (errorCode === 'mini_completion_error' || errorCode === 'llm_query_error') {
+          this.debug(`Ignoring ${errorCode} subprocess error in chat stream`);
           break;
         }
 
@@ -1573,6 +1608,12 @@ export class PiAgent extends BaseAgent {
     }
     this.pendingMiniCompletions.clear();
 
+    // Reject pending llm_query calls (call_llm in-flight during subprocess crash)
+    for (const [, pending] of this.pendingLlmQueries) {
+      pending.reject(new Error(`Pi subprocess exited unexpectedly (${exitReason})`));
+    }
+    this.pendingLlmQueries.clear();
+
     // Reject pending ensure_session_ready requests
     for (const [, pending] of this.pendingEnsureSessionReady) {
       pending.reject(new Error(`Pi subprocess exited unexpectedly (${exitReason})`));
@@ -2171,15 +2212,36 @@ export class PiAgent extends BaseAgent {
   /**
    * Execute an LLM query via the subprocess.
    * Used by session-scoped tool callbacks (call_llm).
+   *
+   * Sends the full LLMQueryRequest over the `llm_query` RPC so the subprocess's
+   * model-aware queryLlm() can honor `request.model`, `request.systemPrompt`,
+   * and (transitively via buildCallLlmRequest) `request.outputSchema`.
+   * See packages/shared/CLAUDE.md → "queryLlm backend contract" and
+   * packages/pi-agent-server/src/index.ts → handleLlmQuery for the invariant.
    */
   async queryLlm(request: LLMQueryRequest): Promise<LLMQueryResult> {
     this.debug('[PiAgent.queryLlm] Starting');
 
-    const text = await this.runMiniCompletion(request.prompt);
-    return {
-      text: text || '',
-      model: request.model || this.config.miniModel || '',
-    };
+    await this.ensureSubprocess();
+
+    const id = `llm-${++this.rpcIdCounter}`;
+    const resultPromise = new Promise<LLMQueryResult>((resolve, reject) => {
+      this.pendingLlmQueries.set(id, { resolve, reject });
+    });
+
+    this.send({ type: 'llm_query', id, request });
+
+    // Keep this aligned with the subprocess-side queryLlm timeout.
+    const timeout = new Promise<LLMQueryResult>((_, reject) => {
+      setTimeout(() => {
+        if (this.pendingLlmQueries.has(id)) {
+          this.pendingLlmQueries.delete(id);
+          reject(new Error(`queryLlm timed out after ${LLM_QUERY_TIMEOUT_MS / 1000}s`));
+        }
+      }, LLM_QUERY_TIMEOUT_MS);
+    });
+
+    return Promise.race([resultPromise, timeout]);
   }
 
   // ============================================================

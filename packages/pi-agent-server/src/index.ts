@@ -116,6 +116,7 @@ type InboundMessage =
   | { type: 'pre_tool_use_response'; requestId: string; action: 'allow' | 'block' | 'modify'; input?: Record<string, unknown>; reason?: string }
   | { type: 'abort' }
   | { type: 'mini_completion'; id: string; prompt: string }
+  | { type: 'llm_query'; id: string; request: LLMQueryRequest }
   | { type: 'ensure_session_ready'; id: string }
   | { type: 'set_model'; model: string }
   | { type: 'set_thinking_level'; level: string }
@@ -158,6 +159,17 @@ interface OutboundPreToolUseReq {
 interface OutboundToolExecReq { type: 'tool_execute_request'; requestId: string; toolName: string; args: Record<string, unknown> }
 interface OutboundSessionToolCompleted { type: 'session_tool_completed'; toolName: string; args: Record<string, unknown>; isError: boolean }
 interface OutboundMiniResult { type: 'mini_completion_result'; id: string; text: string | null }
+interface OutboundLlmQueryResult {
+  type: 'llm_query_result';
+  id: string;
+  result: LLMQueryResult | null;
+  errorMessage?: string;
+  /**
+   * When set, signals the main process that a generic `error` with the same code
+   * was also emitted on the error channel (for centralized auth-refresh detection).
+   */
+  errorCode?: string;
+}
 interface OutboundEnsureSessionReadyResult { type: 'ensure_session_ready_result'; id: string; sessionId: string | null }
 interface OutboundCompactResult {
   type: 'compact_result';
@@ -183,6 +195,7 @@ type OutboundMessage =
   | OutboundToolExecReq
   | OutboundSessionToolCompleted
   | OutboundMiniResult
+  | OutboundLlmQueryResult
   | OutboundEnsureSessionReadyResult
   | OutboundCompactResult
   | OutboundSetAutoCompactionResult
@@ -975,7 +988,8 @@ async function queryLlm(request: LLMQueryRequest): Promise<LLMQueryResult> {
   };
 
   const fallbackCandidates = [
-    'pi/gpt-5.1-codex-mini',
+    // Removed 'pi/gpt-5.1-codex-mini' (#596) — stale on several OpenAI catalogs.
+    // The connection-configured miniModel is still tried via `initConfig.miniModel`.
     'pi/gpt-5-mini',
     initConfig.miniModel,
     getDefaultSummarizationModel(),
@@ -1361,6 +1375,25 @@ async function handleMiniCompletion(msg: Extract<InboundMessage, { type: 'mini_c
   }
 }
 
+// INVARIANT: the full LLMQueryRequest shape must pass through this RPC unchanged.
+// Adding a field to LLMQueryRequest? Nothing to do here — we pass `msg.request`
+// to queryLlm() verbatim. But verify queryLlm() actually honors the new field;
+// request-propagation + request-honoring are independent (see #596).
+async function handleLlmQuery(msg: Extract<InboundMessage, { type: 'llm_query' }>): Promise<void> {
+  try {
+    const result = await queryLlm(msg.request);
+    send({ type: 'llm_query_result', id: msg.id, result });
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    debugLog(`[handleLlmQuery] Error: ${errorMsg}`);
+    // Dual-emit: the generic `error` channel drives main-process OAuth
+    // auth-refresh detection (centralized in PiAgent), while the targeted
+    // `llm_query_result` rejects the pending promise for this specific call.
+    send({ type: 'error', message: errorMsg, code: 'llm_query_error' });
+    send({ type: 'llm_query_result', id: msg.id, result: null, errorMessage: errorMsg, errorCode: 'llm_query_error' });
+  }
+}
+
 async function handleEnsureSessionReady(msg: Extract<InboundMessage, { type: 'ensure_session_ready' }>): Promise<void> {
   const session = await ensureSession();
   send({
@@ -1539,6 +1572,10 @@ async function processMessage(msg: InboundMessage): Promise<void> {
 
     case 'mini_completion':
       await handleMiniCompletion(msg);
+      break;
+
+    case 'llm_query':
+      await handleLlmQuery(msg);
       break;
 
     case 'ensure_session_ready':
