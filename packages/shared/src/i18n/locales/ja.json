@@ -209,7 +209,7 @@
   "chat.processing.workingOnIt": "取り組み中...",
   "chat.processing.zipping": "シュッシュッ...",
   "chat.processing.zooming": "ズーム中...",
-  "chat.queuedBadge": "キュー待機中 — 現在の応答後に送信",
+  "chat.queuedBadge": "キュー待機中",
   "chat.renameSession": "セッション名を変更",
   "chat.scrollUpForEarlier": "上にスクロールして以前のメッセージを表示 (あと {{count}} 件)",
   "chat.selectedText": "選択テキスト",

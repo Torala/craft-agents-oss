@@ -209,7 +209,7 @@
   "chat.processing.workingOnIt": "Working on it...",
   "chat.processing.zipping": "Zipping...",
   "chat.processing.zooming": "Zooming...",
-  "chat.queuedBadge": "Queued — sending after current response",
+  "chat.queuedBadge": "Queued",
   "chat.renameSession": "Rename Session",
   "chat.scrollUpForEarlier": "Scroll up for earlier messages ({{count}} more)",
   "chat.selectedText": "Selected text",

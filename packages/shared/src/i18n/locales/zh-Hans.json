@@ -209,7 +209,7 @@
   "chat.processing.workingOnIt": "正在处理...",
   "chat.processing.zipping": "飞速中...",
   "chat.processing.zooming": "疾驰中...",
-  "chat.queuedBadge": "已排队 — 当前回复完成后发送",
+  "chat.queuedBadge": "已排队",
   "chat.renameSession": "重命名会话",
   "chat.scrollUpForEarlier": "向上滚动查看更早的消息 (还有 {{count}} 条)",
   "chat.selectedText": "选中文本",

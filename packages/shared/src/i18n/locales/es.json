@@ -209,7 +209,7 @@
   "chat.processing.workingOnIt": "Trabajando en ello...",
   "chat.processing.zipping": "Volando...",
   "chat.processing.zooming": "¡Zoom!...",
-  "chat.queuedBadge": "En cola — se enviará tras la respuesta actual",
+  "chat.queuedBadge": "En cola",
   "chat.renameSession": "Renombrar sesión",
   "chat.scrollUpForEarlier": "Sube para ver mensajes anteriores ({{count}} más)",
   "chat.selectedText": "Texto seleccionado",

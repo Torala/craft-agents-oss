@@ -209,7 +209,7 @@
   "chat.processing.workingOnIt": "Dolgozom rajta...",
   "chat.processing.zipping": "Száguldok...",
   "chat.processing.zooming": "Zoom...",
-  "chat.queuedBadge": "Várakozik — a jelenlegi válasz után küldjük",
+  "chat.queuedBadge": "Várakozik",
   "chat.renameSession": "Munkamenet átnevezése",
   "chat.scrollUpForEarlier": "Görgess fel a korábbi üzenetekért (még {{count}})",
   "chat.selectedText": "Kijelölt szöveg",

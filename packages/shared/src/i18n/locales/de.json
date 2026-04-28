@@ -209,7 +209,7 @@
   "chat.processing.workingOnIt": "Wird bearbeitet...",
   "chat.processing.zipping": "Flitzt...",
   "chat.processing.zooming": "Rast...",
-  "chat.queuedBadge": "In Warteschlange — wird nach aktueller Antwort gesendet",
+  "chat.queuedBadge": "In Warteschlange",
   "chat.renameSession": "Sitzung umbenennen",
   "chat.scrollUpForEarlier": "Nach oben scrollen für ältere Nachrichten ({{count}} weitere)",
   "chat.selectedText": "Ausgewählter Text",

@@ -426,19 +426,28 @@ export function UserMessageBubble({
         </div>
       )}
 
-      {/* Text content bubble. Queued messages get a distinct "draft"
-          treatment — dashed border, lifted bg opacity, dimmed text — so
-          users can tell at a glance their send is waiting (#616). */}
+      {/* Text content bubble. Queued messages render an inline header chip
+          inside the bubble (Clock icon + 'Queued' italic) instead of a
+          separate pill below — keeps the chat to one bubble per message
+          while the chip and pulsing icon make the waiting state obvious
+          (#616 follow-up). */}
       <div
         className={cn(
-          "max-w-[80%] rounded-[16px] break-words min-w-0 select-text [&_p]:m-0",
+          "max-w-[80%] bg-user-message-bubble rounded-[16px] break-words min-w-0 select-text [&_p]:m-0",
           compactMode ? "px-4 py-2" : "px-5 py-3.5",
-          isPending && "animate-shimmer",
-          isQueued
-            ? "bg-user-message-bubble/40 border border-dashed border-foreground/30 text-foreground/75"
-            : "bg-user-message-bubble"
+          isPending && "animate-shimmer"
         )}
       >
+        {isQueued && (
+          <div
+            className="flex items-center gap-1.5 text-foreground/55 mb-1.5"
+            role="status"
+            aria-live="polite"
+          >
+            <Clock className="h-3 w-3 animate-pulse" aria-hidden="true" />
+            <span className="text-[11px] italic">{t('chat.queuedBadge')}</span>
+          </div>
+        )}
         {hasInlineBadges
           ? renderContentWithBadges(displayContent, inlineBadges, onUrlClick, onFileClick)
           : (
@@ -453,19 +462,6 @@ export function UserMessageBubble({
           )
         }
       </div>
-
-      {/* Queued indicator badge. Paired with the dashed-bubble treatment
-          above so the message is unmistakably distinct from a sent one. */}
-      {isQueued && (
-        <span
-          className="inline-flex items-center gap-1.5 text-xs font-medium text-foreground/80 bg-foreground/10 px-2.5 py-1 rounded-full"
-          role="status"
-          aria-live="polite"
-        >
-          <Clock className="h-3.5 w-3.5 animate-pulse" aria-hidden="true" />
-          {t('chat.queuedBadge')}
-        </span>
-      )}
     </div>
   )
 }
