@@ -542,14 +542,18 @@ export function handleUserMessage(
     //
     // - 'queued'     → isQueued = true  (Claude path: backend queued for re-send)
     // - 'processing' → isQueued = false (queued message is now actually running)
-    // - 'accepted'   → isQueued = false (Pi steer path: agent has the message;
-    //                                    triggers the bubble's Queued→Sent
-    //                                    transient indicator)
+    // - 'accepted'   → isQueued = false (Pi steer path: agent has the message)
+    //
+    // We deliberately do NOT swap `m.id` to the backend's canonical id here.
+    // ChatDisplay's `getTurnKey` keys user-message bubbles by id, and a swap
+    // would unmount/remount the UserMessageBubble — wiping its local timer
+    // state and dropping the queued chip mid-flight. The canonical backend
+    // id is irrelevant to subsequent events: they all use
+    // `event.optimisticMessageId` for routing (see the findIndex above).
     updatedMessages = session.messages.map((m, i) => {
       if (i === existingIndex) {
         return {
           ...m,
-          id: message.id,  // Use backend's ID as canonical
           isPending: false,
           isQueued: status === 'queued',
         }
