@@ -106,6 +106,48 @@ interface ApiAdapter {
   stripsSseMetadata: boolean;
   /** Optional request modifications (e.g., fast mode headers) */
   modifyRequest?(url: string, init: RequestInit, body: Record<string, unknown>): { init: RequestInit; body: Record<string, unknown> };
+  /**
+   * Optional pre-flight validation of the outgoing body. Adapters that opt in
+   * throw {@link MalformedBodyError} when the body would cause a deterministic
+   * upstream 400 (duplicate tool_call_id, missing call_id, etc.). The
+   * interceptor turns the throw into a synthetic 400 response so the SDK
+   * surfaces a clear error instead of dying on an opaque upstream failure.
+   */
+  validateOutgoingBody?(body: Record<string, unknown>): void;
+}
+
+// ============================================================================
+// MALFORMED BODY ERROR
+// ============================================================================
+
+/**
+ * Thrown by {@link ApiAdapter.validateOutgoingBody} when the request body would
+ * be rejected by the upstream API for a structural reason we can detect locally
+ * (duplicate `tool_call_id`, missing `call_id`, orphaned tool result, etc.).
+ *
+ * The interceptor catches this and turns it into a synthetic 400 response with
+ * a structured error body that the SDK treats as a normal API error — far more
+ * useful than the opaque `400 status code (no body)` users see today.
+ */
+export class MalformedBodyError extends Error {
+  /** Stable error code for telemetry/UX */
+  readonly code: 'duplicate_tool_call_id' | 'missing_tool_call_id' | 'missing_call_id' | 'orphaned_function_call_output' | 'empty_tool_name';
+  /** Human-readable detail to show in logs and surface to the user */
+  readonly detail: string;
+  /** Adapter name (for diagnostics) */
+  readonly adapter: string;
+
+  constructor(args: {
+    code: MalformedBodyError['code'];
+    detail: string;
+    adapter: string;
+  }) {
+    super(`[${args.adapter}] Outgoing body rejected: ${args.code} — ${args.detail}`);
+    this.name = 'MalformedBodyError';
+    this.code = args.code;
+    this.detail = args.detail;
+    this.adapter = args.adapter;
+  }
 }
 
 // ============================================================================
@@ -760,6 +802,12 @@ export function createOpenAiSseStrippingStream(): TransformStream<Uint8Array, Ui
   const decoder = new TextDecoder();
 
   const trackedCalls = new Map<string, TrackedToolCall>();
+  /**
+   * Per-choice fallback for relays that drop `tc.index` on argument-delta
+   * chunks. We pin argument deltas to the most recently opened tool call in
+   * the same choice instead of letting them collide on key 0.
+   */
+  const lastOpenedToolIndexByChoice = new Map<number, number>();
   let lineBuffer = '';
   /** Track whether we're currently buffering tool_call argument deltas */
   let bufferingToolCalls = false;
@@ -851,17 +899,40 @@ export function createOpenAiSseStrippingStream(): TransformStream<Uint8Array, Ui
 
     let handledToolCalls = false;
 
-    // Buffer tool_call argument deltas (across all choices)
+    // Buffer tool_call argument deltas (across all choices).
+    //
+    // Robustness notes (#613):
+    //   - Some relays (the issue cited DeepSeek + Chinese OpenAI-compat
+    //     relays) repeat `tc.id` on every chunk instead of only the first.
+    //     We dedupe so the post-strip stream emits exactly one init event
+    //     per logical tool call.
+    //   - Some relays drop `tc.index` on argument-delta chunks. We fall back
+    //     to "the most recently opened tracked call for this choice" so
+    //     parallel tool calls don't have their argument streams interleaved
+    //     into a single tracked entry under key "0".
     for (const choice of choices) {
       if (!choice?.delta?.tool_calls) continue;
       handledToolCalls = true;
 
       const choiceIndex = choice.index ?? 0;
       for (const tc of choice.delta.tool_calls) {
-        const toolIndex = tc.index ?? 0;
+        // Resolve the bucket key. If `tc.index` is missing, prefer the most
+        // recently opened call in this choice so we don't collide on key 0.
+        const fallbackIndex = lastOpenedToolIndexByChoice.get(choiceIndex);
+        const toolIndex = tc.index ?? fallbackIndex ?? 0;
         const key = `${choiceIndex}:${toolIndex}`;
 
         if (tc.id) {
+          const existing = trackedCalls.get(key);
+          if (existing && existing.id === tc.id) {
+            // Relay repeated the id on a subsequent chunk. Treat this as an
+            // argument-delta only — never re-emit the init event.
+            if (tc.function?.arguments) {
+              existing.arguments += tc.function.arguments;
+            }
+            continue;
+          }
+
           // First chunk for a tool call — has id, name, maybe initial args
           trackedCalls.set(key, {
             id: tc.id,
@@ -870,6 +941,7 @@ export function createOpenAiSseStrippingStream(): TransformStream<Uint8Array, Ui
             toolIndex,
             arguments: tc.function?.arguments || '',
           });
+          lastOpenedToolIndexByChoice.set(choiceIndex, toolIndex);
           bufferingToolCalls = true;
 
           // Emit the initial tool_call event WITHOUT arguments (preserves id/name/type)
@@ -1066,6 +1138,10 @@ const openAiAdapter: ApiAdapter = {
     return body;
   },
 
+  validateOutgoingBody(body: Record<string, unknown>): void {
+    validateOpenAiChatBody(body);
+  },
+
   createSseProcessor(): TransformStream<Uint8Array, Uint8Array> {
     return createOpenAiSseStrippingStream();
   },
@@ -1233,6 +1309,15 @@ const openAiResponsesAdapter: ApiAdapter = {
     const input = body.input as Array<Record<string, unknown>> | undefined;
     if (!Array.isArray(input)) return body;
 
+    // Pass 1: repair structurally-broken history before metadata injection.
+    // Real-world cause: some Pi SDK code paths (notably DeepSeek + custom
+    // OpenAI-compatible endpoints) occasionally drop `call_id` on replayed
+    // function_call entries, or emit a function_call_output that doesn't
+    // reference any earlier function_call. The upstream replies with an
+    // opaque 400 (#613). We synthesize a deterministic id and drop true
+    // orphans so the request reaches the API in a usable shape.
+    repairResponsesHistoryInPlace(input);
+
     let injectedCount = 0;
 
     for (const entry of input) {
@@ -1269,12 +1354,228 @@ const openAiResponsesAdapter: ApiAdapter = {
     return body;
   },
 
+  validateOutgoingBody(body: Record<string, unknown>): void {
+    validateOpenAiResponsesBody(body);
+  },
+
   createSseProcessor(): TransformStream<Uint8Array, Uint8Array> {
     return createOpenAiResponsesSseStrippingStream();
   },
 
   stripsSseMetadata: true,
 };
+
+/**
+ * Validate an outgoing OpenAI Chat Completions body before it hits the wire.
+ * Throws {@link MalformedBodyError} on the structural problems that produce
+ * `400 Duplicate value for 'tool_call_id'` and similar opaque upstream
+ * failures (#613). Exported for focused unit tests.
+ */
+export function validateOpenAiChatBody(body: Record<string, unknown>): void {
+  const messages = body.messages as Array<{
+    role?: string;
+    tool_call_id?: unknown;
+    tool_calls?: Array<{
+      id?: unknown;
+      type?: string;
+      function?: { name?: unknown };
+    }>;
+  }> | undefined;
+  if (!Array.isArray(messages)) return;
+
+  // Track every tool_call id we've seen on assistant messages. Duplicates
+  // across messages are also illegal — OpenAI requires globally unique ids
+  // within a single request.
+  const seenIds = new Set<string>();
+  const knownIds = new Set<string>();
+
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i];
+    if (!msg) continue;
+    if (msg.role === 'assistant' && Array.isArray(msg.tool_calls)) {
+      for (const tc of msg.tool_calls) {
+        const id = typeof tc.id === 'string' ? tc.id : '';
+        if (!id) {
+          throw new MalformedBodyError({
+            code: 'missing_tool_call_id',
+            detail: `messages[${i}].tool_calls[*] missing id`,
+            adapter: 'openai',
+          });
+        }
+        if (seenIds.has(id)) {
+          throw new MalformedBodyError({
+            code: 'duplicate_tool_call_id',
+            detail: `messages[${i}].tool_calls[*] reuses id "${id}" already seen earlier`,
+            adapter: 'openai',
+          });
+        }
+        seenIds.add(id);
+        knownIds.add(id);
+
+        const fnName = typeof tc.function?.name === 'string' ? tc.function.name.trim() : '';
+        if (!fnName) {
+          throw new MalformedBodyError({
+            code: 'empty_tool_name',
+            detail: `messages[${i}].tool_calls[*] (id="${id}") has empty function.name`,
+            adapter: 'openai',
+          });
+        }
+      }
+    }
+
+    if (msg.role === 'tool') {
+      const tcid = typeof msg.tool_call_id === 'string' ? msg.tool_call_id : '';
+      if (!tcid) {
+        throw new MalformedBodyError({
+          code: 'missing_tool_call_id',
+          detail: `messages[${i}] (role=tool) missing tool_call_id`,
+          adapter: 'openai',
+        });
+      }
+      if (!knownIds.has(tcid)) {
+        // Tool result references an id that no preceding assistant message
+        // emitted — usually the symptom of a failed reassembly.
+        throw new MalformedBodyError({
+          code: 'orphaned_function_call_output',
+          detail: `messages[${i}] (role=tool) references unknown tool_call_id "${tcid}"`,
+          adapter: 'openai',
+        });
+      }
+    }
+  }
+}
+
+/**
+ * Validate an outgoing OpenAI Responses-API body before it hits the wire.
+ * Throws {@link MalformedBodyError} on the structural problems that produce
+ * `400 Missing required parameter: input[N].call_id` (#613). Run after
+ * {@link repairResponsesHistoryInPlace}, which fixes the recoverable cases.
+ * Exported for focused unit tests.
+ */
+export function validateOpenAiResponsesBody(body: Record<string, unknown>): void {
+  const input = body.input as Array<Record<string, unknown>> | undefined;
+  if (!Array.isArray(input)) return;
+
+  const seenCallIds = new Set<string>();
+  const knownCallIds = new Set<string>();
+
+  for (let i = 0; i < input.length; i++) {
+    const entry = input[i];
+    if (!entry) continue;
+    if (entry.type === 'function_call') {
+      const callId = typeof entry.call_id === 'string' ? entry.call_id : '';
+      if (!callId) {
+        throw new MalformedBodyError({
+          code: 'missing_call_id',
+          detail: `input[${i}] (type=function_call) missing call_id`,
+          adapter: 'openai-responses',
+        });
+      }
+      if (seenCallIds.has(callId)) {
+        throw new MalformedBodyError({
+          code: 'duplicate_tool_call_id',
+          detail: `input[${i}] (type=function_call) reuses call_id "${callId}"`,
+          adapter: 'openai-responses',
+        });
+      }
+      seenCallIds.add(callId);
+      knownCallIds.add(callId);
+
+      const name = typeof entry.name === 'string' ? entry.name.trim() : '';
+      if (!name) {
+        throw new MalformedBodyError({
+          code: 'empty_tool_name',
+          detail: `input[${i}] (type=function_call, call_id="${callId}") has empty name`,
+          adapter: 'openai-responses',
+        });
+      }
+    } else if (entry.type === 'function_call_output') {
+      const callId = typeof entry.call_id === 'string' ? entry.call_id : '';
+      if (!callId) {
+        throw new MalformedBodyError({
+          code: 'missing_call_id',
+          detail: `input[${i}] (type=function_call_output) missing call_id`,
+          adapter: 'openai-responses',
+        });
+      }
+      if (!knownCallIds.has(callId)) {
+        throw new MalformedBodyError({
+          code: 'orphaned_function_call_output',
+          detail: `input[${i}] (type=function_call_output) references unknown call_id "${callId}"`,
+          adapter: 'openai-responses',
+        });
+      }
+    }
+  }
+}
+
+/**
+ * In-place repair of Responses-API `input[]` arrays that arrive with structural
+ * defects we can recover from. Mutates `input` and returns the number of repairs.
+ *
+ * - `function_call` entries missing `call_id` get a deterministic synthesized id.
+ * - `function_call_output` entries referencing an unknown `call_id` are dropped
+ *   (the upstream would 400 anyway; better to lose one tool result than the turn).
+ *
+ * Exported for focused unit tests.
+ */
+export function repairResponsesHistoryInPlace(input: Array<Record<string, unknown>>): {
+  synthesizedCallIds: number;
+  droppedOrphans: number;
+} {
+  let synthesizedCallIds = 0;
+  let droppedOrphans = 0;
+  const knownCallIds = new Set<string>();
+
+  // First pass: synthesize missing call_ids on function_call entries so later
+  // entries can reference them.
+  for (let i = 0; i < input.length; i++) {
+    const entry = input[i];
+    if (!entry) continue;
+    if (entry.type !== 'function_call') continue;
+    if (typeof entry.call_id === 'string' && entry.call_id.length > 0) {
+      knownCallIds.add(entry.call_id);
+      continue;
+    }
+    const name = typeof entry.name === 'string' ? entry.name : 'unknown';
+    const argsHash = typeof entry.arguments === 'string'
+      ? hashShortString(entry.arguments)
+      : '0';
+    const synthetic = `repaired_${i}_${name}_${argsHash}`;
+    entry.call_id = synthetic;
+    knownCallIds.add(synthetic);
+    synthesizedCallIds++;
+    debugLog(`[OpenAI Responses Repair] Synthesized call_id "${synthetic}" for input[${i}] (name=${name})`);
+  }
+
+  if (synthesizedCallIds === 0 && input.every(e => e.type !== 'function_call_output')) {
+    return { synthesizedCallIds, droppedOrphans };
+  }
+
+  // Second pass: drop orphan function_call_output entries.
+  for (let i = input.length - 1; i >= 0; i--) {
+    const entry = input[i];
+    if (!entry) continue;
+    if (entry.type !== 'function_call_output') continue;
+    const callId = typeof entry.call_id === 'string' ? entry.call_id : '';
+    if (!callId || !knownCallIds.has(callId)) {
+      input.splice(i, 1);
+      droppedOrphans++;
+      debugLog(`[OpenAI Responses Repair] Dropped orphan function_call_output at input[${i}] (call_id="${callId}")`);
+    }
+  }
+
+  return { synthesizedCallIds, droppedOrphans };
+}
+
+/** Tiny stable hash for synthesizing deterministic call_ids. Not a security primitive. */
+function hashShortString(input: string): string {
+  let h = 5381;
+  for (let i = 0; i < input.length; i++) {
+    h = ((h << 5) + h + input.charCodeAt(i)) | 0;
+  }
+  return Math.abs(h).toString(36);
+}
 
 // ============================================================================
 // ADAPTER REGISTRY
@@ -1361,6 +1662,33 @@ async function captureApiError(response: Response, url: string): Promise<void> {
         errorMessage = `Received an unexpected HTML error page (HTTP ${response.status}) instead of a JSON API response. This could be caused by a firewall, captive portal, or network issue.`;
       }
       debugLog(`[Detected HTML error response — replaced raw HTML with clean message]`);
+    }
+
+    // Empty-body 400 (#613): some upstreams (Chinese OpenAI-compat relays,
+    // misconfigured DeepSeek endpoints) return 400 with no body, leaving
+    // users with `400 status code (no body)` and nothing to debug. Attach
+    // a sanitized summary of the last outgoing request so the user — and
+    // we — have something concrete to act on.
+    if (response.status === 400 && !errorText.trim()) {
+      const summary = getLastOutgoingRequest(url);
+      if (summary) {
+        const emptyNames = summary.toolNames.filter(n => n === '<empty>').length;
+        const dupIds = summary.toolCallIds.length - new Set(summary.toolCallIds).size;
+        const hints: string[] = [];
+        if (emptyNames > 0) hints.push(`${emptyNames} tool call(s) with empty name`);
+        if (dupIds > 0) hints.push(`${dupIds} duplicate tool_call_id(s)`);
+        if (hints.length > 0) {
+          errorMessage = `Endpoint rejected the request with no body. Likely cause: ${hints.join(', ')}. ` +
+            `This usually means the upstream relay's tool-call streaming is broken — try a different ` +
+            `model or endpoint. Last request had ${summary.toolCallIds.length} tool call(s) and ` +
+            `${summary.toolResults} tool result(s) over ${summary.historyLength} history entries.`;
+        } else {
+          errorMessage = `Endpoint rejected the request with no body (no obvious shape problem). ` +
+            `Last request: ${summary.toolCallIds.length} tool call(s), ${summary.toolResults} tool ` +
+            `result(s), ${summary.historyLength} history entries. Try a different endpoint.`;
+        }
+        debugLog(`[Empty-body 400 enriched: ${errorMessage}]`);
+      }
     }
 
     setStoredError({
@@ -1475,6 +1803,137 @@ async function logResponse(response: Response, url: string, startTime: number, a
 }
 
 // ============================================================================
+// REQUEST DIAGNOSTICS
+// ============================================================================
+
+/**
+ * Sanitized snapshot of the most recent intercepted request body. Captured so
+ * the empty-body 400 diagnostic can attach actionable context (which tools the
+ * model tried to call) instead of letting users see "400 status code (no
+ * body)" with nothing to act on.
+ *
+ * Tool arguments are NEVER stored — only counts, ids, and names. The data
+ * never leaves this process; it's read by {@link captureApiError} and woven
+ * into the stored error message.
+ */
+interface OutgoingRequestSummary {
+  url: string;
+  adapter: string;
+  /** Timestamp the request was prepared (not sent). Used to expire stale entries. */
+  preparedAt: number;
+  /** Tool-call ids visible in the assistant tool_calls / function_call entries. */
+  toolCallIds: string[];
+  /** Tool names referenced. Empty strings are reported as "<empty>". */
+  toolNames: string[];
+  /** Number of tool result / function_call_output entries. */
+  toolResults: number;
+  /** Number of messages or input entries (whichever the adapter uses). */
+  historyLength: number;
+}
+
+let lastOutgoingRequest: OutgoingRequestSummary | undefined;
+
+function rememberLastOutgoingRequest(
+  url: string,
+  body: Record<string, unknown>,
+  adapter: ApiAdapter,
+): void {
+  const summary: OutgoingRequestSummary = {
+    url,
+    adapter: adapter.name,
+    preparedAt: Date.now(),
+    toolCallIds: [],
+    toolNames: [],
+    toolResults: 0,
+    historyLength: 0,
+  };
+
+  if (adapter.name === 'openai') {
+    const messages = body.messages as Array<Record<string, unknown>> | undefined;
+    if (Array.isArray(messages)) {
+      summary.historyLength = messages.length;
+      for (const msg of messages) {
+        if (msg.role === 'assistant' && Array.isArray(msg.tool_calls)) {
+          for (const tc of msg.tool_calls as Array<{ id?: unknown; function?: { name?: unknown } }>) {
+            if (typeof tc.id === 'string') summary.toolCallIds.push(tc.id);
+            const name = typeof tc.function?.name === 'string' ? tc.function.name : '';
+            summary.toolNames.push(name || '<empty>');
+          }
+        }
+        if (msg.role === 'tool') summary.toolResults++;
+      }
+    }
+  } else if (adapter.name === 'openai-responses') {
+    const input = body.input as Array<Record<string, unknown>> | undefined;
+    if (Array.isArray(input)) {
+      summary.historyLength = input.length;
+      for (const entry of input) {
+        if (entry.type === 'function_call') {
+          if (typeof entry.call_id === 'string') summary.toolCallIds.push(entry.call_id);
+          const name = typeof entry.name === 'string' ? entry.name : '';
+          summary.toolNames.push(name || '<empty>');
+        } else if (entry.type === 'function_call_output') {
+          summary.toolResults++;
+        }
+      }
+    }
+  }
+
+  lastOutgoingRequest = summary;
+}
+
+/** Read by captureApiError; null when no recent request or summary is stale (>30s). */
+function getLastOutgoingRequest(forUrl: string): OutgoingRequestSummary | undefined {
+  if (!lastOutgoingRequest) return undefined;
+  if (Date.now() - lastOutgoingRequest.preparedAt > 30_000) return undefined;
+  if (lastOutgoingRequest.url !== forUrl) return undefined;
+  return lastOutgoingRequest;
+}
+
+/**
+ * Build a synthetic 400 Response that mimics OpenAI's error envelope so the
+ * SDK surfaces the structured error instead of dying on a generic 400. Used
+ * when {@link MalformedBodyError} fires before the request hits the wire.
+ */
+function synthesizeMalformedBodyResponse(
+  err: MalformedBodyError,
+  url: string,
+  startTime: number,
+  adapter: ApiAdapter,
+): Promise<Response> {
+  const body = JSON.stringify({
+    error: {
+      type: 'invalid_request_error',
+      code: err.code,
+      message: `Craft Agents blocked an outgoing request that the API would reject: ${err.detail}. ` +
+        `This typically indicates a streaming-reassembly bug in the upstream endpoint or a stale ` +
+        `tool history. Try starting a new session or switching to a different model/endpoint.`,
+      param: 'tool_calls',
+    },
+  });
+
+  debugLog(`[${adapter.name}] Outgoing body validation failed (${err.code}); synthesizing 400 response`);
+
+  setStoredError({
+    status: 400,
+    statusText: 'Bad Request (blocked by Craft Agents)',
+    message: err.detail,
+    timestamp: Date.now(),
+  });
+
+  return logResponse(
+    new Response(body, {
+      status: 400,
+      statusText: 'Bad Request',
+      headers: { 'content-type': 'application/json' },
+    }),
+    url,
+    startTime,
+    adapter,
+  );
+}
+
+// ============================================================================
 // INTERCEPTED FETCH
 // ============================================================================
 
@@ -1513,8 +1972,25 @@ async function interceptedFetch(
 
         // Add _intent and _displayName to all tool schemas
         parsed = adapter.addMetadataToTools(parsed);
-        // Re-inject stored metadata into conversation history
+        // Re-inject stored metadata into conversation history (also runs the
+        // Responses-API repair pass before metadata)
         parsed = adapter.injectMetadataIntoHistory(parsed);
+
+        // Pre-flight validation. If the body is structurally invalid for this
+        // adapter (duplicate tool_call_id, missing call_id, empty function
+        // name, orphan tool result), short-circuit with a synthetic 400 the
+        // SDK can surface clearly instead of dying on `400 status code (no
+        // body)` from the upstream.
+        if (adapter.validateOutgoingBody) {
+          try {
+            adapter.validateOutgoingBody(parsed);
+          } catch (err) {
+            if (err instanceof MalformedBodyError) {
+              return synthesizeMalformedBodyResponse(err, url, startTime, adapter);
+            }
+            throw err;
+          }
+        }
 
         // Adapter-specific request modifications (e.g., fast mode)
         let modifiedInit = normalizedInit;
@@ -1525,11 +2001,17 @@ async function interceptedFetch(
         }
 
         const proxy = getProxyForUrl(url);
+        const finalBody = JSON.stringify(parsed);
         const finalInit = {
           ...modifiedInit,
-          body: JSON.stringify(parsed),
+          body: finalBody,
           ...(proxy ? { proxy } : {}),
         };
+
+        // Cache a sanitized request summary for the 400-empty-body diagnostic
+        // pathway in captureApiError. Plain-text bodies (sensitive arguments)
+        // never leave this process.
+        rememberLastOutgoingRequest(url, parsed, adapter);
 
         debugLog(`[${adapter.name}] Intercepted request to ${url}`);
         const response = await originalFetch(url, finalInit);
