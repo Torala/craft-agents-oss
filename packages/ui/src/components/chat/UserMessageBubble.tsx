@@ -12,7 +12,7 @@
  */
 
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { Check, Clock } from 'lucide-react'
+import { Clock } from 'lucide-react'
 import type { StoredAttachment, ContentBadge } from '@craft-agent/core'
 import { normalizePath } from '@craft-agent/core/utils'
 import { cn } from '../../lib/utils'
@@ -323,15 +323,11 @@ export interface UserMessageBubbleProps {
   compactMode?: boolean
 }
 
-/** Minimum visible duration of the "Queued" chip before it can transition.
- * On both backends the agent acks within ~50–150ms of an optimistic send,
- * which used to flash Queued faster than the eye could catch. We hold it
- * here so the user always sees the queued → sent state change. */
-const QUEUED_MIN_VISIBLE_MS = 600
-/** How long the "Sent" affirmation lingers before the chip clears. */
-const SENT_BADGE_LINGER_MS = 1200
-
-type ChipState = 'none' | 'queued' | 'sent'
+/** Minimum visible duration of the "Queued" chip. Both backends ack
+ * mid-stream sends within ~50–150ms, which would otherwise make the chip
+ * flash too briefly to register. Hold it long enough for the user to
+ * actually read it. */
+const QUEUED_MIN_VISIBLE_MS = 2500
 
 export function UserMessageBubble({
   content,
@@ -347,57 +343,52 @@ export function UserMessageBubble({
   const { t } = useTranslation()
   const hasAttachments = attachments && attachments.length > 0
 
-  // Queued → Sent → cleared state machine. The underlying `isQueued` field
-  // can flip false very quickly (Pi 'accepted' acks land in <150ms, often
-  // <50ms), which would otherwise make the Queued chip invisible. We
-  // enforce a minimum visible duration before transitioning to Sent.
-  // Local-only state — `isQueued` is the persisted source of truth; the
-  // chip transitions are transient UI flourishes.
-  const [chipState, setChipState] = useState<ChipState>(isQueued ? 'queued' : 'none')
+  // Show the queued chip while `isQueued` is true AND for at least
+  // QUEUED_MIN_VISIBLE_MS after it first became true — even if the backend
+  // acks in <150ms. Pure UI state; `isQueued` remains the persisted source
+  // of truth.
+  const [showQueued, setShowQueued] = useState(isQueued ?? false)
   const queuedShownAtRef = useRef<number | null>(isQueued ? Date.now() : null)
-  const transitionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const clearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     return () => {
-      if (transitionTimerRef.current) clearTimeout(transitionTimerRef.current)
       if (clearTimerRef.current) clearTimeout(clearTimerRef.current)
     }
   }, [])
 
   useEffect(() => {
-    // Cancel any in-flight transition timers; we'll redrive from scratch.
-    if (transitionTimerRef.current) {
-      clearTimeout(transitionTimerRef.current)
-      transitionTimerRef.current = null
-    }
     if (clearTimerRef.current) {
       clearTimeout(clearTimerRef.current)
       clearTimerRef.current = null
     }
 
     if (isQueued) {
-      setChipState('queued')
-      queuedShownAtRef.current = Date.now()
+      setShowQueued(true)
+      if (queuedShownAtRef.current === null) {
+        queuedShownAtRef.current = Date.now()
+      }
       return
     }
 
-    // isQueued just flipped to false. If we were in queued state, run the
-    // transition. Otherwise this is a non-queued message — keep chip hidden.
+    // isQueued flipped to false. Keep the chip up for the remainder of
+    // the minimum visible window, then clear.
     if (queuedShownAtRef.current === null) return
 
     const elapsed = Date.now() - queuedShownAtRef.current
-    const queuedRemaining = Math.max(0, QUEUED_MIN_VISIBLE_MS - elapsed)
+    const remaining = Math.max(0, QUEUED_MIN_VISIBLE_MS - elapsed)
 
-    transitionTimerRef.current = setTimeout(() => {
-      setChipState('sent')
-      transitionTimerRef.current = null
-      clearTimerRef.current = setTimeout(() => {
-        setChipState('none')
-        queuedShownAtRef.current = null
-        clearTimerRef.current = null
-      }, SENT_BADGE_LINGER_MS)
-    }, queuedRemaining)
+    if (remaining === 0) {
+      setShowQueued(false)
+      queuedShownAtRef.current = null
+      return
+    }
+
+    clearTimerRef.current = setTimeout(() => {
+      setShowQueued(false)
+      queuedShownAtRef.current = null
+      clearTimerRef.current = null
+    }, remaining)
   }, [isQueued])
 
   // Separate edit_request badges (rendered above bubble) from other badges (rendered inline)
@@ -501,20 +492,14 @@ export function UserMessageBubble({
           isPending && "animate-shimmer"
         )}
       >
-        {chipState !== 'none' && (
+        {showQueued && (
           <div
             className="flex items-center gap-1.5 text-foreground/55 mb-1.5"
             role="status"
             aria-live="polite"
           >
-            {chipState === 'queued' ? (
-              <Clock className="h-3 w-3 animate-pulse" aria-hidden="true" />
-            ) : (
-              <Check className="h-3 w-3" aria-hidden="true" />
-            )}
-            <span className="text-[11px] italic">
-              {chipState === 'queued' ? t('chat.queuedBadge') : t('chat.sentBadge')}
-            </span>
+            <Clock className="h-3 w-3 animate-pulse" aria-hidden="true" />
+            <span className="text-[11px] italic">{t('chat.queuedBadge')}</span>
           </div>
         )}
         {hasInlineBadges
