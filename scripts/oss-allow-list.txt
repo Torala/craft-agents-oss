@@ -180,6 +180,10 @@ scripts/build-wa-worker.ts
 # i18n locale parity check (referenced by CI)
 scripts/check-i18n-parity.ts
 
+# i18n locale sort + check (`bun run sort-locales` / `bun run lint:i18n:sorted`,
+# called from scripts/lint-i18n-staged.sh and validate:ci)
+scripts/sort-locales.ts
+
 # Server build + distribution scripts
 scripts/build-server.ts
 scripts/generate-dev-cert.sh
