@@ -89,6 +89,19 @@ export interface IncomingMessage {
   messageId: string
   senderId: string
   senderName?: string
+  /**
+   * Platform-native username if the user has one set. Telegram supplies this
+   * via `from.username`; WhatsApp/Lark may leave it undefined. Used by the
+   * access-control layer to render friendlier "pending requests" rows in the
+   * Settings UI without forcing the operator to read raw user_ids.
+   */
+  senderUsername?: string
+  /**
+   * `true` when the platform marks the sender as a bot (Telegram `from.is_bot`).
+   * Adapters use this to silently drop bot-to-bot traffic before it reaches
+   * the router; surfaces in `IncomingMessage` so access-control can audit.
+   */
+  senderIsBot?: boolean
   text: string
   attachments?: IncomingAttachment[]
   replyToMessageId?: string
@@ -227,6 +240,17 @@ export interface PlatformAdapter {
  */
 export type ResponseMode = 'streaming' | 'progress' | 'final_only'
 
+/**
+ * Per-binding access policy.
+ *
+ * - `inherit`     — defer to the platform's owners list (default for new bindings).
+ * - `allow-list`  — only senders in `allowedSenderIds` may route to the bound session.
+ * - `open`        — anyone in an accepted chat may route. Used as the migration
+ *                   default for bindings created before access control existed,
+ *                   and for explicitly-public bindings (e.g. support bots).
+ */
+export type BindingAccessMode = 'inherit' | 'allow-list' | 'open'
+
 export interface BindingConfig {
   /** How outbound agent output is rendered. Default: 'progress' */
   responseMode: ResponseMode
@@ -242,6 +266,20 @@ export interface BindingConfig {
   approvalChannel: 'chat' | 'app'
   /** Telegram edit interval in ms. ~3500ms stays under 20 edits/min. */
   editIntervalMs: number
+  /**
+   * Per-binding access mode. Governs Router.route() admission for this
+   * binding only. Defaults vary by migration vs. fresh creation:
+   *  - Fresh bindings (created after access control shipped): `'inherit'`.
+   *  - Migrated bindings (legacy data with no field set): `'open'` so prod
+   *    behaviour is unchanged until the owner explicitly locks down.
+   */
+  accessMode: BindingAccessMode
+  /**
+   * Sender ids permitted to route into this binding when `accessMode === 'allow-list'`.
+   * Ignored otherwise. The list is platform-native (Telegram numeric user_id
+   * as a string).
+   */
+  allowedSenderIds: string[]
 }
 
 export const DEFAULT_BINDING_CONFIG: BindingConfig = {
@@ -250,6 +288,8 @@ export const DEFAULT_BINDING_CONFIG: BindingConfig = {
   showToolActivity: false,
   approvalChannel: 'chat',
   editIntervalMs: 3500,
+  accessMode: 'inherit',
+  allowedSenderIds: [],
 }
 
 export function getDefaultBindingConfig(platform: PlatformType): BindingConfig {
@@ -268,11 +308,23 @@ export function normalizeBindingConfig(
     config?.responseMode ??
     (config?.streamResponses === false ? 'final_only' : config?.streamResponses === true ? 'streaming' : base.responseMode)
 
+  // Migration rule: if a persisted config predates access control (no
+  // `accessMode` field), treat the binding as `'open'` so prod behaviour
+  // doesn't change silently. Owners explicitly lock down via Settings.
+  const accessMode: BindingAccessMode =
+    config?.accessMode ?? (config !== undefined ? 'open' : base.accessMode)
+
+  const allowedSenderIds = Array.isArray(config?.allowedSenderIds)
+    ? [...config!.allowedSenderIds]
+    : []
+
   return {
     ...base,
     ...config,
     responseMode: resolvedResponseMode,
     approvalChannel: platform === 'whatsapp' ? 'app' : (config?.approvalChannel ?? base.approvalChannel),
+    accessMode,
+    allowedSenderIds,
   }
 }
 
@@ -316,6 +368,59 @@ export interface TelegramSupergroupConfig {
   capturedAt: number
 }
 
+/**
+ * Workspace-level access policy for a messaging platform.
+ *
+ * - `open`        — anyone in an accepted chat can run pre-binding commands
+ *                   (`/new`, `/bind`) and bound chats fall back to their own
+ *                   `BindingConfig.accessMode` for routing.
+ * - `owner-only`  — pre-binding commands require sender to be on the
+ *                   platform's `owners` list. Bindings whose `accessMode`
+ *                   is `'inherit'` use the same list as their allow-list.
+ *
+ * Defaults vary by migration vs. fresh setup:
+ *  - Fresh workspaces pairing the bot for the first time → `'owner-only'`.
+ *  - Existing workspaces that predate access control → `'open'` so the
+ *    Settings UI can show a "Lock down" banner without breaking traffic.
+ */
+export type PlatformAccessMode = 'open' | 'owner-only'
+
+/**
+ * A user authorised to interact with the workspace's bot. Platform-native
+ * `userId` (Telegram numeric user_id as a string). `displayName` and
+ * `username` are best-effort metadata captured when the user pairs or sends
+ * a message; they're for UI rendering only.
+ */
+export interface PlatformOwner {
+  userId: string
+  displayName?: string
+  username?: string
+  /** Unix-ms when this owner was added to the list. */
+  addedAt: number
+}
+
+/**
+ * A sender the gateway recently rejected because they weren't on the owners
+ * list. Surfaces in the Settings UI so the operator can promote them with
+ * one click instead of typing numeric ids by hand.
+ *
+ * The store is bounded (LRU + TTL) — see `pending-senders.ts`. Persistence
+ * is best-effort: losing the file just means the operator has to wait for
+ * the user to attempt access again.
+ */
+export interface PendingSender {
+  /** Platform identity. Always present so the same sender across DM and
+   *  supergroup attempts collapses to one row. */
+  platform: PlatformType
+  userId: string
+  displayName?: string
+  username?: string
+  /** Unix-ms of the most recent rejected attempt. */
+  lastAttemptAt: number
+  /** Total attempts since this sender first appeared in the pending list. */
+  attemptCount: number
+}
+
 export interface MessagingConfig {
   enabled: boolean
   platforms: {
@@ -326,6 +431,22 @@ export interface MessagingConfig {
        * chat in addition to DMs. Sessions can bind to specific topics within.
        */
       supergroup?: TelegramSupergroupConfig
+      /**
+       * Workspace-level access policy. Missing field = `'open'` for back-
+       * compat with workspaces that predate access control. Fresh setups
+       * land on `'owner-only'` automatically (registry sets it on first pair).
+       */
+      accessMode?: PlatformAccessMode
+      /**
+       * Telegram user ids permitted to drive the bot at workspace level.
+       * Gates `/new`, `/bind`, `/unbind`, `/status`, `/stop` and serves as
+       * the default sender allow-list for bindings whose `accessMode === 'inherit'`.
+       *
+       * `/pair` itself stays open: if the list is empty, the first
+       * successful redeem seeds the list with the consuming sender. After
+       * that, only existing owners may redeem further codes.
+       */
+      owners?: PlatformOwner[]
     }
     whatsapp?: {
       enabled: boolean

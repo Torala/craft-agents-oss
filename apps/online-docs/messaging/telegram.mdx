@@ -91,6 +91,39 @@ Recent sessions:
 
 Tap a button → bound. The gateway clears the keyboard on the posted message so stale buttons don't pile up.
 
+## Access control
+
+Bots are addressable by anyone who knows the username, so by default a fresh
+workspace ships with **owner-only** access for Telegram. Only senders on the
+workspace's allowed-users list can run pre-binding commands (`/new`, `/bind`,
+`/unbind`, `/status`, `/stop`) or route messages to a bound session.
+
+**First-pair rule.** When you redeem a pairing code from a fresh workspace,
+your Telegram user_id is captured automatically and added as the first owner.
+You don't have to type any numeric ids — the bot learns them from your
+`/pair` message.
+
+**Adding more users.** When someone else messages the bot, they get a
+"Bot is private" reply and appear under **Settings → Messaging → Pending
+requests** with a one-click *Allow* button. No numeric ids needed.
+
+**Per-binding allow-list.** Each session-channel binding can override the
+workspace policy with one of three modes:
+
+| Mode | Meaning |
+|------|---------|
+| Inherits workspace | Default. Falls back to the workspace allowed-users list. |
+| Custom allow-list | Only the explicitly checked users can use this binding. Useful for sharing one session with a guest without giving them access to everything. |
+| Open to anyone | Anyone in an accepted chat can use this binding. Use only for genuinely public bots. |
+
+**Migration.** Workspaces that paired Telegram before access control existed
+stay in `open` mode until you click **Lock down** in Settings → Messaging.
+Existing bindings keep their current behaviour to avoid breaking traffic.
+
+**Why no group-message gating?** Group/channel messages are rejected at the
+adapter boundary unless you've paired a workspace supergroup. Inside a paired
+supergroup, sender-level rules apply identically to DMs.
+
 ## Webhook vs Long-Poll
 
 - **In-app (desktop Electron):** the adapter uses **long-poll** (grammY's built-in updater). No public URL needed.

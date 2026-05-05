@@ -10,15 +10,18 @@ import type { PushTarget } from '@craft-agent/shared/protocol'
 import { RPC_CHANNELS } from '@craft-agent/shared/protocol'
 import { BindingStore } from './binding-store'
 import { Router } from './router'
-import { Commands, type PairingCodeConsumer } from './commands'
+import { Commands, type AccessControlDeps, type PairingCodeConsumer } from './commands'
 import { Renderer, type SessionEvent } from './renderer'
+import { PendingSendersStore } from './pending-senders'
 import { PlanTokenRegistry } from './plan-tokens'
 import type {
   PlatformAdapter,
   PlatformType,
   IncomingMessage,
   ButtonPress,
+  MessagingConfig,
   MessagingLogger,
+  PlatformOwner,
 } from './types'
 
 const consoleLogger: MessagingLogger = {
@@ -46,6 +49,27 @@ export interface GatewayOptions {
   pairingConsumer?: PairingCodeConsumer
   /** Fired after any binding mutation (bind/unbind). */
   onBindingChanged?: () => void
+  /**
+   * Reads the workspace's MessagingConfig. Called per-message so config
+   * edits (toggling accessMode, adding owners) take effect without restart.
+   * Optional — when omitted, the gateway falls back to a permissive
+   * "everything is open" config (useful for legacy callers and unit tests).
+   */
+  getWorkspaceConfig?: () => MessagingConfig
+  /**
+   * Append `candidate` to the platform's owners list iff the list is
+   * currently empty. No-op otherwise. Used by Commands.handlePair to
+   * bootstrap ownership the first time anyone redeems a code.
+   */
+  seedOwnerOnFirstPair?: (
+    platform: PlatformType,
+    candidate: PlatformOwner,
+  ) => Promise<PlatformOwner[]>
+  /**
+   * Fires after the pending-senders store mutates, so the registry can push
+   * an event to the renderer. Mirrors `onBindingChanged`.
+   */
+  onPendingChanged?: () => void
   /** Optional logger — defaults to console. Pass a structured host logger in Electron. */
   logger?: MessagingLogger
 }
@@ -80,6 +104,7 @@ export class MessagingGateway {
   private readonly sessionManager: ISessionManager
   private readonly workspaceId: string
   private readonly bindingStore: BindingStore
+  private readonly pendingStore: PendingSendersStore
   private readonly router: Router
   private readonly commands: Commands
   private readonly renderer: Renderer
@@ -105,18 +130,40 @@ export class MessagingGateway {
     if (opts.onBindingChanged) {
       this.bindingStore.onChange(opts.onBindingChanged)
     }
+
+    this.pendingStore = new PendingSendersStore(
+      opts.storageDir,
+      this.log.child({ component: 'pending-senders' }),
+    )
+    if (opts.onPendingChanged) {
+      this.pendingStore.onChange(opts.onPendingChanged)
+    }
+
+    const accessDeps: AccessControlDeps = {
+      getWorkspaceConfig:
+        opts.getWorkspaceConfig ?? (() => ({ enabled: false, platforms: {} })),
+      seedOwnerOnFirstPair:
+        opts.seedOwnerOnFirstPair ?? (async () => []),
+      pendingStore: this.pendingStore,
+    }
+
     this.commands = new Commands(
       opts.sessionManager,
       this.bindingStore,
       opts.workspaceId,
       opts.pairingConsumer,
       this.log.child({ component: 'commands' }),
+      accessDeps,
     )
     this.router = new Router(
       opts.sessionManager,
       this.bindingStore,
       this.commands,
       this.log.child({ component: 'router' }),
+      {
+        getWorkspaceConfig: accessDeps.getWorkspaceConfig,
+        pendingStore: this.pendingStore,
+      },
     )
     this.planTokens = new PlanTokenRegistry()
     this.renderer = new Renderer({
@@ -492,6 +539,10 @@ export class MessagingGateway {
 
   getBindingStore(): BindingStore {
     return this.bindingStore
+  }
+
+  getPendingStore(): PendingSendersStore {
+    return this.pendingStore
   }
 
   isStarted(): boolean {

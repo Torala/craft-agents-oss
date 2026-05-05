@@ -11,11 +11,21 @@
  */
 
 import type { ISessionManager } from '@craft-agent/server-core/handlers'
+import {
+  buildRejectionReply,
+  evaluatePreBindingAccess,
+  readPlatformAccessMode,
+  readPlatformOwners,
+  type AccessRejectReason,
+} from './access-control'
 import type { BindingStore } from './binding-store'
+import type { PendingSendersStore } from './pending-senders'
 import type {
   IncomingMessage,
+  MessagingConfig,
   MessagingLogger,
   PlatformAdapter,
+  PlatformOwner,
   PlatformType,
 } from './types'
 
@@ -63,8 +73,38 @@ export interface PairingCodeConsumer {
   }): Promise<{ title: string }>
 }
 
+/**
+ * Access-control wiring supplied by the gateway. Commands consults the
+ * workspace config on every command invocation (so config edits take effect
+ * without restart) and uses `seedOwnerOnFirstPair` to bootstrap ownership
+ * the first time anyone redeems a pairing code.
+ */
+export interface AccessControlDeps {
+  getWorkspaceConfig: () => MessagingConfig
+  /**
+   * Append the sender to the platform's owners list iff the list is currently
+   * empty for that platform. Returns the updated list (or the existing list
+   * if the seed didn't run). Called from `/pair` consume.
+   */
+  seedOwnerOnFirstPair: (
+    platform: PlatformType,
+    candidate: PlatformOwner,
+  ) => Promise<PlatformOwner[]>
+  /** Optional pending-senders store for recording rejected attempts. */
+  pendingStore?: PendingSendersStore
+}
+
+/**
+ * Commands the gateway lets *anyone* run, regardless of ownership. `/pair`
+ * is the bootstrap exception (first sender to redeem becomes owner) and
+ * `/help` is informational.
+ */
+const ALWAYS_ALLOWED_COMMANDS = new Set(['/pair', '/help'])
+
 export class Commands {
   private readonly log: MessagingLogger
+  private readonly access: AccessControlDeps
+  private readonly recentRejectReplies = new Map<string, number>()
 
   constructor(
     private readonly sessionManager: ISessionManager,
@@ -72,13 +112,33 @@ export class Commands {
     private readonly workspaceId: string,
     private readonly pairingConsumer?: PairingCodeConsumer,
     logger: MessagingLogger = NOOP_LOGGER,
+    access: AccessControlDeps = {
+      getWorkspaceConfig: () => ({ enabled: false, platforms: {} }),
+      seedOwnerOnFirstPair: async () => [],
+    },
   ) {
     this.log = logger
+    this.access = access
   }
 
   async handle(adapter: PlatformAdapter, msg: IncomingMessage): Promise<void> {
     const text = msg.text.trim()
     const replyOpts = msg.threadId !== undefined ? { threadId: msg.threadId } : {}
+
+    // Pre-binding gate: anyone can run /pair (bootstrap) or /help.
+    // Everything else requires the sender to be on the owners list when
+    // workspace mode is `'owner-only'`.
+    const cmd = text.startsWith('/') ? (text.split(/\s+/)[0]!.toLowerCase()) : ''
+    if (cmd && !ALWAYS_ALLOWED_COMMANDS.has(cmd)) {
+      const verdict = evaluatePreBindingAccess({
+        msg,
+        workspaceConfig: this.access.getWorkspaceConfig(),
+      })
+      if (!verdict.allow) {
+        await this.sendRejection(adapter, msg, verdict.reason)
+        return
+      }
+    }
 
     if (text.startsWith('/new')) {
       await this.handleNew(adapter, msg)
@@ -91,6 +151,9 @@ export class Commands {
     } else if (text === '/help') {
       await this.handleHelp(adapter, msg)
     } else {
+      // The sender is an owner (or the workspace is open) and typed
+      // free-form text into a chat with no binding. Show the help prompt.
+      // Non-owners on a locked-down workspace are intercepted above.
       await adapter.sendText(
         msg.channelId,
         'No session bound to this chat.\n\n' +
@@ -118,6 +181,20 @@ export class Commands {
       command: cmd,
     })
 
+    // Pre-binding gate for commands that arrive directly (i.e. typed inside
+    // an already-bound chat — `gateway.wireAdapter` always tries
+    // `handleCommand` before `router.route`). `/pair` and `/help` always pass.
+    if (!ALWAYS_ALLOWED_COMMANDS.has(cmd)) {
+      const verdict = evaluatePreBindingAccess({
+        msg,
+        workspaceConfig: this.access.getWorkspaceConfig(),
+      })
+      if (!verdict.allow) {
+        await this.sendRejection(adapter, msg, verdict.reason)
+        return true
+      }
+    }
+
     switch (cmd) {
       case '/new':
         await this.handleNew(adapter, msg)
@@ -143,6 +220,49 @@ export class Commands {
       default:
         return false
     }
+  }
+
+  /**
+   * Reject reply for pre-binding gating. Mirrors `Router.handleReject` but
+   * lives here to avoid an import cycle (Commands is constructed before
+   * Router and Commands is what Router *holds*, not the other way around).
+   */
+  private async sendRejection(
+    adapter: PlatformAdapter,
+    msg: IncomingMessage,
+    reason: AccessRejectReason,
+  ): Promise<void> {
+    this.log.info('access-control rejected pre-binding command', {
+      event: 'command_rejected',
+      reason,
+      workspaceId: this.workspaceId,
+      platform: adapter.platform,
+      channelId: msg.channelId,
+      threadId: msg.threadId,
+      senderId: msg.senderId,
+    })
+
+    if (reason !== 'bot-sender') {
+      this.access.pendingStore?.recordRejection({
+        platform: msg.platform,
+        senderId: msg.senderId,
+        senderName: msg.senderName,
+        senderUsername: msg.senderUsername,
+      })
+    }
+
+    const replyText = buildRejectionReply(reason)
+    if (!replyText) return
+
+    const key = `${msg.platform}:${msg.senderId}`
+    const last = this.recentRejectReplies.get(key) ?? 0
+    if (Date.now() - last < 60 * 60 * 1000) return
+    this.recentRejectReplies.set(key, Date.now())
+
+    const replyOpts = msg.threadId !== undefined ? { threadId: msg.threadId } : {}
+    await adapter
+      .sendText(msg.channelId, replyText, replyOpts)
+      .catch(() => {/* non-fatal */})
   }
 
   // -------------------------------------------------------------------------
@@ -305,10 +425,58 @@ export class Commands {
       return
     }
 
+    // Pre-consume access gate. Bootstrap rule: when the platform has zero
+    // owners, ANY successful redeem seeds the first owner (the user who
+    // typed `/pair`). Once owners exist, only existing owners may redeem
+    // further codes — without this, an attacker who steals or guesses a
+    // code becomes an owner.
+    const wsConfig = this.access.getWorkspaceConfig()
+    const wsMode = readPlatformAccessMode(wsConfig, adapter.platform)
+    const owners = readPlatformOwners(wsConfig, adapter.platform)
+    if (
+      wsMode === 'owner-only' &&
+      owners.length > 0 &&
+      !owners.some((o) => o.userId === msg.senderId)
+    ) {
+      this.log.info('pairing redeem blocked: sender is not an owner', {
+        event: 'pairing_redeem_not_owner',
+        workspaceId: this.workspaceId,
+        platform: adapter.platform,
+        senderId: msg.senderId,
+      })
+      await adapter.sendText(
+        msg.channelId,
+        'Only existing bot owners can redeem pairing codes. Ask an owner to add you in the Craft Agent app.',
+        replyOpts,
+      )
+      return
+    }
+
     const entry = this.pairingConsumer.consume(adapter.platform, code)
     if (!entry) {
       await adapter.sendText(msg.channelId, 'Invalid or expired pairing code.', replyOpts)
       return
+    }
+
+    // Seed the first owner. The seeder is a no-op when the list is already
+    // populated, so it's safe to call unconditionally on every successful
+    // redeem. Failures are logged but never block the pair itself — losing
+    // the seed only means the operator has to add the user manually later.
+    try {
+      await this.access.seedOwnerOnFirstPair(adapter.platform, {
+        userId: msg.senderId,
+        ...(msg.senderName ? { displayName: msg.senderName } : {}),
+        ...(msg.senderUsername ? { username: msg.senderUsername } : {}),
+        addedAt: Date.now(),
+      })
+    } catch (err) {
+      this.log.warn('seedOwnerOnFirstPair failed (non-fatal)', {
+        event: 'pairing_owner_seed_failed',
+        workspaceId: this.workspaceId,
+        platform: adapter.platform,
+        senderId: msg.senderId,
+        error: err,
+      })
     }
 
     if (entry.kind === 'workspace-supergroup') {

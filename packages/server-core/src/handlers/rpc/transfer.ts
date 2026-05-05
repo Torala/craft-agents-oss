@@ -89,6 +89,13 @@ export function __resetTransferStateForTests(): void {
   transferableHandlers.clear()
 }
 
+export const HANDLED_CHANNELS = [
+  RPC_CHANNELS.transfer.START,
+  RPC_CHANNELS.transfer.CHUNK,
+  RPC_CHANNELS.transfer.COMMIT,
+  RPC_CHANNELS.transfer.ABORT,
+] as const
+
 export function registerTransferHandlers(server: RpcServer): void {
   server.handle(RPC_CHANNELS.transfer.START, async (ctx, opts: {
     totalBytes: number
