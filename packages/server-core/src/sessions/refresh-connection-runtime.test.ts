@@ -27,10 +27,19 @@ interface AgentStub {
   disposeForRestart?: () => Promise<void>
 }
 
-function createAgentStub(opts: { isProcessing?: boolean; refreshSucceeds?: boolean } = {}): AgentStub {
+function createAgentStub(opts: {
+  isProcessing?: boolean
+  refreshSucceeds?: boolean
+  refreshDelayMs?: number
+} = {}): AgentStub {
+  const delay = opts.refreshDelayMs ?? 0
+  const result = opts.refreshSucceeds ?? true
   return {
     isProcessing: () => opts.isProcessing ?? false,
-    updateRuntimeConfig: jest.fn().mockResolvedValue(opts.refreshSucceeds ?? true),
+    updateRuntimeConfig: jest.fn().mockImplementation(async () => {
+      if (delay > 0) await new Promise(resolve => setTimeout(resolve, delay))
+      return result
+    }),
     dispose: () => { /* no-op for tests */ },
   }
 }
@@ -162,6 +171,30 @@ describe('refreshConnectionRuntime', () => {
 
     expect(agent.updateRuntimeConfig).not.toHaveBeenCalled()
     expect(managed.agent).toBeNull()
+  })
+
+  it('serializes concurrent refresh requests via the per-session mutex', async () => {
+    // SAVE handler is fire-and-forget (Finding 1) so its refresh can be
+    // mid-flight when sendMessage triggers another via getOrCreateAgent.
+    // Without a mutex, both fire updateRuntimeConfig and the subprocess can
+    // race a chat against the still-pending update.
+    //
+    // The first call holds the lock long enough for the second to see it,
+    // wait, and re-evaluate from the post-refresh state — at which point the
+    // signature matches and the second call is a no-op.
+    const agent = createAgentStub({ refreshDelayMs: 50 })
+    injectSession(sm, 'concurrent', tmpRoot, 'slug-A', agent)
+
+    const [first, second] = await Promise.all([
+      sm.refreshConnectionRuntime('slug-A'),
+      sm.refreshConnectionRuntime('slug-A'),
+    ])
+
+    expect(first).toBeUndefined()
+    expect(second).toBeUndefined()
+    // Only one updateRuntimeConfig — the second call awaited the first via
+    // the mutex, then saw matching signatures and bailed.
+    expect(agent.updateRuntimeConfig).toHaveBeenCalledTimes(1)
   })
 
   it('records customModels with the per-model supportsImages flag in the IPC payload', async () => {

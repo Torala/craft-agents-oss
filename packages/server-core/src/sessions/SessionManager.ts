@@ -1040,6 +1040,15 @@ export class SessionManager implements ISessionManager {
   private initGate = new InitGate()
   // O(1) index: taskId → sessionId for background task output lookup (avoids O(n) session scan)
   private taskOutputIndex: Map<string, string> = new Map()
+  /**
+   * Per-session in-flight runtime-refresh promise. Ensures `updateRuntimeConfig`
+   * (or a dispose) cannot overlap with another refresh OR with a send-path
+   * `getOrCreateAgent` on the same session. Without this serialization, a
+   * `SAVE`-triggered refresh and a `sendMessage`-triggered refresh can both
+   * see `agent.isProcessing()=false`, both fire `updateRuntimeConfig`, and the
+   * subprocess can race the resulting `chat` against the still-pending update.
+   */
+  private agentRefreshLocks: Map<string, Promise<void>> = new Map()
   /** Monotonic clock to ensure strictly increasing message timestamps */
   private lastTimestamp = 0
 
@@ -2709,6 +2718,12 @@ export class SessionManager implements ISessionManager {
    * calling `getOrCreateAgent`, which would make every send-path refresh dead
    * code).
    *
+   * Concurrency: per-session serialization via `agentRefreshLocks`. A second
+   * caller (e.g. `sendMessage` arriving mid-`SAVE`-refresh) awaits the
+   * in-flight refresh, then re-evaluates from the post-refresh state — so the
+   * subsequent `agent.chat()` is sent only after the subprocess has applied
+   * the runtime update (or the agent has been disposed for recreation).
+   *
    * The helper distinguishes two kinds of drift:
    *   - Restart-required (provider/auth/slug/piAuthProvider): goes straight
    *     to dispose + recreate because `update_runtime_config` cannot fully
@@ -2718,6 +2733,14 @@ export class SessionManager implements ISessionManager {
    *     can't apply the update.
    */
   private async tryRefreshAgentRuntime(managed: ManagedSession, reason: string): Promise<void> {
+    // Serialize against any in-flight refresh on this session. The waiter
+    // doesn't propagate the prior call's errors — those are logged at the
+    // origin call site.
+    const inflight = this.agentRefreshLocks.get(managed.id)
+    if (inflight) {
+      await inflight.catch(() => undefined)
+    }
+
     if (!managed.agent) return
 
     const workspaceConfig = loadWorkspaceConfig(managed.workspace.rootPath)
@@ -2752,14 +2775,48 @@ export class SessionManager implements ISessionManager {
       return
     }
 
+    const work = this.runAgentRuntimeRefresh(
+      managed,
+      backendContext,
+      runtimeSignature,
+      restartSignature,
+      restartRequired,
+      reason,
+    )
+    // Track the work so concurrent callers serialize. Swallow errors on the
+    // tracked promise — the awaiter shouldn't get someone else's exception;
+    // errors are logged inside `runAgentRuntimeRefresh`.
+    const tracked = work.then(() => undefined, () => undefined)
+    this.agentRefreshLocks.set(managed.id, tracked)
+    try {
+      await work
+    } finally {
+      // Concurrent callers awaited `tracked` before reaching this point and
+      // each registered their own work serially, so the slot is always ours
+      // to clear when our own work resolves.
+      if (this.agentRefreshLocks.get(managed.id) === tracked) {
+        this.agentRefreshLocks.delete(managed.id)
+      }
+    }
+  }
+
+  private async runAgentRuntimeRefresh(
+    managed: ManagedSession,
+    backendContext: ReturnType<typeof resolveBackendContext>,
+    runtimeSignature: string,
+    restartSignature: string,
+    restartRequired: boolean,
+    reason: string,
+  ): Promise<void> {
     if (restartRequired) {
       sessionLog.info(`Restart-required field changed for session ${managed.id}; recreating backend runtime (${reason})`)
       await this.disposeManagedAgentRuntime(managed, 'restart-required runtime change')
       return
     }
 
+    const connection = backendContext.connection
     let refreshed = false
-    if (managed.agent.updateRuntimeConfig) {
+    if (managed.agent?.updateRuntimeConfig) {
       try {
         refreshed = await managed.agent.updateRuntimeConfig({
           model: backendContext.resolvedModel,
