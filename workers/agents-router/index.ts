@@ -66,7 +66,7 @@ export default {
 
     // Session viewer: /s/* routes
     if (path.startsWith('/s/')) {
-      return fetch(`https://craft-agents-session-viewer.pages.dev${path}${url.search}`, {
+      return fetch(`https://craft-agents-session-viewer-77v.pages.dev${path}${url.search}`, {
         method: request.method,
         headers: request.headers,
         body: request.body,
@@ -76,7 +76,7 @@ export default {
     // Mermaid site: /mermaid routes
     if (path === '/mermaid' || path.startsWith('/mermaid/')) {
       const mermaidPath = path === '/mermaid' ? '/' : path.slice('/mermaid'.length);
-      return fetch(`https://craft-agents-mermaid.pages.dev${mermaidPath}${url.search}`);
+      return fetch(`https://craft-agents-mermaid-dxu.pages.dev${mermaidPath}${url.search}`);
     }
 
     // Generic OAuth callback relay: /auth/callback

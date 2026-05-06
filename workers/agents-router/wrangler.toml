@@ -1,10 +1,5 @@
 # Router Worker for agents.craft.do
-# Routes:
-#   /electron/* → R2 bucket (installers, manifests)
-#   /install-app.* → R2 bucket (install scripts)
-#   /docs/* → Mintlify documentation site
-#   /s/* → Session viewer Pages site
-#   /* → Proxy to Pages marketing site
+# Routes are documented in index.ts (single source of truth).
 
 account_id = "9f3399617ee46dd586bd107a96b014db"
 name = "agents-router"
