@@ -21,7 +21,6 @@ import { WorkspaceCreationScreen } from "@/components/workspace"
 import { waitForTransportConnected } from '@/lib/transport-wait'
 import { useWorkspaceIcons } from "@/hooks/useWorkspaceIcon"
 import { useTransportConnectionState } from "@/hooks/useTransportConnectionState"
-import { CompactWorkspaceSwitcher } from "./CompactWorkspaceSwitcher"
 import type { Workspace } from "../../../shared/types"
 
 interface WorkspaceSwitcherProps {
@@ -34,9 +33,6 @@ interface WorkspaceSwitcherProps {
   onWorkspaceRemoved?: () => void
   /** workspaceId -> has unread */
   workspaceUnreadMap?: Record<string, boolean>
-  /** When true (compact viewport), the topbar variant opens a bottom-sheet drawer
-   *  instead of an anchored dropdown. No effect on the sidebar variant. */
-  isCompact?: boolean
 }
 
 /**
@@ -55,25 +51,8 @@ export function WorkspaceSwitcher({
   onWorkspaceCreated,
   onWorkspaceRemoved,
   workspaceUnreadMap,
-  isCompact = false,
 }: WorkspaceSwitcherProps) {
   const { t } = useTranslation()
-
-  // Compact viewport + topbar pill → bottom-sheet drawer (touch-friendly).
-  // Sidebar variant keeps its dropdown layout because the desktop sidebar is
-  // never in compact mode.
-  if (isCompact && variant === 'topbar') {
-    return (
-      <CompactWorkspaceSwitcher
-        workspaces={workspaces}
-        activeWorkspaceId={activeWorkspaceId}
-        onSelect={onSelect}
-        onWorkspaceCreated={onWorkspaceCreated}
-        onWorkspaceRemoved={onWorkspaceRemoved}
-        workspaceUnreadMap={workspaceUnreadMap}
-      />
-    )
-  }
   const [showCreationScreen, setShowCreationScreen] = useState(false)
   const [reconnectTarget, setReconnectTarget] = useState<Workspace | null>(null)
   const setFullscreenOverlayOpen = useSetAtom(fullscreenOverlayOpenAtom)

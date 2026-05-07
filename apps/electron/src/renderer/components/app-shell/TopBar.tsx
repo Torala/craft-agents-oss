@@ -28,6 +28,7 @@ import { useEffect, useRef, useState } from "react"
 import { BrowserTabStrip } from "../browser/BrowserTabStrip"
 import type { Workspace } from "../../../shared/types"
 import { WorkspaceSwitcher } from "./WorkspaceSwitcher"
+import { CompactWorkspaceSwitcher } from "./CompactWorkspaceSwitcher"
 import { getDocUrl } from "@craft-agent/shared/docs/doc-links"
 import { AppMenu } from "../AppMenu"
 
@@ -179,16 +180,26 @@ export function TopBar({
           </Tooltip>
 
           <div className="min-w-0 flex-1">
-            <WorkspaceSwitcher
-              variant="topbar"
-              workspaces={workspaces}
-              activeWorkspaceId={activeWorkspaceId}
-              onSelect={onSelectWorkspace}
-              onWorkspaceCreated={onWorkspaceCreated}
-              onWorkspaceRemoved={onWorkspaceRemoved}
-              workspaceUnreadMap={workspaceUnreadMap}
-              isCompact={isCompact}
-            />
+            {isCompact ? (
+              <CompactWorkspaceSwitcher
+                workspaces={workspaces}
+                activeWorkspaceId={activeWorkspaceId}
+                onSelect={onSelectWorkspace}
+                onWorkspaceCreated={onWorkspaceCreated}
+                onWorkspaceRemoved={onWorkspaceRemoved}
+                workspaceUnreadMap={workspaceUnreadMap}
+              />
+            ) : (
+              <WorkspaceSwitcher
+                variant="topbar"
+                workspaces={workspaces}
+                activeWorkspaceId={activeWorkspaceId}
+                onSelect={onSelectWorkspace}
+                onWorkspaceCreated={onWorkspaceCreated}
+                onWorkspaceRemoved={onWorkspaceRemoved}
+                workspaceUnreadMap={workspaceUnreadMap}
+              />
+            )}
           </div>
         </div>
       </div>
