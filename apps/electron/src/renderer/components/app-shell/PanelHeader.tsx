@@ -92,7 +92,7 @@ export function PanelHeader({
   // PanelSlot in compact mode) propagate to every page's PanelHeader without each
   // page having to forward the prop manually. ChatPage explicitly passes its own
   // value, which overrides the context.
-  const { leadingAction: contextLeadingAction } = useAppShellContext()
+  const { leadingAction: contextLeadingAction, isCompactMode } = useAppShellContext()
   const leadingAction = explicitLeadingAction ?? contextLeadingAction
 
   // Use context as fallback when prop is not explicitly set.
@@ -121,7 +121,69 @@ export function PanelHeader({
     </motion.div>
   )
 
-  const content = (
+  // Title node — wrapped in interactive dropdown trigger when titleMenu is provided,
+  // bare when not. Shared between the desktop and compact layouts below.
+  const titleNode = titleMenu ? (
+    <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
+      {/* Wrapper button for the whole clickable area */}
+      <button
+        onClick={() => setDropdownOpen(true)}
+        className={cn(
+          "flex items-center gap-1 px-2 py-1 rounded-md titlebar-no-drag min-w-0",
+          "hover:bg-foreground/[0.03] transition-colors",
+          "focus:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+          dropdownOpen && "bg-foreground/[0.03]"
+        )}
+      >
+        {titleContent}
+        {/* Chevron is the actual trigger anchor point */}
+        <DropdownMenuTrigger asChild>
+          <span className="shrink-0 flex items-center justify-center">
+            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground translate-y-[1px]" />
+          </span>
+        </DropdownMenuTrigger>
+      </button>
+      <StyledDropdownMenuContent align="center" sideOffset={8}>
+        {titleMenu}
+      </StyledDropdownMenuContent>
+    </DropdownMenu>
+  ) : titleContent
+
+  // Compact (mobile) layout puts the title in an absolute-positioned overlay so
+  // it stays visually centered relative to the full panel width regardless of
+  // which side has more buttons — iOS UINavigationBar pattern. `inset-x-12`
+  // reserves 48px on each side for the leading / trailing buttons; the title
+  // truncates if longer.
+  const content = isCompactMode ? (
+    <>
+      {leadingAction && (
+        <div className="titlebar-no-drag shrink-0 z-[1]">
+          {leadingAction}
+        </div>
+      )}
+      <div className="flex-1" />
+      {centerButton && (
+        <div className="titlebar-no-drag shrink-0 z-[1]">
+          {centerButton}
+        </div>
+      )}
+      {actions && (
+        <div className="titlebar-no-drag shrink-0 z-[1]">
+          {actions}
+        </div>
+      )}
+      {rightSidebarButton && (
+        <div className="titlebar-no-drag shrink-0 z-[1]">
+          {rightSidebarButton}
+        </div>
+      )}
+      <div className="absolute inset-x-12 inset-y-0 flex items-center justify-center pointer-events-none">
+        <div className="max-w-full overflow-hidden pointer-events-auto">
+          {titleNode}
+        </div>
+      </div>
+    </>
+  ) : (
     <>
       {leadingAction && (
         <div className="titlebar-no-drag shrink-0">
@@ -130,33 +192,7 @@ export function PanelHeader({
       )}
       <div className="flex-1 min-w-0 flex items-center select-none">
         <div className={cn("max-w-full overflow-hidden", !leadingAction && "mx-auto")}>
-          {titleMenu ? (
-            <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
-              {/* Wrapper button for the whole clickable area */}
-              <button
-                onClick={() => setDropdownOpen(true)}
-                className={cn(
-                  "flex items-center gap-1 px-2 py-1 rounded-md titlebar-no-drag min-w-0",
-                  "hover:bg-foreground/[0.03] transition-colors",
-                  "focus:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-                  dropdownOpen && "bg-foreground/[0.03]"
-                )}
-              >
-                {titleContent}
-                {/* Chevron is the actual trigger anchor point */}
-                <DropdownMenuTrigger asChild>
-                  <span className="shrink-0 flex items-center justify-center">
-                    <ChevronDown className="h-3.5 w-3.5 text-muted-foreground translate-y-[1px]" />
-                  </span>
-                </DropdownMenuTrigger>
-              </button>
-              <StyledDropdownMenuContent align="center" sideOffset={8}>
-                {titleMenu}
-              </StyledDropdownMenuContent>
-            </DropdownMenu>
-          ) : (
-            titleContent
-          )}
+          {titleNode}
         </div>
       </div>
       {centerButton && (
