@@ -212,18 +212,22 @@ describe('estimateTokensDensityAware', () => {
     expect(dense).toBe(20_000);
   });
 
-  test('escalates estimate for chunked MIME-style base64 (line-wrapped)', () => {
-    // MIME body wraps base64 at 76 chars with \r\n. The runs we look for
-    // are ≥100 chars, but each MIME line is only 76. We want to ensure
-    // mostly-base64 content still trips the correction even with line
-    // wrapping by virtue of the lines being long enough when concatenated
-    // without the wrap whitespace. To make this test deterministic, we
-    // use 200-char chunks separated by \n which still each match the
-    // 100-char run regex.
-    const chunk = 'X'.repeat(200);
+  test('escalates estimate for RFC 2045 MIME base64 (76-char line wrapping)', () => {
+    // MIME wraps base64 at 76 chars with \r\n separators. Each line is one
+    // 76-char run between separators — well above the 60-char minimum, so
+    // density correction must fire on bodies that are mostly such lines.
     const lines: string[] = [];
-    for (let i = 0; i < 150; i++) lines.push(chunk);
-    const text = lines.join('\n'); // ~30KB, dominated by 200-char runs
+    for (let i = 0; i < 400; i++) lines.push('X'.repeat(76)); // ~30KB body
+    const text = lines.join('\r\n');
+    const dense = estimateTokensDensityAware(text);
+    expect(dense).toBeGreaterThan(estimateTokens(text));
+  });
+
+  test('escalates estimate for PEM-style base64 (64-char line wrapping)', () => {
+    // PEM wraps at 64 chars — also above the 60-char minimum.
+    const lines: string[] = [];
+    for (let i = 0; i < 500; i++) lines.push('X'.repeat(64)); // ~32KB body
+    const text = lines.join('\n');
     const dense = estimateTokensDensityAware(text);
     expect(dense).toBeGreaterThan(estimateTokens(text));
   });
@@ -278,6 +282,35 @@ describe('guardLargeResult: base64-heavy regression (poisoned-session repro)', (
       contextWindow: 200_000,
     });
     // Must not pass through: this is the exact case that poisoned the session.
+    expect(result).not.toBeNull();
+  });
+
+  test('reviewer regression: 600 lines × 76-char MIME body must spill', async () => {
+    // The exact case the PR review called out: a payload that landed at
+    // 600 × 76 chars ≈ 46.9KB of pure MIME-wrapped base64. Pre-fix this
+    // produced 0 detected dense chars (run minimum was 100, MIME lines are
+    // 76), estimated ~11,719 tokens via chars/4, fell under the 12k
+    // threshold, and slipped through into conversation history.
+    const lines: string[] = [];
+    for (let i = 0; i < 600; i++) {
+      lines.push('A'.repeat(76));
+    }
+    const text = lines.join('\r\n');
+    expect(text.length).toBeGreaterThan(45_000);
+    expect(text.length).toBeLessThan(50_000);
+
+    // Plain 4-chars/token estimate falls below the post-fix 12k threshold —
+    // so without density-aware correction this would still pass through.
+    expect(estimateTokens(text)).toBeLessThan(12_000);
+    // But density correction must fire and push the estimate over.
+    expect(estimateTokensDensityAware(text)).toBeGreaterThanOrEqual(12_000);
+
+    const result = await guardLargeResult(text, {
+      sessionPath,
+      toolName: 'Read',
+      summarize: async () => 'mocked summary',
+      contextWindow: 200_000,
+    });
     expect(result).not.toBeNull();
   });
 });

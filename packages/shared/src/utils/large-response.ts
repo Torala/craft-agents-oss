@@ -75,9 +75,16 @@ export function estimateTokens(text: string): number {
  */
 const DENSITY_AWARE_MIN_LENGTH = 20_000;
 
-/** Minimum run length for a base64-dense span to count. Short A-Za-z0-9 runs
- *  appear in normal text (URLs, IDs); long unbroken runs are encoded data. */
-const BASE64_RUN_MIN = 100;
+/** Minimum run length for a base64-dense span to count. Set to 60 to catch
+ *  the common wrapping styles for line-broken base64 in the wild — RFC 2045
+ *  MIME wraps at 76, PEM at 64, custom encoders sometimes 60. Short
+ *  alphanumeric runs (URLs without `:/?&`, UUIDs, identifiers) sit below
+ *  this threshold so the false-positive rate stays low.
+ *
+ *  Hex digests (SHA-256 = 64 chars, SHA-512 = 128) and JWTs do match — both
+ *  are token-dense in real tokenizers, so a tool result dominated by them
+ *  should spill anyway. */
+const BASE64_RUN_MIN = 60;
 
 /** Fraction of total characters that must be inside long base64-style runs
  *  before the density correction applies. */
@@ -115,9 +122,9 @@ export function estimateTokensDensityAware(text: string): number {
 
 /**
  * Per-result summarization threshold scaled to the active model's context
- * window. A 200k-window model returns the existing {@link TOKEN_LIMIT}
- * (15k); a 64k-window model returns 6_400; below ~20k window the floor
- * (2_000) kicks in.
+ * window. A 200k-window model returns the {@link TOKEN_LIMIT} cap (12k);
+ * a 64k-window model returns 6_400; below ~20k window the floor (2_000)
+ * kicks in.
  *
  * Pass `undefined` when the call site has no model context — returns the
  * fixed default for backward compatibility.

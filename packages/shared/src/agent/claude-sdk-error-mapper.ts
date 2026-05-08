@@ -48,13 +48,23 @@ const NETWORK_HINTS = [
   'connection refused',
 ] as const;
 
-// Signals specific to the 1M context beta (tier access issue, or request
-// exceeded even 1M). When these fire, the user is told to disable
-// "Extended Context (1M)" in settings — only correct for users on the 1M tier.
+// Signals specific to the 1M context beta. When these fire, the user is told
+// to disable "Extended Context (1M)" in settings — only correct for users on
+// the 1M tier, so the matcher must be precise.
 const ONE_M_CONTEXT_HINTS = [
   'context-1m',
   'context_1m',
-  'tier',
+] as const;
+
+// Phrases that, when paired with the word "tier", confirm the error is about
+// 1M context access specifically (vs. tier-gated images, models, audio,
+// document support, etc.). The bare word "tier" is far too broad on its own.
+const ONE_M_TIER_PHRASES = [
+  'context',
+  '1m',
+  'extended',
+  '200k',
+  '1000k',
 ] as const;
 
 // Signals that the request exceeded the model's context window in general,
@@ -89,7 +99,14 @@ function isOneMContextError(context: ClaudeSdkErrorContext): boolean {
     normalize(context.capturedApiError?.message),
     normalize(context.actualError?.message),
   ].join(' ');
-  return includesAny(haystack, ONE_M_CONTEXT_HINTS);
+  if (includesAny(haystack, ONE_M_CONTEXT_HINTS)) return true;
+  // "tier" alone is ambiguous — only counts as 1M when it co-occurs with a
+  // context-window-specific phrase. Image/model/audio/feature-tier errors
+  // are deliberately excluded.
+  if (haystack.includes('tier') && includesAny(haystack, ONE_M_TIER_PHRASES)) {
+    return true;
+  }
+  return false;
 }
 
 function isContextOverflowError(context: ClaudeSdkErrorContext): boolean {
@@ -284,10 +301,11 @@ export function mapClaudeSdkAssistantError(
           ],
           actions: [
             { key: 's', label: 'Settings', action: 'settings' },
-            { key: 'r', label: 'Retry', action: 'retry' },
+            { key: 'c', label: 'Compact', command: '/compact' },
           ],
-          canRetry: true,
-          retryDelayMs: 1000,
+          // Retrying the same payload won't help — user must change settings
+          // or compact history first. Hiding the button is correct UX.
+          canRetry: false,
           providerInfo,
         };
       }
@@ -302,9 +320,12 @@ export function mapClaudeSdkAssistantError(
             'Run /compact to summarize history and free up context',
             'Or start a new conversation to keep going',
           ],
-          actions: retryAction,
-          canRetry: true,
-          retryDelayMs: 1000,
+          actions: [
+            { key: 'c', label: 'Compact', command: '/compact' },
+          ],
+          // Same as 1M case: retrying without changing the payload hits the
+          // same wall, so suppress the button.
+          canRetry: false,
           providerInfo,
         };
       }
@@ -325,7 +346,7 @@ export function mapClaudeSdkAssistantError(
       // When neither error source provided detail, tell the user where to look
       // instead of leaving them with vague advice.
       if (apiDetails.length === 0) {
-        fallbackHints.push('No detailed error info available — check ~/Library/Logs/@craft-agent/electron/main.log for the raw response');
+        fallbackHints.push("No detailed error info available — check the app's main process log for the raw response");
       }
 
       return {
