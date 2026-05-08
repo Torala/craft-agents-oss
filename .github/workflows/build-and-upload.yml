@@ -81,6 +81,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            /*
+            !/docs/project-evolution/
+          sparse-checkout-cone-mode: false
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2

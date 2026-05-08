@@ -27,6 +27,19 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v5
 
+      - name: Reject Windows-illegal filenames (with legal-archive exemption)
+        run: |
+          BAD=$(git ls-files \
+            | grep -E '[<>:"|?*]' \
+            | grep -v '^docs/project-evolution/' \
+            || true)
+          if [ -n "$BAD" ]; then
+            echo "::error::New files with characters illegal on Windows:"
+            echo "$BAD"
+            echo "Note: docs/project-evolution/ is exempt (legal archive)."
+            exit 1
+          fi
+
       - name: Install dependencies
         run: bun install --frozen-lockfile
         env:

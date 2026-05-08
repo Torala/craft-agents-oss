@@ -139,6 +139,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            /*
+            !/docs/project-evolution/
+          sparse-checkout-cone-mode: false
 
       - name: Check if artifact exists
         id: check
