@@ -27,16 +27,12 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v5
 
-      - name: Reject Windows-illegal filenames (with legal-archive exemption)
+      - name: Reject Windows-illegal filenames
         run: |
-          BAD=$(git ls-files \
-            | grep -E '[<>:"|?*]' \
-            | grep -v '^docs/project-evolution/' \
-            || true)
+          BAD=$(git ls-files | grep -E '[<>:"|?*]' || true)
           if [ -n "$BAD" ]; then
-            echo "::error::New files with characters illegal on Windows:"
+            echo "::error::Files with characters illegal on Windows:"
             echo "$BAD"
-            echo "Note: docs/project-evolution/ is exempt (legal archive)."
             exit 1
           fi
 
