@@ -131,6 +131,13 @@ export function PanelHeader({
   // Controlled dropdown state for anchoring to chevron while keeping full title clickable
   const [dropdownOpen, setDropdownOpen] = useState(false)
 
+  // Force-close the desktop dropdown when compact mode takes over the title
+  // slot — otherwise the open state survives unmount and the dropdown
+  // resurrects open the next time the user resizes back to desktop width.
+  React.useEffect(() => {
+    if (isCompactMode && dropdownOpen) setDropdownOpen(false)
+  }, [isCompactMode, dropdownOpen])
+
   // Title content - either static or interactive with dropdown
   // Shimmer effect shows during title regeneration
   const titleContent = (

@@ -135,6 +135,14 @@ export function CompactSessionMenu({
     if (!open) setView('root')
   }, [open])
 
+  // Close+reset the drawer if the underlying session changes while it's open.
+  // Otherwise action handlers retarget to the new session (e.g. user opens
+  // menu for A, navigation switches to B, "Delete" deletes B).
+  React.useEffect(() => {
+    setOpen(false)
+    setView('root')
+  }, [item.id])
+
   const sessionId = item.id
   const isFlagged = item.isFlagged ?? false
   const isArchived = item.isArchived ?? false
@@ -185,7 +193,7 @@ export function CompactSessionMenu({
       toast.success(t('toast.linkCopied'), {
         description: result.url,
         action: {
-          label: 'Open',
+          label: t('common.open'),
           onClick: () => window.electronAPI.openUrl(result.url!),
         },
       })
@@ -311,7 +319,7 @@ export function CompactSessionMenu({
             {badge}
           </motion.div>
           <span className="shrink-0 flex items-center justify-center">
-            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground translate-y-[1px]" />
+            <ChevronDown className="h-3.5 w-3.5 text-foreground/50 translate-y-[1px]" />
           </span>
         </button>
       </DrawerTrigger>
@@ -322,7 +330,7 @@ export function CompactSessionMenu({
             <button
               type="button"
               onClick={() => setView('root')}
-              className="-ml-1 h-8 w-8 rounded-md flex items-center justify-center hover:bg-foreground/5 active:bg-foreground/10 transition-colors text-muted-foreground"
+              className="-ml-1 h-8 w-8 rounded-md flex items-center justify-center hover:bg-foreground/5 active:bg-foreground/10 transition-colors text-foreground/50"
               aria-label={t('common.back')}
             >
               <ChevronLeft className="h-4 w-4" />
@@ -506,7 +514,6 @@ function RootPane({
 
       <Row
         icon={<span style={statusColor ? { color: statusColor } : undefined}>{statusIconNode}</span>}
-        bareIcon
         label={t('sessionMenu.status')}
         chevron
         onTap={onOpenStatusSub}
@@ -580,14 +587,13 @@ function StatusPane({
   return (
     <div className="flex flex-col">
       {sessionStatuses.map((state) => {
-        const bareIcon = React.isValidElement(state.icon)
+        const bareStateIcon = React.isValidElement(state.icon)
           ? React.cloneElement(state.icon as React.ReactElement<{ bare?: boolean }>, { bare: true })
           : state.icon
         return (
           <Row
             key={state.id}
-            icon={<span style={getStatusIconStyle(state)}>{bareIcon}</span>}
-            bareIcon
+            icon={<span style={getStatusIconStyle(state)}>{bareStateIcon}</span>}
             label={state.label}
             radioSelected={activeStateId === state.id}
             onTap={() => onSelect(state.id)}
@@ -619,7 +625,7 @@ function LabelsPane({
             icon={<LabelIcon label={item.config} size="lg" />}
             label={item.parentPath ? (
               <>
-                <span className="text-muted-foreground">{item.parentPath}</span>
+                <span className="text-foreground/50">{item.parentPath}</span>
                 {item.label}
               </>
             ) : item.label}
@@ -671,9 +677,6 @@ function MessagingPane({ onConnect }: { onConnect: (platform: MessagingPlatform)
 
 interface RowProps {
   icon: React.ReactNode
-  /** When true, the icon span is rendered without the default 5x5 wrapper —
-   *  used for status icons that already render their own container. */
-  bareIcon?: boolean
   label: React.ReactNode
   trailing?: React.ReactNode
   chevron?: boolean
@@ -684,7 +687,6 @@ interface RowProps {
 
 function Row({
   icon,
-  bareIcon,
   label,
   trailing,
   chevron,
@@ -703,18 +705,13 @@ function Row({
         destructive && 'text-destructive hover:bg-destructive/10 active:bg-destructive/15',
       )}
     >
-      <span
-        className={cn(
-          'shrink-0 inline-flex items-center justify-center',
-          bareIcon ? 'h-5 w-5' : 'h-5 w-5',
-        )}
-      >
+      <span className="shrink-0 inline-flex items-center justify-center h-5 w-5">
         {icon}
       </span>
       <span className="flex-1 min-w-0 text-sm truncate">{label}</span>
       {trailing}
       {radioSelected && <Check className="h-4 w-4 shrink-0 text-foreground/70" />}
-      {chevron && <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />}
+      {chevron && <ChevronRight className="h-4 w-4 shrink-0 text-foreground/50" />}
     </button>
   )
 }
@@ -725,7 +722,7 @@ function Separator() {
 
 function CountBadge({ count }: { count: number }) {
   return (
-    <span className="text-[11px] tabular-nums text-muted-foreground">
+    <span className="text-[11px] tabular-nums text-foreground/50">
       {count}
     </span>
   )
