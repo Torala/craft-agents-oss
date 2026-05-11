@@ -368,7 +368,15 @@ export class MessagingGateway {
 
     for (const binding of bindings) {
       const adapter = this.adapters.get(binding.platform)
-      if (!adapter || !adapter.isConnected()) continue
+      if (!adapter || !adapter.isConnected()) {
+        this.log.warn('dropping session event — adapter not connected', {
+          event: 'adapter_not_connected',
+          sessionId: event.sessionId,
+          platform: binding.platform,
+          eventType: event.type,
+        })
+        continue
+      }
       this.renderer.handle(event, binding, adapter).catch((err) => {
         this.log.error('renderer failed to emit event to chat', {
           event: 'renderer_failed',
