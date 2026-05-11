@@ -25,6 +25,7 @@ import { cn } from "@/lib/utils"
 import { Check, ChevronDown, Eye, EyeOff, Loader2 } from "lucide-react"
 import { pickTierDefaults, resolveTierModels, type PiModelInfo } from "./tier-models"
 import {
+  resolveCustomEndpointPayload,
   resolvePiAuthProviderForSubmit,
   resolvePresetStateForBaseUrlChange,
   type PresetKey,
@@ -318,6 +319,8 @@ export function ApiKeyInput({
     if (!connectionDefaultModel.trim()) {
       if (presetKey === 'ollama') {
         setConnectionDefaultModel('qwen3-coder')
+      } else if (presetKey === 'manifest') {
+        setConnectionDefaultModel('auto')
       } else if (presetKey === 'minimax-global' || presetKey === 'minimax-cn') {
         setConnectionDefaultModel(COMPAT_MINIMAX_DEFAULTS)
       } else if (presetKey === 'kimi-coding') {
@@ -397,13 +400,13 @@ export function ApiKeyInput({
     // Include custom endpoint protocol when user configured a custom base URL.
     // Branded openai-compat presets (e.g. Manifest) are pinned to openai-completions
     // and routed via the Pi SDK's openai adapter.
-    const isBrandedOpenAiCompat = OPENAI_COMPAT_CUSTOM_URL_PRESETS.has(activePreset) && !!effectiveBaseUrl
-    const isCustomEndpoint = (activePreset === 'custom' && !!effectiveBaseUrl) || isBrandedOpenAiCompat
-    const effectiveCustomApi: CustomEndpointApi = isBrandedOpenAiCompat ? 'openai-completions' : customApi
-    const customEndpoint = isCustomEndpoint ? { api: effectiveCustomApi } : undefined
-    const resolvedPiAuthProvider = isCustomEndpoint
-      ? (effectiveCustomApi === 'anthropic-messages' ? 'anthropic' : 'openai')
-      : effectivePiAuthProvider
+    const { customEndpoint, piAuthProvider: resolvedPiAuthProvider } = resolveCustomEndpointPayload({
+      activePreset,
+      baseUrl: effectiveBaseUrl,
+      customApi,
+      brandedOpenAiCompatPresets: OPENAI_COMPAT_CUSTOM_URL_PRESETS,
+      fallbackPiAuthProvider: effectivePiAuthProvider,
+    })
 
     onSubmit({
       apiKey: apiKey.trim(),
