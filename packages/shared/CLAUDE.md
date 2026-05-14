@@ -109,6 +109,20 @@ Keys use **flat dot-notation** with a category prefix:
    - Button labels (avoid exceeding 2x the English length)
    - Menu items (flexible, but avoid 3x+ growth)
 
+### Validation
+
+Three checks gate i18n correctness, all wired into pre-commit (`lint:i18n:staged`) and `validate:ci`:
+
+| Script | Catches |
+|--------|---------|
+| `lint:i18n:sorted` | locale keys not alphabetical |
+| `lint:i18n:parity` | non-EN locale missing keys present in `en.json`, or vice versa |
+| `lint:i18n:coverage` | `t('...')` callsite referencing a key that doesn't exist in `en.json` |
+
+`parity` alone is insufficient — it can't detect symmetric losses across all locales (a merge that drops the same 50 keys from every locale file passes parity but breaks the UI). `coverage` closes that gap by verifying every literal `t(...)` / `i18n.t(...)` / `<Trans i18nKey>` reference resolves against `en.json`. Dynamic keys (`t(\`status.${id}\`)`) are skipped — those surface via i18next's runtime missing-key warnings.
+
+When resolving locale merge conflicts, run `bun run validate:ci` and trust the result — no manual key auditing needed if all three pass.
+
 ### Adding a new translated string
 
 1. Add the key + English value to `en.json` (alphabetical order)
