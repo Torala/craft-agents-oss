@@ -62,9 +62,9 @@ How the agent's output is rendered back to the chat.
 
 | Mode | What you see | When to use |
 |------|-------------|-------------|
-| **`progress`** *(default)* | One evolving message per run. A "💭 thinking…" bubble appears on first activity, edits in place as tools run, and is replaced by the final answer when complete. Intermediate text is dropped. | Keep the chat tidy — most users. |
+| **`progress`** *(default)* | One evolving message per run. A "💭 thinking…" bubble appears on first activity, edits in place as tools run, and is replaced by the final answer when complete. If the run ends on a tool call without emitting a non-intermediate final, the most recent assistant text is used as the answer instead of leaving the thinking bubble behind. | Keep the chat tidy — most users. |
 | **`streaming`** | Live edits during the final turn, plus every intermediate `text_complete` as its own message. Multiple messages per run. | Parity with the in-app streaming experience. |
-| **`final_only`** | Silent until the run completes, then one message with the final text. Nothing is posted if the run has no final text. | Quiet chats, batch-style workflows. |
+| **`final_only`** | Silent until the run completes, then one message with the final text. If no non-intermediate final arrived, the most recent assistant text is posted instead; genuinely empty runs stay silent. | Quiet chats, batch-style workflows. |
 
 Response mode is configured **per binding** — you can have one chat on `progress` and another on `final_only` in the same workspace.
 
