@@ -223,9 +223,15 @@ interface ChatDisplayProps {
   isSearchModeActive?: boolean
   /** Callback when match info changes - for immediate UI updates */
   onMatchInfoChange?: (info: { count: number; index: number; isHighlighting: boolean; sessionId: string | null }) => void
-  // Compact mode (for EditPopover embedding)
+  // Compact mode (for EditPopover embedding and auto-compact / WebUI mobile)
   /** Enable compact mode - hides non-essential UI elements for popover embedding */
   compactMode?: boolean
+  /**
+   * When compactMode is true, enable the compact (drawer-based) model selector
+   * next to the permission-mode pill. Defaults to false so EditPopover keeps
+   * its current behavior; ChatPage opts in when in auto-compact / mobile.
+   */
+  enableCompactModelPicker?: boolean
   /** Custom placeholder for input (used in compact mode for edit context) */
   placeholder?: string | string[]
   /** Label shown as empty state in compact mode (e.g., "Permission Settings") */
@@ -481,8 +487,9 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
   searchQuery: externalSearchQuery,
   isSearchModeActive = false,
   onMatchInfoChange,
-  // Compact mode (for EditPopover embedding)
+  // Compact mode (for EditPopover embedding and auto-compact / WebUI mobile)
   compactMode = false,
+  enableCompactModelPicker = false,
   placeholder,
   emptyStateLabel,
   // Connection unavailable
@@ -1920,6 +1927,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
               thinkingLevel,
               onThinkingLevelChange,
               enabledModes,
+              enableCompactModelPicker,
               structuredInput,
               onStructuredResponse: handleStructuredResponse,
               inputValue,

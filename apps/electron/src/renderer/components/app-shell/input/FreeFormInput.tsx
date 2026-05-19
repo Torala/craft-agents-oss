@@ -1,7 +1,6 @@
 import * as React from 'react'
 import { useTranslation } from "react-i18next"
 import { Command as CommandPrimitive } from 'cmdk'
-import { toast } from 'sonner'
 import { AnimatePresence, motion } from 'motion/react'
 import {
   Paperclip,
@@ -63,10 +62,7 @@ import { ANTHROPIC_MODELS, getModelShortName, getModelDisplayName, getModelConte
 import {
   resolveEffectiveConnectionSlug,
   isCompatProvider,
-  isLocalConnection,
   modelSupportsImages,
-  setModelSupportsImages,
-  type LlmConnection,
 } from '@config/llm-connections'
 import { useOptionalAppShellContext } from '@/context/AppShellContext'
 import { EditPopover, getEditConfig } from '@/components/ui/EditPopover'
@@ -91,23 +87,13 @@ import {
   removeRecentWorkingDir,
 } from './working-directory-history'
 import { CompactPermissionModeSelector } from './CompactPermissionModeSelector'
-
-/**
- * Format token count for display (e.g., 1500 -> "1.5k", 200000 -> "200k")
- */
-function formatTokenCount(tokens: number): string {
-  if (tokens >= 1000000) {
-    return `${(tokens / 1000000).toFixed(1)}M`
-  }
-  if (tokens >= 1000) {
-    return `${(tokens / 1000).toFixed(tokens >= 10000 ? 0 : 1)}k`
-  }
-  return tokens.toString()
-}
-
-function stripPiPrefixForDisplay(value: string): string {
-  return value.startsWith('pi/') ? value.slice(3) : value
-}
+import { CompactModelSelector } from './CompactModelSelector'
+import {
+  formatTokenCount,
+  groupConnectionsByProvider,
+  stripPiPrefixForDisplay,
+} from './model-picker-helpers'
+import { useModelVisionToggle } from './useModelVisionToggle'
 
 function formatFollowUpChipText(text: string, fallback: string, maxLength = 50): string {
   const normalized = text.replace(/\s+/g, ' ').trim()
@@ -234,8 +220,20 @@ export interface FreeFormInputProps {
   onFollowUpClick?: (item: FollowUpInputItem, anchor?: { x: number; y: number }) => void
   /** Callback when user clicks the follow-up index badge */
   onFollowUpIndexClick?: (item: FollowUpInputItem) => void
-  /** Enable compact mode - hides attach, sources, working directory for popover embedding */
+  /**
+   * Compact-footer layout. Used by EditPopover (popover embedding) and by
+   * ChatPage in auto-compact / WebUI mobile mode. The popover case hides the
+   * model picker; the auto-compact case opts the compact picker in via
+   * `enableCompactModelPicker`.
+   */
   compactMode?: boolean
+  /**
+   * When `compactMode` is true, render the compact (drawer-based) model
+   * selector next to the permission-mode pill. Defaults to false so that
+   * EditPopover (which has no use for a model picker) keeps its current
+   * behavior.
+   */
+  enableCompactModelPicker?: boolean
   // Connection selection (hierarchical connection → model selector)
   /** Current LLM connection slug (locked after first message) */
   currentConnection?: string
@@ -296,6 +294,7 @@ export function FreeFormInput({
   onFollowUpClick,
   onFollowUpIndexClick,
   compactMode = false,
+  enableCompactModelPicker = false,
   currentConnection,
   onConnectionChange,
   connectionUnavailable = false,
@@ -386,28 +385,12 @@ export function FreeFormInput({
     return model.name ?? stripPiPrefixForDisplay(model.id)
   }, [availableModels, currentModel, connectionDefaultModel])
 
-  // Group connections by provider type for hierarchical dropdown
+  // Group connections by provider type for hierarchical dropdown.
   // Each provider (Anthropic, Pi) can have multiple connections (API Key, OAuth, etc.)
-  const connectionsByProvider = React.useMemo(() => {
-    const groups: Record<string, typeof llmConnections> = {
-      'Anthropic': [],
-      'Local': [],
-      'Craft Agents Backend': [],
-    }
-    for (const conn of llmConnections) {
-      const provider = conn.providerType || 'anthropic'
-      // Group by SDK: only 'anthropic' uses Claude Agent SDK
-      if (provider === 'anthropic') {
-        groups['Anthropic'].push(conn)
-      } else if (provider === 'pi_compat' && isLocalConnection(conn)) {
-        groups['Local'].push(conn)
-      } else if (provider === 'pi' || provider === 'pi_compat') {
-        groups['Craft Agents Backend'].push(conn)
-      }
-    }
-    // Return only non-empty groups
-    return Object.entries(groups).filter(([, conns]) => conns.length > 0)
-  }, [llmConnections])
+  const connectionsByProvider = React.useMemo(
+    () => groupConnectionsByProvider(llmConnections),
+    [llmConnections],
+  )
 
   // Find current connection details for display
   const currentConnectionDetails = React.useMemo(() => {
@@ -657,32 +640,7 @@ export function FreeFormInput({
     prevInputValueRef.current = ''
   }, [onInputChange])
 
-  const refreshLlmConnections = appShellCtx?.refreshLlmConnections
-  const handleToggleModelVision = React.useCallback(async (
-    connectionSlug: string,
-    modelId: string,
-    enabled: boolean,
-  ) => {
-    if (!window.electronAPI) return
-    const conn = llmConnections.find(c => c.slug === connectionSlug)
-    if (!conn) return
-    try {
-      // Strip the runtime-only status fields before passing to setModelSupportsImages,
-      // so the persisted payload matches the LlmConnection schema.
-      const { isAuthenticated: _a, authError: _b, isDefault: _c, ...bare } = conn
-      const updated = setModelSupportsImages(bare as LlmConnection, modelId, enabled)
-      const result = await window.electronAPI.saveLlmConnection(updated)
-      if (!result.success) {
-        console.error('Failed to toggle model vision:', result.error)
-        toast.error(t('chat.modelPicker.toggleVisionFailed'))
-        return
-      }
-      await refreshLlmConnections?.()
-    } catch (error) {
-      console.error('Failed to toggle model vision:', error)
-      toast.error(t('chat.modelPicker.toggleVisionFailed'))
-    }
-  }, [llmConnections, refreshLlmConnections, t])
+  const handleToggleModelVision = useModelVisionToggle()
 
   const consumeInputDraftSnapshot = React.useCallback((): string => {
     const snapshot = input.trim()
@@ -1814,6 +1772,19 @@ export function FreeFormInput({
             <CompactPermissionModeSelector
               permissionMode={permissionMode}
               onPermissionModeChange={onPermissionModeChange}
+            />
+          )}
+          {enableCompactModelPicker && (
+            <CompactModelSelector
+              currentModel={currentModel}
+              currentConnection={currentConnection}
+              onModelChange={onModelChange}
+              onConnectionChange={onConnectionChange}
+              thinkingLevel={thinkingLevel}
+              onThinkingLevelChange={onThinkingLevelChange}
+              isEmptySession={isEmptySession}
+              connectionUnavailable={connectionUnavailable}
+              contextStatus={contextStatus}
             />
           )}
           <FreeFormInputContextBadge
