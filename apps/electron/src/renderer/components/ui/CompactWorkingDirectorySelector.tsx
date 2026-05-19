@@ -11,12 +11,7 @@ import {
   DrawerClose,
 } from '@/components/ui/drawer'
 import { FreeFormInputContextBadge } from '../app-shell/input/FreeFormInputContextBadge'
-import {
-  getRecentWorkingDirs,
-  addRecentWorkingDir,
-  removeRecentWorkingDir,
-} from '../app-shell/input/working-directory-history'
-import { useDirectoryPicker } from '@/hooks/useDirectoryPicker'
+import { useWorkingDirectoryState } from '../app-shell/input/use-working-directory-state'
 import { ServerDirectoryBrowser } from '@/components/ServerDirectoryBrowser'
 import { PATH_SEP, getPathBasename } from '@/lib/platform'
 import { cn } from '@/lib/utils'
@@ -37,6 +32,8 @@ export interface CompactWorkingDirectorySelectorProps {
  * every option is a full-width tap target and positioning is anchor-free.
  * The desktop `Popover` + `cmdk` variant continues to live in
  * `FreeFormInput.tsx` for non-compact layouts.
+ *
+ * State is shared with the desktop surface via `useWorkingDirectoryState`.
  */
 export function CompactWorkingDirectorySelector({
   workingDirectory,
@@ -47,106 +44,55 @@ export function CompactWorkingDirectorySelector({
 }: CompactWorkingDirectorySelectorProps) {
   const { t } = useTranslation()
   const [open, setOpen] = React.useState(false)
-  const [recentDirs, setRecentDirs] = React.useState<string[]>([])
-  const [homeDir, setHomeDir] = React.useState<string>('')
-  const [gitBranch, setGitBranch] = React.useState<string | null>(null)
-  const [filter, setFilter] = React.useState('')
-
-  // Load home directory and recent directories on mount
-  React.useEffect(() => {
-    setRecentDirs(getRecentWorkingDirs(workspaceId))
-    window.electronAPI?.getHomeDir?.().then((dir: string) => {
-      if (dir) setHomeDir(dir)
-    })
-  }, [workspaceId])
-
-  // Refresh git branch when working directory changes
-  React.useEffect(() => {
-    if (workingDirectory) {
-      window.electronAPI?.getGitBranch?.(workingDirectory).then((branch: string | null) => {
-        setGitBranch(branch)
-      })
-    } else {
-      setGitBranch(null)
-    }
-  }, [workingDirectory])
-
-  // Refresh history and reset filter whenever the drawer opens
-  React.useEffect(() => {
-    if (open) {
-      setFilter('')
-      setRecentDirs(getRecentWorkingDirs(workspaceId))
-    }
-  }, [open, workspaceId])
-
-  const handleFolderSelected = React.useCallback((selectedPath: string) => {
-    setRecentDirs(addRecentWorkingDir(selectedPath, workspaceId))
-    onWorkingDirectoryChange(selectedPath)
-  }, [onWorkingDirectoryChange, workspaceId])
+  const closeDrawer = React.useCallback(() => setOpen(false), [])
 
   const {
-    pickDirectory,
-    showServerBrowser,
-    serverBrowserMode,
-    cancelServerBrowser,
-    confirmServerBrowser,
-  } = useDirectoryPicker(handleFolderSelected)
+    homeDir,
+    gitBranch,
+    filter,
+    setFilter,
+    sortedRecent,
+    hasFolder,
+    folderName,
+    showReset,
+    showFilter,
+    handleSelectRecent,
+    handleReset,
+    handleRemoveRecent,
+    handleChooseFolder,
+    serverBrowser: {
+      showServerBrowser,
+      serverBrowserMode,
+      cancelServerBrowser,
+      confirmServerBrowser,
+    },
+  } = useWorkingDirectoryState({
+    workingDirectory,
+    onWorkingDirectoryChange,
+    sessionFolderPath,
+    workspaceId,
+    isOpen: open,
+    onClose: closeDrawer,
+  })
 
-  const handleChooseFolder = () => {
-    setOpen(false)
-    pickDirectory()
-  }
-
-  const handleSelectRecent = (path: string) => {
-    setRecentDirs(addRecentWorkingDir(path, workspaceId))
-    onWorkingDirectoryChange(path)
-    setOpen(false)
-  }
-
-  const handleReset = () => {
-    if (sessionFolderPath) {
-      onWorkingDirectoryChange(sessionFolderPath)
-      setOpen(false)
-    }
-  }
-
-  const handleRemoveRecent = (e: React.MouseEvent, path: string) => {
-    e.stopPropagation()
-    setRecentDirs(removeRecentWorkingDir(path, workspaceId))
-  }
-
-  // Filter out current directory and apply user filter
+  // Drawer-side text filter. The hook stores the raw filter string; this
+  // surface does its own JS filtering since there's no cmdk to delegate to.
   const filteredRecent = React.useMemo(() => {
     const q = filter.trim().toLowerCase()
-    return recentDirs
-      .filter((p) => p !== workingDirectory)
-      .filter((p) => {
-        if (!q) return true
-        return (
-          getPathBasename(p).toLowerCase().includes(q) ||
-          p.toLowerCase().includes(q)
-        )
-      })
-      .sort((a, b) => {
-        const nameA = getPathBasename(a).toLowerCase()
-        const nameB = getPathBasename(b).toLowerCase()
-        return nameA.localeCompare(nameB)
-      })
-  }, [recentDirs, workingDirectory, filter])
+    if (!q) return sortedRecent
+    return sortedRecent.filter((p) => (
+      getPathBasename(p).toLowerCase().includes(q) ||
+      p.toLowerCase().includes(q)
+    ))
+  }, [sortedRecent, filter])
 
-  const hasFolder = !!workingDirectory && workingDirectory !== sessionFolderPath
-  const folderName = hasFolder
-    ? (getPathBasename(workingDirectory) || 'Folder')
-    : t('chat.chooseWorkingDirectory')
-  const showReset = hasFolder && !!sessionFolderPath && sessionFolderPath !== workingDirectory
-  // Search filter only kicks in when there's enough recent history to scroll
-  const showFilter = recentDirs.filter((p) => p !== workingDirectory).length > 5
+  const displayFolderName = folderName ?? t('chat.chooseWorkingDirectory')
 
   return (
     <>
       <FreeFormInputContextBadge
         icon={<Icon_Home className="h-4 w-4" />}
-        label={folderName}
+        label={displayFolderName}
         isExpanded={isEmptySession}
         hasSelection={hasFolder}
         showChevron={true}
@@ -194,7 +140,7 @@ export function CompactWorkingDirectorySelector({
               <div className="flex items-center gap-3 px-3 py-3 rounded-[10px] bg-foreground/5">
                 <Icon_Folder className="h-5 w-5 shrink-0 text-foreground/60" />
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium truncate">{folderName}</div>
+                  <div className="text-sm font-medium truncate">{displayFolderName}</div>
                   <div className="text-xs text-foreground/50 truncate">
                     {formatPath(workingDirectory, homeDir)}
                   </div>

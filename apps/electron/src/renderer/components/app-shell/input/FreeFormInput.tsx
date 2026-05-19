@@ -86,8 +86,8 @@ import { clearPendingFocusForSession, consumePendingFocusForSession } from './fo
 import {
   getRecentWorkingDirs,
   addRecentWorkingDir,
-  removeRecentWorkingDir,
 } from './working-directory-history'
+import { useWorkingDirectoryState } from './use-working-directory-state'
 import { CompactPermissionModeSelector } from './CompactPermissionModeSelector'
 import { CompactModelSelector } from './CompactModelSelector'
 import {
@@ -2464,7 +2464,8 @@ export function FreeFormInput({
 /**
  * Format path for display, with home directory shortened
  */
-function formatPathForDisplay(path: string, homeDir: string): string {
+function formatPathForDisplay(path: string | undefined, homeDir: string): string {
+  if (!path) return ''
   let displayPath = path
   if (homeDir && path.startsWith(homeDir)) {
     const relativePath = path.slice(homeDir.length)
@@ -2494,98 +2495,49 @@ function WorkingDirectoryBadge({
   workspaceId?: string
 }) {
   const { t } = useTranslation()
-  const [recentDirs, setRecentDirs] = React.useState<string[]>([])
   const [popoverOpen, setPopoverOpen] = React.useState(false)
-  const [homeDir, setHomeDir] = React.useState<string>('')
-  const [gitBranch, setGitBranch] = React.useState<string | null>(null)
-  const [filter, setFilter] = React.useState('')
   const inputRef = React.useRef<HTMLInputElement>(null)
+  const closePopover = React.useCallback(() => setPopoverOpen(false), [])
 
-  // Load home directory and recent directories on mount
-  React.useEffect(() => {
-    setRecentDirs(getRecentWorkingDirs(workspaceId))
-    window.electronAPI?.getHomeDir?.().then((dir: string) => {
-      if (dir) setHomeDir(dir)
-    })
-  }, [workspaceId])
+  const {
+    homeDir,
+    gitBranch,
+    filter,
+    setFilter,
+    sortedRecent: filteredRecent,
+    hasFolder,
+    folderName,
+    showReset,
+    showFilter,
+    handleSelectRecent,
+    handleReset,
+    handleRemoveRecent,
+    handleChooseFolder,
+    serverBrowser: {
+      showServerBrowser,
+      serverBrowserMode,
+      cancelServerBrowser,
+      confirmServerBrowser,
+    },
+  } = useWorkingDirectoryState({
+    workingDirectory,
+    onWorkingDirectoryChange,
+    sessionFolderPath,
+    workspaceId,
+    isOpen: popoverOpen,
+    onClose: closePopover,
+  })
 
-  // Fetch git branch when working directory changes
+  // Autofocus the filter input on popover open. Lives in the consumer (not
+  // the hook) because the compact drawer surface has no autofocus.
   React.useEffect(() => {
-    if (workingDirectory) {
-      window.electronAPI?.getGitBranch?.(workingDirectory).then((branch: string | null) => {
-        setGitBranch(branch)
-      })
-    } else {
-      setGitBranch(null)
-    }
-  }, [workingDirectory])
-
-  // Reset filter, refresh history, and focus input when popover opens
-  React.useEffect(() => {
-    if (popoverOpen) {
-      setFilter('')
-      setRecentDirs(getRecentWorkingDirs(workspaceId))
-      // Focus input after popover animation completes (only if filter is shown)
+    if (popoverOpen && showFilter) {
       const timer = setTimeout(() => {
         inputRef.current?.focus()
       }, 0)
       return () => clearTimeout(timer)
     }
-  }, [popoverOpen, workspaceId])
-
-  const handleFolderSelected = React.useCallback((selectedPath: string) => {
-    setRecentDirs(addRecentWorkingDir(selectedPath, workspaceId))
-    onWorkingDirectoryChange(selectedPath)
-  }, [onWorkingDirectoryChange, workspaceId])
-
-  const {
-    pickDirectory,
-    showServerBrowser,
-    serverBrowserMode,
-    cancelServerBrowser,
-    confirmServerBrowser,
-  } = useDirectoryPicker(handleFolderSelected)
-
-  const handleChooseFolder = () => {
-    setPopoverOpen(false)
-    pickDirectory()
-  }
-
-  const handleSelectRecent = (path: string) => {
-    setRecentDirs(addRecentWorkingDir(path, workspaceId)) // Move to top of recent list
-    onWorkingDirectoryChange(path)
-    setPopoverOpen(false)
-  }
-
-  const handleReset = () => {
-    if (sessionFolderPath) {
-      onWorkingDirectoryChange(sessionFolderPath)
-      setPopoverOpen(false)
-    }
-  }
-
-  const handleRemoveRecent = (e: React.MouseEvent, path: string) => {
-    e.stopPropagation() // Don't trigger the item's onSelect
-    setRecentDirs(removeRecentWorkingDir(path, workspaceId))
-  }
-
-  // Filter out current directory from recent list and sort alphabetically by folder name
-  const filteredRecent = recentDirs
-    .filter(p => p !== workingDirectory)
-    .sort((a, b) => {
-      const nameA = getPathBasename(a).toLowerCase()
-      const nameB = getPathBasename(b).toLowerCase()
-      return nameA.localeCompare(nameB)
-    })
-  // Show filter input only when more than 5 recent folders
-  const showFilter = filteredRecent.length > 5
-
-  // Determine label - "Work in Folder" if not set or at session root, otherwise folder name
-  const hasFolder = !!workingDirectory && workingDirectory !== sessionFolderPath
-  const folderName = hasFolder ? (getPathBasename(workingDirectory) || 'Folder') : 'Work in Folder'
-
-  // Show reset option when a folder is selected and it differs from session folder
-  const showReset = hasFolder && sessionFolderPath && sessionFolderPath !== workingDirectory
+  }, [popoverOpen, showFilter])
 
   // Styles matching todo-filter-menu.tsx for consistency
   const MENU_CONTAINER_STYLE = 'min-w-[200px] max-w-[400px] overflow-hidden rounded-[8px] bg-background text-foreground shadow-modal-small p-0'
@@ -2599,7 +2551,7 @@ function WorkingDirectoryBadge({
         <span className="shrink min-w-0 overflow-hidden">
           <FreeFormInputContextBadge
             icon={<Icon_Home className="h-4 w-4" />}
-            label={folderName}
+            label={folderName ?? 'Work in Folder'}
             isExpanded={isEmptySession}
             hasSelection={hasFolder}
             showChevron={true}
