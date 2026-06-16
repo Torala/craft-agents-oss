@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   build-macos-x64:
-    runs-on: macos-13  # macos-13 is the last x64 runner; macos-latest is arm64
+    runs-on: macos-latest  # arm64 runner; cross-compile x64 via electron-builder --x64
     timeout-minutes: 60
 
     steps:
