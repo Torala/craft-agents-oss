@@ -108,6 +108,84 @@ jobs:
 
           echo "=== SDK preparation complete ==="
 
+      - name: Build and copy MCP/Pi servers
+        run: |
+          echo "=== Building MCP and Pi servers ==="
+          ELECTRON_DIR="apps/electron"
+          ROOT_DIR="."
+
+          # 1. Build session-mcp-server (Node/CJS target)
+          echo "Building session-mcp-server..."
+          mkdir -p packages/session-mcp-server/dist
+          bun build packages/session-mcp-server/src/index.ts \
+            --outfile packages/session-mcp-server/dist/index.js \
+            --target node --format cjs
+          if [ ! -f packages/session-mcp-server/dist/index.js ]; then
+            echo "ERROR: session-mcp-server build failed"
+            exit 1
+          fi
+          echo "  session-mcp-server built OK"
+
+          # 2. Copy session-mcp-server to electron resources
+          mkdir -p "$ELECTRON_DIR/resources/session-mcp-server"
+          cp packages/session-mcp-server/dist/index.js "$ELECTRON_DIR/resources/session-mcp-server/"
+          echo "  session-mcp-server copied to resources"
+
+          # 3. Build pi-agent-server (Bun/ESM target, koffi external)
+          if [ -d "packages/pi-agent-server/src" ]; then
+            echo "Building pi-agent-server..."
+            mkdir -p packages/pi-agent-server/dist
+            bun build packages/pi-agent-server/src/index.ts \
+              --outdir packages/pi-agent-server/dist \
+              --target bun --format esm --external koffi
+            if [ ! -f packages/pi-agent-server/dist/index.js ]; then
+              echo "ERROR: pi-agent-server build failed"
+              exit 1
+            fi
+            echo "  pi-agent-server built OK"
+
+            # 4. Copy pi-agent-server to electron resources
+            PI_DEST="$ELECTRON_DIR/resources/pi-agent-server"
+            mkdir -p "$PI_DEST"
+            cp packages/pi-agent-server/dist/index.js "$PI_DEST/"
+
+            # 5. Copy koffi package with platform-specific native binary
+            KOFFI_SOURCE="$ROOT_DIR/node_modules/koffi"
+            if [ -d "$KOFFI_SOURCE" ]; then
+              KOFFI_DEST="$PI_DEST/node_modules/koffi"
+              mkdir -p "$KOFFI_DEST"
+              # Copy koffi JS files
+              for entry in package.json index.js indirect.js index.d.ts lib; do
+                if [ -e "$KOFFI_SOURCE/$entry" ]; then
+                  cp -r "$KOFFI_SOURCE/$entry" "$KOFFI_DEST/"
+                fi
+              done
+              # Copy x64 native binary (cross-compile: arm64 runner building x64 app)
+              KOFFI_PLATFORM="darwin_x64"
+              NATIVE_SRC="$KOFFI_SOURCE/build/koffi/$KOFFI_PLATFORM"
+              if [ -d "$NATIVE_SRC" ]; then
+                mkdir -p "$KOFFI_DEST/build/koffi/$KOFFI_PLATFORM"
+                cp -r "$NATIVE_SRC/." "$KOFFI_DEST/build/koffi/$KOFFI_PLATFORM/"
+                NATIVE_SIZE=$(ls -la "$NATIVE_SRC/" | grep -v "^total\|^d" | awk '{print $5}' | head -1)
+                echo "  koffi/$KOFFI_PLATFORM copied ($(( NATIVE_SIZE / 1024 / 1024 )) MB)"
+              else
+                echo "  WARNING: koffi native binary not found for $KOFFI_PLATFORM, copying all platforms"
+                cp -r "$KOFFI_SOURCE/build" "$KOFFI_DEST/" 2>/dev/null || true
+              fi
+              echo "  pi-agent-server + koffi copied to resources"
+            else
+              echo "  WARNING: koffi not found in node_modules. Pi SDK sessions may not work."
+            fi
+          else
+            echo "  WARNING: pi-agent-server source not found. Pi SDK sessions will not work."
+          fi
+
+          # 6. Verify
+          echo "=== Verifying server resources ==="
+          ls -la "$ELECTRON_DIR/resources/session-mcp-server/"
+          ls -la "$ELECTRON_DIR/resources/pi-agent-server/" 2>/dev/null || echo "  (pi-agent-server not present)"
+          echo "=== Server build complete ==="
+
       - name: Build electron main
         run: bun run electron:build:main
 
