@@ -13,7 +13,7 @@ concurrency:
 jobs:
   build-macos-x64:
     runs-on: macos-latest  # arm64 runner; cross-compile x64 via electron-builder --x64
-    timeout-minutes: 60
+    timeout-minutes: 90
 
     steps:
       - name: Checkout
@@ -32,18 +32,69 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # ============================================================
+      # Official build-dmg.sh steps (adapted for CI cross-compilation)
+      # ============================================================
+
+      - name: Clean previous build artifacts
+        run: |
+          ELECTRON_DIR="apps/electron"
+          rm -rf "$ELECTRON_DIR/vendor"
+          rm -rf "$ELECTRON_DIR/node_modules/@anthropic-ai"
+          rm -rf "$ELECTRON_DIR/packages"
+          rm -rf "$ELECTRON_DIR/release"
+
+      - name: Download Bun vendor binary (darwin-x64)
+        run: |
+          echo "=== Downloading Bun vendor binary ==="
+          ELECTRON_DIR="apps/electron"
+          BUN_VERSION="bun-v1.3.10"
+          BUN_DOWNLOAD="bun-darwin-x64"
+
+          mkdir -p "$ELECTRON_DIR/vendor/bun"
+          TEMP_DIR=$(mktemp -d)
+
+          # Download binary and checksums
+          curl -fSL "https://github.com/oven-sh/bun/releases/download/${BUN_VERSION}/${BUN_DOWNLOAD}.zip" \
+            -o "$TEMP_DIR/${BUN_DOWNLOAD}.zip"
+          curl -fSL "https://github.com/oven-sh/bun/releases/download/${BUN_VERSION}/SHASUMS256.txt" \
+            -o "$TEMP_DIR/SHASUMS256.txt"
+
+          # Verify checksum
+          echo "Verifying checksum..."
+          cd "$TEMP_DIR"
+          grep "${BUN_DOWNLOAD}.zip" SHASUMS256.txt | shasum -a 256 -c -
+          cd - > /dev/null
+
+          # Extract and install
+          unzip -o "$TEMP_DIR/${BUN_DOWNLOAD}.zip" -d "$TEMP_DIR"
+          cp "$TEMP_DIR/${BUN_DOWNLOAD}/bun" "$ELECTRON_DIR/vendor/bun/"
+          chmod +x "$ELECTRON_DIR/vendor/bun/bun"
+          rm -rf "$TEMP_DIR"
+
+          echo "  Bun binary: $(ls -lh "$ELECTRON_DIR/vendor/bun/bun" | awk '{print $5}')"
+
       - name: Prepare SDK and dependencies for Electron
         run: |
           echo "=== Preparing SDK and dependencies ==="
           ELECTRON_DIR="apps/electron"
           ROOT_DIR="."
 
+          # Helper: require path exists or fail
+          require_path() {
+            local path="$1"
+            local desc="$2"
+            local hint="$3"
+            if [ ! -e "$path" ]; then
+              echo "ERROR: $desc not found at $path"
+              [ -n "$hint" ] && echo "$hint"
+              exit 1
+            fi
+          }
+
           # 1. Copy SDK core
           SDK_SOURCE="$ROOT_DIR/node_modules/@anthropic-ai/claude-agent-sdk"
-          if [ ! -d "$SDK_SOURCE" ]; then
-            echo "ERROR: SDK core not found at $SDK_SOURCE"
-            exit 1
-          fi
+          require_path "$SDK_SOURCE" "SDK core" "Run 'bun install' from the repository root first."
           echo "Copying SDK core..."
           mkdir -p "$ELECTRON_DIR/node_modules/@anthropic-ai"
           rm -rf "$ELECTRON_DIR/node_modules/@anthropic-ai/claude-agent-sdk"
@@ -57,54 +108,53 @@ jobs:
             echo "Cross-arch build: $SDK_BIN_PKG not in node_modules — fetching from npm..."
             SDK_VERSION=$(node -p "require('./package.json').dependencies['@anthropic-ai/claude-agent-sdk']" | tr -d '"')
             PKG_TMP=$(mktemp -d)
-            cd "$PKG_TMP"
-            npm pack "@anthropic-ai/${SDK_BIN_PKG}@${SDK_VERSION}" >/dev/null
-            TARBALL=$(ls anthropic-ai-*.tgz | head -1)
-            tar -xzf "$TARBALL"
-            cd - > /dev/null
+            (
+              cd "$PKG_TMP"
+              npm pack "@anthropic-ai/${SDK_BIN_PKG}@${SDK_VERSION}" >/dev/null
+              TARBALL=$(ls anthropic-ai-*.tgz | head -1)
+              tar -xzf "$TARBALL"
+            )
             SDK_BIN_SOURCE="$PKG_TMP/package"
           fi
+
+          require_path "$SDK_BIN_SOURCE" "SDK native binary package ($SDK_BIN_PKG)" \
+            "Run 'bun install' from the repository root, or check your network for the npm cross-fetch."
 
           echo "Staging SDK native binary as claude-agent-sdk-binary alias..."
           ALIAS_DEST="$ELECTRON_DIR/node_modules/@anthropic-ai/claude-agent-sdk-binary"
           rm -rf "$ALIAS_DEST"
           mkdir -p "$ALIAS_DEST"
           cp -r "$SDK_BIN_SOURCE/." "$ALIAS_DEST/"
-          chmod +x "$ALIAS_DEST/claude" 2>/dev/null || true
+          chmod +x "$ALIAS_DEST/claude"
 
-          # Sanity check
-          if [ -f "$ALIAS_DEST/claude" ]; then
-            BIN_SIZE=$(stat -c%s "$ALIAS_DEST/claude" 2>/dev/null || stat -f%z "$ALIAS_DEST/claude" 2>/dev/null || echo "0")
-            echo "  Native binary: $((BIN_SIZE / 1024 / 1024)) MB"
-          else
-            echo "WARNING: claude binary not found in SDK binary package"
+          # Sanity check: binary should be ~210 MB
+          BIN_SIZE=$(stat -f%z "$ALIAS_DEST/claude" 2>/dev/null || stat -c%s "$ALIAS_DEST/claude")
+          if [ "$BIN_SIZE" -lt 50000000 ]; then
+            echo "ERROR: claude binary is only $BIN_SIZE bytes (expected ~210 MB)"
+            exit 1
           fi
+          echo "  Native binary: $((BIN_SIZE / 1024 / 1024)) MB"
 
           # 3. Copy ripgrep
           RG_SOURCE="$ROOT_DIR/node_modules/@vscode/ripgrep"
-          if [ -d "$RG_SOURCE" ]; then
-            echo "Copying @vscode/ripgrep..."
-            mkdir -p "$ELECTRON_DIR/node_modules/@vscode"
-            rm -rf "$ELECTRON_DIR/node_modules/@vscode/ripgrep"
-            cp -r "$RG_SOURCE" "$ELECTRON_DIR/node_modules/@vscode/"
-          else
-            echo "WARNING: @vscode/ripgrep not found"
-          fi
+          require_path "$RG_SOURCE" "@vscode/ripgrep" "Run 'bun install' and 'bun pm trust @vscode/ripgrep' first."
+          require_path "$RG_SOURCE/bin/rg" "ripgrep binary" "@vscode/ripgrep postinstall did not run."
+          echo "Copying @vscode/ripgrep..."
+          mkdir -p "$ELECTRON_DIR/node_modules/@vscode"
+          rm -rf "$ELECTRON_DIR/node_modules/@vscode/ripgrep"
+          cp -r "$RG_SOURCE" "$ELECTRON_DIR/node_modules/@vscode/"
 
-          # 4. Copy interceptor sources
+          # 4. Copy interceptor sources (for Pi subprocess)
           INTERCEPTOR_SOURCE="$ROOT_DIR/packages/shared/src/unified-network-interceptor.ts"
-          if [ -f "$INTERCEPTOR_SOURCE" ]; then
-            echo "Copying interceptor sources..."
-            mkdir -p "$ELECTRON_DIR/packages/shared/src"
-            cp "$INTERCEPTOR_SOURCE" "$ELECTRON_DIR/packages/shared/src/"
-            for dep in interceptor-common.ts feature-flags.ts interceptor-request-utils.ts; do
-              if [ -f "$ROOT_DIR/packages/shared/src/$dep" ]; then
-                cp "$ROOT_DIR/packages/shared/src/$dep" "$ELECTRON_DIR/packages/shared/src/"
-              fi
-            done
-          else
-            echo "WARNING: Interceptor source not found"
-          fi
+          require_path "$INTERCEPTOR_SOURCE" "Interceptor" "Ensure packages/shared/src/unified-network-interceptor.ts exists."
+          echo "Copying interceptor (for Pi subprocess)..."
+          mkdir -p "$ELECTRON_DIR/packages/shared/src"
+          cp "$INTERCEPTOR_SOURCE" "$ELECTRON_DIR/packages/shared/src/"
+          for dep in interceptor-common.ts feature-flags.ts interceptor-request-utils.ts; do
+            if [ -f "$ROOT_DIR/packages/shared/src/$dep" ]; then
+              cp "$ROOT_DIR/packages/shared/src/$dep" "$ELECTRON_DIR/packages/shared/src/"
+            fi
+          done
 
           echo "=== SDK preparation complete ==="
 
@@ -124,14 +174,13 @@ jobs:
             echo "ERROR: session-mcp-server build failed"
             exit 1
           fi
-          echo "  session-mcp-server built OK"
 
-          # 2. Copy session-mcp-server to electron resources
+          # Copy to electron resources
           mkdir -p "$ELECTRON_DIR/resources/session-mcp-server"
           cp packages/session-mcp-server/dist/index.js "$ELECTRON_DIR/resources/session-mcp-server/"
-          echo "  session-mcp-server copied to resources"
+          echo "  session-mcp-server OK"
 
-          # 3. Build pi-agent-server (Bun/ESM target, koffi external)
+          # 2. Build pi-agent-server (Bun/ESM target, koffi external)
           if [ -d "packages/pi-agent-server/src" ]; then
             echo "Building pi-agent-server..."
             mkdir -p packages/pi-agent-server/dist
@@ -142,66 +191,88 @@ jobs:
               echo "ERROR: pi-agent-server build failed"
               exit 1
             fi
-            echo "  pi-agent-server built OK"
 
-            # 4. Copy pi-agent-server to electron resources
+            # Copy to electron resources
             PI_DEST="$ELECTRON_DIR/resources/pi-agent-server"
             mkdir -p "$PI_DEST"
             cp packages/pi-agent-server/dist/index.js "$PI_DEST/"
 
-            # 5. Copy koffi package with platform-specific native binary
+            # Copy koffi with platform-specific native binary
             KOFFI_SOURCE="$ROOT_DIR/node_modules/koffi"
             if [ -d "$KOFFI_SOURCE" ]; then
               KOFFI_DEST="$PI_DEST/node_modules/koffi"
               mkdir -p "$KOFFI_DEST"
-              # Copy koffi JS files
               for entry in package.json index.js indirect.js index.d.ts lib; do
                 if [ -e "$KOFFI_SOURCE/$entry" ]; then
                   cp -r "$KOFFI_SOURCE/$entry" "$KOFFI_DEST/"
                 fi
               done
-              # Copy x64 native binary (cross-compile: arm64 runner building x64 app)
+              # x64 native binary (cross-compile from arm64 runner)
               KOFFI_PLATFORM="darwin_x64"
               NATIVE_SRC="$KOFFI_SOURCE/build/koffi/$KOFFI_PLATFORM"
               if [ -d "$NATIVE_SRC" ]; then
                 mkdir -p "$KOFFI_DEST/build/koffi/$KOFFI_PLATFORM"
                 cp -r "$NATIVE_SRC/." "$KOFFI_DEST/build/koffi/$KOFFI_PLATFORM/"
-                NATIVE_SIZE=$(ls -la "$NATIVE_SRC/" | grep -v "^total\|^d" | awk '{print $5}' | head -1)
-                echo "  koffi/$KOFFI_PLATFORM copied ($(( NATIVE_SIZE / 1024 / 1024 )) MB)"
               else
                 echo "  WARNING: koffi native binary not found for $KOFFI_PLATFORM, copying all platforms"
                 cp -r "$KOFFI_SOURCE/build" "$KOFFI_DEST/" 2>/dev/null || true
               fi
-              echo "  pi-agent-server + koffi copied to resources"
             else
-              echo "  WARNING: koffi not found in node_modules. Pi SDK sessions may not work."
+              echo "  WARNING: koffi not found in node_modules"
             fi
+            echo "  pi-agent-server OK"
           else
-            echo "  WARNING: pi-agent-server source not found. Pi SDK sessions will not work."
+            echo "  WARNING: pi-agent-server source not found"
           fi
 
-          # 6. Verify
-          echo "=== Verifying server resources ==="
-          ls -la "$ELECTRON_DIR/resources/session-mcp-server/"
-          ls -la "$ELECTRON_DIR/resources/pi-agent-server/" 2>/dev/null || echo "  (pi-agent-server not present)"
+          # 3. Build bridge-mcp-server if present
+          if [ -d "packages/bridge-mcp-server/src" ]; then
+            echo "Building bridge-mcp-server..."
+            mkdir -p packages/bridge-mcp-server/dist
+            bun build packages/bridge-mcp-server/src/index.ts \
+              --outfile packages/bridge-mcp-server/dist/index.js \
+              --target node --format cjs 2>/dev/null || true
+            if [ -f packages/bridge-mcp-server/dist/index.js ]; then
+              mkdir -p "$ELECTRON_DIR/resources/bridge-mcp-server"
+              cp packages/bridge-mcp-server/dist/index.js "$ELECTRON_DIR/resources/bridge-mcp-server/"
+              echo "  bridge-mcp-server OK"
+            fi
+          fi
+
           echo "=== Server build complete ==="
 
-      - name: Build electron main
-        run: bun run electron:build:main
+      - name: Build WhatsApp worker
+        run: |
+          echo "=== Building WhatsApp worker ==="
+          if [ -f "scripts/build-wa-worker.ts" ]; then
+            bun run build:wa-worker
+            echo "  WhatsApp worker built OK"
+          else
+            echo "  WARNING: build-wa-worker.ts not found, skipping"
+          fi
+          # Verify the output exists
+          if [ -f "packages/messaging-whatsapp-worker/dist/worker.cjs" ]; then
+            echo "  worker.cjs: $(ls -lh packages/messaging-whatsapp-worker/dist/worker.cjs | awk '{print $5}')"
+          else
+            echo "  WARNING: worker.cjs not found after build"
+          fi
 
-      - name: Build electron preload
-        run: bun run electron:build:preload
+      - name: Build Electron app (full pipeline)
+        run: |
+          echo "=== Building Electron app ==="
+          cd apps/electron
+          # Run the full official build pipeline (lint + all build steps + validate)
+          # Skip lint in CI to save time — focus on correctness
+          bun run build:main
+          bun run build:preload
+          bun run build:preload-toolbar
+          bun run build:interceptor
+          bun run build:renderer
+          bun run build:copy
+          bun run build:validate
+          echo "=== Electron build complete ==="
 
-      - name: Build electron renderer
-        run: bun run electron:build:renderer
-
-      - name: Build electron resources
-        run: bun run electron:build:resources
-
-      - name: Copy assets
-        run: bun run electron:build:assets
-
-      - name: Build macOS x64
+      - name: Package with electron-builder
         run: |
           cd apps/electron
           npx electron-builder --config electron-builder.yml --mac --x64
@@ -209,8 +280,23 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: false
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: List build artifacts
-        run: ls -la apps/electron/release/
+      - name: Verify build output
+        run: |
+          echo "=== Build Artifacts ==="
+          ls -lh apps/electron/release/
+          echo ""
+          # Verify DMG exists and has reasonable size
+          DMG="apps/electron/release/Craft-Agents-x64.dmg"
+          if [ -f "$DMG" ]; then
+            DMG_SIZE=$(stat -f%z "$DMG" 2>/dev/null || stat -c%s "$DMG")
+            echo "DMG size: $((DMG_SIZE / 1024 / 1024)) MB"
+            if [ "$DMG_SIZE" -lt 50000000 ]; then
+              echo "WARNING: DMG seems too small (< 50 MB), something may be wrong"
+            fi
+          else
+            echo "ERROR: DMG not found!"
+            exit 1
+          fi
 
       - name: Upload DMG
         uses: actions/upload-artifact@v4
