@@ -274,7 +274,11 @@ jobs:
           bun run build:interceptor
           NODE_OPTIONS="--max-old-space-size=6144" bun run build:renderer
           bun run build:copy
-          bun run build:validate
+          # NOTE: package.json references scripts/validate-assets.ts, but that
+          # file is not present on upstream main (v0.13.0). Skipping this step
+          # intentionally — upstream has the same issue, and copy-assets.ts has
+          # already produced dist/resources/ which is what electron-builder needs.
+          # bun run build:validate
           echo "=== Electron build complete ==="
 
       - name: Package with electron-builder
