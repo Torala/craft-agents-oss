@@ -258,6 +258,11 @@ jobs:
           fi
 
       - name: Build Electron app (full pipeline)
+        # macos-latest runners cap the V8 heap at ~2GB; vite's renderer build
+        # (Pages v0.13+ ships a much larger dependency graph) OOMs without more.
+        # Bump to 6GB for renderer only — other steps are unaffected.
+        env:
+          NODE_OPTIONS: "--max-old-space-size=6144"
         run: |
           echo "=== Building Electron app ==="
           cd apps/electron
@@ -267,7 +272,7 @@ jobs:
           bun run build:preload
           bun run build:preload-toolbar
           bun run build:interceptor
-          bun run build:renderer
+          NODE_OPTIONS="--max-old-space-size=6144" bun run build:renderer
           bun run build:copy
           bun run build:validate
           echo "=== Electron build complete ==="
