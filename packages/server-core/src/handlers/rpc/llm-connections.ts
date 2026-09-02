@@ -48,6 +48,21 @@ export const HANDLED_CHANNELS = [
 export function registerLlmConnectionsHandlers(server: RpcServer, deps: HandlerDeps): void {
   const { sessionManager } = deps
 
+  // Fire-and-forget model-list refresh after a credential change (setup, re-auth,
+  // validation). Re-auth can switch to an account with different model
+  // entitlements, so the cached list from the previous account must be replaced
+  // (#820). Never throws into the caller — a failed refresh must not fail the
+  // credential flow that triggered it.
+  const refreshModelsInBackground = (slug: string, context: string) => {
+    try {
+      getModelRefreshService().refreshNow(slug).catch(err => {
+        deps.platform.logger?.warn(`Model refresh after ${context} failed for ${slug}: ${err instanceof Error ? err.message : err}`)
+      })
+    } catch (err) {
+      deps.platform.logger?.warn(`Model refresh service unavailable after ${context} for ${slug}: ${err instanceof Error ? err.message : err}`)
+    }
+  }
+
   // Unified handler for LLM connection setup
   server.handle(RPC_CHANNELS.settings.SETUP_LLM_CONNECTION, async (_ctx, setup: LlmConnectionSetup): Promise<{ success: boolean; error?: string }> => {
     try {
@@ -376,7 +391,7 @@ export function registerLlmConnectionsHandlers(server: RpcServer, deps: HandlerD
   })
 
   server.handle(RPC_CHANNELS.pi.GET_PROVIDER_MODELS, async (_ctx, provider: string) => {
-    const { getModels } = await import('@mariozechner/pi-ai')
+    const { getModels } = await import('@earendil-works/pi-ai/compat')
     try {
       const models = getModels(provider as Parameters<typeof getModels>[0])
       const sorted = [...models].sort((a, b) => b.cost.output - a.cost.output || b.cost.input - a.cost.input)
@@ -523,9 +538,7 @@ export function registerLlmConnectionsHandlers(server: RpcServer, deps: HandlerD
       touchLlmConnection(slug)
 
       if (result.shouldRefreshModels) {
-        getModelRefreshService().refreshNow(slug).catch(err => {
-          deps.platform.logger?.warn(`Model refresh failed during validation: ${err instanceof Error ? err.message : err}`)
-        })
+        refreshModelsInBackground(slug, 'validation')
       }
 
       deps.platform.logger?.info(`LLM connection validated: ${slug}`)
@@ -689,6 +702,7 @@ export function registerLlmConnectionsHandlers(server: RpcServer, deps: HandlerD
 
       pendingChatGptFlows.delete(state)
       deps.platform.logger?.info(`[ChatGPT OAuth] Flow complete for ${flow.connectionSlug}`)
+      refreshModelsInBackground(flow.connectionSlug, 'ChatGPT auth')
       return { success: true }
     } catch (error) {
       pendingChatGptFlows.delete(state)
@@ -763,7 +777,7 @@ export function registerLlmConnectionsHandlers(server: RpcServer, deps: HandlerD
     error?: string
   }> => {
     try {
-      const { loginGitHubCopilot } = await import('@mariozechner/pi-ai/oauth')
+      const { loginGitHubCopilot } = await import('@craft-agent/shared/auth')
       const credentialManager = getCredentialManager()
 
       // Cancel any previous in-flight flow
@@ -772,27 +786,20 @@ export function registerLlmConnectionsHandlers(server: RpcServer, deps: HandlerD
 
       deps.platform.logger?.info(`Starting GitHub Copilot OAuth device flow for connection: ${connectionSlug}`)
 
-      // Use Pi SDK's login flow — this handles the device code flow AND
-      // the critical Copilot token exchange that determines the correct
-      // API endpoint for the user's subscription tier (individual/business/enterprise).
+      // App-owned login flow (pi-ai 0.81.x no longer exports one) — handles the
+      // device code flow AND the critical Copilot token exchange that determines
+      // the correct API endpoint for the user's subscription tier via proxy-ep.
       const credentials = await loginGitHubCopilot({
-        onAuth: (url, instructions) => {
-          // Extract user code from instructions (format: "Enter code: XXXX-YYYY")
-          const codeMatch = instructions?.match(/:\s*(\S+)/)
-          const userCode = codeMatch?.[1] ?? ''
+        onDeviceCode: ({ userCode, verificationUri }) => {
           deps.platform.logger?.info(`[GitHub OAuth] Device code: ${userCode}`)
           pushTyped(server, RPC_CHANNELS.copilot.DEVICE_CODE, { to: 'client', clientId: ctx.clientId }, {
             userCode,
-            verificationUri: url,
+            verificationUri,
           })
           // Open GitHub device code page on the client's machine
-          server.invokeClient(ctx.clientId, CLIENT_OPEN_EXTERNAL, url).catch(err => {
+          server.invokeClient(ctx.clientId, CLIENT_OPEN_EXTERNAL, verificationUri).catch(err => {
             deps.platform.logger?.warn(`Failed to open browser for GitHub OAuth: ${err}`)
           })
-        },
-        onPrompt: async () => {
-          // Pi SDK asks for GitHub Enterprise domain — return empty for github.com
-          return ''
         },
         onProgress: (message) => {
           deps.platform.logger?.info(`[GitHub OAuth] ${message}`)
@@ -813,6 +820,7 @@ export function registerLlmConnectionsHandlers(server: RpcServer, deps: HandlerD
       })
 
       deps.platform.logger?.info('GitHub Copilot OAuth completed successfully')
+      refreshModelsInBackground(connectionSlug, 'Copilot auth')
       return { success: true }
     } catch (error) {
       copilotOAuthAbort = null

@@ -2,7 +2,7 @@
  * Auto-update module using electron-updater
  *
  * Handles checking for updates, downloading, and installing via the standard
- * electron-updater library. Updates are served from https://agents.craft.do/electron/latest
+ * electron-updater library. Updates are served from https://thecraftagents.com/electron/latest
  * using the generic provider (YAML manifests + binaries on R2/S3).
  *
  * Platform behavior:
@@ -19,7 +19,7 @@ import { app, BrowserWindow } from 'electron'
 import { platform } from 'os'
 import * as path from 'path'
 import * as fs from 'fs'
-import { mainLog } from './logger'
+import { mainLog, autoUpdateLog } from './logger'
 import { getAppVersion } from '@craft-agent/shared/version'
 import {
   getDismissedUpdateVersion,
@@ -72,12 +72,42 @@ let __isUpdating = false
 // so the regular before-quit save site would see an empty array.
 let beforeUpdateQuitHook: (() => void) | null = null
 
+// Hook fired (awaited) immediately before quitAndInstall, AFTER the window
+// snapshot. index.ts uses it to flush sessions + release resources BEFORE the
+// installer quit, so before-quit no longer needs to preventDefault (which
+// cancelled Squirrel.Mac's quit and left the update downloaded-but-not-installed).
+let beforeUpdateInstallHook: (() => Promise<void>) | null = null
+
+// Hook fired when quitAndInstall throws AFTER beforeUpdateInstallHook already tore
+// the app down (sessions flushed, services disposed, lock released, isQuitting set).
+// The process cannot safely keep running at that point — index.ts uses this to
+// inform the user and relaunch into a fresh process instead of leaving a zombie
+// app whose next quit would skip the flush entirely (#891).
+let installQuitFailedHook: (() => void) | null = null
+
 /**
  * Register a callback to run inside installUpdate() before quitAndInstall.
  * Used by index.ts to snapshot multi-window state while windows are still alive.
  */
 export function setBeforeUpdateQuitHook(fn: () => void): void {
   beforeUpdateQuitHook = fn
+}
+
+/**
+ * Register an async callback run (awaited) inside installUpdate() right before
+ * quitAndInstall. index.ts uses it to run the full quit cleanup so the installer
+ * handoff isn't interrupted by the before-quit handler's preventDefault (#891).
+ */
+export function setBeforeUpdateInstallHook(fn: () => Promise<void>): void {
+  beforeUpdateInstallHook = fn
+}
+
+/**
+ * Register the recovery callback for a quitAndInstall failure that happens after
+ * the install cleanup hook already ran. index.ts relaunches the app from it.
+ */
+export function setInstallQuitFailedHook(fn: () => void): void {
+  installQuitFailedHook = fn
 }
 
 /**
@@ -145,7 +175,7 @@ autoUpdater.on('checking-for-update', () => {
 })
 
 autoUpdater.on('update-available', (info) => {
-  mainLog.info(`[auto-update] Update available: ${updateInfo.currentVersion} → ${info.version}`)
+  autoUpdateLog.info(`Update available: ${updateInfo.currentVersion} → ${info.version}`)
 
   // First, check electron-updater's internal state (most reliable)
   const internalState = checkElectronUpdaterState()
@@ -206,7 +236,7 @@ autoUpdater.on('download-progress', (progress) => {
 })
 
 autoUpdater.on('update-downloaded', async (info) => {
-  mainLog.info(`[auto-update] Update downloaded: v${info.version}`)
+  autoUpdateLog.info(`Update downloaded: v${info.version}`)
 
   updateInfo = {
     ...updateInfo,
@@ -223,7 +253,7 @@ autoUpdater.on('update-downloaded', async (info) => {
 })
 
 autoUpdater.on('error', (error) => {
-  mainLog.error('[auto-update] Error:', error.message)
+  autoUpdateLog.error('electron-updater error', error)
 
   updateInfo = {
     ...updateInfo,
@@ -359,7 +389,7 @@ export async function checkForUpdates(options: CheckOptions = {}): Promise<Updat
       }
     }
   } catch (error) {
-    mainLog.error('[auto-update] Check failed:', error)
+    autoUpdateLog.error('Update check failed', error)
     updateInfo = {
       ...updateInfo,
       downloadState: 'error',
@@ -386,7 +416,7 @@ export async function installUpdate(): Promise<void> {
     throw new Error('No update ready to install')
   }
 
-  mainLog.info('[auto-update] Installing update and restarting...')
+  autoUpdateLog.info('Installing update and restarting...')
 
   updateInfo = { ...updateInfo, downloadState: 'installing' }
   broadcastUpdateInfo()
@@ -400,7 +430,7 @@ export async function installUpdate(): Promise<void> {
   // Diagnostic correlation with before-quit's [update-flow] log. If these
   // window counts diverge, electron-updater is destroying windows between
   // here and before-quit firing — confirms the multi-window restore bug.
-  mainLog.info('[update-flow] installUpdate pre-quit', {
+  autoUpdateLog.info('installUpdate pre-quit', {
     electronWindowCount: BrowserWindow.getAllWindows().length,
     downloadState: updateInfo.downloadState,
     latestVersion: updateInfo.latestVersion,
@@ -412,7 +442,17 @@ export async function installUpdate(): Promise<void> {
   try {
     beforeUpdateQuitHook?.()
   } catch (err) {
-    mainLog.error('[auto-update] beforeUpdateQuit hook failed:', err)
+    autoUpdateLog.error('beforeUpdateQuit hook failed', err)
+  }
+
+  // Run the app's quit cleanup (session flush, timers, lock release) BEFORE the
+  // installer hands off. This lets the before-quit handler skip its own
+  // preventDefault-based cleanup, so Squirrel.Mac's quit runs to a real exit and
+  // the update actually installs (#891).
+  try {
+    await beforeUpdateInstallHook?.()
+  } catch (err) {
+    autoUpdateLog.error('beforeUpdateInstall cleanup hook failed', err)
   }
 
   try {
@@ -421,9 +461,16 @@ export async function installUpdate(): Promise<void> {
     autoUpdater.quitAndInstall(false, true)
   } catch (error) {
     __isUpdating = false
-    mainLog.error('[auto-update] quitAndInstall failed:', error)
+    autoUpdateLog.error('quitAndInstall failed', error)
     updateInfo = { ...updateInfo, downloadState: 'error' }
     broadcastUpdateInfo()
+    // beforeUpdateInstallHook already tore the app down — recover via the
+    // registered relaunch hook instead of leaving a zombie process (#891).
+    try {
+      installQuitFailedHook?.()
+    } catch (hookErr) {
+      autoUpdateLog.error('installQuitFailed hook failed', hookErr)
+    }
     throw error
   }
 }
@@ -444,7 +491,7 @@ export interface UpdateOnLaunchResult {
  * - Auto-downloads if update available
  */
 export async function checkForUpdatesOnLaunch(): Promise<UpdateOnLaunchResult> {
-  mainLog.info('[auto-update] Checking for updates on launch...')
+  autoUpdateLog.info('Checking for updates on launch...')
 
   const info = await checkForUpdates({ autoDownload: true })
 

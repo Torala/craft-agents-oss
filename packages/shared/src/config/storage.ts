@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync, statSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync, statSync, readdirSync } from 'fs';
 import { join, dirname, basename } from 'path';
 import { getCredentialManager } from '../credentials/index.ts';
 import { getOrCreateLatestSession, type SessionConfig } from '../sessions/index.ts';
@@ -210,12 +210,48 @@ export function ensureConfigDefaults(): void {
 
 let configDirInitialized = false;
 
+const MAX_CONFIG_BACKUPS = 3;
+const CONFIG_BACKUP_DATE_RE = /^config\.json\.bak-\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Snapshot an existing config.json into a dated file (config.json.bak-YYYY-MM-DD)
+ * and keep only the newest MAX_CONFIG_BACKUPS. Runs once at startup, before any
+ * path can mutate or (in failure paths) overwrite the workspace registry.
+ * Best-effort: failures are logged and swallowed so a backup never blocks startup.
+ */
+export function backupConfigFile(): void {
+  try {
+    if (!existsSync(CONFIG_FILE)) return;
+
+    const now = new Date();
+    const stamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const dated = join(CONFIG_DIR, `config.json.bak-${stamp}`);
+    // One backup per day, never overwritten: the first snapshot of the day is taken
+    // before any mutation, so it holds the good pre-reset state. A second startup that
+    // day (e.g. after a reset already nuked the registry) must NOT clobber it.
+    if (existsSync(dated)) return;
+    writeFileSync(dated, readFileSync(CONFIG_FILE, 'utf-8'), 'utf-8');
+
+    // ISO date in the name → lexical sort is chronological; drop all but the newest few.
+    const backups = readdirSync(CONFIG_DIR).filter(f => CONFIG_BACKUP_DATE_RE.test(f)).sort();
+    for (const stale of backups.slice(0, Math.max(0, backups.length - MAX_CONFIG_BACKUPS))) {
+      try { rmSync(join(CONFIG_DIR, stale)); } catch { /* ignore individual cleanup errors */ }
+    }
+  } catch (error) {
+    debug('[config] backupConfigFile failed:', error instanceof Error ? error.message : error);
+  }
+}
+
 export function ensureConfigDir(): void {
   if (configDirInitialized) return;
 
   if (!existsSync(CONFIG_DIR)) {
     mkdirSync(CONFIG_DIR, { recursive: true });
   }
+
+  // Snapshot an existing config.json (dated, keep last 3) before anything can
+  // mutate or — in a failure path — overwrite the workspace registry.
+  backupConfigFile();
   // Initialize bundled docs (creates ~/.craft-agent/docs/ with sources.md, agents.md, permissions.md)
   initializeDocs();
 
@@ -1203,7 +1239,6 @@ export function getAllSessionDrafts(): Record<string, SessionDraft> {
 // ============================================
 
 import type { ThemeOverrides, ThemeFile, PresetTheme } from './theme.ts';
-import { readdirSync } from 'fs';
 
 const APP_THEME_FILE = join(CONFIG_DIR, 'theme.json');
 const APP_THEMES_DIR = join(CONFIG_DIR, 'themes');
@@ -1940,6 +1975,74 @@ function migrateLegacyOpusToDefaultOpus(config: StoredConfig): boolean {
 }
 
 /**
+ * Restore claude-opus-4-6 to direct Anthropic connections that were previously
+ * force-migrated to 4.8 and no longer list 4.6. Runs once per user (tracked via
+ * config.migrationsApplied). Never touches `defaultModel` — users keep whatever
+ * default they had, and can switch models themselves.
+ *
+ * The marker is versioned ("-2") because the pre-4.8 restore already consumed
+ * 'opus-4-6-restored' in long-time users' configs; this restore must fire
+ * again after the 4.8-era removal.
+ *
+ * TODO(opus-4.6-sunset): drop this call and the function when 4.6 is deprecated.
+ */
+function restoreOpus46ToAnthropicConnections(config: StoredConfig): boolean {
+  const OPUS_46_ID = 'claude-opus-4-6';
+  const MARKER = 'opus-4-6-restored-2';
+  const alreadyRan = config.migrationsApplied?.includes(MARKER) ?? false;
+
+  // Anthropic connection.models entries are stored as full ModelDefinition
+  // objects (via backfillAllConnectionModels). The model picker reads
+  // model.name and falls back to the raw ID for bare strings, so we must
+  // push the object form to render as "Opus 4.6".
+  const opus46Model = getModelById(OPUS_46_ID);
+  if (!opus46Model) {
+    // Defensive — 4.6 is registered in this same PR, should never happen.
+    if (!alreadyRan) {
+      config.migrationsApplied = [...(config.migrationsApplied ?? []), MARKER];
+      return true;
+    }
+    return false;
+  }
+
+  let changed = false;
+
+  for (const connection of config.llmConnections ?? []) {
+    if (connection.providerType !== 'anthropic') continue;
+    if (!Array.isArray(connection.models) || connection.models.length === 0) continue;
+
+    // Idempotent shape repair: normalize any bare-string 'claude-opus-4-6'
+    // entry to the ModelDefinition object form. Runs regardless of the
+    // one-shot marker because it's a display-shape fix, not a new entry.
+    for (let i = 0; i < connection.models.length; i++) {
+      const m = connection.models[i];
+      if (typeof m === 'string' && m === OPUS_46_ID) {
+        connection.models[i] = { ...opus46Model };
+        changed = true;
+      }
+    }
+
+    // One-shot restore: only append 4.6 on the first run for a given user.
+    // A deliberate removal after the marker is set should stick.
+    if (alreadyRan) continue;
+
+    const ids = connection.models.map(m => typeof m === 'string' ? m : m.id);
+    if ((ids.includes(OPUS_DEFAULT_ID) || ids.includes(OPUS_FALLBACK_ID)) && !ids.includes(OPUS_46_ID)) {
+      connection.models.push({ ...opus46Model });
+      changed = true;
+    }
+  }
+
+  // Mark the migration as seen on the first run — even when no connection
+  // was eligible — so subsequent runs don't keep re-checking.
+  if (!alreadyRan) {
+    config.migrationsApplied = [...(config.migrationsApplied ?? []), MARKER];
+    return true;
+  }
+  return changed;
+}
+
+/**
  * Migrate Sonnet 4.5 to Sonnet 4.6 for direct Anthropic connections.
  * Updates stored model IDs and names for direct Anthropic connections.
  */
@@ -2312,6 +2415,12 @@ export function migrateLegacyLlmConnectionsConfig(): void {
     // Important for old Bedrock connections: they become Pi+Bedrock first, then can
     // fall back from Opus 4.8 to 4.7 while Pi's catalog lacks 4.8.
     if (migrateLegacyOpusToDefaultOpus(config)) {
+      needsSave = true;
+    }
+    // Phase 1m: Restore Opus 4.6 to direct Anthropic connections that were
+    // previously force-migrated away from it (one-shot, guarded by marker).
+    // TODO(opus-4.6-sunset): drop this call and the function when 4.6 is deprecated.
+    if (restoreOpus46ToAnthropicConnections(config)) {
       needsSave = true;
     }
 

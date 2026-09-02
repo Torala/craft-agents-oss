@@ -6,7 +6,7 @@
  */
 
 import { Type } from '@sinclair/typebox';
-import type { ToolDefinition } from '@mariozechner/pi-coding-agent';
+import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
 import type { WebSearchProvider, WebSearchResult } from './types.ts';
 import { DDGSearchProvider } from './providers/ddg.ts';
 
@@ -91,7 +91,7 @@ export function createSearchTool(
               content: [
                 {
                   type: 'text' as const,
-                  text: `Search failed for "${query}": primary (${provider.name}) failed with "${primaryMsg}"; fallback (${fallbackProvider.name}) failed with "${fallbackMsg}"`,
+                  text: `Search failed for "${query}": primary (${provider.name}) failed with "${formatErrorSnippet(primaryMsg, 400)}"; fallback (${fallbackProvider.name}) failed with "${formatErrorSnippet(fallbackMsg, 400)}"`,
                 },
               ],
               details: { isError: true },
@@ -103,7 +103,7 @@ export function createSearchTool(
           content: [
             {
               type: 'text' as const,
-              text: `Search failed for "${query}": ${primaryMsg}`,
+              text: `Search failed for "${query}": ${formatErrorSnippet(primaryMsg, 400)}`,
             },
           ],
           details: { isError: true },

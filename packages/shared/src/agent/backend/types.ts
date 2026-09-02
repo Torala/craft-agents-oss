@@ -370,6 +370,13 @@ export interface AgentBackend {
   forceAbort(reason: AbortReason): void;
 
   /**
+   * WS2: register a sink for background task events that arrive BETWEEN turns
+   * (when no chat() generator is being consumed) under keep-alive mode. Backends
+   * without a persistent cross-turn query may leave this unimplemented.
+   */
+  setBackgroundEventSink?(sink: ((event: AgentEvent) => void) | null): void;
+
+  /**
    * Interrupt the current turn because control is being handed to the UI.
    *
    * Used for pause points like plan submission and auth requests, where the
@@ -638,7 +645,7 @@ export interface BackendConfig extends CoreBackendConfig {
    * Provider/SDK to use for this backend.
    * Determines which agent class is instantiated:
    * - 'anthropic' → ClaudeAgent (Anthropic SDK)
-   * - 'pi' → PiAgent (Pi via @mariozechner/pi-coding-agent)
+   * - 'pi' → PiAgent (Pi via @earendil-works/pi-coding-agent)
    */
   provider: AgentProvider;
 

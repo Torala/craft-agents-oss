@@ -55,7 +55,22 @@ export const RPC_CHANNELS = {
     ABORT: 'transfer:abort',
   },
   tasks: {
+    // Legacy: background-task output (disabled-feature remnant). Kept for back-compat; retire later.
     GET_OUTPUT: 'tasks:getOutput',
+    // Conductor — the Tasks DAG runner.
+    VALIDATE: 'tasks:validate',
+    CREATE: 'tasks:create',
+    GENERATE: 'tasks:generate',
+    // Push: the authored spec (or an error) for an async tasks:generate, keyed by orchestratorSessionId.
+    GENERATED: 'tasks:generated',
+    RUN: 'tasks:run',
+    PAUSE: 'tasks:pause',
+    RESUME: 'tasks:resume',
+    STOP: 'tasks:stop',
+    GET: 'tasks:get',
+    LIST: 'tasks:list',
+    // Storage-backed read of a run's outcome (verdict + per-node output). Survives restart.
+    GET_RESULTS: 'tasks:getResults',
   },
   workspaces: {
     GET: 'workspaces:get',
@@ -377,6 +392,42 @@ export const RPC_CHANNELS = {
   resources: {
     EXPORT: 'resources:export',
     IMPORT: 'resources:import',
+  },
+  projects: {
+    GET: 'projects:get',
+    GET_ONE: 'projects:getOne',
+    CREATE: 'projects:create',
+    UPDATE: 'projects:update',
+    DELETE: 'projects:delete',
+    LIST_ASSETS: 'projects:listAssets',
+    UPLOAD_ASSET: 'projects:uploadAsset',
+    DELETE_ASSET: 'projects:deleteAsset',
+    CHANGED: 'projects:changed',
+  },
+  pages: {
+    GET: 'pages:get',
+    GET_ONE: 'pages:getOne',
+    CREATE: 'pages:create',
+    UPDATE: 'pages:update',
+    DELETE: 'pages:delete',
+    GET_CONTENT: 'pages:getContent',
+    SET_CONTENT: 'pages:setContent',
+    GET_DATA: 'pages:getData',
+    LIST_GRANTS: 'pages:listGrants',
+    ISSUE_GRANT: 'pages:issueGrant',
+    REVOKE_GRANT: 'pages:revokeGrant',
+    CREATE_LEASE: 'pages:createLease',
+    RELEASE_LEASE: 'pages:releaseLease',
+    EXECUTE_ACTION: 'pages:executeAction',
+    CANCEL_ACTION: 'pages:cancelAction',
+    GET_SHARE_CAPABILITIES: 'pages:getShareCapabilities',
+    GET_SHARE_DATA_SCAN: 'pages:getShareDataScan',
+    PUBLISH: 'pages:publish',
+    SET_PUBLICATION_PASSWORD: 'pages:setPublicationPassword',
+    UNPUBLISH: 'pages:unpublish',
+    GET_THUMBNAIL: 'pages:getThumbnail',
+    REGENERATE_THUMBNAIL: 'pages:regenerateThumbnail',
+    CHANGED: 'pages:changed',
   },
   messaging: {
     // WhatsApp subprocess → Gateway (subprocess invokes on server)
